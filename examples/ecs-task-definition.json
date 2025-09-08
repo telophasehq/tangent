@@ -56,7 +56,7 @@
                     "value": "/var/run/docker.sock"
                 },
                 {
-                    "name": "RUST_LOG",
+                    "name": "LOG_LEVEL",
                     "value": "info"
                 }
             ],

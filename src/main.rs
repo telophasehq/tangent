@@ -106,8 +106,8 @@ impl WasmEngine {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
+    if std::env::var("LOG_LEVEL").is_err() {
+        std::env::set_var("LOG_LEVEL", "info");
     }
 
     tracing_subscriber::fmt::init();
@@ -121,7 +121,6 @@ async fn main() -> std::io::Result<()> {
 
     info!("Starting Actix Web HTTP server on {}", addr);
 
-    // Initialize WASM engine
     let wasm_engine = match WasmEngine::new() {
         Ok(engine) => {
             info!("WASM engine initialized successfully");
@@ -133,7 +132,6 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
-    // Start the server
     info!("Server listening on {}", addr);
     HttpServer::new(move || {
         App::new()
@@ -155,14 +153,12 @@ async fn sink_handler(
     let payload_value = payload.into_inner();
     info!("Payload: {}", serde_json::to_string_pretty(&payload_value).unwrap());
     
-    // Process logs with WASM
     let logs_json = serde_json::to_string(&payload_value).unwrap();
     match wasm_engine.process_logs(&logs_json) {
         Ok(analysis) => {
             info!("Log analysis completed");
             info!("Analysis: {}", analysis);
             
-            // Parse the analysis back to JSON for response
             match serde_json::from_str::<Value>(&analysis) {
                 Ok(analysis_json) => {
                     web::Json(json!({

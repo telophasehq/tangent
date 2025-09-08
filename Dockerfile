@@ -36,7 +36,7 @@ COPY --from=builder /usr/src/app/config.toml /etc/config.toml
 USER sidecar
 
 # Set environment variables
-ENV RUST_LOG=info
+ENV LOG_LEVEL=info
 ENV SIDECAR_CONFIG_FILE=/etc/config.toml
 
 # Expose WASM directory

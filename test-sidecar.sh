@@ -31,7 +31,7 @@ docker run -d --name test-sidecar \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e SIDECAR_TARGET_CONTAINER=test-app \
     -e SIDECAR_LOG_INTERVAL_MS=1000 \
-    -e RUST_LOG=info \
+    -e LOG_LEVEL=info \
     rustagent-sidecar
 
 # Wait for the sidecar to process some logs

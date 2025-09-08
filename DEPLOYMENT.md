@@ -150,7 +150,7 @@ aws ecs create-service \
 SIDECAR_TARGET_CONTAINER=myapp
 SIDECAR_LOG_INTERVAL_MS=5000
 SIDECAR_WASM_MODULE_PATH=/wasm/custom-processor.wasm
-RUST_LOG=info
+LOG_LEVEL=info
 ```
 
 ### Custom WASM Module Path
@@ -188,7 +188,7 @@ SIDECAR_WASM_MODULE_PATH=/wasm/production-processor.wasm
 Enable debug logging in production:
 
 ```bash
-RUST_LOG=debug
+LOG_LEVEL=debug
 ```
 
 ## Security Best Practices
