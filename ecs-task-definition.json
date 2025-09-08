@@ -1,0 +1,90 @@
+{
+    "family": "app-with-sidecar",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024",
+    "executionRoleArn": "arn:aws:iam::YOUR_ACCOUNT:role/ecsTaskExecutionRole",
+    "taskRoleArn": "arn:aws:iam::YOUR_ACCOUNT:role/ecsTaskRole",
+    "containerDefinitions": [
+        {
+            "name": "app",
+            "image": "your-app-image:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 8080,
+                    "protocol": "tcp"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/app-with-sidecar",
+                    "awslogs-region": "us-west-2",
+                    "awslogs-stream-prefix": "app"
+                }
+            }
+        },
+        {
+            "name": "sidecar",
+            "image": "your-sidecar-image:latest",
+            "essential": false,
+            "dependsOn": [
+                {
+                    "containerName": "app",
+                    "condition": "START"
+                }
+            ],
+            "environment": [
+                {
+                    "name": "SIDECAR_TARGET_CONTAINER",
+                    "value": "app"
+                },
+                {
+                    "name": "SIDECAR_LOG_INTERVAL_MS",
+                    "value": "1000"
+                },
+                {
+                    "name": "SIDECAR_WASM_MODULE_PATH",
+                    "value": "/wasm/log-processor.wasm"
+                },
+                {
+                    "name": "SIDECAR_DOCKER_SOCKET",
+                    "value": "/var/run/docker.sock"
+                },
+                {
+                    "name": "RUST_LOG",
+                    "value": "info"
+                }
+            ],
+            "mountPoints": [
+                {
+                    "sourceVolume": "wasm-modules",
+                    "containerPath": "/wasm",
+                    "readOnly": true
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/app-with-sidecar",
+                    "awslogs-region": "us-west-2",
+                    "awslogs-stream-prefix": "sidecar"
+                }
+            }
+        }
+    ],
+    "volumes": [
+        {
+            "name": "wasm-modules",
+            "efsVolumeConfiguration": {
+                "fileSystemId": "fs-12345678",
+                "rootDirectory": "/",
+                "transitEncryption": "ENABLED"
+            }
+        }
+    ]
+}

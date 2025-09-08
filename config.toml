@@ -1,0 +1,5 @@
+# Sidecar configuration
+target_container = "app"
+log_interval_ms = 1000
+wasm_module_path = "/wasm/log-processor.wasm"
+docker_socket = "/var/run/docker.sock" 

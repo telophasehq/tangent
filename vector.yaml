@@ -1,0 +1,13 @@
+sources:
+  in:
+    type: "stdin"
+
+sinks:
+  my_sink_id:
+    type: http
+    inputs:
+      - in 
+    uri: "http://127.0.0.1:3000/sink"
+    encoding:
+      codec: "json"
+
