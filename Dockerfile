@@ -29,7 +29,7 @@ RUN mkdir -p /wasm /var/run/docker.sock
 RUN chown -R sidecar:sidecar /wasm
 
 # Copy the binary
-COPY --from=builder /usr/src/app/target/release/rustagent /usr/local/bin/
+COPY --from=builder /usr/src/app/target/release/tangent /usr/local/bin/
 COPY --from=builder /usr/src/app/config.toml /etc/config.toml
 
 # Switch to non-root user
@@ -43,4 +43,4 @@ ENV SIDECAR_CONFIG_FILE=/etc/config.toml
 VOLUME ["/wasm"]
 
 # Run the sidecar
-CMD ["/usr/local/bin/rustagent"] 
+CMD ["/usr/local/bin/tangent"] 

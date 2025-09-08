@@ -19,7 +19,7 @@ This guide explains how to deploy the Rust Agent Sidecar to Amazon ECS.
 ./build.sh
 
 # Tag for ECR
-docker tag rustagent-sidecar:latest YOUR_ACCOUNT.dkr.ecr.YOUR_REGION.amazonaws.com/rustagent-sidecar:latest
+docker tag tangent-sidecar:latest YOUR_ACCOUNT.dkr.ecr.YOUR_REGION.amazonaws.com/tangent-sidecar:latest
 ```
 
 ### Push to ECR
@@ -29,7 +29,7 @@ docker tag rustagent-sidecar:latest YOUR_ACCOUNT.dkr.ecr.YOUR_REGION.amazonaws.c
 aws ecr get-login-password --region YOUR_REGION | docker login --username AWS --password-stdin YOUR_ACCOUNT.dkr.ecr.ecr.YOUR_REGION.amazonaws.com
 
 # Push the image
-docker push YOUR_ACCOUNT.dkr.ecr.YOUR_REGION.amazonaws.com/rustagent-sidecar:latest
+docker push YOUR_ACCOUNT.dkr.ecr.YOUR_REGION.amazonaws.com/tangent-sidecar:latest
 ```
 
 ## Step 2: Prepare WASM Modules

@@ -32,7 +32,7 @@ docker run -d --name test-sidecar \
     -e SIDECAR_TARGET_CONTAINER=test-app \
     -e SIDECAR_LOG_INTERVAL_MS=1000 \
     -e LOG_LEVEL=info \
-    rustagent-sidecar
+    tangent-sidecar
 
 # Wait for the sidecar to process some logs
 echo "Waiting for sidecar to process logs..."

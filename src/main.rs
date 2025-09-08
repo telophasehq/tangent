@@ -48,37 +48,11 @@ impl WasmEngine {
         // For now, return a simple analysis since we need to build the WASM module first
         let logs: Vec<LogEntry> = serde_json::from_str(logs_json)?;
         
-        let mut error_count = 0;
-        let mut warn_count = 0;
-        let mut info_count = 0;
-        let mut suspicious_patterns = Vec::new();
         let mut hosts = Vec::new();
         let mut source_types = Vec::new();
         
         for log in &logs {
             let lower_message = log.message.to_lowercase();
-            
-            // Count log levels based on message content
-            if lower_message.contains("error") {
-                error_count += 1;
-            } else if lower_message.contains("warn") {
-                warn_count += 1;
-            } else if lower_message.contains("info") {
-                info_count += 1;
-            }
-            
-            // Check for suspicious patterns
-            if lower_message.contains("password") || lower_message.contains("secret") || lower_message.contains("key") {
-                suspicious_patterns.push("Potential credential leak detected".to_string());
-            }
-            
-            if lower_message.contains("exception") || lower_message.contains("stack trace") {
-                suspicious_patterns.push("Exception or stack trace detected".to_string());
-            }
-            
-            if lower_message.contains("timeout") || lower_message.contains("deadlock") {
-                suspicious_patterns.push("Performance issue detected".to_string());
-            }
             
             // Collect unique hosts and source types
             if !hosts.contains(&log.host) {
@@ -91,11 +65,7 @@ impl WasmEngine {
         
         let analysis = json!({
             "total_logs": logs.len(),
-            "error_count": error_count,
-            "warn_count": warn_count,
-            "info_count": info_count,
             "debug_count": 0,
-            "suspicious_patterns": suspicious_patterns,
             "hosts": hosts,
             "source_types": source_types
         });
