@@ -1,0 +1,23 @@
+[package]
+name = "light-node"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+reqwest = { version = "0.11", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+config = "0.13"
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.10"
+wasmtime = "15.0"
+wasmtime-wasi = "15.0"
+docker-api = "0.14"
+futures = "0.3"
+async-stream = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+actix-web = "4"
+tracing = "0.1"
+tracing-subscriber = "0.3" 

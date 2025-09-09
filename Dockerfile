@@ -1,5 +1,5 @@
 # Multi-stage build for Rust sidecar
-FROM rust:1.75-slim as builder
+FROM rust:1.89-slim as builder
 
 WORKDIR /usr/src/app
 COPY . .
@@ -25,12 +25,12 @@ RUN apt-get update && apt-get install -y \
 RUN useradd -r -s /bin/false sidecar
 
 # Create necessary directories
-RUN mkdir -p /wasm /var/run/docker.sock
+RUN mkdir -p /wasm /var/run
 RUN chown -R sidecar:sidecar /wasm
 
 # Copy the binary
-COPY --from=builder /usr/src/app/target/release/tangent /usr/local/bin/
-COPY --from=builder /usr/src/app/config.toml /etc/config.toml
+COPY --from=builder /usr/src/app/target/release/light-node /usr/local/bin/
+COPY --from=builder /usr/src/app/light-node/config.toml /etc/config.toml
 
 # Switch to non-root user
 USER sidecar
@@ -43,4 +43,4 @@ ENV SIDECAR_CONFIG_FILE=/etc/config.toml
 VOLUME ["/wasm"]
 
 # Run the sidecar
-CMD ["/usr/local/bin/tangent"] 
+CMD ["/usr/local/bin/light-node"] 

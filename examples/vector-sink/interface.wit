@@ -1,0 +1,5 @@
+package tangent:logs@0.1.0
+
+world analyzer {
+  export process-logs: func(logs: string) -> result<string, string>
+}

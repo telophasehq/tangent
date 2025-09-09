@@ -10,41 +10,33 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Clean up any existing test containers
 echo "Cleaning up existing test containers..."
-docker rm -f test-app test-sidecar 2>/dev/null || true
+docker rm -f test-app light-node 2>/dev/null || true
 
-# Start a test application container
 echo "Starting test application container..."
 docker run -d --name test-app nginx:alpine
 
-# Wait a moment for the container to start
 sleep 2
 
-# Generate some test logs
 echo "Generating test logs..."
 docker exec test-app sh -c "echo 'INFO: Application started' && echo 'ERROR: Test error message' && echo 'WARN: Test warning'"
 
-# Start the sidecar
 echo "Starting sidecar container..."
-docker run -d --name test-sidecar \
+docker run -d --name light-node \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e SIDECAR_TARGET_CONTAINER=test-app \
     -e SIDECAR_LOG_INTERVAL_MS=1000 \
     -e LOG_LEVEL=info \
     tangent-sidecar
 
-# Wait for the sidecar to process some logs
 echo "Waiting for sidecar to process logs..."
 sleep 5
 
-# Check sidecar logs
 echo "Sidecar logs:"
-docker logs test-sidecar
+docker logs light-node
 
-# Clean up
 echo "Cleaning up test containers..."
-docker rm -f test-app test-sidecar
+docker rm -f test-app light-node
 
 echo "Test completed successfully!"
 echo ""
