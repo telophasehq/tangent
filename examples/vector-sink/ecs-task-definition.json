@@ -48,15 +48,11 @@
                     "value": "1000"
                 },
                 {
-                    "name": "SIDECAR_WASM_MODULE_PATH",
-                    "value": "/wasm/log-processor.wasm"
-                },
-                {
                     "name": "SIDECAR_DOCKER_SOCKET",
                     "value": "/var/run/docker.sock"
                 },
                 {
-                    "name": "RUST_LOG",
+                    "name": "LOG_LEVEL",
                     "value": "info"
                 }
             ],

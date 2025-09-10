@@ -1,1 +1,3 @@
 target/
+compiled/
+**/__pycache__
