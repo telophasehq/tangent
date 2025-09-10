@@ -1,5 +1,12 @@
-from typing import Dict, Any, List
+import json
+
+# NOTE: wit_world is provided by componentize-py during build (compile-wasm)
+import wit_world
 
 
-def process_logs(events: List[Dict[str, Any]]) -> Dict[str, Any]:
-    print(f"hello world! I see {len(events)} logs")
+class WitWorld(wit_world.WitWorld):
+    def process_logs(self, logs: str) -> None:
+        events = json.loads(logs)
+        print(f"hello world! I see {len(events)} logs")
+
+        return None

@@ -7,7 +7,8 @@ NET=tangent-test
 APP=test-app
 SIDECAR=light-node
 VECTOR=vector
-VECTOR_CFG="$(pwd)/vector.toml"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+VECTOR_CFG="$SCRIPT_DIR/vector.toml"
 VECTOR_IMAGE="timberio/vector:0.49.0-alpine"
 
 if ! docker info >/dev/null 2>&1; then
@@ -21,12 +22,16 @@ docker network rm "$NET" 2>/dev/null || true
 echo "Creating network ${NET}…"
 docker network create "$NET" >/dev/null
 
+echo "Building light-node"
+docker build -t light-node .
+
 echo "Starting ${APP}…"
 docker run -d --name "$APP" --network "$NET" nginx:alpine >/dev/null
 
 echo "Starting light-node (${SIDECAR})…"
 docker run -d --name "$SIDECAR" \
   --network "$NET" \
+  -e WASM_COMPONENT=/wasm/app.component.wasm \
   -p 3000:3000 \
   -e LOG_LEVEL=info \
   light-node >/dev/null

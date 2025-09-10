@@ -1,4 +1,1 @@
-modules:
-  - hello_world.py
-
 entry_point: hello_world.py

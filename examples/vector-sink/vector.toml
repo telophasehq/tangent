@@ -1,9 +1,5 @@
 data_dir = "/var/lib/vector"
 
-[api]
-enabled = true
-address = "0.0.0.0:8686"
-
 [sources.docker]
 type = "docker_logs"
 include_containers = ["test-app"]
@@ -13,3 +9,4 @@ type = "http"
 inputs = ["docker"]
 uri = "http://light-node:3000/sink"
 encoding.codec = "json"
+healthcheck.enabled = true

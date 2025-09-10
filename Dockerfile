@@ -1,25 +1,26 @@
-# Multi-stage build for Rust sidecar
+# syntax=docker/dockerfile:1.7
 FROM rust:1.89-slim as builder
 
 WORKDIR /usr/src/app
-COPY . .
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get -yq update && apt-get -yq install --no-install-recommends \
+      pkg-config libssl-dev ca-certificates \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Build the application
-RUN cargo build --release
+COPY . .
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # Create non-root user
 RUN useradd -r -s /bin/false sidecar
@@ -31,6 +32,7 @@ RUN chown -R sidecar:sidecar /wasm
 # Copy the binary
 COPY --from=builder /usr/src/app/target/release/light-node /usr/local/bin/
 COPY --from=builder /usr/src/app/light-node/config.toml /etc/config.toml
+COPY --from=builder /usr/src/app/compiled/* /wasm/
 
 # Switch to non-root user
 USER sidecar

@@ -1,3 +1,3 @@
 [workspace]
-members = ["light-node", "tools/compile-wasm", "tools/wasm-shim"]
+members = ["light-node", "tools/compile-wasm"]
 resolver = "2"
