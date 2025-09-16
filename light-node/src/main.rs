@@ -1,81 +1,57 @@
-use actix_web::{get, post, web, App, HttpServer, Responder};
-use serde_json::{json, Value};
-use std::net::SocketAddr;
-use std::sync::Arc;
+use tokio::net::UnixListener;
 use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
+
+use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
+use prometheus_exporter;
 
 mod wasm;
 
-#[actix_web::main]
+lazy_static::lazy_static! {    static ref BATCH_LATENCY: Histogram = register_histogram!(
+        "tangent_batch_seconds",
+        "Batch call latency (sec)",
+        vec![5e-5,1e-4,2e-4,4e-4,8e-4,1.6e-3,3.2e-3,6.4e-3,1.28e-2,2.56e-2,5.12e-2,0.102,0.204,0.409,0.819,1.638],
+    ).unwrap();
+
+    static ref BATCH_EVENTS: IntCounter = register_int_counter!(
+        "tangent_batch_events_total",
+        "Events processed in batches",
+    ).unwrap();
+}
+
+#[tokio::main]
 async fn main() -> std::io::Result<()> {
-    if std::env::var("LOG_LEVEL").is_err() {
-        std::env::set_var("LOG_LEVEL", "info");
-    }
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
+    let _exporter =
+        prometheus_exporter::start("0.0.0.0:9184".parse().expect("failed to parse binding"))
+            .expect("failed to start prometheus exporter");
 
-    tracing_subscriber::fmt::init();
+    let _ = &*BATCH_LATENCY;
+    let _ = &*BATCH_EVENTS;
 
-    let port = std::env::var("PORT")
-        .unwrap_or_else(|_| "3000".into())
-        .parse::<u16>()
-        .expect("PORT must be a valid u16");
+    info!("Starting light node socket listener...");
+    let path = std::env::var("SOCKET_PATH").unwrap_or("/tmp/sidecar.sock".into());
+    let _ = std::fs::remove_file(&path);
+    let listener = UnixListener::bind(&path)?;
+    info!("Listening on {}", path);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let engine = wasm::WasmEngine::new().expect("engine");
+    let n = std::env::var("WASM_WORKERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(num_cpus::get);
+    let workers = engine.spawn_workers(n).await;
 
-    info!("Starting Actix Web HTTP server on {}", addr);
+    let mut rr = 0usize;
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let tx = &workers[rr % workers.len()];
+        rr = rr.wrapping_add(1);
 
-    let wasm_engine = match wasm::WasmEngine::new() {
-        Ok(engine) => {
-            info!("WASM engine initialized successfully");
-            Arc::new(engine)
-        }
-        Err(e) => {
-            tracing::error!("Failed to initialize WASM engine: {:#}", e);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e.to_string(),
-            ));
-        }
-    };
-
-    HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(wasm_engine.clone()))
-            .service(sink_handler)
-            .service(health_handler)
-    })
-    .bind(("0.0.0.0", port))?
-    .run()
-    .await
-}
-
-#[post("/sink")]
-async fn sink_handler(
-    payload: web::Json<Value>,
-    wasm_engine: web::Data<Arc<wasm::WasmEngine>>,
-) -> impl Responder {
-    info!("=== POST Request to /sink ===");
-    let payload_value = payload.into_inner();
-    info!(
-        "Payload: {}",
-        serde_json::to_string_pretty(&payload_value).unwrap()
-    );
-
-    let logs_json = serde_json::to_string(&payload_value).unwrap();
-    match wasm_engine.process_logs(&logs_json).await {
-        Ok(()) => web::Json(json!({
-            "status": "processed",
-        })),
-        Err(e) => {
-            error!("Failed to process logs: {}", e);
-            web::Json(json!({
-                "status": "error",
-                "error": format!("Failed to process logs: {}", e)
-            }))
+        // TODO: we should probably use try_send here.
+        if tx.send(stream).await.is_err() {
+            error!("worker channel closed");
         }
     }
-}
-
-#[get("/health")]
-async fn health_handler() -> impl Responder {
-    web::Json(json!({ "status": "healthy" }))
 }

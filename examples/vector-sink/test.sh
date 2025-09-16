@@ -1,12 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "Testing Rust Agent Sidecar with Vector → Sidecar…"
+echo "Testing Rust Agent Sidecar with Vector → Sidecar (UDS)…"
 
-NET=tangent-test
 APP=test-app
 SIDECAR=light-node
 VECTOR=vector
+SOCKVOL=sidecar-sock
+SOCKPATH=/tmp/tangent-sidecar.sock
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 VECTOR_CFG="$SCRIPT_DIR/vector.toml"
 VECTOR_IMAGE="timberio/vector:0.49.0-alpine"
@@ -17,40 +18,43 @@ fi
 
 echo "Cleaning up…"
 docker rm -f "$APP" "$SIDECAR" "$VECTOR" 2>/dev/null || true
-docker network rm "$NET" 2>/dev/null || true
+docker volume rm "$SOCKVOL" 2>/dev/null || true
 
-echo "Creating network ${NET}…"
-docker network create "$NET" >/dev/null
+echo "Creating shared socket volume…"
+docker volume create "$SOCKVOL" >/dev/null
 
-echo "Building light-node"
+echo "Building light-node…"
 docker build -t light-node .
 
 echo "Starting ${APP}…"
-docker run -d --name "$APP" --network "$NET" nginx:alpine >/dev/null
+docker run -d --name "$APP" nginx:alpine >/dev/null
 
 echo "Starting light-node (${SIDECAR})…"
 docker run -d --name "$SIDECAR" \
-  --network "$NET" \
   -e WASM_COMPONENT=/wasm/app.component.wasm \
-  -p 3000:3000 \
-  -e LOG_LEVEL=info \
+  -e SOCKET_PATH="$SOCKPATH" \
+  -e SOCKET_MODE=660 \
+  -e RUST_LOG=info \
+  -v "$SOCKVOL":/tmp \
   light-node >/dev/null
 
-echo "Waiting for sidecar to become ready…"
-for i in {1..40}; do
-  if docker exec "$SIDECAR" sh -lc 'curl -fsS http://light-node:3000/health' >/dev/null 2>&1; then
-    echo "Sidecar is up."
+echo "Waiting for sidecar socket to appear…"
+for i in {1..80}; do
+  if docker exec "$SIDECAR" sh -lc "test -S '$SOCKPATH'"; then
+    echo "Sidecar socket is ready at $SOCKPATH."
     break
   fi
   sleep 0.25
+  if [ "$i" -eq 80 ]; then
+    echo "Timeout waiting for sidecar socket."; exit 1
+  fi
 done
-
 
 echo "Starting Vector…"
 docker run -d --name "$VECTOR" \
-  --network "$NET" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$VECTOR_CFG":/etc/vector/vector.toml:ro \
+  -v "$SOCKVOL":/tmp \
   -e VECTOR_LOG=debug \
   "$VECTOR_IMAGE" -c /etc/vector/vector.toml >/dev/null
 
@@ -73,6 +77,6 @@ docker logs --since=30s "$SIDECAR" || true
 echo
 echo "Cleaning up…"
 docker rm -f "$APP" "$SIDECAR" "$VECTOR" >/dev/null || true
-docker network rm "$NET" >/dev/null || true
+docker volume rm "$SOCKVOL" >/dev/null || true
 
-echo "Done. Vector tailed $APP and posted to $SIDECAR."
+echo "Done. Vector tailed $APP and posted to $SIDECAR via $SOCKPATH."

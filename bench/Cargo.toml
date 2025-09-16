@@ -1,0 +1,18 @@
+[package]
+name = "bench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.99"
+clap = { version = "4.5.47", features = ["derive"] }
+reqwest = "0.12.23"
+serde_json = "1.0.145"
+tokio = { version = "1.47.1", features = ["full"] }
+tracing = "0.1.41"
+tracing-subscriber = "0.3.20"
+prometheus = { workspace = true }
+prometheus_exporter = { workspace = true }
+lazy_static = { workspace = true }
+hdrhistogram = "7.5.4"
+futures = "0.3.31"

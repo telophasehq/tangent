@@ -1,0 +1,21 @@
+{
+    "timestamp": "2025-09-11T12:00:00Z",
+    "container_id": "c0ffee1234567890deadbeefcafebabe",
+    "container_name": "app-backend-7cbd9f48d5-abc12",
+    "image": "myorg/backend:1.4.2",
+    "host": "node-42",
+    "source_type": "docker_logs",
+    "stream": "stdout",
+    "label": {
+        "app": "backend",
+        "env": "prod",
+        "maintainer": "backend-team@example.com"
+    },
+    "message": "GET /api/v1/resource/42 200 134ms \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)\"",
+    "extra": {
+        "trace_id": "8dba61f62e6e4b9c",
+        "span_id": "72fcd2a88a19d5ed",
+        "user_id": 12345,
+        "region": "us-west-2"
+    }
+}

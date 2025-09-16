@@ -5,8 +5,10 @@ import wit_world
 
 
 class WitWorld(wit_world.WitWorld):
-    def process_logs(self, logs: str) -> None:
-        events = json.loads(logs)
-        print(f"hello world! I see {len(events)} logs")
+    def process_logs(self, logs: str) -> wit_world.Result[None, str]:
+        try:
+            json.loads(logs)
+        except Exception as e:
+            return wit_world.Err(str(e))
 
-        return None
+        return wit_world.Ok(None)
