@@ -5,8 +5,11 @@ type = "docker_logs"
 include_containers = ["test-app"]
 
 [sinks.sidecar]
-type = "http"
+type = "socket"
 inputs = ["docker"]
-uri = "http://light-node:3000/sink"
+mode = "unix_stream"
+path = "/tmp/tangent-sidecar.sock"
 encoding.codec = "json"
-healthcheck.enabled = true
+framing.method = "newline_delimited"
+buffer.type = "memory"
+buffer.when_full = "block"

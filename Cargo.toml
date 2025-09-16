@@ -1,3 +1,8 @@
 [workspace]
-members = ["light-node", "tools/compile-wasm"]
+members = [ "bench","light-node", "tools/compile-wasm"]
 resolver = "2"
+
+[workspace.dependencies]
+prometheus = "0.13.4"
+prometheus_exporter = "0.8.5"
+lazy_static = "1"
