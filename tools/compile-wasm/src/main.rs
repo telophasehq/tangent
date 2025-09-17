@@ -11,8 +11,12 @@ struct Args {
     /// Path to YAML config
     #[arg(long)]
     config: PathBuf,
+    /// Path to WIT directory
+    #[arg(long, default_value = "./wit")]
+    wit: PathBuf,
 }
 
 fn main() -> Result<()> {
-    compile_wasm::compile_from_config(&Args::parse().config)
+    let args = &Args::parse();
+    compile_wasm::compile_from_config(&args.config, &args.wit)
 }

@@ -3,9 +3,10 @@ name = "app:processor"
 version = "0.1.0"
 
 [dependencies]
-"wasi:cli"      = { version = "0.2.2" }
-"wasi:clocks"   = { version = "0.2.2" }
-"wasi:io"       = { version = "0.2.2" }
+"wasi:cli"      = { version = "0.2.0" }
+"wasi:clocks"   = { version = "0.2.0" }
+"wasi:io"       = { version = "0.2.0" }
+"wasi:environment"       = { version = "0.2.0" }
 
 [registries]
 default = "https://registry.bytecodealliance.org"

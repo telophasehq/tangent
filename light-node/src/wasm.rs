@@ -20,7 +20,7 @@ const BATCH_MAX_AGE: Duration = Duration::from_millis(5);
 
 bindgen!({
     world: "processor",
-    path: "../wit/interface.wit",
+    path: "../wit",
     async: true
 });
 
