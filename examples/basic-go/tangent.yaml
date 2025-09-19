@@ -1,1 +1,1 @@
-entry_point: hello_world.go
+entry_point: wrapper.go
