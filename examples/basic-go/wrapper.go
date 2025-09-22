@@ -1,137 +1,137 @@
-//go:generate go tool wit-bindgen-go generate --world process --out internal ./tangent:logs@0.1.0.wasm
+//go:generate go tool wit-bindgen-go generate --world process --out internal ../../wit/tangent:logs@0.1.0.wasm
 
 package main
 
 import (
 	"basic-go/internal/tangent/logs/processor"
-	"basic-go/internal/wasi/io/streams"
-	"bytes"
 	"encoding/json"
-	"unsafe"
+	"errors"
 
+	"github.com/minio/simdjson-go"
 	"go.bytecodealliance.org/cm"
 )
 
-const (
-	chunkSize = 256 * 1024
-	ringCap   = 2 * 1024 * 1024
-)
+var pjReuse *simdjson.ParsedJson
+var outBuf []byte
 
-var ring = make([]byte, ringCap)
-var w int
-var obj = make(map[string]any, 64)
+func grow(b []byte, need int) []byte {
+	c := cap(b)
+	if c >= need {
+		return b
+	}
+	if c < 4096 {
+		c = 4096
+	}
+	for c < need {
+		c <<= 1
+	}
+	nb := make([]byte, len(b), c)
+	copy(nb, b)
+	return nb
+}
+
+func appendBytes(dst []byte, p []byte) []byte {
+	dst = grow(dst, len(dst)+len(p))
+	dst = dst[:len(dst)+len(p)]
+	copy(dst[len(dst)-len(p):], p)
+	return dst
+}
+
+func appendString(dst []byte, s string) []byte {
+	dst = grow(dst, len(dst)+len(s))
+	dst = dst[:len(dst)+len(s)]
+	copy(dst[len(dst)-len(s):], s)
+	return dst
+}
 
 type Handler interface {
-	ProcessLogs(log map[string]any) error
+	// Input: slice of objects decoded with json.Number for numbers.
+	// Output: slice of objects to emit as NDJSON (each encoded on its own line).
+	ProcessLogs(logs []map[string]any) ([]any, error)
+}
+
+func parse(input string, dst []map[string]any) ([]map[string]any, error) {
+	if !simdjson.SupportedCPU() {
+		return nil, errors.New("SIMD JSON not supported on this CPU")
+	}
+
+	data := []byte(input)
+
+	var pj *simdjson.ParsedJson
+	var err error
+	pj, err = simdjson.ParseND(data, pjReuse)
+	if err != nil {
+		return nil, err
+	}
+	pjReuse = pj
+
+	it := pj.Iter()
+	dst = dst[:0]
+
+	var root simdjson.Iter
+	var obj simdjson.Object
+	for {
+		t, r, err := it.Root(&root)
+		if err != nil {
+			return nil, err
+		}
+		if t == simdjson.TypeNone {
+			break
+		}
+		if t != simdjson.TypeObject {
+			continue
+		}
+		if _, err = r.Object(&obj); err != nil {
+			return nil, err
+		}
+		m, err := obj.Map(nil)
+		if err != nil {
+			return nil, err
+		}
+		dst = append(dst, m)
+	}
+
+	return dst, nil
+}
+
+func serializeNDJSON(out []byte, objs []any) ([]byte, error) {
+	out = out[:0]
+	for i := range objs {
+		b, err := json.Marshal(objs[i])
+		if err != nil {
+			return out, err
+		}
+		out = appendBytes(out, b)
+		out = append(out, '\n')
+	}
+	return out, nil
 }
 
 func Wire(h Handler) {
-	processor.Exports.ProcessStream = func(input streams.InputStream) (r cm.Result[string, struct{}, string]) {
-		defer input.ResourceDrop()
-		w = 0
-
-		for {
-			res := input.BlockingRead(chunkSize)
-			if res.IsErr() {
-				r.SetErr(streamErrToString(res.Err()))
-				return
-			}
-			b := res.OK().Slice()
-			if len(b) == 0 {
-				break // EOF
-			}
-
-			if w+len(b) > len(ring) {
-				for k := range obj {
-					delete(obj, k)
-				}
-				dec := json.NewDecoder(bytes.NewReader(ring[:w]))
-				dec.UseNumber()
-				if err := dec.Decode(&obj); err != nil {
-					r.SetErr(err.Error())
-					return
-				}
-
-				if err := h.ProcessLogs(obj); err != nil {
-					r.SetErr(err.Error())
-					return
-				}
-				w = 0
-			}
-			copy(ring[w:], b) // 1 copy, no new allocs
-			w += len(b)
-
-			// optional: flush on newline boundaries to keep latency low
-			// find last '\n' and process up to there
-			if i := lastNL(ring[:w]); i >= 0 {
-				for k := range obj {
-					delete(obj, k)
-				}
-				dec := json.NewDecoder(bytes.NewReader(ring[:i+1]))
-				dec.UseNumber()
-				if err := dec.Decode(&obj); err != nil {
-					r.SetErr(err.Error())
-					return
-				}
-				if err := h.ProcessLogs(obj); err != nil {
-					r.SetErr(err.Error())
-					return
-				}
-				// move tail down
-				tail := w - (i + 1)
-				copy(ring[0:], ring[i+1:w])
-				w = tail
-			}
+	processor.Exports.ProcessLogs = func(input string) (r cm.Result[string, string, string]) {
+		var logs []map[string]any
+		var err error
+		logs, err = parse(input, logs)
+		if err != nil {
+			r.SetErr(err.Error())
+			return
 		}
 
-		// flush any remainder
-		if w > 0 {
-			for k := range obj {
-				delete(obj, k)
-			}
-			dec := json.NewDecoder(bytes.NewReader(ring[:w]))
-			dec.UseNumber()
-			if err := dec.Decode(&obj); err != nil {
-				r.SetErr(err.Error())
-				return
-			}
-			if err := h.ProcessLogs(obj); err != nil {
-				r.SetErr(err.Error())
-				return
-			}
+		output, err := h.ProcessLogs(logs)
+		if err != nil {
+			r.SetErr(err.Error())
+			return
 		}
 
-		r.SetOK(struct{}{}) // if your handler increments internally, return that
+		outBuf, err = serializeNDJSON(outBuf, output)
+		if err != nil {
+			r.SetErr(err.Error())
+			return
+		}
+
+		r.SetOK(string(outBuf))
 		return
 	}
-}
-
-func lastNL(b []byte) int {
-	for i := len(b) - 1; i >= 0; i-- {
-		if b[i] == '\n' {
-			return i
-		}
-	}
-	return -1
-}
-
-func bytesToString(b []byte) string {
-	return *(*string)(unsafe.Pointer(&b))
-}
-
-func streamErrToString(se *streams.StreamError) string {
-	if se == nil {
-		return "stream error: <nil>"
-	}
-	if e := se.LastOperationFailed(); e != nil {
-		msg := e.ToDebugString()
-		e.ResourceDrop()
-		return "last-operation-failed: " + msg
-	}
-	if se.Closed() {
-		return "closed"
-	}
-	return se.String()
 }
 
 func main() {}

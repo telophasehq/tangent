@@ -1,4 +1,0 @@
-# Sidecar configuration
-target_container = "app"
-log_interval_ms = 1000
-docker_socket = "/var/run/docker.sock" 
