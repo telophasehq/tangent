@@ -103,7 +103,7 @@ fn run_go_compile(
 ) -> Result<()> {
     ensure_tinygo()?;
 
-    let wasm_out = out_component.with_file_name("app.wasm");
+    let wasm_out = out_component.with_file_name("app.component.wasm");
     let status = Command::new("tinygo")
         .arg("build")
         .arg("-x")

@@ -29,7 +29,7 @@ world processor {
   import wasi:random/insecure@0.2.0;
   import wasi:random/insecure-seed@0.2.0;
 
-  export process-logs: func(logs: string) -> result<_, string>;
+  export process-logs: func(logs: string) -> result<string, string>;
 }
 package wasi:io@0.2.0 {
   interface error {

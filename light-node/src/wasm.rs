@@ -73,19 +73,16 @@ async fn handle_conn(
         if batch.is_empty() {
             return;
         }
-        let mut payload =
-            String::with_capacity(batch.iter().map(|s| s.len() + 1).sum::<usize>() + 2);
-        payload.push('[');
-        for (i, s) in batch.iter().enumerate() {
-            if i > 0 {
-                payload.push(',');
-            }
+        let mut payload = String::with_capacity(batch.iter().map(|s| s.len() + 2).sum::<usize>());
+        for s in batch.iter() {
             payload.push_str(s);
+            payload.push('\n');
         }
-        payload.push(']');
 
         let start = Instant::now();
         let s: &mut Store<Host> = &mut *store;
+
+        // TODO: handle output
         match processor.call_process_logs(s, &payload).await {
             Ok(_) => {
                 let secs = start.elapsed().as_secs_f64();
