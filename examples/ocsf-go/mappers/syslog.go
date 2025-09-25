@@ -11,13 +11,12 @@ func SyslogToOCSF(log map[string]any) (*v1_5_0.Authentication, error) {
 	if err != nil {
 		return nil, err
 	}
-	epochMs := ts.UnixMilli()
 	message := log["message"].(string)
 
 	return &v1_5_0.Authentication{
 		ActivityId:   1,
 		ActivityName: strPtr("Logon"),
-		Time:         epochMs,
+		Time:         ts.UnixMilli(),
 		Message:      &message,
 		SeverityId:   1,
 		Severity:     strPtr("Informational"),

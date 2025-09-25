@@ -21,7 +21,7 @@ const BATCH_MAX_AGE: Duration = Duration::from_millis(5);
 bindgen!({
     world: "processor",
     path: "../wit",
-    async: true
+    async: true,
 });
 
 struct Host {
@@ -60,66 +60,71 @@ async fn handle_conn(
     stream: UnixStream,
     store: &mut Store<Host>,
     processor: &Processor,
-) -> std::io::Result<()> {
+) -> Result<()> {
     let reader = BufReader::new(stream);
     let mut lines = reader.lines();
 
-    let mut batch: Vec<String> = Vec::with_capacity(BATCH_MAX_EVENTS);
+    let mut batch: Vec<u8> = Vec::with_capacity(BATCH_MAX_EVENTS);
+    let mut events_in_batch: usize = 0;
+
     let mut deadline = TokioInstant::now() + BATCH_MAX_AGE;
     let sleeper = time::sleep_until(deadline);
     tokio::pin!(sleeper);
 
-    async fn flush_batch(batch: &mut Vec<String>, store: &mut Store<Host>, processor: &Processor) {
+    async fn flush_batch(
+        batch: &mut Vec<u8>,
+        events_in_batch: &mut usize,
+        store: &mut Store<Host>,
+        processor: &Processor,
+    ) -> Result<()> {
         if batch.is_empty() {
-            return;
-        }
-        let mut payload = String::with_capacity(batch.iter().map(|s| s.len() + 2).sum::<usize>());
-        for s in batch.iter() {
-            payload.push_str(s);
-            payload.push('\n');
+            return Ok(());
         }
 
         let start = Instant::now();
         let s: &mut Store<Host> = &mut *store;
 
         // TODO: handle output
-        match processor.call_process_logs(s, &payload).await {
-            Ok(_) => {
-                let secs = start.elapsed().as_secs_f64();
-                BATCH_LATENCY.observe(secs);
-                BATCH_EVENTS.inc_by(batch.len() as u64);
+        let _ = processor.call_process_logs(s, &batch).await?;
 
-                tracing::info!(target: "sidecar", "processed batch of {} in {} µs",
-                                batch.len(), start.elapsed().as_micros());
-            }
-            Err(e) => {
-                tracing::error!(target: "sidecar", "batch failed after {} µs: {e}",
-                                start.elapsed().as_micros());
-            }
-        }
+        let secs = start.elapsed().as_secs_f64();
+        BATCH_LATENCY.observe(secs);
+        BATCH_EVENTS.inc_by(*events_in_batch as u64);
+
+        tracing::info!(target: "sidecar", "processed batch of {} in {} µs",
+                                events_in_batch, start.elapsed().as_micros());
         batch.clear();
+        *events_in_batch = 0;
+        Ok(())
     }
 
     loop {
         tokio::select! {
             line = lines.next_line() => {
                 match line? {
-                    Some(l) => {
+                    Some(mut l) => {
+                        if l.ends_with('\n') { l.pop(); }
+                        if l.ends_with('\r') { l.pop(); }
                         if l.is_empty() { continue; }
+
                         if batch.is_empty() {
                             deadline = TokioInstant::now() + BATCH_MAX_AGE;
                             sleeper.as_mut().reset(deadline);
                         }
-                        batch.push(l);
 
-                        if batch.len() >= BATCH_MAX_EVENTS {
-                            flush_batch(&mut batch, store, processor).await;
+                        batch.extend_from_slice(l.as_bytes());
+                        batch.push(b'\n');
+                        events_in_batch += 1;
+
+                        if events_in_batch >= BATCH_MAX_EVENTS {
+                            let _ = flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
                             deadline = TokioInstant::now() + BATCH_MAX_AGE;
                             sleeper.as_mut().reset(deadline);
                         }
                     }
                     None => {
-                        flush_batch(&mut batch, store, processor).await;
+                        tracing::info!(target:"sidecar", "client EOF; flushing then closing");
+                        let _ = flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
                         break;
                     }
                 }
@@ -127,7 +132,7 @@ async fn handle_conn(
 
             _ = &mut sleeper => {
                 if !batch.is_empty() {
-                    flush_batch(&mut batch, store, processor).await;
+                    flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
                 }
                 deadline = TokioInstant::now() + BATCH_MAX_AGE;
                 sleeper.as_mut().reset(deadline);
@@ -186,7 +191,7 @@ impl WasmEngine {
                 .expect("instantiate");
 
             let start = Instant::now();
-            match processor.call_process_logs(&mut store, "{}").await {
+            match processor.call_process_logs(&mut store, b"{}").await {
                 Ok(_) => {
                     let secs = start.elapsed().as_secs_f64();
                     BATCH_LATENCY.observe(secs);

@@ -2,13 +2,14 @@ package mappers
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	ocsf "github.com/Santiago-Labs/go-ocsf/ocsf/v1_5_0"
 )
 
-func CloudtrailToOCSF(ctx context.Context, event map[string]any) (ocsf.APIActivity, error) {
+func CloudtrailToOCSF(ctx context.Context, event map[string]any) (*ocsf.APIActivity, error) {
 	// Parse the event data for OCSF conversion
 	classUID := 6003
 	categoryUID := 6
@@ -21,7 +22,10 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (ocsf.APIActivi
 	var typeName string
 
 	// Determine the activity type based on the event name
-	eventName := event["EventName"].(string)
+	eventName, ok := event["eventName"].(string)
+	if !ok {
+		return nil, errors.New("missing eventName field")
+	}
 	if strings.HasPrefix(eventName, "Create") || strings.HasPrefix(eventName, "Add") ||
 		strings.HasPrefix(eventName, "Put") || strings.HasPrefix(eventName, "Insert") {
 		activityID = 1
@@ -56,7 +60,7 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (ocsf.APIActivi
 	statusID := 0
 	severity := "informational"
 	severityID := 1
-	if event["ErrorCode"] == nil || event["ErrorCode"] == "" {
+	if event["errorCode"] == nil || event["errorCode"] == "" {
 		status = "success"
 		statusID = 1
 	} else {
@@ -68,9 +72,9 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (ocsf.APIActivi
 
 	// Parse actor information
 	var actor ocsf.Actor
-	userIdentity := event["UserIdentity"].(map[string]any)
-	username, ok := userIdentity["UserName"].(string)
-	eventSource := event["EventSource"].(string)
+	userIdentity := event["userIdentity"].(map[string]any)
+	username, ok := userIdentity["userName"].(string)
+	eventSource := event["eventSource"].(string)
 
 	if ok && username != "" {
 		actor = ocsf.Actor{
@@ -79,7 +83,7 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (ocsf.APIActivi
 				Name: stringPtr(username),
 			},
 		}
-		acctID, ok := userIdentity["AccountID"].(string)
+		acctID, ok := userIdentity["accountId"].(string)
 		if ok {
 			actor.User.Account = &ocsf.Account{
 				TypeId: int32Ptr(10),
@@ -103,21 +107,21 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (ocsf.APIActivi
 
 	// Parse resource information
 	var resources []ocsf.ResourceDetails
-	eventResources, ok := event["Resources"].([]map[string]any)
+	eventResources, ok := event["resources"].([]map[string]any)
 	if ok {
 		for _, resource := range eventResources {
 			resources = append(resources, ocsf.ResourceDetails{
-				Name: stringPtr(resource["ARN"].(string)),
-				Type: stringPtr(resource["Type"].(string)),
-				Uid:  stringPtr(resource["ARN"].(string)),
+				Name: stringPtr(resource["arn"].(string)),
+				Type: stringPtr(resource["type"].(string)),
+				Uid:  stringPtr(resource["arn"].(string)),
 			})
 		}
 	}
 
 	// Parse source endpoint information
 	var srcEndpoint ocsf.NetworkEndpoint
-	sourceIP := event["SourceIP"].(string)
-	if sourceIP != "" {
+	sourceIP, ok := event["sourceIP"].(string)
+	if !ok || sourceIP != "" {
 		srcEndpoint = ocsf.NetworkEndpoint{
 			Ip: stringPtr(sourceIP),
 		}
@@ -141,11 +145,11 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (ocsf.APIActivi
 		StatusId:     int32Ptr(int32(statusID)),
 		Cloud: ocsf.Cloud{
 			Provider: "AWS",
-			Region:   stringPtr(event["AwsRegion"].(string)),
+			Region:   stringPtr(event["awsRegion"].(string)),
 			Account: &ocsf.Account{
 				TypeId: int32Ptr(10), // AWS Account
 				Type:   stringPtr("AWS Account"),
-				Uid:    stringPtr(event["RecipientAccountID"].(string)),
+				Uid:    stringPtr(event["recipientAccountId"].(string)),
 			},
 		},
 
@@ -154,17 +158,17 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (ocsf.APIActivi
 		SeverityId: int32(severityID),
 
 		Metadata: ocsf.Metadata{
-			CorrelationUid: stringPtr(event["EventID"].(string)),
+			CorrelationUid: stringPtr(event["eventId"].(string)),
 		},
 
 		SrcEndpoint:    srcEndpoint,
-		Time:           event["EventTime"].(time.Time).UnixMilli(),
+		Time:           event["eventTime"].(time.Time).UnixMilli(),
 		TypeName:       &typeName,
 		TypeUid:        int64(typeUID),
 		TimezoneOffset: int32Ptr(0),
 	}
 
-	return activity, nil
+	return &activity, nil
 }
 
 // Helper functions

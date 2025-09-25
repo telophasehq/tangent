@@ -18,7 +18,7 @@ struct Args {
     /// Duration (seconds)
     #[arg(long, default_value_t = 15)]
     seconds: u64,
-    /// Duration (seconds)
+    /// Concurrent connections
     #[arg(long, default_value_t = 2)]
     connections: u16,
     /// Payload filepath. Leave empty to run all test payloads.
@@ -67,12 +67,12 @@ async fn main() -> Result<()> {
 async fn run_bench(
     socket: PathBuf,
     connections: u16,
-    payload: PathBuf,
+    payload_path: PathBuf,
     max_bytes: usize,
     seconds: u64,
 ) -> Result<()> {
-    let payload = fs::read_to_string(&payload)
-        .with_context(|| format!("failed to read payload file {}", payload.display()))?;
+    let payload = fs::read_to_string(&payload_path)
+        .with_context(|| format!("failed to read payload file {}", payload_path.display()))?;
 
     let one_line = serde_json::to_string(&serde_json::from_str::<Value>(&payload)?)?;
 
@@ -80,7 +80,7 @@ async fn run_bench(
     info!(
         "uds={:?} payload={:?} bytes/line={} connections={}",
         socket,
-        payload,
+        payload_path,
         payload.len(),
         connections,
     );
@@ -104,18 +104,22 @@ async fn run_bench(
                 .with_context(|| format!("socket does not exist: {}", uds.display()))?;
             let deadline = Instant::now() + Duration::from_secs(seconds);
             let mut buf = Vec::with_capacity(max_bytes.max(line_cl.len()));
-            let mut i: u64 = 0;
 
-            while Instant::now() < deadline {
-                buf.clear();
-                while buf.len() + line_cl.len() <= max_bytes {
-                    buf.extend_from_slice(&line_cl);
-                    i += 1;
-                }
-
-                s.write_all(&buf).await?;
+            let mut events_per_buff: u64 = 0;
+            while max_bytes < line_cl.len() || buf.len() + line_cl.len() <= max_bytes {
+                buf.extend_from_slice(&line_cl);
+                events_per_buff += 1;
             }
-            anyhow::Ok(i)
+
+            let mut total_events: u64 = 0;
+            while Instant::now() < deadline {
+                match s.write_all(&buf).await {
+                    Ok(()) => total_events += events_per_buff,
+                    Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => break,
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            anyhow::Ok(total_events)
         }));
     }
 

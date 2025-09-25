@@ -13,6 +13,7 @@ const WORLD: &str = "processor";
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub entry_point: String,
+    pub module_type: String,
 }
 
 pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()> {
@@ -28,16 +29,12 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
     // Build only the entry point
     let out = PathBuf::from(format!("{OUT_DIR}/app.component.wasm"));
 
-    match entry_point_path.extension().and_then(|ext| ext.to_str()) {
-        Some("py") => run_componentize_py(&wit_path, WORLD, &entry_point_path, &out)?,
-        Some("go") => run_go_compile(&wit_path, WORLD, &entry_point_path, &out)?,
-        Some(ext) => anyhow::bail!(
+    match cfg.module_type.as_str() {
+        "py" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &out)?,
+        "go" => run_go_compile(&wit_path, WORLD, &entry_point_path, &out)?,
+        ext => anyhow::bail!(
             "unsupported filetype: {} for wasm entrypoint: {}",
             ext,
-            entry_point_path.display()
-        ),
-        None => anyhow::bail!(
-            "could not detect filetype for wasm entrypoint: {}",
             entry_point_path.display()
         ),
     }

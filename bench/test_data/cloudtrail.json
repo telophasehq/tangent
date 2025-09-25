@@ -1,48 +1,37 @@
 {
-    "timestamp": "2025-09-11T12:00:00Z",
-    "event_id": "e1f2d3c4-b5a6-7890-1234-56789abcdef0",
-    "event_type": "aws.cloudtrail",
-    "account_id": "123456789012",
-    "region": "us-east-1",
-    "source_ip": "203.0.113.42",
-    "user": {
-        "type": "IAMUser",
-        "name": "alice",
-        "arn": "arn:aws:iam::123456789012:user/alice",
-        "principal_id": "AIDAEXAMPLEID"
-    },
-    "request": {
-        "service": "ec2.amazonaws.com",
-        "action": "RunInstances",
-        "parameters": {
-            "ImageId": "ami-0abcdef1234567890",
-            "InstanceType": "m5.large",
-            "KeyName": "alice-key",
-            "SecurityGroups": [
-                "sg-12345678",
-                "sg-abcdef12"
-            ],
-            "UserData": "IyEvYmluL2Jhc2gKZWNobyAiSGVsbG8gZnJvbSBjdXN0b20gVXNlckRhdGEi"
-        }
-    },
-    "response": {
-        "http_status": 200,
-        "request_id": "abcd1234-ef56-7890-ab12-cd34ef567890",
-        "instance_ids": [
-            "i-0123456789abcdef0",
-            "i-abcdef0123456789"
-        ]
-    },
-    "resources": [
-        {
-            "type": "AWS::EC2::Instance",
-            "id": "i-0123456789abcdef0"
+    "eventVersion": "1.11",
+    "userIdentity": {
+        "type": "IdentityCenterUser",
+        "arn": "",
+        "accountId": "123456789101",
+        "accessKeyId": "",
+        "onBehalfOf": {
+            "userId": "15766072-84c7-4278-82e4-045a9a37f85c",
+            "identityStoreArn": "arn:aws:identitystore::123456789101:identitystore/d-1111111111"
         },
-        {
-            "type": "AWS::EC2::Instance",
-            "id": "i-abcdef0123456789"
-        }
-    ],
-    "message": "User alice launched 2 EC2 instances via RunInstances",
-    "stream": "stdout"
+        "credentialId": "b12a44dd-c70b-41b2-87b9-36ffdce73079"
+    },
+    "eventTime": "2025-09-25T18:27:52Z",
+    "eventSource": "signin.amazonaws.com",
+    "eventName": "CredentialChallenge",
+    "awsRegion": "us-east-1",
+    "sourceIPAddress": "55.252.111.55",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    "requestParameters": null,
+    "responseElements": null,
+    "additionalEventData": {
+        "AuthWorkflowID": "efbc9fcc-2a1f-417b-87f8-0ab7d99b4644",
+        "UserName": "admin",
+        "CredentialType": "PASSWORD"
+    },
+    "requestID": "4c90c2d9-7840-4a0c-ba3c-e6c96bf503b0",
+    "eventID": "082254a4-e4c3-430c-8632-e7361a6e95e5",
+    "readOnly": false,
+    "eventType": "AwsServiceEvent",
+    "managementEvent": true,
+    "recipientAccountId": "123456789101",
+    "serviceEventDetails": {
+        "CredentialChallenge": "Success"
+    },
+    "eventCategory": "Management"
 }

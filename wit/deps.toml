@@ -1,12 +1,10 @@
 [package]
-name = "app:processor"
+name = "tangent:logs"
 version = "0.1.0"
 
 [dependencies]
-"wasi:cli"      = { version = "0.2.0" }
-"wasi:clocks"   = { version = "0.2.0" }
-"wasi:io"       = { version = "0.2.0" }
-"wasi:environment"       = { version = "0.2.0" }
+"wasi:cli"        = { version = "0.2.0" }
+"wasi:io"         = { version = "0.2.0" }
 
 [registries]
 default = "https://registry.bytecodealliance.org"
