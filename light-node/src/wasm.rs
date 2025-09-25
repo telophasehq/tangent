@@ -15,7 +15,7 @@ use wasmtime_wasi::p2::{IoView, WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::{BATCH_EVENTS, BATCH_LATENCY};
 
-const BATCH_MAX_EVENTS: usize = 256;
+const BATCH_MAX_BYTES: usize = 2 << 20;
 const BATCH_MAX_AGE: Duration = Duration::from_millis(5);
 
 bindgen!({
@@ -64,7 +64,7 @@ async fn handle_conn(
     let reader = BufReader::new(stream);
     let mut lines = reader.lines();
 
-    let mut batch: Vec<u8> = Vec::with_capacity(BATCH_MAX_EVENTS);
+    let mut batch: Vec<u8> = Vec::with_capacity(BATCH_MAX_BYTES);
     let mut events_in_batch: usize = 0;
 
     let mut deadline = TokioInstant::now() + BATCH_MAX_AGE;
@@ -116,7 +116,7 @@ async fn handle_conn(
                         batch.push(b'\n');
                         events_in_batch += 1;
 
-                        if events_in_batch >= BATCH_MAX_EVENTS {
+                        if batch.len() >= BATCH_MAX_BYTES {
                             let _ = flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
                             deadline = TokioInstant::now() + BATCH_MAX_AGE;
                             sleeper.as_mut().reset(deadline);
