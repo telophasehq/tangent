@@ -10,6 +10,6 @@ import (
 var Exports struct {
 	// ProcessLogs represents the caller-defined, exported function "process-logs".
 	//
-	//	process-logs: func(logs: string) -> result<string, string>
-	ProcessLogs func(logs string) (result cm.Result[string, string, string])
+	//	process-logs: func(logs: list<u8>) -> result<list<u8>, string>
+	ProcessLogs func(logs cm.List[uint8]) (result cm.Result[cm.List[uint8], cm.List[uint8], string])
 }

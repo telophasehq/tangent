@@ -1,0 +1,37 @@
+{
+    "eventVersion": "1.11",
+    "userIdentity": {
+        "type": "IdentityCenterUser",
+        "arn": "",
+        "accountId": "123456789101",
+        "accessKeyId": "",
+        "onBehalfOf": {
+            "userId": "15766072-84c7-4278-82e4-045a9a37f85c",
+            "identityStoreArn": "arn:aws:identitystore::123456789101:identitystore/d-1111111111"
+        },
+        "credentialId": "b12a44dd-c70b-41b2-87b9-36ffdce73079"
+    },
+    "eventTime": "2025-09-25T18:27:52Z",
+    "eventSource": "signin.amazonaws.com",
+    "eventName": "CredentialChallenge",
+    "awsRegion": "us-east-1",
+    "sourceIPAddress": "55.252.111.55",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    "requestParameters": null,
+    "responseElements": null,
+    "additionalEventData": {
+        "AuthWorkflowID": "efbc9fcc-2a1f-417b-87f8-0ab7d99b4644",
+        "UserName": "admin",
+        "CredentialType": "PASSWORD"
+    },
+    "requestID": "4c90c2d9-7840-4a0c-ba3c-e6c96bf503b0",
+    "eventID": "082254a4-e4c3-430c-8632-e7361a6e95e5",
+    "readOnly": false,
+    "eventType": "AwsServiceEvent",
+    "managementEvent": true,
+    "recipientAccountId": "123456789101",
+    "serviceEventDetails": {
+        "CredentialChallenge": "Success"
+    },
+    "eventCategory": "Management"
+}

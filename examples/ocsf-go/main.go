@@ -2,43 +2,43 @@ package main
 
 import (
 	"context"
+	"errors"
 	"ocsf-go/mappers"
 )
 
 type Processor struct{}
 
-func (p Processor) ProcessLogs(logs []map[string]any) ([]any, error) {
+func (p Processor) ProcessLog(log map[string]any) ([]any, error) {
 	var normalized []any
 	ctx := context.Background()
-	for _, log := range logs {
-		if sourceType, ok := log["source_type"].(string); ok {
-			switch sourceType {
-			case "docker_logs":
-				mapped, err := mappers.EKSToOCSF(log)
-				if err != nil {
-					log["__error"] = err.Error()
-				}
-				normalized = append(normalized, mapped)
-			case "syslog":
-				mapped, err := mappers.SyslogToOCSF(log)
-				if err != nil {
-					log["__error"] = err.Error()
-				}
-				normalized = append(normalized, mapped)
-			}
+	if _, ok := log["source_type"]; ok {
+		sourceType, ok := log["source_type"].(string)
+		if !ok {
+			return nil, errors.New("source_type is not a string")
 		}
-
-		if _, ok := log["event_type"]; ok {
-			mapped, err := mappers.CloudtrailToOCSF(ctx, log)
+		switch sourceType {
+		case "docker_logs":
+			mapped, err := mappers.EKSToOCSF(log)
 			if err != nil {
-				log["__error"] = err.Error()
+				return nil, err
+			}
+			normalized = append(normalized, mapped)
+		case "syslog":
+			mapped, err := mappers.SyslogToOCSF(log)
+			if err != nil {
+				return nil, err
 			}
 			normalized = append(normalized, mapped)
 		}
 	}
-	return normalized, nil
-}
 
-func init() {
-	Wire(Processor{})
+	if _, ok := log["event_type"]; ok {
+		mapped, err := mappers.CloudtrailToOCSF(ctx, log)
+		if err != nil {
+			return nil, err
+		}
+		normalized = append(normalized, mapped)
+	}
+
+	return normalized, nil
 }

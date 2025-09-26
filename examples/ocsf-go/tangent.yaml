@@ -1,1 +1,2 @@
-entry_point: wrapper.go
+module_type: go
+entry_point: .
