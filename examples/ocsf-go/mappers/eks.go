@@ -24,7 +24,12 @@ type eksLog struct {
 }
 
 var (
-	reAccess = regexp.MustCompile(`^\s*([A-Z]+)\s+(\S+)\s+(\d{3})\s+(\d+)\s*ms\s+"([^"]*)"\s*$`)
+	reAccess     = regexp.MustCompile(`^\s*([A-Z]+)\s+(\S+)\s+(\d{3})\s+(\d+)\s*ms\s+"([^"]*)"\s*$`)
+	className    = "API Activity"
+	categoryName = "Application Activity"
+	eksSeverity  = "Informational"
+	logName      = "backend"
+	provider     = "aws"
 )
 
 func parseAccessLine(s string) (method, path string, status int32, latencyMs int32, ok bool) {
@@ -64,19 +69,19 @@ func EKSToOCSF(log map[string]any) (*v1_5_0.APIActivity, error) {
 	activityId, activityName := httpReqToActivity(method)
 	ev := &v1_5_0.APIActivity{
 		ClassUid:     6003,
-		ClassName:    strPtr("API Activity"),
+		ClassName:    &className,
 		ActivityId:   int32(activityId),
 		ActivityName: &activityName,
 		CategoryUid:  6,
-		CategoryName: strPtr("Application Activity"),
-		Severity:     strPtr("Informational"),
+		CategoryName: &categoryName,
+		Severity:     &eksSeverity,
 		SeverityId:   1,
 		Time:         epochMs,
 		Metadata: v1_5_0.Metadata{
-			LogName: strPtr("backend"),
+			LogName: &logName,
 		},
 		Cloud: v1_5_0.Cloud{
-			Provider: "aws",
+			Provider: provider,
 			Region:   &region,
 		},
 		DstEndpoint: &v1_5_0.NetworkEndpoint{

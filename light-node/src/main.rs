@@ -41,7 +41,13 @@ async fn main() -> std::io::Result<()> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or_else(num_cpus::get);
-    let workers = engine.spawn_workers(n).await;
+
+    let batch_size: usize = std::env::var("BATCH_MAX_SIZE_MB")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5 << 20);
+
+    let workers = engine.spawn_workers(n, batch_size).await;
 
     let mut rr = 0usize;
     loop {

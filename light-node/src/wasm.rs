@@ -15,7 +15,6 @@ use wasmtime_wasi::p2::{IoView, WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::{BATCH_EVENTS, BATCH_LATENCY};
 
-const BATCH_MAX_BYTES: usize = 2 << 20;
 const BATCH_MAX_AGE: Duration = Duration::from_millis(5);
 
 bindgen!({
@@ -44,12 +43,20 @@ struct Worker {
     rx: mpsc::Receiver<UnixStream>,
     store: Store<Host>,
     processor: Processor,
+    batch_max_size: usize,
 }
 
 impl Worker {
     async fn run(mut self) {
         while let Some(stream) = self.rx.recv().await {
-            if let Err(e) = handle_conn(stream, &mut self.store, &self.processor).await {
+            if let Err(e) = handle_conn(
+                stream,
+                &mut self.store,
+                &self.processor,
+                self.batch_max_size,
+            )
+            .await
+            {
                 error!("worker conn error: {e}");
             }
         }
@@ -60,11 +67,12 @@ async fn handle_conn(
     stream: UnixStream,
     store: &mut Store<Host>,
     processor: &Processor,
+    batch_max_size: usize,
 ) -> Result<()> {
     let mut reader = BufReader::new(stream);
     let mut line_bytes = Vec::with_capacity(4096);
 
-    let mut batch: Vec<u8> = Vec::with_capacity(BATCH_MAX_BYTES);
+    let mut batch: Vec<u8> = Vec::with_capacity(batch_max_size);
     let mut events_in_batch: usize = 0;
 
     let mut deadline = TokioInstant::now() + BATCH_MAX_AGE;
@@ -128,12 +136,12 @@ async fn handle_conn(
                     reset_timer(&mut sleeper, &mut deadline);
                 }
 
-                if batch.len() + need > BATCH_MAX_BYTES {
+                if batch.len() + need > batch_max_size {
                     flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
                     reset_timer(&mut sleeper, &mut deadline);
                 }
 
-                if need > BATCH_MAX_BYTES && batch.is_empty() {
+                if need > batch_max_size && batch.is_empty() {
                     batch.extend_from_slice(&line_bytes);
                     batch.push(b'\n');
                     events_in_batch += 1;
@@ -186,7 +194,11 @@ impl WasmEngine {
         })
     }
 
-    pub async fn spawn_workers(&self, n: usize) -> Vec<mpsc::Sender<UnixStream>> {
+    pub async fn spawn_workers(
+        &self,
+        n: usize,
+        batch_max_size: usize,
+    ) -> Vec<mpsc::Sender<UnixStream>> {
         let mut senders = Vec::with_capacity(n);
         for _ in 0..n {
             let (tx, rx) = mpsc::channel::<UnixStream>(128);
@@ -224,6 +236,7 @@ impl WasmEngine {
                 rx,
                 store,
                 processor,
+                batch_max_size,
             };
             task::spawn(worker.run());
 
