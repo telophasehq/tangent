@@ -15,27 +15,11 @@ import (
 
 var outBuf []byte
 
-func grow(b []byte, need int) []byte {
-	c := cap(b)
-	if c >= need {
-		return b
-	}
-	if c < 4096 {
-		c = 4096
-	}
-	for c < need {
-		c <<= 1
-	}
-	nb := make([]byte, len(b), c)
-	copy(nb, b)
-	return nb
-}
+type byteSliceWriter struct{ p *[]byte }
 
-func appendBytes(dst []byte, p []byte) []byte {
-	dst = grow(dst, len(dst)+len(p))
-	dst = dst[:len(dst)+len(p)]
-	copy(dst[len(dst)-len(p):], p)
-	return dst
+func (w byteSliceWriter) Write(b []byte) (int, error) {
+	*w.p = append(*w.p, b...)
+	return len(b), nil
 }
 
 type Handler interface {
@@ -49,13 +33,11 @@ func Wire(h Handler) {
 		outBuf = outBuf[:0]
 
 		in := input.Slice()
-		var bb bytes.Buffer
-		bb.Grow(len(in) / 2)
-		enc := json.NewEncoder(&bb)
-		enc.SetEscapeHTML(false)
-
 		dec := json.NewDecoder(bytes.NewReader(in))
 		dec.UseNumber()
+
+		enc := json.NewEncoder(byteSliceWriter{&outBuf})
+		enc.SetEscapeHTML(false)
 
 		for {
 			var m map[string]any
