@@ -15,11 +15,9 @@ use wasmtime_wasi::p2::{IoView, WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::{BATCH_EVENTS, BATCH_LATENCY};
 
-const BATCH_MAX_AGE: Duration = Duration::from_millis(5);
-
 bindgen!({
     world: "processor",
-    path: "../wit",
+    path: "../../wit",
     async: true,
 });
 
@@ -44,6 +42,7 @@ struct Worker {
     store: Store<Host>,
     processor: Processor,
     batch_max_size: usize,
+    batch_max_age: Duration,
 }
 
 impl Worker {
@@ -54,6 +53,7 @@ impl Worker {
                 &mut self.store,
                 &self.processor,
                 self.batch_max_size,
+                self.batch_max_age,
             )
             .await
             {
@@ -68,6 +68,7 @@ async fn handle_conn(
     store: &mut Store<Host>,
     processor: &Processor,
     batch_max_size: usize,
+    batch_max_age: Duration,
 ) -> Result<()> {
     let mut reader = BufReader::new(stream);
     let mut line_bytes = Vec::with_capacity(4096);
@@ -75,7 +76,7 @@ async fn handle_conn(
     let mut batch: Vec<u8> = Vec::with_capacity(batch_max_size);
     let mut events_in_batch: usize = 0;
 
-    let mut deadline = TokioInstant::now() + BATCH_MAX_AGE;
+    let mut deadline = TokioInstant::now() + batch_max_age;
     let sleeper = time::sleep_until(deadline);
     tokio::pin!(sleeper);
 
@@ -109,8 +110,9 @@ async fn handle_conn(
     fn reset_timer(
         sleeper: &mut core::pin::Pin<&mut tokio::time::Sleep>,
         deadline: &mut TokioInstant,
+        batch_max_age: Duration,
     ) {
-        *deadline = TokioInstant::now() + BATCH_MAX_AGE;
+        *deadline = TokioInstant::now() + batch_max_age;
         sleeper.as_mut().reset(*deadline);
     }
 
@@ -133,12 +135,12 @@ async fn handle_conn(
                 let need = line_bytes.len() + 1;
 
                 if batch.is_empty() {
-                    reset_timer(&mut sleeper, &mut deadline);
+                    reset_timer(&mut sleeper, &mut deadline, batch_max_age);
                 }
 
                 if batch.len() + need > batch_max_size {
                     flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
-                    reset_timer(&mut sleeper, &mut deadline);
+                    reset_timer(&mut sleeper, &mut deadline, batch_max_age);
                 }
 
                 if need > batch_max_size && batch.is_empty() {
@@ -146,7 +148,7 @@ async fn handle_conn(
                     batch.push(b'\n');
                     events_in_batch += 1;
                     flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
-                    reset_timer(&mut sleeper, &mut deadline);
+                    reset_timer(&mut sleeper, &mut deadline, batch_max_age);
                 } else {
                     batch.extend_from_slice(&line_bytes);
                     batch.push(b'\n');
@@ -160,7 +162,7 @@ async fn handle_conn(
                 if !batch.is_empty() {
                     flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
                 }
-                reset_timer(&mut sleeper, &mut deadline);
+                reset_timer(&mut sleeper, &mut deadline, batch_max_age);
             }
         }
     }
@@ -198,6 +200,7 @@ impl WasmEngine {
         &self,
         n: usize,
         batch_max_size: usize,
+        batch_max_age: Duration,
     ) -> Vec<mpsc::Sender<UnixStream>> {
         let mut senders = Vec::with_capacity(n);
         for _ in 0..n {
@@ -237,6 +240,7 @@ impl WasmEngine {
                 store,
                 processor,
                 batch_max_size,
+                batch_max_age,
             };
             task::spawn(worker.run());
 

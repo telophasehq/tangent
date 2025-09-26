@@ -1,25 +1,17 @@
 use anyhow::{Context, Result, anyhow, bail};
-use serde::Deserialize;
 use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
+use tangent_shared::Config;
 use which::which;
 
 const OUT_DIR: &str = "compiled";
 const WORLD: &str = "processor";
 
-#[derive(Debug, Deserialize)]
-pub struct Config {
-    pub entry_point: String,
-    pub module_type: String,
-}
-
 pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()> {
-    let bytes = fs::read(&cfg_path).with_context(|| format!("reading {}", cfg_path.display()))?;
-    let cfg: Config = serde_yaml::from_slice(&bytes)
-        .with_context(|| format!("parsing YAML {}", cfg_path.display()))?;
+    let cfg = Config::from_file(cfg_path)?;
 
     let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
     let entry_point_path = config_dir.join(&cfg.entry_point);

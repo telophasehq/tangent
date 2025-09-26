@@ -1,3 +1,7 @@
+use anyhow::Result;
+use clap::Parser;
+use std::path::PathBuf;
+use tangent_shared::Config;
 use tokio::net::UnixListener;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -19,8 +23,17 @@ lazy_static::lazy_static! {    static ref BATCH_LATENCY: Histogram = register_hi
     ).unwrap();
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about = "Run log processor")]
+
+struct Args {
+    /// Path to YAML config
+    #[arg(long)]
+    config: PathBuf,
+}
+
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<()> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
     let _exporter =
@@ -30,24 +43,24 @@ async fn main() -> std::io::Result<()> {
     let _ = &*BATCH_LATENCY;
     let _ = &*BATCH_EVENTS;
 
+    let args = &Args::parse();
+    let cfg = Config::from_file(&args.config)?;
+
     info!("Starting light node socket listener...");
-    let path = std::env::var("SOCKET_PATH").unwrap_or("/tmp/sidecar.sock".into());
-    let _ = std::fs::remove_file(&path);
-    let listener = UnixListener::bind(&path)?;
-    info!("Listening on {}", path);
+    let _ = std::fs::remove_file(&cfg.socket_path);
+    let listener = UnixListener::bind(&cfg.socket_path)?;
+    info!("Listening on {}", cfg.socket_path.display());
 
     let engine = wasm::WasmEngine::new().expect("engine");
-    let n = std::env::var("WASM_WORKERS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or_else(num_cpus::get);
+    info!(
+        "Batch size: {} KiB, max age: {:?}",
+        cfg.batch_size >> 10,
+        cfg.batch_age_ms()
+    );
 
-    let batch_size: usize = std::env::var("BATCH_MAX_SIZE_MB")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(5 << 20);
-
-    let workers = engine.spawn_workers(n, batch_size).await;
+    let workers = engine
+        .spawn_workers(cfg.workers, cfg.batch_size_kb(), cfg.batch_age_ms())
+        .await;
 
     let mut rr = 0usize;
     loop {

@@ -1,0 +1,18 @@
+[package]
+name = "tangent-shared"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "core-cli"
+path = "src/bin/shared-cli.rs"
+
+[dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.5.48", features = ["derive"] }
+num_cpus = "1.17.0"
+serde = { version = "1.0.227", features = ["derive"] }
+serde_yaml = "0.9.34"
