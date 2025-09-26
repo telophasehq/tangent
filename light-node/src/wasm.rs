@@ -61,8 +61,8 @@ async fn handle_conn(
     store: &mut Store<Host>,
     processor: &Processor,
 ) -> Result<()> {
-    let reader = BufReader::new(stream);
-    let mut lines = reader.lines();
+    let mut reader = BufReader::new(stream);
+    let mut line_bytes = Vec::with_capacity(4096);
 
     let mut batch: Vec<u8> = Vec::with_capacity(BATCH_MAX_BYTES);
     let mut events_in_batch: usize = 0;
@@ -98,48 +98,63 @@ async fn handle_conn(
         Ok(())
     }
 
+    fn reset_timer(
+        sleeper: &mut core::pin::Pin<&mut tokio::time::Sleep>,
+        deadline: &mut TokioInstant,
+    ) {
+        *deadline = TokioInstant::now() + BATCH_MAX_AGE;
+        sleeper.as_mut().reset(*deadline);
+    }
+
     loop {
         tokio::select! {
-            line = lines.next_line() => {
-                match line? {
-                    Some(mut l) => {
-                        if l.ends_with('\n') { l.pop(); }
-                        if l.ends_with('\r') { l.pop(); }
-                        if l.is_empty() { continue; }
-
-                        if batch.is_empty() {
-                            deadline = TokioInstant::now() + BATCH_MAX_AGE;
-                            sleeper.as_mut().reset(deadline);
-                        }
-
-                        batch.extend_from_slice(l.as_bytes());
-                        batch.push(b'\n');
-                        events_in_batch += 1;
-
-                        if batch.len() >= BATCH_MAX_BYTES {
-                            let _ = flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
-                            deadline = TokioInstant::now() + BATCH_MAX_AGE;
-                            sleeper.as_mut().reset(deadline);
-                        }
-                    }
-                    None => {
-                        tracing::info!(target:"sidecar", "client EOF; flushing then closing");
-                        let _ = flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
-                        break;
-                    }
+            n = reader.read_until(b'\n', &mut line_bytes) => {
+                let n = n?;
+                if n == 0 {
+                    flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
+                    break;
                 }
+
+                if line_bytes.last().copied() == Some(b'\n') { line_bytes.pop(); }
+                if line_bytes.last().copied() == Some(b'\r') { line_bytes.pop(); }
+                if line_bytes.is_empty() {
+                    line_bytes.clear();
+                    continue;
+                }
+
+                let need = line_bytes.len() + 1;
+
+                if batch.is_empty() {
+                    reset_timer(&mut sleeper, &mut deadline);
+                }
+
+                if batch.len() + need > BATCH_MAX_BYTES {
+                    flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
+                    reset_timer(&mut sleeper, &mut deadline);
+                }
+
+                if need > BATCH_MAX_BYTES && batch.is_empty() {
+                    batch.extend_from_slice(&line_bytes);
+                    batch.push(b'\n');
+                    events_in_batch += 1;
+                    flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
+                    reset_timer(&mut sleeper, &mut deadline);
+                } else {
+                    batch.extend_from_slice(&line_bytes);
+                    batch.push(b'\n');
+                    events_in_batch += 1;
+                }
+
+                line_bytes.clear();
             }
 
             _ = &mut sleeper => {
                 if !batch.is_empty() {
                     flush_batch(&mut batch, &mut events_in_batch, store, processor).await?;
                 }
-                deadline = TokioInstant::now() + BATCH_MAX_AGE;
-                sleeper.as_mut().reset(deadline);
+                reset_timer(&mut sleeper, &mut deadline);
             }
         }
-
-        tokio::task::yield_now().await;
     }
 
     Ok(())
