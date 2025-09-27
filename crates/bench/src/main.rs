@@ -3,7 +3,7 @@ use clap::Parser;
 use serde_json::Value;
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 use tokio::{self, io::AsyncWriteExt, net::UnixStream};
@@ -32,6 +32,14 @@ struct Args {
     metrics_url: String,
 }
 
+fn crate_root() -> &'static str {
+    env!("CARGO_MANIFEST_DIR")
+}
+
+fn test_data_dir() -> PathBuf {
+    Path::new(crate_root()).join("test_data")
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt().init();
@@ -48,7 +56,10 @@ async fn main() -> Result<()> {
         )
         .await?;
     } else {
-        for entry in fs::read_dir("bench/test_data")? {
+        for entry in fs::read_dir(test_data_dir()).context(format!(
+            "reading test data dir: {}",
+            test_data_dir().display()
+        ))? {
             let entry = entry?;
             run_bench(
                 args.socket.clone(),

@@ -1,2 +1,7 @@
 module_type: go
 entry_point: .
+batch_size: 1024
+consumers:
+  socket_main:
+    type: socket
+    path: "/tmp/sidecar.sock"
