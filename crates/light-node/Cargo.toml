@@ -31,3 +31,9 @@ rdkafka = { version = "0.38.0", features = ["cmake-build", "ssl"] }
 bytes = "1.10.1"
 tokio-util = { version = "0.7.16", features = ["codec"] }
 tokio-stream = { version = "0.1.17", features = ["io-util"] }
+aws-sdk-sqs = "1.84.1"
+aws-config = "1.8.6"
+async-trait = "0.1.89"
+aws-smithy-types = { version = "1.3.2", features = ["byte-stream-poll-next"] }
+aws-sdk-s3 = "1.106.0"
+memchr = "2.7.6"

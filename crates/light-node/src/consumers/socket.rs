@@ -8,7 +8,7 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::sync::CancellationToken;
 
-use crate::worker::{Incoming, WorkerPool};
+use crate::worker::{Incoming, Record, WorkerPool};
 
 pub async fn run_consumer(
     cfg: SocketConfig,
@@ -31,7 +31,10 @@ pub async fn run_consumer(
                                 let mut b = BytesMut::with_capacity(line.len() + 1);
                                 b.extend_from_slice(line.as_bytes());
                                 b.extend_from_slice(b"\n");
-                                let _ = pool.dispatch(Incoming::Record(b.freeze())).await;
+                                let _ = pool.dispatch(Incoming::Record(Record{
+                                    payload: b.freeze(),
+                                    ack: None,
+                            })).await;
                             }
                             Err(e) => {
                                 tracing::warn!("socket read error: {e}");

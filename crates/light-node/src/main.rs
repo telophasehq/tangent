@@ -101,6 +101,16 @@ async fn run_all_consumers(
                     }
                 });
             }
+            (_, Consumer::SQS(sq)) => {
+                tokio::spawn(async move {
+                    if let Err(e) =
+                        consumers::sqs::run_consumer(sq, cfg.batch_size, pool, shutdown.clone())
+                            .await
+                    {
+                        tracing::error!("SQS consumer error: {e}");
+                    }
+                });
+            }
         }
     }
 }

@@ -6,16 +6,19 @@ consumers:
   # socket_main:
   #   type: socket
   #   path: "/tmp/sidecar.sock"
-  kafka_ocsf:
-    type: msk
-    bootstrap_servers: "boot.bench..kafka.us-west-2.amazonaws.com:9096"
-    topic: tangent-topic
-    group_id: tangent-sidecar
-    session_timeout_ms: 10000
-    max_poll_records: 5000
-    fetch_max_bytes: 10485760
-    security_protocol: SASL_SSL
-    auth:
-      mode: scram
-      username: user
-      password: pass
+  # kafka_ocsf:
+  #   type: msk
+  #   bootstrap_servers: "boot.bench..kafka.us-west-2.amazonaws.com:9096"
+  #   topic: tangent-topic
+  #   group_id: tangent-sidecar
+  #   session_timeout_ms: 10000
+  #   max_poll_records: 5000
+  #   fetch_max_bytes: 10485760
+  #   security_protocol: SASL_SSL
+  #   auth:
+  #     mode: scram
+  #     username: user
+  #     password: pass
+  ocsf_sqs:
+    type: sqs
+    queue_url: https://sqs.us-west-2.amazonaws.com/605862532274/bench
