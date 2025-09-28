@@ -8,6 +8,7 @@ use tangent_shared::{Config, Consumer};
 
 mod msk;
 mod socket;
+mod sqs;
 /// NDJSON UDS load generator
 #[derive(Parser, Debug)]
 struct Args {
@@ -29,6 +30,11 @@ struct Args {
 
     #[arg(long, default_value = "http://127.0.0.1:9184/metrics")]
     metrics_url: String,
+    /// For S3 + SQS Bench.
+    #[arg(long)]
+    bucket: Option<String>,
+    #[arg(long)]
+    object_prefix: Option<String>,
 }
 
 fn crate_root() -> &'static str {
@@ -65,6 +71,8 @@ async fn main() -> Result<()> {
             args.max_bytes,
             args.seconds,
             payload,
+            args.bucket.clone(),
+            args.object_prefix.clone(),
         )
         .await?
     }
@@ -78,6 +86,8 @@ async fn run_bench(
     max_bytes: usize,
     seconds: u64,
     payload: PathBuf,
+    bucket: Option<String>,
+    obj_prefix: Option<String>,
 ) -> Result<()> {
     for consumer in &cfg.consumers {
         let pd = payload.clone();
@@ -88,6 +98,22 @@ async fn run_bench(
             }
             (name, Consumer::MSK(mc)) => {
                 msk::run_bench(mc, connections, pd, max_bytes, seconds).await?;
+            }
+            (name, Consumer::SQS(sq)) => {
+                if let Some(ref b) = bucket {
+                    sqs::run_bench(
+                        sq,
+                        b.clone(),
+                        obj_prefix.clone(),
+                        max_bytes,
+                        connections,
+                        pd,
+                        seconds,
+                    )
+                    .await?;
+                } else {
+                    anyhow::bail!("--bucket is a required arg for sqs bench");
+                }
             }
         }
     }

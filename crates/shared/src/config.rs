@@ -6,9 +6,11 @@ use std::time::Duration;
 
 use crate::msk::MSKConfig;
 use crate::socket::SocketConfig;
+use crate::sqs::SQSConfig;
 
 pub mod msk;
 pub mod socket;
+pub mod sqs;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -35,6 +37,8 @@ pub enum Consumer {
     MSK(MSKConfig),
     #[serde(rename = "socket")]
     Socket(SocketConfig),
+    #[serde(rename = "sqs")]
+    SQS(SQSConfig),
 }
 
 fn default_batch_size() -> usize {

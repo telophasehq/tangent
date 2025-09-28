@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     time::{Duration, Instant},
 };
 use tokio::{self, io::AsyncWriteExt, net::UnixStream};

@@ -19,4 +19,8 @@ futures = "0.3.31"
 tangent-shared = { path = "../shared" }
 rdkafka = { version = "0.38.0", features = ["cmake-build", "ssl"] }
 bytes = "1.10.1"
+aws-sdk-s3 = "1.106.0"
+aws-sdk-sqs = "1.84.1"
+aws-config = "1.8.6"
+chrono = "0.4.42"
 

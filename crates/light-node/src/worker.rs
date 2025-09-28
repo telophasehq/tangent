@@ -1,6 +1,10 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time::{self, Instant as TokioInstant};
@@ -9,8 +13,26 @@ use wasmtime::Store;
 use crate::wasm::{self, Host, Processor};
 use crate::{BATCH_EVENTS, BATCH_LATENCY};
 
+#[async_trait]
+pub trait Ack: Send + Sync {
+    async fn ack(&self) -> Result<()>;
+}
+
+pub struct NoopAck;
+#[async_trait]
+impl Ack for NoopAck {
+    async fn ack(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
 pub enum Incoming {
-    Record(Bytes),
+    Record(Record),
+}
+
+pub struct Record {
+    pub payload: Bytes,
+    pub ack: Option<Arc<dyn Ack>>,
 }
 
 pub struct Worker {
@@ -25,6 +47,7 @@ pub struct Worker {
 impl Worker {
     pub async fn run(mut self) -> Result<()> {
         let mut batch = BytesMut::with_capacity(self.batch_max_size);
+        let mut acks: Vec<Arc<dyn Ack>> = Vec::with_capacity(1024);
         let mut events = 0usize;
 
         let mut deadline = TokioInstant::now() + self.batch_max_age;
@@ -36,7 +59,7 @@ impl Worker {
                 maybe_job = self.rx.recv() => {
                     match maybe_job {
                         None => {
-                            let _ = self.flush_batch(&mut batch, &mut events).await;
+                            let _ = self.flush_batch(&mut batch, &mut acks, &mut events).await;
                             break;
                         }
                         Some(Incoming::Record(rec)) => {
@@ -45,22 +68,24 @@ impl Worker {
                                 sleeper.as_mut().reset(deadline);
                             }
 
-                            let need = rec.len();
+                            let need = rec.payload.len();
 
                             if batch.len() + need > self.batch_max_size {
-                                self.flush_batch(&mut batch, &mut events).await?;
+                                self.flush_batch(&mut batch, &mut acks, &mut events).await?;
                                 deadline = TokioInstant::now() + self.batch_max_age;
                                 sleeper.as_mut().reset(deadline);
                             }
 
                             if need > self.batch_max_size && batch.is_empty() {
-                                let mut single = BytesMut::from(rec.as_ref());
+                                let mut single = BytesMut::from(rec.payload.as_ref());
                                 let mut one = 1usize;
-                                self.flush_batch(&mut single, &mut one).await?;
+                                self.flush_batch(&mut single, &mut acks, &mut one).await?;
                                 deadline = TokioInstant::now() + self.batch_max_age;
                                 sleeper.as_mut().reset(deadline);
+                                if let Some(a) = rec.ack { acks.push(a); }
                             } else {
-                                batch.extend_from_slice(&rec);
+                                batch.extend_from_slice(&rec.payload);
+                                if let Some(a) = rec.ack { acks.push(a); }
                                 events += 1;
                             }
                         }
@@ -68,7 +93,7 @@ impl Worker {
                 }
                 _ = &mut sleeper => {
                     if !batch.is_empty() {
-                        self.flush_batch(&mut batch, &mut events).await?;
+                        self.flush_batch(&mut batch, &mut acks, &mut events).await?;
                     }
                     deadline = TokioInstant::now() + self.batch_max_age;
                     sleeper.as_mut().reset(deadline);
@@ -82,6 +107,7 @@ impl Worker {
     pub async fn flush_batch(
         &mut self,
         batch: &mut BytesMut,
+        acks: &mut Vec<Arc<dyn Ack>>,
         events_in_batch: &mut usize,
     ) -> Result<()> {
         if batch.is_empty() {
@@ -93,6 +119,12 @@ impl Worker {
 
         // TODO: handle output
         let _ = self.processor.call_process_logs(s, &batch).await?;
+
+        for ack in acks.drain(..) {
+            if let Err(e) = ack.ack().await {
+                tracing::warn!("ack failed: {e}");
+            }
+        }
 
         let secs = start.elapsed().as_secs_f64();
         BATCH_LATENCY.observe(secs);
