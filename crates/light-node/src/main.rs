@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
 
     info!(
         "Batch size: {} KiB, max age: {:?}",
-        cfg.batch_size >> 10,
+        cfg.batch_size,
         cfg.batch_age_ms()
     );
 
