@@ -17,6 +17,6 @@ lazy_static = { workspace = true }
 hdrhistogram = "7.5.4"
 futures = "0.3.31"
 tangent-shared = { path = "../shared" }
-rdkafka = "0.38.0"
+rdkafka = { version = "0.38.0", features = ["cmake-build", "ssl"] }
 bytes = "1.10.1"
 

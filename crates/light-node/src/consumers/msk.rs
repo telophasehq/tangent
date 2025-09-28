@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
 use futures::StreamExt;
 use rdkafka::{
@@ -87,7 +87,7 @@ pub fn build_consumer(kc: &MSKConfig) -> Result<StreamConsumer> {
             username,
             password,
         } => {
-            cfg.set("sasl.mechanisms", sasl_mechanism)
+            cfg.set("sasl.mechanism", sasl_mechanism)
                 .set("sasl.username", username)
                 .set("sasl.password", password);
             "SCRAM"
@@ -97,7 +97,9 @@ pub fn build_consumer(kc: &MSKConfig) -> Result<StreamConsumer> {
     cfg.set("fetch.max.bytes", "10485760");
     cfg.set("max.partition.fetch.bytes", "10485760");
 
-    let consumer: StreamConsumer = cfg.create().context("creating StreamConsumer")?;
+    let consumer: StreamConsumer = cfg
+        .create()
+        .map_err(|e| anyhow!("creating StreamConsumer failed: {e:#?}"))?;
 
     tracing::info!("Kafka consumer built with {}", mechanism);
     Ok(consumer)

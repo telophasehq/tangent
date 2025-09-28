@@ -16,7 +16,7 @@ use tracing::info;
 fn build_scram_producer(bootstrap: &str, username: &str, password: &str) -> FutureProducer {
     let mut cfg = ClientConfig::new();
     cfg.set("bootstrap.servers", bootstrap)
-        .set("security.protocol", "SASL_PLAINTEXT")
+        .set("security.protocol", "SASL_SSL")
         .set("sasl.mechanisms", "SCRAM-SHA-512")
         .set("sasl.username", username)
         .set("sasl.password", password)

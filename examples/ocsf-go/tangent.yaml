@@ -3,12 +3,12 @@ entry_point: .
 batch_size: 1024
 workers: 2
 consumers:
-  socket_main:
-    type: socket
-    path: "/tmp/sidecar.sock"
+  # socket_main:
+  #   type: socket
+  #   path: "/tmp/sidecar.sock"
   kafka_ocsf:
     type: msk
-    bootstrap_servers: "bootstrap:9096"
+    bootstrap_servers: "boot.bench..kafka.us-west-2.amazonaws.com:9096"
     topic: tangent-test
     group_id: tangent-sidecar
     session_timeout_ms: 10000
