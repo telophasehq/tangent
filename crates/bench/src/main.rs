@@ -1,20 +1,19 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use serde_json::Value;
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::{Duration, Instant},
 };
-use tokio::{self, io::AsyncWriteExt, net::UnixStream};
-use tracing::info;
+use tangent_shared::{Config, Consumer};
 
+mod msk;
+mod socket;
 /// NDJSON UDS load generator
 #[derive(Parser, Debug)]
 struct Args {
-    /// UDS path (must match sidecar SOCKET_PATH)
-    #[arg(long, default_value = "/tmp/sidecar.sock")]
-    socket: PathBuf,
+    /// Path to tangent.yaml
+    #[arg(long)]
+    config: PathBuf,
     /// Duration (seconds)
     #[arg(long, default_value_t = 15)]
     seconds: u64,
@@ -45,108 +44,53 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt().init();
 
     let args = Args::parse();
+    let cfg = Config::from_file(&args.config)?;
 
+    let mut payloads: Vec<PathBuf> = Vec::new();
     if let Some(payload) = args.payload {
-        run_bench(
-            args.socket,
-            args.connections,
-            payload,
-            args.max_bytes,
-            args.seconds,
-        )
-        .await?;
+        payloads.push(payload);
     } else {
         for entry in fs::read_dir(test_data_dir()).context(format!(
             "reading test data dir: {}",
             test_data_dir().display()
         ))? {
-            let entry = entry?;
-            run_bench(
-                args.socket.clone(),
-                args.connections,
-                entry.path(),
-                args.max_bytes,
-                args.seconds,
-            )
-            .await?;
+            payloads.push(entry?.path());
         }
+    }
+
+    for payload in payloads {
+        run_bench(
+            &cfg,
+            args.connections,
+            args.max_bytes,
+            args.seconds,
+            payload,
+        )
+        .await?
     }
 
     Ok(())
 }
 
 async fn run_bench(
-    socket: PathBuf,
+    cfg: &Config,
     connections: u16,
-    payload_path: PathBuf,
     max_bytes: usize,
     seconds: u64,
+    payload: PathBuf,
 ) -> Result<()> {
-    let payload = fs::read_to_string(&payload_path)
-        .with_context(|| format!("failed to read payload file {}", payload_path.display()))?;
-
-    let one_line = serde_json::to_string(&serde_json::from_str::<Value>(&payload)?)?;
-
-    info!("===Starting benchmark===");
-    info!(
-        "uds={:?} payload={:?} bytes/line={} connections={}",
-        socket,
-        payload_path,
-        payload.len(),
-        connections,
-    );
-
-    let mut line = Vec::with_capacity(one_line.len() + 1);
-    line.extend_from_slice(one_line.as_bytes());
-    line.push(b'\n');
-
-    let max_bytes = max_bytes;
-    let seconds = seconds;
-    let bytes_per_event = line.len() as u64;
-    let mut handles = Vec::with_capacity(connections as usize);
-
-    for _ in 0..connections {
-        let line_cl = line.clone();
-        let uds = socket.clone();
-
-        handles.push(tokio::spawn(async move {
-            let mut s = UnixStream::connect(&uds)
-                .await
-                .with_context(|| format!("socket does not exist: {}", uds.display()))?;
-            let deadline = Instant::now() + Duration::from_secs(seconds);
-            let mut buf = Vec::with_capacity(max_bytes.max(line_cl.len()));
-
-            let mut events_per_buff: u64 = 0;
-            while max_bytes < line_cl.len() || buf.len() + line_cl.len() <= max_bytes {
-                buf.extend_from_slice(&line_cl);
-                events_per_buff += 1;
+    for consumer in &cfg.consumers {
+        let pd = payload.clone();
+        match consumer {
+            (name, Consumer::Socket(sc)) => {
+                socket::run_bench(sc.socket_path.clone(), connections, pd, max_bytes, seconds)
+                    .await?;
             }
-
-            let mut total_events: u64 = 0;
-            while Instant::now() < deadline {
-                match s.write_all(&buf).await {
-                    Ok(()) => total_events += events_per_buff,
-                    Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => break,
-                    Err(e) => return Err(e.into()),
-                }
+            (name, Consumer::MSK(mc)) => {
+                msk::run_bench(mc, connections, pd, max_bytes, seconds).await?;
             }
-            anyhow::Ok(total_events)
-        }));
+        }
     }
-
-    let appends: u64 = futures::future::try_join_all(handles)
-        .await?
-        .into_iter()
-        .try_fold(0u64, |acc, res| res.map(|v| acc + v))?;
-
-    let total_bytes = appends * bytes_per_event;
-    let mb_per_sec = (total_bytes as f64 / (1024.0 * 1024.0)) / seconds as f64;
-
-    info!(
-        "events per second = {}, MB per second = {:.2}",
-        appends / seconds,
-        mb_per_sec
-    );
 
     Ok(())
 }

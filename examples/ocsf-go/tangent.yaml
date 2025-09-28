@@ -1,7 +1,20 @@
 module_type: go
 entry_point: .
 batch_size: 1024
+workers: 2
 consumers:
   socket_main:
     type: socket
     path: "/tmp/sidecar.sock"
+  kafka_ocsf:
+    type: msk
+    bootstrap_servers: "bootstrap:9096"
+    topic: tangent-test
+    group_id: tangent-sidecar
+    session_timeout_ms: 10000
+    max_poll_records: 5000
+    fetch_max_bytes: 10485760
+    auth:
+      mode: scram
+      username: user
+      password: pass

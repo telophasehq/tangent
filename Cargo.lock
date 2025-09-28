@@ -222,14 +222,17 @@ name = "bench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap",
  "futures",
  "hdrhistogram",
  "lazy_static",
  "prometheus",
  "prometheus_exporter",
+ "rdkafka",
  "reqwest 0.12.23",
  "serde_json",
+ "tangent-shared",
  "tokio",
  "tracing",
  "tracing-subscriber",
