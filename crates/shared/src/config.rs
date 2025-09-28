@@ -4,13 +4,16 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::msk::MSKConfig;
+use crate::socket::SocketConfig;
+
+pub mod msk;
+pub mod socket;
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub entry_point: String,
     pub module_type: String,
-
-    #[serde(default = "default_socket_path")]
-    pub socket_path: PathBuf,
 
     #[serde(default = "default_batch_size")]
     pub batch_size: usize,
@@ -20,11 +23,20 @@ pub struct Config {
 
     #[serde(default = "default_workers")]
     pub workers: usize,
+
+    #[serde(default)]
+    pub consumers: std::collections::BTreeMap<String, Consumer>,
 }
 
-fn default_socket_path() -> PathBuf {
-    "/tmp/sidecar.sock".into()
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum Consumer {
+    #[serde(rename = "msk")]
+    MSK(MSKConfig),
+    #[serde(rename = "socket")]
+    Socket(SocketConfig),
 }
+
 fn default_batch_size() -> usize {
     256
 }

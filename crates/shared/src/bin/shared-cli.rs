@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     let cfg = Config::from_file(&args.config)
         .with_context(|| format!("loading config from {}", &args.config.display()))?;
 
-    let socket_path = &cfg.socket_path;
+    let consumers = &cfg.consumers;
     let batch_kb = cfg.batch_size_kb();
     let batch_bytes = batch_kb << 10;
     let batch_age_ms = cfg.batch_age_ms();
@@ -29,11 +29,11 @@ fn main() -> Result<()> {
     if args.json {
         println!(
             "{{\"entry_point\":\"{entry}\",\"module_type\":\"{mtype}\",\
-              \"socket_path\":\"{sock}\",\"batch_size_kb\":{kb},\"batch_size_bytes\":{bytes},\
+              \"consumers\":\"{c:?}\",\"batch_size_kb\":{kb},\"batch_size_bytes\":{bytes},\
               \"batch_age_ms\":{age:?},\"workers\":{workers}}}",
             entry = cfg.entry_point,
             mtype = cfg.module_type,
-            sock = socket_path.display(),
+            c = consumers,
             kb = batch_kb,
             bytes = batch_bytes,
             age = batch_age_ms,
@@ -43,7 +43,7 @@ fn main() -> Result<()> {
         println!("Config:");
         println!("  entry_point : {}", cfg.entry_point);
         println!("  module_type : {}", cfg.module_type);
-        println!("  socket_path : {}", socket_path.display());
+        println!("  consumers : {:?}", consumers);
         println!("  batch_size  : {} KB ({} bytes)", batch_kb, batch_bytes);
         println!("  batch_age   : {:?} ms", batch_age_ms);
         println!("  workers     : {}", workers);
