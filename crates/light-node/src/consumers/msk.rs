@@ -1,14 +1,12 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use futures::StreamExt;
 use rdkafka::{
     config::ClientConfig,
     consumer::{Consumer, ConsumerContext, StreamConsumer},
     ClientContext, Message,
 };
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 use crate::worker::{Incoming, WorkerPool};
@@ -39,7 +37,7 @@ fn lag_from_stats(s: &rdkafka::statistics::Statistics) -> (i64, i64, usize) {
     (total_lag, max_lag, assigned_parts)
 }
 
-struct Ctx {
+pub struct Ctx {
     state: Arc<Mutex<StatState>>,
 }
 
@@ -78,39 +76,29 @@ impl ConsumerContext for Ctx {}
 
 pub async fn run_consumer(
     kc: MSKConfig,
-    pool: std::sync::Arc<WorkerPool>,
+    pool: Arc<WorkerPool>,
     shutdown: CancellationToken,
 ) -> Result<()> {
     let consumer: StreamConsumer<Ctx> = build_consumer(&kc)?;
-    consumer
-        .subscribe(&[kc.topic.as_str()])
-        .with_context(|| format!("subscribing to topic {}", kc.topic))?;
-
-    let (tx, rx) = mpsc::channel::<Result<Bytes, anyhow::Error>>(1024);
+    consumer.subscribe(&[kc.topic.as_str()])?;
 
     let fwd_shutdown = shutdown.clone();
-    tokio::spawn(async move {
-        let mut stream = consumer.stream();
+    let pool2 = pool.clone();
 
+    tokio::spawn(async move {
         loop {
             tokio::select! {
                 _ = fwd_shutdown.cancelled() => break,
-                next = stream.next() => {
-                    match next {
-                        None => break,
-                        Some(Err(e)) => {
-                            if tx.send(Err(anyhow::Error::new(e))).await.is_err() {
-                                break;
+                msg = consumer.recv() => {
+                    match msg {
+                        Ok(m) => {
+                            if let Some(p) = m.payload() {
+                                let _ = pool2.dispatch(Incoming::Record(Bytes::copy_from_slice(p))).await;
                             }
                         }
-                        Some(Ok(msg)) => {
-                            let b = match msg.payload() {
-                                Some(p) => Bytes::copy_from_slice(p),
-                                None => Bytes::new(),
-                            };
-                            if tx.send(Ok(b)).await.is_err() {
-                                break;
-                            }
+                        Err(e) => {
+                            tracing::warn!("kafka recv error: {e}");
+                            tokio::time::sleep(Duration::from_millis(10)).await;
                         }
                     }
                 }
@@ -118,9 +106,6 @@ pub async fn run_consumer(
         }
     });
 
-    let record_stream = ReceiverStream::new(rx).map(|r| r);
-    pool.dispatch(Incoming::Records(Box::pin(record_stream)))
-        .await;
     shutdown.cancelled().await;
     Ok(())
 }

@@ -1,60 +1,47 @@
 // consumers/socket.rs
-use anyhow::{Context, Result};
-use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+use anyhow::Result;
+use bytes::BytesMut;
+use std::sync::Arc;
 use tangent_shared::socket::SocketConfig;
 use tokio::net::UnixListener;
+use tokio_stream::StreamExt;
+use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::sync::CancellationToken;
 
 use crate::worker::{Incoming, WorkerPool};
 
 pub async fn run_consumer(
     cfg: SocketConfig,
-    pool: std::sync::Arc<WorkerPool>,
+    pool: Arc<WorkerPool>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    let path = Path::new(&cfg.socket_path);
-    if path.exists() {
-        fs::remove_file(path)
-            .with_context(|| format!("removing stale socket {}", cfg.socket_path.display()))?;
-    }
-
-    let listener = UnixListener::bind(path)
-        .with_context(|| format!("binding unix socket {}", cfg.socket_path.display()))?;
-
-    if let Ok(meta) = fs::metadata(path) {
-        let mut perm = meta.permissions();
-        perm.set_mode(0o666);
-        let _ = fs::set_permissions(path, perm);
-    }
-
-    tracing::info!("unix socket listening at {}", cfg.socket_path.display());
+    let _ = std::fs::remove_file(&cfg.socket_path);
+    let listener = UnixListener::bind(&cfg.socket_path)?;
 
     loop {
         tokio::select! {
-            _ = shutdown.cancelled() => {
-                tracing::info!("socket consumer shutdown requested");
-                break;
-            }
-            res = listener.accept() => {
-                match res {
-                    Ok((us, _addr)) => {
-                        pool.dispatch(Incoming::UnixStream(us)).await;
+            _ = shutdown.cancelled() => break,
+            Ok((us, _)) = listener.accept() => {
+                let pool = pool.clone();
+                tokio::spawn(async move {
+                    let mut framed = FramedRead::new(us, LinesCodec::new());
+                    while let Some(line_res) = framed.next().await {
+                        match line_res {
+                            Ok(line) => {
+                                let mut b = BytesMut::with_capacity(line.len() + 1);
+                                b.extend_from_slice(line.as_bytes());
+                                b.extend_from_slice(b"\n");
+                                let _ = pool.dispatch(Incoming::Record(b.freeze())).await;
+                            }
+                            Err(e) => {
+                                tracing::warn!("socket read error: {e}");
+                                break;
+                            }
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!("unix accept error: {e}");
-                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                    }
-                }
+                });
             }
         }
     }
-
-    if let Err(e) = fs::remove_file(path) {
-        tracing::debug!(
-            "failed to remove socket {} on shutdown: {e}",
-            cfg.socket_path.display()
-        );
-    }
-
     Ok(())
 }
