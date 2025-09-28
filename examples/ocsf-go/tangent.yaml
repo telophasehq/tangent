@@ -1,7 +1,7 @@
 module_type: go
 entry_point: .
 batch_size: 1024
-workers: 2
+# workers: 2
 consumers:
   # socket_main:
   #   type: socket

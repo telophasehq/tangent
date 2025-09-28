@@ -98,8 +98,14 @@ impl Worker {
         BATCH_LATENCY.observe(secs);
         BATCH_EVENTS.inc_by(*events_in_batch as u64);
 
-        tracing::info!(target: "sidecar", "processed batch of {} in {} µs",
-                                events_in_batch, start.elapsed().as_micros());
+        tracing::info!(
+            target: "sidecar",
+            worker = self.id,
+            events = *events_in_batch,
+            bytes = batch.len(),
+            took_us = start.elapsed().as_micros(),
+            "processed batch"
+        );
         batch.clear();
         *events_in_batch = 0;
         Ok(())
