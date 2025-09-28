@@ -100,10 +100,19 @@ async fn run_bench(
                 msk::run_bench(mc, connections, pd, max_bytes, seconds).await?;
             }
             (name, Consumer::SQS(sq)) => {
-                if let Some(b) = bucket.clone() {
-                    sqs::run_bench(sq, b, obj_prefix.clone(), connections, pd, seconds).await?;
+                if let Some(ref b) = bucket {
+                    sqs::run_bench(
+                        sq,
+                        b.clone(),
+                        obj_prefix.clone(),
+                        max_bytes,
+                        connections,
+                        pd,
+                        seconds,
+                    )
+                    .await?;
                 } else {
-                    anyhow::bail!("--bucket is a required arg for sqs bench")
+                    anyhow::bail!("--bucket is a required arg for sqs bench");
                 }
             }
         }

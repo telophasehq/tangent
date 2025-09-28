@@ -3,9 +3,9 @@ entry_point: .
 batch_size: 1024
 # workers: 2
 consumers:
-  # socket_main:
-  #   type: socket
-  #   path: "/tmp/sidecar.sock"
+  socket_main:
+    type: socket
+    path: "/tmp/sidecar.sock"
   # kafka_ocsf:
   #   type: msk
   #   bootstrap_servers: "boot.bench..kafka.us-west-2.amazonaws.com:9096"
@@ -19,6 +19,6 @@ consumers:
   #     mode: scram
   #     username: user
   #     password: pass
-  ocsf_sqs:
-    type: sqs
-    queue_url: https://sqs.us-west-2.amazonaws.com/605862532274/bench
+  # ocsf_sqs:
+  #   type: sqs
+  #   queue_url: https://sqs.us-west-2.amazonaws.com/*/bench
