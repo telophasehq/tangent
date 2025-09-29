@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use aws_config;
 use aws_sdk_s3::Client as S3Client;

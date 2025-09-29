@@ -5,10 +5,12 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::msk::MSKConfig;
+use crate::s3::S3Config;
 use crate::socket::SocketConfig;
 use crate::sqs::SQSConfig;
 
 pub mod msk;
+pub mod s3;
 pub mod socket;
 pub mod sqs;
 
@@ -27,18 +29,28 @@ pub struct Config {
     pub workers: usize,
 
     #[serde(default)]
-    pub consumers: std::collections::BTreeMap<String, Consumer>,
+    pub sources: std::collections::BTreeMap<String, Source>,
+
+    #[serde(default)]
+    pub sinks: std::collections::BTreeMap<String, Source>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
-pub enum Consumer {
+pub enum Source {
     #[serde(rename = "msk")]
     MSK(MSKConfig),
     #[serde(rename = "socket")]
     Socket(SocketConfig),
     #[serde(rename = "sqs")]
     SQS(SQSConfig),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum Sink {
+    #[serde(rename = "s3")]
+    S3(S3Config),
 }
 
 fn default_batch_size() -> usize {

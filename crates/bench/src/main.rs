@@ -4,7 +4,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tangent_shared::{Config, Consumer};
+use tangent_shared::{Config, Source};
 
 mod msk;
 mod socket;
@@ -89,17 +89,17 @@ async fn run_bench(
     bucket: Option<String>,
     obj_prefix: Option<String>,
 ) -> Result<()> {
-    for consumer in &cfg.consumers {
+    for src in &cfg.sources {
         let pd = payload.clone();
-        match consumer {
-            (name, Consumer::Socket(sc)) => {
+        match src {
+            (name, Source::Socket(sc)) => {
                 socket::run_bench(sc.socket_path.clone(), connections, pd, max_bytes, seconds)
                     .await?;
             }
-            (name, Consumer::MSK(mc)) => {
+            (name, Source::MSK(mc)) => {
                 msk::run_bench(mc, connections, pd, max_bytes, seconds).await?;
             }
-            (name, Consumer::SQS(sq)) => {
+            (name, Source::SQS(sq)) => {
                 if let Some(ref b) = bucket {
                     sqs::run_bench(
                         sq,

@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use clap::Parser;
 use std::{path::PathBuf, sync::Arc};
-use tangent_shared::{Config, Consumer};
+use tangent_shared::{Config, Source};
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -10,7 +10,7 @@ use tracing_subscriber::EnvFilter;
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use prometheus_exporter;
 
-mod consumers;
+mod sources;
 mod wasm;
 mod worker;
 
@@ -50,8 +50,8 @@ async fn main() -> Result<()> {
     let args = &Args::parse();
     let cfg = Config::from_file(&args.config)?;
 
-    if cfg.consumers.is_empty() {
-        bail!("At least one consumer is required.");
+    if cfg.sources.is_empty() {
+        bail!("At least one source is required.");
     }
 
     let engine = wasm::WasmEngine::new().expect("engine");
@@ -81,31 +81,29 @@ async fn run_all_consumers(
     pool: Arc<worker::WorkerPool>,
     shutdown: CancellationToken,
 ) {
-    for cons in cfg.consumers {
+    for src in cfg.sources {
         let pool = pool.clone();
         let shutdown = shutdown.clone();
-        match cons {
-            (_, Consumer::MSK(kc)) => {
+        match src {
+            (_, Source::MSK(kc)) => {
                 tokio::spawn(async move {
-                    if let Err(e) = consumers::msk::run_consumer(kc, pool, shutdown.clone()).await {
+                    if let Err(e) = sources::msk::run_consumer(kc, pool, shutdown.clone()).await {
                         tracing::error!("msk consumer error: {e}");
                     }
                 });
             }
-            (_, Consumer::Socket(sc)) => {
+            (_, Source::Socket(sc)) => {
                 tokio::spawn(async move {
-                    if let Err(e) =
-                        consumers::socket::run_consumer(sc, pool, shutdown.clone()).await
+                    if let Err(e) = sources::socket::run_consumer(sc, pool, shutdown.clone()).await
                     {
                         tracing::error!("socket listener error: {e}");
                     }
                 });
             }
-            (_, Consumer::SQS(sq)) => {
+            (_, Source::SQS(sq)) => {
                 tokio::spawn(async move {
                     if let Err(e) =
-                        consumers::sqs::run_consumer(sq, cfg.batch_size, pool, shutdown.clone())
-                            .await
+                        sources::sqs::run_consumer(sq, cfg.batch_size, pool, shutdown.clone()).await
                     {
                         tracing::error!("SQS consumer error: {e}");
                     }
