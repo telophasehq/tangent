@@ -93,15 +93,23 @@ async fn run_bench(
         let pd = payload.clone();
         match src {
             (name, Source::Socket(sc)) => {
-                socket::run_bench(sc.socket_path.clone(), connections, pd, max_bytes, seconds)
-                    .await?;
+                socket::run_bench(
+                    name,
+                    sc.socket_path.clone(),
+                    connections,
+                    pd,
+                    max_bytes,
+                    seconds,
+                )
+                .await?;
             }
             (name, Source::MSK(mc)) => {
-                msk::run_bench(mc, connections, pd, max_bytes, seconds).await?;
+                msk::run_bench(name, mc, connections, pd, max_bytes, seconds).await?;
             }
             (name, Source::SQS(sq)) => {
                 if let Some(ref b) = bucket {
                     sqs::run_bench(
+                        name,
                         sq,
                         b.clone(),
                         obj_prefix.clone(),

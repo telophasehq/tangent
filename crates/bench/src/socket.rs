@@ -9,6 +9,7 @@ use tokio::{self, io::AsyncWriteExt, net::UnixStream};
 use tracing::info;
 
 pub async fn run_bench(
+    name: &String,
     socket: PathBuf,
     connections: u16,
     payload_path: PathBuf,
@@ -20,7 +21,7 @@ pub async fn run_bench(
 
     let one_line = serde_json::to_string(&serde_json::from_str::<Value>(&payload)?)?;
 
-    info!("===Starting benchmark===");
+    info!("===Starting {name} benchmark===");
     info!(
         "uds={:?} payload={:?} bytes/line={} connections={}",
         socket,

@@ -14,6 +14,7 @@ use tokio::task::JoinHandle;
 use tracing::info;
 
 pub async fn run_bench(
+    name: &String,
     cfg: &SQSConfig,
     bucket: String,
     object_prefix: Option<String>,
@@ -36,7 +37,7 @@ pub async fn run_bench(
     }
     let line_len = line.len();
 
-    info!("===Starting S3+SQS benchmark===");
+    info!("===Starting {name} benchmark===");
     info!(
         "bucket={} queue={} payload={} object_bytes={} connections={} duration={}s",
         bucket,

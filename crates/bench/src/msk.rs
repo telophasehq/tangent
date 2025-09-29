@@ -30,6 +30,7 @@ fn build_scram_producer(bootstrap: &str, username: &str, password: &str) -> Futu
 }
 
 pub async fn run_bench(
+    name: &String,
     kcfg: &MSKConfig,
     connections: u16,
     payload_path: PathBuf,
@@ -40,7 +41,7 @@ pub async fn run_bench(
         .with_context(|| format!("failed to read payload file {}", payload_path.display()))?;
     let one_line = serde_json::to_string(&serde_json::from_str::<Value>(&payload)?)?;
 
-    info!("===Starting MSK benchmark===");
+    info!("===Starting {name} benchmark===");
     info!(
         "bootstrap={} topic={} payload={:?} bytes/line={} connections={}",
         kcfg.bootstrap_servers,
