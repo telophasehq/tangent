@@ -7,23 +7,18 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
+use tokio::task::JoinHandle;
 use tokio::time::{self, Instant as TokioInstant};
 use wasmtime::Store;
 
+use crate::sinks::manager::{SinkItem, SinkManager};
 use crate::wasm::{self, Host, Processor};
 use crate::{BATCH_EVENTS, BATCH_LATENCY};
 
 #[async_trait]
 pub trait Ack: Send + Sync {
     async fn ack(&self) -> Result<()>;
-}
-
-pub struct NoopAck;
-#[async_trait]
-impl Ack for NoopAck {
-    async fn ack(&self) -> Result<()> {
-        Ok(())
-    }
 }
 
 pub enum Incoming {
@@ -42,6 +37,7 @@ pub struct Worker {
     processor: Processor,
     batch_max_size: usize,
     batch_max_age: Duration,
+    sink_manager: Arc<SinkManager>,
 }
 
 impl Worker {
@@ -117,8 +113,29 @@ impl Worker {
         let start = Instant::now();
         let s: &mut Store<Host> = &mut self.store;
 
-        // TODO: handle output
-        let _ = self.processor.call_process_logs(s, &batch).await?;
+        let out = match self.processor.call_process_logs(s, &batch).await {
+            Err(host) => {
+                return Err(anyhow::anyhow!("process_logs host error: {host}"));
+            }
+            Ok(Ok(out)) => out,
+            Ok(Err(guest)) => {
+                tracing::warn!(target: "sidecar",
+                    %guest,
+                    batch_bytes = batch.len(),
+                    "process_logs guest error; skipping batch");
+                return Ok(());
+            }
+        };
+
+        let sink_payload: Bytes = Bytes::from(out);
+        let pending_acks = std::mem::take(acks);
+        self.sink_manager
+            .enqueue(SinkItem {
+                payload: sink_payload,
+                acks: pending_acks,
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("sink queue full: {e}"))?;
 
         for ack in acks.drain(..) {
             if let Err(e) = ack.ack().await {
@@ -147,20 +164,21 @@ impl Worker {
 pub struct WorkerPool {
     senders: Vec<mpsc::Sender<Incoming>>,
     rr: AtomicUsize,
+    handles: Vec<JoinHandle<()>>,
 }
 
 impl WorkerPool {
     pub async fn new(
         size: usize,
         engine: wasm::WasmEngine,
+        sink_manager: Arc<SinkManager>,
         batch_max_size: usize,
         batch_max_age: Duration,
     ) -> anyhow::Result<Self> {
         let mut senders = Vec::with_capacity(size);
+        let mut handles = Vec::with_capacity(size);
 
-        // e.g., allow ~several batches worth per worker. Start simple:
         let ch_capacity = 4096;
-
         for i in 0..size {
             let (tx, rx) = mpsc::channel::<Incoming>(ch_capacity);
             senders.push(tx);
@@ -184,34 +202,62 @@ impl WorkerPool {
 
             let worker = Worker {
                 id: i,
+                sink_manager: Arc::clone(&sink_manager),
                 rx,
                 store,
                 processor,
                 batch_max_size,
                 batch_max_age,
             };
-            tokio::spawn(async move { worker.run().await });
+            let h = tokio::spawn(async move {
+                if let Err(e) = worker.run().await {
+                    tracing::error!("worker {i} exited: {e:#}");
+                }
+            });
+            handles.push(h);
         }
 
         Ok(Self {
             senders,
             rr: AtomicUsize::new(0),
+            handles: handles,
         })
     }
 
     pub async fn dispatch(&self, mut job: Incoming) {
         let n = self.senders.len();
-        let mut idx = self.rr.fetch_add(1, Ordering::Relaxed) % n;
+        if n == 0 {
+            tracing::warn!("worker pool is closed; dropping job");
+            return;
+        }
+        let start = self.rr.fetch_add(1, Ordering::Relaxed) % n;
 
-        for _ in 0..n {
-            match self.senders[idx].send(job).await {
+        for i in 0..n {
+            let idx = (start + i) % n;
+            match self.senders[idx].try_send(job) {
                 Ok(()) => return,
-                Err(e) => {
-                    job = e.0;
-                    idx = (idx + 1) % n;
+                Err(TrySendError::Full(j)) => {
+                    job = j;
+                }
+                Err(TrySendError::Closed(j)) => {
+                    job = j;
                 }
             }
         }
-        tracing::warn!("all workers unavailable; dropping job");
+
+        let idx = start;
+        if let Err(_e) = self.senders[idx].send(job).await {
+            tracing::warn!("all workers unavailable; dropping job");
+        }
+    }
+
+    pub fn close(&mut self) {
+        self.senders.clear();
+    }
+
+    pub async fn join(self) {
+        for h in self.handles {
+            let _ = h.await;
+        }
     }
 }

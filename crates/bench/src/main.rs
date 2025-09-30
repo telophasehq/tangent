@@ -4,8 +4,9 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tangent_shared::{Config, Source};
+use tangent_shared::{Config, SourceConfig};
 
+mod metrics;
 mod msk;
 mod socket;
 mod sqs;
@@ -67,6 +68,7 @@ async fn main() -> Result<()> {
     for payload in payloads {
         run_bench(
             &cfg,
+            &args.metrics_url,
             args.connections,
             args.max_bytes,
             args.seconds,
@@ -82,6 +84,7 @@ async fn main() -> Result<()> {
 
 async fn run_bench(
     cfg: &Config,
+    metrics_url: &String,
     connections: u16,
     max_bytes: usize,
     seconds: u64,
@@ -91,8 +94,10 @@ async fn run_bench(
 ) -> Result<()> {
     for src in &cfg.sources {
         let pd = payload.clone();
+        let before = metrics::scrape_stats(&metrics_url).await?;
+
         match src {
-            (name, Source::Socket(sc)) => {
+            (name, SourceConfig::Socket(sc)) => {
                 socket::run_bench(
                     name,
                     sc.socket_path.clone(),
@@ -103,10 +108,10 @@ async fn run_bench(
                 )
                 .await?;
             }
-            (name, Source::MSK(mc)) => {
+            (name, SourceConfig::MSK(mc)) => {
                 msk::run_bench(name, mc, connections, pd, max_bytes, seconds).await?;
             }
-            (name, Source::SQS(sq)) => {
+            (name, SourceConfig::SQS(sq)) => {
                 if let Some(ref b) = bucket {
                     sqs::run_bench(
                         name,
@@ -124,6 +129,39 @@ async fn run_bench(
                 }
             }
         }
+
+        let after = metrics::scrape_stats(&metrics_url).await?;
+        let delta = metrics::Stats {
+            batch_objects: after.batch_objects - before.batch_objects,
+            sink_bytes: after.sink_bytes - before.sink_bytes,
+            sink_objects: after.sink_objects - before.sink_objects,
+            consumer_bytes: after.consumer_bytes - before.consumer_bytes,
+            consumer_objects: after.consumer_objects - before.consumer_objects,
+            inflight: after.inflight,
+        };
+        println!(
+            "processed: events={}, bytes≈{:.2} MiB, objects={}",
+            delta.batch_objects as u64,
+            delta.sink_bytes / (1024.0 * 1024.0),
+            delta.sink_objects as u64
+        );
+
+        println!("waiting for inflight messages to finish to verify correctness...");
+
+        let drained = metrics::wait_for_drain(&metrics_url).await?;
+        let final_delta_vs_before = metrics::Stats {
+            batch_objects: drained.batch_objects - before.batch_objects,
+            sink_bytes: drained.sink_bytes - before.sink_bytes,
+            sink_objects: drained.sink_objects - before.sink_objects,
+            consumer_bytes: drained.consumer_bytes - before.consumer_bytes,
+            consumer_objects: drained.consumer_objects - before.consumer_objects,
+            inflight: drained.inflight,
+        };
+
+        println!(
+            "objects delta (consumer - uploaded): {}",
+            (final_delta_vs_before.consumer_objects - final_delta_vs_before.sink_objects)
+        );
     }
 
     Ok(())

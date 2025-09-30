@@ -29,15 +29,15 @@ pub struct Config {
     pub workers: usize,
 
     #[serde(default)]
-    pub sources: std::collections::BTreeMap<String, Source>,
+    pub sources: std::collections::BTreeMap<String, SourceConfig>,
 
     #[serde(default)]
-    pub sinks: std::collections::BTreeMap<String, Source>,
+    pub sinks: std::collections::BTreeMap<String, SinkConfig>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
-pub enum Source {
+pub enum SourceConfig {
     #[serde(rename = "msk")]
     MSK(MSKConfig),
     #[serde(rename = "socket")]
@@ -47,8 +47,41 @@ pub enum Source {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CommonSinkOptions {
+    #[serde(default = "object_max_bytes")]
+    pub object_max_bytes: usize,
+
+    #[serde(default = "in_flight_limit")]
+    pub in_flight_limit: usize,
+
+    #[serde(default = "wal_path")]
+    pub wal_path: PathBuf,
+}
+
+fn object_max_bytes() -> usize {
+    134217728
+}
+
+fn in_flight_limit() -> usize {
+    16
+}
+
+fn wal_path() -> PathBuf {
+    "/tmp/wal".into()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SinkConfig {
+    #[serde(flatten)]
+    pub common: CommonSinkOptions,
+
+    #[serde(flatten)]
+    pub kind: SinkKind,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
-pub enum Sink {
+pub enum SinkKind {
     #[serde(rename = "s3")]
     S3(S3Config),
 }
