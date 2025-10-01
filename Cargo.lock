@@ -659,6 +659,7 @@ dependencies = [
  "prometheus_exporter",
  "rdkafka",
  "reqwest",
+ "secrecy",
  "serde_json",
  "tangent-shared",
  "tokio",
