@@ -25,5 +25,5 @@ sources:
 sinks:
   s3_bucket:
     type: s3
-    bucket_name: tangent-bench-no-notification
+    bucket_name: my_bucket
     max_inflight: 4
