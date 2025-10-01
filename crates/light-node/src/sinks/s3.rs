@@ -26,15 +26,39 @@ impl WALSink for S3Sink {
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("tangent-{}.ndjson", Ulid::new()));
 
-        let create_res = self
+        let enc = match path.extension().and_then(|e| e.to_str()) {
+            Some("gz") => Some("gzip"),
+            Some("zst") => Some("zstd"),
+            _ => None,
+        };
+
+        let size = tokio::fs::metadata(path).await?.len();
+
+        if size < 5 * 1024 * 1024 {
+            let mut put = self
+                .client
+                .put_object()
+                .bucket(&self.bucket_name)
+                .key(&key)
+                .body(aws_smithy_types::byte_stream::ByteStream::from_path(path).await?);
+            if let Some(e) = enc {
+                put = put.content_encoding(e);
+            }
+            put.send().await?;
+            return Ok(());
+        }
+
+        let mut create_req = self
             .client
             .create_multipart_upload()
             .bucket(&self.bucket_name)
-            .key(&key)
-            .send()
-            .await;
+            .key(&key);
 
-        let create = match create_res {
+        if let Some(e) = enc {
+            create_req = create_req.content_encoding(e);
+        }
+
+        let create = match create_req.send().await {
             Ok(o) => o,
             Err(e) => {
                 match &e {

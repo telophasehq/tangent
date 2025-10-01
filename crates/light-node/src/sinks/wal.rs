@@ -140,7 +140,7 @@ impl DurableFileSink {
     }
 
     async fn rotate(&self) -> Result<()> {
-        // Do not hold the cur lock while uploading
+        // Important: Do not hold the cur lock while uploading
         let (sealed_ready, sealed_bytes) = {
             let mut cur = self.cur.lock().await;
             if cur.bytes == 0 {
