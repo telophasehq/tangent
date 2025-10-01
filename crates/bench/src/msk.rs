@@ -30,6 +30,7 @@ fn build_scram_producer(bootstrap: &str, username: &str, password: &str) -> Futu
 }
 
 pub async fn run_bench(
+    name: &String,
     kcfg: &MSKConfig,
     connections: u16,
     payload_path: PathBuf,
@@ -40,19 +41,19 @@ pub async fn run_bench(
         .with_context(|| format!("failed to read payload file {}", payload_path.display()))?;
     let one_line = serde_json::to_string(&serde_json::from_str::<Value>(&payload)?)?;
 
-    info!("===Starting MSK benchmark===");
+    let mut line = Vec::with_capacity(one_line.len() + 1);
+    line.extend_from_slice(one_line.as_bytes());
+    line.push(b'\n');
+
+    info!("===Starting {name} benchmark===");
     info!(
         "bootstrap={} topic={} payload={:?} bytes/line={} connections={}",
         kcfg.bootstrap_servers,
         kcfg.topic,
         payload_path,
-        one_line.len(),
+        line.len(),
         connections,
     );
-
-    let mut line = Vec::with_capacity(one_line.len() + 1);
-    line.extend_from_slice(one_line.as_bytes());
-    line.push(b'\n');
 
     let producer = match &kcfg.auth {
         MSKAuth::Scram {
@@ -61,8 +62,6 @@ pub async fn run_bench(
             password,
         } => build_scram_producer(&kcfg.bootstrap_servers, username, password),
     };
-
-    let bytes_per_event = line.len() as u64;
 
     let topic = kcfg.topic.clone();
     let seconds = seconds;
@@ -97,19 +96,10 @@ pub async fn run_bench(
         }));
     }
 
-    let appends: u64 = futures::future::try_join_all(tasks)
+    futures::future::try_join_all(tasks)
         .await?
         .into_iter()
         .try_fold(0u64, |acc, res| res.map(|v| acc + v))?;
-
-    let total_bytes = appends * bytes_per_event;
-    let mb_per_sec = (total_bytes as f64 / (1024.0 * 1024.0)) / seconds as f64;
-
-    info!(
-        "Kafka events/sec = {}, throughput = {:.2} MiB/s",
-        appends / seconds,
-        mb_per_sec
-    );
 
     Ok(())
 }

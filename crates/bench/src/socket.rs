@@ -9,6 +9,7 @@ use tokio::{self, io::AsyncWriteExt, net::UnixStream};
 use tracing::info;
 
 pub async fn run_bench(
+    name: &String,
     socket: PathBuf,
     connections: u16,
     payload_path: PathBuf,
@@ -20,22 +21,21 @@ pub async fn run_bench(
 
     let one_line = serde_json::to_string(&serde_json::from_str::<Value>(&payload)?)?;
 
-    info!("===Starting benchmark===");
-    info!(
-        "uds={:?} payload={:?} bytes/line={} connections={}",
-        socket,
-        payload_path,
-        payload.len(),
-        connections,
-    );
-
     let mut line = Vec::with_capacity(one_line.len() + 1);
     line.extend_from_slice(one_line.as_bytes());
     line.push(b'\n');
 
+    info!("===Starting {name} benchmark===");
+    info!(
+        "uds={:?} payload={:?} bytes/line={} connections={}",
+        socket,
+        payload_path,
+        line.len(),
+        connections,
+    );
+
     let max_bytes = max_bytes;
     let seconds = seconds;
-    let bytes_per_event = line.len() as u64;
     let mut handles = Vec::with_capacity(connections as usize);
 
     for _ in 0..connections {
@@ -67,19 +67,10 @@ pub async fn run_bench(
         }));
     }
 
-    let appends: u64 = futures::future::try_join_all(handles)
+    futures::future::try_join_all(handles)
         .await?
         .into_iter()
         .try_fold(0u64, |acc, res| res.map(|v| acc + v))?;
-
-    let total_bytes = appends * bytes_per_event;
-    let mb_per_sec = (total_bytes as f64 / (1024.0 * 1024.0)) / seconds as f64;
-
-    info!(
-        "events per second = {}, MB per second = {:.2}",
-        appends / seconds,
-        mb_per_sec
-    );
 
     Ok(())
 }

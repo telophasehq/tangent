@@ -5,10 +5,12 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::msk::MSKConfig;
+use crate::s3::S3Config;
 use crate::socket::SocketConfig;
 use crate::sqs::SQSConfig;
 
 pub mod msk;
+pub mod s3;
 pub mod socket;
 pub mod sqs;
 
@@ -27,18 +29,68 @@ pub struct Config {
     pub workers: usize,
 
     #[serde(default)]
-    pub consumers: std::collections::BTreeMap<String, Consumer>,
+    pub sources: std::collections::BTreeMap<String, SourceConfig>,
+
+    #[serde(default)]
+    pub sinks: std::collections::BTreeMap<String, SinkConfig>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
-pub enum Consumer {
+pub enum SourceConfig {
     #[serde(rename = "msk")]
     MSK(MSKConfig),
     #[serde(rename = "socket")]
     Socket(SocketConfig),
     #[serde(rename = "sqs")]
     SQS(SQSConfig),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CommonSinkOptions {
+    #[serde(default = "object_max_bytes")]
+    pub object_max_bytes: usize,
+
+    #[serde(default = "in_flight_limit")]
+    pub in_flight_limit: usize,
+
+    #[serde(default = "wal_path")]
+    pub wal_path: PathBuf,
+
+    #[serde(default = "max_file_age_seconds")]
+    pub max_file_age_seconds: u64,
+}
+
+fn object_max_bytes() -> usize {
+    134217728
+}
+
+fn in_flight_limit() -> usize {
+    16
+}
+
+fn wal_path() -> PathBuf {
+    "/tmp/wal".into()
+}
+
+fn max_file_age_seconds() -> u64 {
+    60
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SinkConfig {
+    #[serde(flatten)]
+    pub common: CommonSinkOptions,
+
+    #[serde(flatten)]
+    pub kind: SinkKind,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum SinkKind {
+    #[serde(rename = "s3")]
+    S3(S3Config),
 }
 
 fn default_batch_size() -> usize {

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-use crate::worker::{Incoming, Record, WorkerPool};
+use crate::worker::{Record, WorkerPool};
 use tangent_shared::msk::{MSKAuth, MSKConfig};
 
 #[derive(Default)]
@@ -56,7 +56,7 @@ impl ClientContext for Ctx {
             let (total_lag, max_lag, assigned) = lag_from_stats(&s);
             let cg_state = s.cgrp.as_ref().map(|c| c.state.as_str()).unwrap_or("n/a");
 
-            tracing::info!(target:"kafka_stats",
+            tracing::debug!(target:"kafka_stats",
                 msgs_per_s = format_args!("{:.0}", msgs_per_s),
                 mib_per_s  = format_args!("{:.2}", mib_per_s),
                 cg_state   = %cg_state,
@@ -93,10 +93,10 @@ pub async fn run_consumer(
                     match msg {
                         Ok(m) => {
                             if let Some(p) = m.payload() {
-                                let _ = pool2.dispatch(Incoming::Record(Record{
+                                let _ = pool2.dispatch(Record{
                                     payload: Bytes::copy_from_slice(p),
                                     ack: None,
-                            })).await;
+                            }).await;
                             }
                         }
                         Err(e) => {
@@ -133,7 +133,7 @@ pub fn build_consumer(kc: &MSKConfig) -> Result<StreamConsumer<Ctx>> {
         cfg.set("ssl.key.location", p);
     }
 
-    let mechanism = match &kc.auth {
+    match &kc.auth {
         MSKAuth::Scram {
             sasl_mechanism,
             username,
@@ -142,7 +142,6 @@ pub fn build_consumer(kc: &MSKConfig) -> Result<StreamConsumer<Ctx>> {
             cfg.set("sasl.mechanism", sasl_mechanism)
                 .set("sasl.username", username)
                 .set("sasl.password", password);
-            "SCRAM"
         }
     };
 
@@ -156,6 +155,5 @@ pub fn build_consumer(kc: &MSKConfig) -> Result<StreamConsumer<Ctx>> {
         .create_with_context(ctx)
         .map_err(|e| anyhow!("creating StreamConsumer failed: {e:#?}"))?;
 
-    tracing::info!("Kafka consumer built with {}", mechanism);
     Ok(consumer)
 }

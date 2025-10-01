@@ -4,8 +4,9 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tangent_shared::{Config, Consumer};
+use tangent_shared::{Config, SourceConfig};
 
+mod metrics;
 mod msk;
 mod socket;
 mod sqs;
@@ -67,6 +68,7 @@ async fn main() -> Result<()> {
     for payload in payloads {
         run_bench(
             &cfg,
+            &args.metrics_url,
             args.connections,
             args.max_bytes,
             args.seconds,
@@ -82,6 +84,7 @@ async fn main() -> Result<()> {
 
 async fn run_bench(
     cfg: &Config,
+    metrics_url: &String,
     connections: u16,
     max_bytes: usize,
     seconds: u64,
@@ -89,19 +92,30 @@ async fn run_bench(
     bucket: Option<String>,
     obj_prefix: Option<String>,
 ) -> Result<()> {
-    for consumer in &cfg.consumers {
+    for src in &cfg.sources {
         let pd = payload.clone();
-        match consumer {
-            (name, Consumer::Socket(sc)) => {
-                socket::run_bench(sc.socket_path.clone(), connections, pd, max_bytes, seconds)
-                    .await?;
+        let before = metrics::scrape_stats(&metrics_url).await?;
+        let t0 = std::time::Instant::now();
+
+        match src {
+            (name, SourceConfig::Socket(sc)) => {
+                socket::run_bench(
+                    name,
+                    sc.socket_path.clone(),
+                    connections,
+                    pd,
+                    max_bytes,
+                    seconds,
+                )
+                .await?;
             }
-            (name, Consumer::MSK(mc)) => {
-                msk::run_bench(mc, connections, pd, max_bytes, seconds).await?;
+            (name, SourceConfig::MSK(mc)) => {
+                msk::run_bench(name, mc, connections, pd, max_bytes, seconds).await?;
             }
-            (name, Consumer::SQS(sq)) => {
+            (name, SourceConfig::SQS(sq)) => {
                 if let Some(ref b) = bucket {
                     sqs::run_bench(
+                        name,
                         sq,
                         b.clone(),
                         obj_prefix.clone(),
@@ -116,6 +130,31 @@ async fn run_bench(
                 }
             }
         }
+
+        let drained = metrics::wait_for_drain(&metrics_url).await?;
+        let elapsed = t0.elapsed().as_secs_f64();
+
+        let in_bytes = (drained.consumer_bytes - before.consumer_bytes) as f64;
+        let out_bytes = (drained.sink_bytes - before.sink_bytes) as f64;
+        let amp = if in_bytes > 0.0 {
+            out_bytes / in_bytes
+        } else {
+            0.0
+        };
+
+        let in_mibs = in_bytes / (1024.0 * 1024.0);
+        let out_mibs = out_bytes / (1024.0 * 1024.0);
+        let in_mibs_s = in_mibs / elapsed;
+        let out_mibs_s = out_mibs / elapsed;
+
+        println!(
+            "end-to-end: uploaded={:.2} MiB over {:.2}s → {:.2} MiB/s (amplification x{:.2})",
+            out_mibs, elapsed, out_mibs_s, amp
+        );
+        println!(
+            "producer bytes (consumed): {:.2} MiB → {:.2} MiB/s",
+            in_mibs, in_mibs_s
+        );
     }
 
     Ok(())
