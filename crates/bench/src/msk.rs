@@ -63,8 +63,6 @@ pub async fn run_bench(
         } => build_scram_producer(&kcfg.bootstrap_servers, username, password),
     };
 
-    let bytes_per_event = line.len() as u64;
-
     let topic = kcfg.topic.clone();
     let seconds = seconds;
     let max_bytes = max_bytes;

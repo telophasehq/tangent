@@ -154,7 +154,7 @@ impl WALSink for S3Sink {
             .await
             .with_context(|| format!("complete_multipart_upload {}/{}", self.bucket_name, key))?;
 
-        tracing::debug!("multipart uploaded {} to {}", key, self.bucket_name);
+        tracing::info!("upload completed {} to {}", key, self.bucket_name);
         Ok(())
     }
 }

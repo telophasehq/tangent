@@ -80,7 +80,12 @@ struct Args {
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    let (nb, _guard) = tracing_appender::non_blocking(std::io::stderr());
+    tracing_subscriber::fmt()
+        .with_writer(nb)
+        .with_env_filter(filter)
+        .init();
+
     let _exporter =
         prometheus_exporter::start("0.0.0.0:9184".parse().expect("failed to parse binding"))
             .expect("failed to start prometheus exporter");

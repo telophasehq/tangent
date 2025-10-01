@@ -36,7 +36,6 @@ pub async fn run_bench(
 
     let max_bytes = max_bytes;
     let seconds = seconds;
-    let bytes_per_event = line.len() as u64;
     let mut handles = Vec::with_capacity(connections as usize);
 
     for _ in 0..connections {

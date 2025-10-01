@@ -133,17 +133,11 @@ impl Worker {
             .await
             .map_err(|e| anyhow::anyhow!("sink queue full: {e}"))?;
 
-        for ack in acks.drain(..) {
-            if let Err(e) = ack.ack().await {
-                tracing::warn!("ack failed: {e}");
-            }
-        }
-
         let secs = start.elapsed().as_secs_f64();
         BATCH_LATENCY.observe(secs);
         BATCH_EVENTS.inc_by(*events_in_batch as u64);
 
-        tracing::info!(
+        tracing::debug!(
             target: "sidecar",
             worker = self.id,
             events = *events_in_batch,
