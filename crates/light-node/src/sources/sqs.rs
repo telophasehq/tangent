@@ -9,7 +9,7 @@ use std::{sync::Arc, time::Duration};
 use tangent_shared::sqs::SQSConfig;
 use tokio_util::sync::CancellationToken;
 
-use crate::worker::{Ack, Incoming, Record, WorkerPool};
+use crate::worker::{Ack, Record, WorkerPool};
 
 pub async fn run_consumer(
     cfg: SQSConfig,
@@ -45,10 +45,10 @@ pub async fn run_consumer(
                                             b.extend_from_slice(body.as_bytes());
                                             b.extend_from_slice(b"\n");
 
-                                            let _ = pool.dispatch(Incoming::Record(Record {
+                                            let _ = pool.dispatch(Record {
                                                 payload: b.into(),
                                                 ack: Some(ack),
-                                            })).await;
+                                            }).await;
                                             continue;
                                         }
                                     };
@@ -84,6 +84,7 @@ pub async fn run_consumer(
                                                         final_ack = Some(a);
                                                     }
                                                 }
+
                                                 dispatch_ndjson_chunks(pool.clone(), bytes, max_chunk, final_ack).await;
                                             }
                                         }
@@ -155,19 +156,19 @@ async fn dispatch_ndjson_chunks(
         if line.len() > max_chunk && cur.is_empty() {
             chunks_left -= 1;
             let final_ack = if chunks_left == 0 { ack.clone() } else { None };
-            pool.dispatch(Incoming::Record(Record {
+            pool.dispatch(Record {
                 payload: Bytes::copy_from_slice(line),
                 ack: final_ack,
-            }))
+            })
             .await;
         } else {
             if cur.len() + line.len() > max_chunk {
                 chunks_left -= 1;
                 let final_ack = if chunks_left == 0 { ack.clone() } else { None };
-                pool.dispatch(Incoming::Record(Record {
+                pool.dispatch(Record {
                     payload: cur.split().freeze(),
                     ack: final_ack,
-                }))
+                })
                 .await;
             }
             cur.extend_from_slice(line);
@@ -179,10 +180,10 @@ async fn dispatch_ndjson_chunks(
     if !cur.is_empty() {
         chunks_left -= 1;
         let final_ack = if chunks_left == 0 { ack } else { None };
-        pool.dispatch(Incoming::Record(Record {
+        pool.dispatch(Record {
             payload: cur.freeze(),
             ack: final_ack,
-        }))
+        })
         .await;
     }
 }

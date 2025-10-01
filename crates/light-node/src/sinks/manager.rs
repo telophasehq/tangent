@@ -15,9 +15,9 @@ use crate::{
 
 #[async_trait]
 pub trait Sink: Send + Sync {
-    async fn write(&self, payload: Bytes) -> anyhow::Result<()>;
+    async fn write(&self, payload: Bytes) -> Result<()>;
 
-    async fn flush(&self) -> anyhow::Result<()> {
+    async fn flush(&self) -> Result<()> {
         Ok(())
     }
 }
@@ -44,6 +44,7 @@ impl SinkManager {
                     wal::DurableFileSink::new(
                         remote,
                         cfg.common.wal_path.clone(),
+                        cfg.common.in_flight_limit,
                         cfg.common.object_max_bytes,
                     )
                     .await?,

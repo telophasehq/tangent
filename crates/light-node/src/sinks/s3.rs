@@ -1,10 +1,10 @@
 use anyhow::{bail, Result};
 use aws_sdk_s3::Client;
 use aws_smithy_types::byte_stream::ByteStream;
-use bytes::Bytes;
+use std::path::Path;
 use tangent_shared::s3::S3Config;
 
-use crate::sinks::manager::Sink;
+use crate::sinks::wal::WALSink;
 
 pub struct S3Sink {
     name: String,
@@ -13,17 +13,24 @@ pub struct S3Sink {
 }
 
 #[async_trait::async_trait]
-impl Sink for S3Sink {
-    async fn write(&self, payload: Bytes) -> Result<()> {
-        let id = ulid::Ulid::new().to_string();
-        let key = format!("tangent-{id}.ndjson");
+impl WALSink for S3Sink {
+    async fn write_path(&self, path: &Path) -> Result<()> {
+        let body = ByteStream::from_path(path).await?;
+        let key = path
+            .file_name()
+            .and_then(|os| os.to_str()) // convert OsStr → &str
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                let id = ulid::Ulid::new().to_string();
+                format!("tangent-{id}.ndjson")
+            });
 
         let put_res = self
             .client
             .put_object()
             .bucket(&self.bucket_name)
             .key(&key)
-            .body(ByteStream::from(payload))
+            .body(body)
             .send()
             .await;
 

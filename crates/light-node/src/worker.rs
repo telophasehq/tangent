@@ -14,15 +14,11 @@ use wasmtime::Store;
 
 use crate::sinks::manager::{SinkItem, SinkManager};
 use crate::wasm::{self, Host, Processor};
-use crate::{BATCH_EVENTS, BATCH_LATENCY};
+use crate::{BATCH_EVENTS, BATCH_LATENCY, CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL};
 
 #[async_trait]
 pub trait Ack: Send + Sync {
     async fn ack(&self) -> Result<()>;
-}
-
-pub enum Incoming {
-    Record(Record),
 }
 
 pub struct Record {
@@ -32,7 +28,7 @@ pub struct Record {
 
 pub struct Worker {
     id: usize,
-    rx: mpsc::Receiver<Incoming>,
+    rx: mpsc::Receiver<Record>,
     store: Store<Host>,
     processor: Processor,
     batch_max_size: usize,
@@ -58,7 +54,7 @@ impl Worker {
                             let _ = self.flush_batch(&mut batch, &mut acks, &mut events).await;
                             break;
                         }
-                        Some(Incoming::Record(rec)) => {
+                        Some(rec) => {
                             if batch.is_empty() {
                                 deadline = TokioInstant::now() + self.batch_max_age;
                                 sleeper.as_mut().reset(deadline);
@@ -162,7 +158,7 @@ impl Worker {
 }
 
 pub struct WorkerPool {
-    senders: Vec<mpsc::Sender<Incoming>>,
+    senders: Vec<mpsc::Sender<Record>>,
     rr: AtomicUsize,
     handles: Vec<JoinHandle<()>>,
 }
@@ -180,7 +176,7 @@ impl WorkerPool {
 
         let ch_capacity = 4096;
         for i in 0..size {
-            let (tx, rx) = mpsc::channel::<Incoming>(ch_capacity);
+            let (tx, rx) = mpsc::channel::<Record>(ch_capacity);
             senders.push(tx);
 
             let mut store = engine.make_store();
@@ -224,13 +220,16 @@ impl WorkerPool {
         })
     }
 
-    pub async fn dispatch(&self, mut job: Incoming) {
+    pub async fn dispatch(&self, mut job: Record) {
         let n = self.senders.len();
         if n == 0 {
             tracing::warn!("worker pool is closed; dropping job");
             return;
         }
         let start = self.rr.fetch_add(1, Ordering::Relaxed) % n;
+
+        CONSUMER_BYTES_TOTAL.inc_by(job.payload.len() as u64);
+        CONSUMER_OBJECTS_TOTAL.inc();
 
         for i in 0..n {
             let idx = (start + i) % n;

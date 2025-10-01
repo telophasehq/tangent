@@ -1,12 +1,14 @@
+use anyhow::Result;
+use async_trait::async_trait;
 use bytes::Bytes;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicUsize, Ordering, Ordering::Acquire},
     Arc,
 };
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use ulid::Ulid;
 
 use crate::sinks::manager::Sink;
@@ -15,10 +17,11 @@ use crate::{
     WAL_SEALED_BYTES_TOTAL, WAL_SEALED_FILES_TOTAL,
 };
 
-pub struct DurableFileSink<S: Sink> {
-    inner: Arc<S>,
+pub struct DurableFileSink {
+    inner: Arc<dyn WALSink>,
     dir: PathBuf,
     inflight: Arc<AtomicUsize>,
+    max_inflight: Arc<Semaphore>,
     max_file_size: usize,
     cur: Mutex<Current>,
 }
@@ -29,12 +32,18 @@ struct Current {
     bytes: usize,
 }
 
-impl<S: Sink + 'static> DurableFileSink<S> {
+#[async_trait]
+pub trait WALSink: Send + Sync {
+    async fn write_path(&self, path: &Path) -> Result<()>;
+}
+
+impl DurableFileSink {
     pub async fn new(
-        inner: Arc<S>,
+        inner: Arc<dyn WALSink>,
         dir: impl AsRef<Path>,
+        max_inflight: usize,
         max_file_size: usize,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         tokio::fs::create_dir_all(&dir).await?;
 
@@ -49,6 +58,7 @@ impl<S: Sink + 'static> DurableFileSink<S> {
             inner,
             dir,
             inflight: Default::default(),
+            max_inflight: Arc::new(tokio::sync::Semaphore::new(max_inflight)),
             max_file_size: max_file_size.into(),
             cur: Mutex::new(Current {
                 path,
@@ -61,12 +71,6 @@ impl<S: Sink + 'static> DurableFileSink<S> {
     }
 
     async fn retry_leftovers(&self) {
-        // Snapshot current path once to avoid locking per entry
-        let current_path = {
-            let cur = self.cur.lock().await;
-            cur.path.clone()
-        };
-
         let mut rd = match tokio::fs::read_dir(&self.dir).await {
             Ok(r) => r,
             Err(_) => return,
@@ -74,7 +78,11 @@ impl<S: Sink + 'static> DurableFileSink<S> {
 
         while let Some(ent) = rd.next_entry().await.ok().flatten() {
             let path = ent.path();
-            if path == current_path {
+            let is_current = {
+                let cur = self.cur.lock().await;
+                path == cur.path
+            };
+            if is_current {
                 continue;
             }
 
@@ -93,7 +101,8 @@ impl<S: Sink + 'static> DurableFileSink<S> {
         }
     }
 
-    async fn rotate_locked(&self, cur: &mut Current) -> anyhow::Result<()> {
+    async fn rotate_locked(&self, cur: &mut Current) -> Result<()> {
+        tracing::warn!("rotating cur");
         if let Some(f) = cur.file.take() {
             f.sync_data().await?;
             drop(f);
@@ -121,20 +130,23 @@ impl<S: Sink + 'static> DurableFileSink<S> {
     }
 
     async fn spawn_upload(&self, path: PathBuf, size: u64) {
+        let permit = self.max_inflight.clone().acquire_owned().await.unwrap();
         self.inflight.fetch_add(1, Ordering::AcqRel);
         let inner = self.inner.clone();
         let inflight = self.inflight.clone();
         tokio::spawn(async move {
             let res = async {
-                let buf = tokio::fs::read(&path).await?;
+                tracing::warn!("calling s3 write");
 
                 // TODO: use streaming where possible.
-                inner.write(Bytes::from(buf)).await?;
+                inner.write_path(&path).await?;
+                tracing::warn!("called s3 write");
                 tokio::fs::remove_file(&path).await?;
                 anyhow::Ok(())
             }
             .await;
 
+            drop(permit);
             match res {
                 Ok(()) => {
                     SINK_OBJECTS_TOTAL.inc();
@@ -153,8 +165,8 @@ impl<S: Sink + 'static> DurableFileSink<S> {
 }
 
 #[async_trait::async_trait]
-impl<S: Sink + 'static> Sink for DurableFileSink<S> {
-    async fn write(&self, payload: Bytes) -> anyhow::Result<()> {
+impl Sink for DurableFileSink {
+    async fn write(&self, payload: Bytes) -> Result<()> {
         if payload.is_empty() {
             tracing::error!(target = "wal", "WAL got EMPTY payload");
         }
@@ -176,7 +188,7 @@ impl<S: Sink + 'static> Sink for DurableFileSink<S> {
         Ok(())
     }
 
-    async fn flush(&self) -> anyhow::Result<()> {
+    async fn flush(&self) -> Result<()> {
         {
             let mut cur = self.cur.lock().await;
             if cur.bytes > 0 {
@@ -186,7 +198,6 @@ impl<S: Sink + 'static> Sink for DurableFileSink<S> {
             }
         }
 
-        use std::sync::atomic::Ordering::Acquire;
         loop {
             let mut rd = tokio::fs::read_dir(&self.dir).await?;
             let mut any_sealed = false;
@@ -206,6 +217,7 @@ impl<S: Sink + 'static> Sink for DurableFileSink<S> {
                 break;
             }
             if any_sealed {
+                tracing::warn!("retrying leftovers");
                 self.retry_leftovers().await;
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;

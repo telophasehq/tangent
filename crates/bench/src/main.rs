@@ -131,19 +131,11 @@ async fn run_bench(
         }
 
         let after = metrics::scrape_stats(&metrics_url).await?;
-        let delta = metrics::Stats {
-            batch_objects: after.batch_objects - before.batch_objects,
-            sink_bytes: after.sink_bytes - before.sink_bytes,
-            sink_objects: after.sink_objects - before.sink_objects,
-            consumer_bytes: after.consumer_bytes - before.consumer_bytes,
-            consumer_objects: after.consumer_objects - before.consumer_objects,
-            inflight: after.inflight,
-        };
         println!(
             "processed: events={}, bytes≈{:.2} MiB, objects={}",
-            delta.batch_objects as u64,
-            delta.sink_bytes / (1024.0 * 1024.0),
-            delta.sink_objects as u64
+            after.batch_objects as u64,
+            after.sink_bytes as u64 / 1024 / 1024,
+            after.sink_objects as u64
         );
 
         println!("waiting for inflight messages to finish to verify correctness...");

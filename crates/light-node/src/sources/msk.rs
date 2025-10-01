@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-use crate::worker::{Incoming, Record, WorkerPool};
+use crate::worker::{Record, WorkerPool};
 use tangent_shared::msk::{MSKAuth, MSKConfig};
 
 #[derive(Default)]
@@ -93,10 +93,10 @@ pub async fn run_consumer(
                     match msg {
                         Ok(m) => {
                             if let Some(p) = m.payload() {
-                                let _ = pool2.dispatch(Incoming::Record(Record{
+                                let _ = pool2.dispatch(Record{
                                     payload: Bytes::copy_from_slice(p),
                                     ack: None,
-                            })).await;
+                            }).await;
                             }
                         }
                         Err(e) => {

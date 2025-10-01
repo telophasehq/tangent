@@ -21,7 +21,6 @@ mod wasm;
 mod worker;
 
 lazy_static::lazy_static! {
-    // Existing
     static ref BATCH_LATENCY: Histogram = register_histogram!(
         "tangent_batch_seconds", "Batch call latency (sec)",
         vec![5e-5,1e-4,2e-4,4e-4,8e-4,1.6e-3,3.2e-3,6.4e-3,1.28e-2,2.56e-2,5.12e-2,0.102,0.204,0.409,0.819,1.638]
@@ -82,9 +81,6 @@ async fn main() -> Result<()> {
     let _exporter =
         prometheus_exporter::start("0.0.0.0:9184".parse().expect("failed to parse binding"))
             .expect("failed to start prometheus exporter");
-
-    let _ = &*BATCH_LATENCY;
-    let _ = &*BATCH_EVENTS;
 
     let args = &Args::parse();
     let cfg = Config::from_file(&args.config)?;
