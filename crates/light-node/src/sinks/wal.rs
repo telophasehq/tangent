@@ -188,7 +188,7 @@ impl DurableFileSink {
                     Compression::Zstd { level } => compress_zstd_to_file(&path_cl, level).await?,
                 };
 
-                inner.write_path(&path_cl).await?;
+                inner.write_path(&upload_path).await?;
 
                 let _ = tokio::fs::remove_file(&upload_path).await;
                 let _ = tokio::fs::remove_file(&path_cl).await;

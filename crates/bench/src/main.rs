@@ -149,7 +149,7 @@ async fn run_bench(
         let out_mibs_uncompressed = out_bytes_uncompressed / (1024.0 * 1024.0);
         let in_mibs_s = in_mibs / elapsed;
         let out_mibs_s = out_mibs / elapsed;
-        let out_mibs_uncompressed_s = out_bytes_uncompressed / elapsed;
+        let out_mibs_uncompressed_s = out_mibs_uncompressed / elapsed;
 
         println!(
             "end-to-end: uploaded={:.2} MiB ({:.2} MiB uncompressed) over {:.2}s → {:.2} MiB/s ({:.2} MiB/s uncompressed) (amplification x{:.5})",
