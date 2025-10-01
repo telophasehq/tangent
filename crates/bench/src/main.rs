@@ -134,15 +134,26 @@ async fn run_bench(
         let drained = metrics::wait_for_drain(&metrics_url).await?;
         let elapsed = t0.elapsed().as_secs_f64();
 
-        let delta_sink_bytes = (drained.sink_bytes - before.sink_bytes) as u64;
+        let in_bytes = (drained.consumer_bytes - before.consumer_bytes) as f64;
+        let out_bytes = (drained.sink_bytes - before.sink_bytes) as f64;
+        let amp = if in_bytes > 0.0 {
+            out_bytes / in_bytes
+        } else {
+            0.0
+        };
 
-        let mib = delta_sink_bytes as f64 / (1024.0 * 1024.0);
-        let mbps = delta_sink_bytes as f64 / (elapsed * 1_000_000.0);
-        let mibs = delta_sink_bytes as f64 / (elapsed * 1024.0 * 1024.0);
+        let in_mibs = in_bytes / (1024.0 * 1024.0);
+        let out_mibs = out_bytes / (1024.0 * 1024.0);
+        let in_mibs_s = in_mibs / elapsed;
+        let out_mibs_s = out_mibs / elapsed;
 
         println!(
-            "end-to-end: sink_bytes={:.2} MiB over {:.2}s → {:.2} MB/s ({:.2} MiB/s)",
-            mib, elapsed, mbps, mibs
+            "end-to-end: uploaded={:.2} MiB over {:.2}s → {:.2} MiB/s (amplification x{:.2})",
+            out_mibs, elapsed, out_mibs_s, amp
+        );
+        println!(
+            "producer bytes (consumed): {:.2} MiB → {:.2} MiB/s",
+            in_mibs, in_mibs_s
         );
     }
 

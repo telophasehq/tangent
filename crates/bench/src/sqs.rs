@@ -43,7 +43,7 @@ pub async fn run_bench(
         bucket,
         cfg.queue_url,
         payload_path.display(),
-        line.len(),
+        line_len,
         connections,
         seconds
     );
@@ -98,21 +98,9 @@ pub async fn run_bench(
         }));
     }
 
-    // Aggregate results
-    let mut total_objects: u64 = 0;
     for h in handles {
-        let objs = h.await??;
-        total_objects += objs;
+        h.await??;
     }
-
-    let total_bytes = total_objects * (line_len as u64);
-    let mb_per_sec = (total_bytes as f64 / (1024.0 * 1024.0)) / (seconds as f64);
-
-    info!(
-        "objects/sec = {},  MB/sec = {:.2}",
-        total_objects / seconds,
-        mb_per_sec
-    );
 
     Ok(())
 }
