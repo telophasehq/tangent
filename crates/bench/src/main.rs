@@ -132,10 +132,10 @@ async fn run_bench(
 
         let after = metrics::scrape_stats(&metrics_url).await?;
         println!(
-            "processed: events={}, bytes≈{:.2} MiB, objects={}",
+            "processed: events={}, bytes={:.2} MiB, bytes/s={:.2} MB",
             after.batch_objects as u64,
             after.sink_bytes as u64 / 1024 / 1024,
-            after.sink_objects as u64
+            after.sink_bytes as u64 / 1_000_000 / seconds
         );
 
         println!("waiting for inflight messages to finish to verify correctness...");

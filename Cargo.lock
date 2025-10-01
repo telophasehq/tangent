@@ -2289,6 +2289,8 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "aws-sdk-sqs",
+ "aws-smithy-http",
+ "aws-smithy-runtime-api",
  "aws-smithy-types",
  "bytes",
  "chrono",

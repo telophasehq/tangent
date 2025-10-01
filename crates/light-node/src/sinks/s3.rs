@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
+use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::byte_stream::ByteStream;
 use std::path::Path;
 use tokio::io::AsyncReadExt;
@@ -25,14 +26,37 @@ impl WALSink for S3Sink {
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("tangent-{}.ndjson", Ulid::new()));
 
-        let create = self
+        let create_res = self
             .client
             .create_multipart_upload()
             .bucket(&self.bucket_name)
             .key(&key)
             .send()
-            .await
-            .with_context(|| format!("create_multipart_upload {}/{}", self.bucket_name, key))?;
+            .await;
+
+        let create = match create_res {
+            Ok(o) => o,
+            Err(e) => {
+                match &e {
+                    SdkError::ServiceError(se) => {
+                        let err = se.err();
+                        tracing::warn!(
+                            "create_multipart_upload failed: code={:?} msg={:?} status={:?}",
+                            err.meta().code(),
+                            err.meta().message(),
+                            se.raw().status(),
+                        );
+                    }
+                    other => tracing::warn!("create_multipart_upload transport error: {:?}", other),
+                }
+                bail!(
+                    "create_multipart_upload {}/{}: {:?}",
+                    self.bucket_name,
+                    key,
+                    e
+                );
+            }
+        };
 
         let upload_id = create
             .upload_id()

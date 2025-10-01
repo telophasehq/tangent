@@ -102,7 +102,6 @@ impl DurableFileSink {
     }
 
     async fn rotate_locked(&self, cur: &mut Current) -> Result<()> {
-        tracing::warn!("rotating cur");
         if let Some(f) = cur.file.take() {
             f.sync_data().await?;
             drop(f);
@@ -136,11 +135,7 @@ impl DurableFileSink {
         let inflight = self.inflight.clone();
         tokio::spawn(async move {
             let res = async {
-                tracing::warn!("calling s3 write");
-
-                // TODO: use streaming where possible.
                 inner.write_path(&path).await?;
-                tracing::warn!("called s3 write");
                 tokio::fs::remove_file(&path).await?;
                 anyhow::Ok(())
             }
@@ -217,7 +212,6 @@ impl Sink for DurableFileSink {
                 break;
             }
             if any_sealed {
-                tracing::warn!("retrying leftovers");
                 self.retry_leftovers().await;
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;

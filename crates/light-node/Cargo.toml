@@ -35,3 +35,5 @@ memchr = "2.7.6"
 futures-util = { version = "0.3.31", features = ["sink"] }
 ulid = "1.2.1"
 rand = "0.9.2"
+aws-smithy-http = "0.62.3"
+aws-smithy-runtime-api = "1.9.0"
