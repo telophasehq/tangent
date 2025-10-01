@@ -159,6 +159,23 @@ async fn run_bench(
             "producer bytes (consumed): {:.2} MiB → {:.2} MiB/s",
             in_mibs, in_mibs_s
         );
+
+        let guest_bytes_delta = drained.guest_bytes - before.guest_bytes;
+        let guest_sum_delta = drained.guest_seconds_sum - before.guest_seconds_sum;
+        let guest_cnt_delta = drained.guest_seconds_count - before.guest_seconds_count;
+
+        let guest_avg_ms = if guest_cnt_delta > 0.0 {
+            (guest_sum_delta / guest_cnt_delta) * 1_000.0
+        } else {
+            0.0
+        };
+
+        println!(
+            "guest: bytes_in={:.2} MiB, avg_latency={:.3} ms (over {:.0} calls)",
+            guest_bytes_delta / (1024.0 * 1024.0),
+            guest_avg_ms,
+            guest_cnt_delta
+        );
     }
 
     Ok(())

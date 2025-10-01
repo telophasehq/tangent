@@ -14,7 +14,7 @@ use wasmtime::Store;
 
 use crate::sinks::manager::{SinkItem, SinkManager};
 use crate::wasm::{self, Host, Processor};
-use crate::{BATCH_EVENTS, BATCH_LATENCY, CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL};
+use crate::{CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, GUEST_BYTES_TOTAL, GUEST_LATENCY};
 
 #[async_trait]
 pub trait Ack: Send + Sync {
@@ -106,9 +106,9 @@ impl Worker {
             return Ok(());
         }
 
-        let start = Instant::now();
         let s: &mut Store<Host> = &mut self.store;
 
+        let start = Instant::now();
         let out = match self.processor.call_process_logs(s, &batch).await {
             Err(host) => {
                 return Err(anyhow::anyhow!("process_logs host error: {host}"));
@@ -122,6 +122,12 @@ impl Worker {
                 return Ok(());
             }
         };
+        let secs = start.elapsed().as_secs_f64();
+        GUEST_LATENCY
+            .with_label_values(&[&self.id.to_string()])
+            .observe(secs);
+
+        GUEST_BYTES_TOTAL.inc_by(batch.len() as u64);
 
         let sink_payload: Bytes = Bytes::from(out);
         let pending_acks = std::mem::take(acks);
@@ -132,10 +138,6 @@ impl Worker {
             })
             .await
             .map_err(|e| anyhow::anyhow!("sink queue full: {e}"))?;
-
-        let secs = start.elapsed().as_secs_f64();
-        BATCH_LATENCY.observe(secs);
-        BATCH_EVENTS.inc_by(*events_in_batch as u64);
 
         tracing::debug!(
             target: "sidecar",
@@ -179,7 +181,6 @@ impl WorkerPool {
             let start = Instant::now();
             match processor.call_process_logs(&mut store, b"{}").await? {
                 Ok(_) => {
-                    BATCH_LATENCY.observe(start.elapsed().as_secs_f64());
                     tracing::info!(target:"sidecar",
                         "worker {i} warmup in {} µs", start.elapsed().as_micros());
                 }
