@@ -1,11 +1,13 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
+use rand::{rng, Rng};
 use std::{sync::Arc, time::Duration};
 use tangent_shared::{SinkConfig, SinkKind};
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
-use tokio::time::Instant;
+use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
+use tokio::task::{JoinHandle, JoinSet};
+use tokio::time::{sleep, Instant};
+use tokio_util::sync::CancellationToken;
 
 use crate::INFLIGHT;
 use crate::{
@@ -31,92 +33,135 @@ pub struct SinkManager {
     tx: mpsc::Sender<SinkItem>,
     handles: Vec<JoinHandle<()>>,
     sink: Arc<dyn Sink>,
+    cancel: CancellationToken,
 }
 
 impl SinkManager {
-    pub async fn new(name: &String, cfg: &SinkConfig, queue_capacity: usize) -> Result<Self> {
+    pub async fn new(
+        name: &String,
+        cfg: &SinkConfig,
+        queue_capacity: usize,
+        cancel: CancellationToken,
+    ) -> Result<Self> {
         let mut handles = Vec::with_capacity(1usize);
+
         let sink: Arc<dyn Sink> = match &cfg.kind {
             SinkKind::S3(s3cfg) => {
                 let remote = Arc::new(s3::S3Sink::new(name, s3cfg).await?);
 
-                Arc::new(
-                    wal::DurableFileSink::new(
-                        remote,
-                        cfg.common.wal_path.clone(),
-                        cfg.common.in_flight_limit,
-                        cfg.common.object_max_bytes,
-                    )
-                    .await?,
+                wal::DurableFileSink::new(
+                    remote,
+                    cfg.common.wal_path.clone(),
+                    cfg.common.in_flight_limit,
+                    cfg.common.object_max_bytes,
+                    Duration::from_secs(cfg.common.max_file_age_seconds),
+                    cancel.clone(),
                 )
+                .await?
             }
         };
 
         let (tx, mut rx) = mpsc::channel::<SinkItem>(queue_capacity);
-        let sem = Arc::new(tokio::sync::Semaphore::new(cfg.common.in_flight_limit));
-        let h = tokio::spawn({
-            let sem = sem.clone();
-            let sink_for_worker = sink.clone();
-            async move {
-                while let Some(mut item) = rx.recv().await {
-                    let sink = sink_for_worker.clone();
-                    let sem = sem.clone();
+        let sem = Arc::new(Semaphore::new(cfg.common.in_flight_limit));
 
+        let sink_cloned = sink.clone();
+        let sem_cloned = sem.clone();
+        let cancel_cloned = cancel.clone();
+
+        let h = tokio::spawn(async move {
+            let mut js = JoinSet::new();
+            while let Some(mut item) = rx.recv().await {
+                if cancel_cloned.is_cancelled() {
+                    break;
+                }
+
+                let sink = sink_cloned.clone();
+                let permit = match sem_cloned.clone().acquire_owned().await {
+                    Ok(p) => p,
+                    Err(_) => break,
+                };
+                let token = cancel_cloned.child_token();
+
+                js.spawn(async move {
+                    let _permit: OwnedSemaphorePermit = permit;
+                    let start = Instant::now();
                     let mut delay = Duration::from_millis(50);
-                    let permit = sem.acquire_owned().await.unwrap();
-                    tokio::spawn(async move {
-                        let start = Instant::now();
-                        for attempt in 0.. {
-                            match sink.write(item.payload.clone()).await {
-                                Ok(()) => {
-                                    for a in item.acks.drain(..) {
-                                        if let Err(e) = a.ack().await {
-                                            tracing::warn!("ack failed: {e}");
-                                        }
-                                    }
 
-                                    tracing::info!(
-                                        target: "sidecar",
-                                        bytes = item.payload.len(),
-                                        took_us = start.elapsed().as_micros(),
-                                        "wrote batch"
-                                    );
+                    loop {
+                        if token.is_cancelled() {
+                            tracing::debug!("task cancelled before write");
+                            INFLIGHT.dec();
+                            break;
+                        }
+
+                        match sink.write(item.payload.clone()).await {
+                            Ok(()) => {
+                                for a in item.acks.drain(..) {
+                                    if let Err(e) = a.ack().await {
+                                        tracing::warn!("ack failed: {e}");
+                                    }
+                                }
+
+                                tracing::debug!(
+                                    target: "sidecar",
+                                    bytes = item.payload.len(),
+                                    took_us = start.elapsed().as_micros(),
+                                    "wrote batch"
+                                );
+                                INFLIGHT.dec();
+                                break;
+                            }
+                            Err(e) => {
+                                if token.is_cancelled() {
+                                    tracing::warn!("cancelling retries due to shutdown");
                                     INFLIGHT.dec();
                                     break;
                                 }
-                                Err(e) => {
-                                    tracing::warn!("sink write failed (attempt {attempt}): {e}");
-                                    // TODO: cap attempts → DLQ
-                                    tokio::time::sleep(delay).await;
-                                    delay = delay.saturating_mul(2).min(Duration::from_secs(5));
-                                }
+
+                                tracing::warn!("sink write failed: {e}");
+                                let j = rng().random_range(0..=delay.as_millis() as u64 / 4);
+                                sleep(delay + Duration::from_millis(j)).await;
+                                delay = (delay * 2).min(Duration::from_secs(5));
+                                // TODO: DLQ
                             }
                         }
-                        drop(permit);
-                    });
-                }
+                    }
+                });
             }
+
+            while js.join_next().await.is_some() {}
         });
         handles.push(h);
         Ok(Self {
             tx: tx,
             handles: handles,
             sink: sink,
+            cancel: cancel,
         })
     }
 
-    pub async fn enqueue(&self, item: SinkItem) -> Result<(), mpsc::error::SendError<SinkItem>> {
-        INFLIGHT.inc();
-        self.tx.send(item).await
+    pub fn cancel(&self) {
+        self.cancel.cancel();
     }
 
-    pub async fn join(self) {
-        for h in self.handles {
-            let _ = h.await;
+    pub async fn enqueue(&self, item: SinkItem) -> Result<(), mpsc::error::SendError<SinkItem>> {
+        match self.tx.send(item).await {
+            Ok(()) => {
+                INFLIGHT.inc();
+                Ok(())
+            }
+            Err(e) => Err(e),
         }
+    }
 
+    pub async fn join(self) -> Result<()> {
+        for h in self.handles {
+            h.await?;
+        }
         if let Err(e) = self.sink.flush().await {
             tracing::warn!("sink flush failed during shutdown: {e}");
+            return Err(e);
         }
+        Ok(())
     }
 }

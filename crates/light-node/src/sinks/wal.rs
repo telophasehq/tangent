@@ -1,14 +1,18 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
+use std::cmp::max;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    atomic::{AtomicUsize, Ordering, Ordering::Acquire},
+    atomic::{AtomicUsize, Ordering},
     Arc,
 };
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore};
+use tokio::task::{JoinHandle, JoinSet};
+use tokio::time::{sleep, Duration, Instant};
+use tokio_util::sync::CancellationToken;
 use ulid::Ulid;
 
 use crate::sinks::manager::Sink;
@@ -23,13 +27,17 @@ pub struct DurableFileSink {
     inflight: Arc<AtomicUsize>,
     max_inflight: Arc<Semaphore>,
     max_file_size: usize,
+    max_file_age: Duration,
     cur: Mutex<Current>,
+    rotator: Mutex<Option<JoinHandle<()>>>,
+    uploads: tokio::sync::Mutex<JoinSet<()>>,
 }
 
 struct Current {
     path: PathBuf,
     file: Option<File>,
     bytes: usize,
+    created_at: Instant,
 }
 
 #[async_trait]
@@ -43,7 +51,9 @@ impl DurableFileSink {
         dir: impl AsRef<Path>,
         max_inflight: usize,
         max_file_size: usize,
-    ) -> Result<Self> {
+        max_file_age: Duration,
+        cancel: CancellationToken,
+    ) -> Result<Arc<Self>> {
         let dir = dir.as_ref().to_path_buf();
         tokio::fs::create_dir_all(&dir).await?;
 
@@ -54,19 +64,39 @@ impl DurableFileSink {
             .open(&path)
             .await?;
 
-        let s = Self {
+        let s = Arc::new(Self {
             inner,
             dir,
             inflight: Default::default(),
-            max_inflight: Arc::new(tokio::sync::Semaphore::new(max_inflight)),
+            max_inflight: Arc::new(Semaphore::new(max_inflight)),
             max_file_size: max_file_size.into(),
+            max_file_age: max_file_age,
             cur: Mutex::new(Current {
                 path,
                 file: Some(file),
                 bytes: 0,
+                created_at: Instant::now(),
             }),
-        };
+            rotator: Mutex::new(None),
+            uploads: Mutex::new(JoinSet::new()),
+        });
         s.retry_leftovers().await;
+
+        let s_cloned = s.clone();
+        let handle = tokio::spawn(async move {
+            let tick = max(Duration::from_millis(250), max_file_age / 4);
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = sleep(tick) => {
+                        let should_rotate = { let cur = s_cloned.cur.lock().await; cur.bytes > 0 && cur.created_at.elapsed() >= s_cloned.max_file_age };
+                        if should_rotate { s_cloned.rotate().await.ok(); }
+                    }
+                }
+            }
+        });
+
+        *s.rotator.lock().await = Some(handle);
         Ok(s)
     }
 
@@ -75,9 +105,12 @@ impl DurableFileSink {
             Ok(r) => r,
             Err(_) => return,
         };
-
         while let Some(ent) = rd.next_entry().await.ok().flatten() {
+            if !ent.file_type().await.map(|t| t.is_file()).unwrap_or(false) {
+                continue;
+            }
             let path = ent.path();
+
             let is_current = {
                 let cur = self.cur.lock().await;
                 path == cur.path
@@ -86,45 +119,55 @@ impl DurableFileSink {
                 continue;
             }
 
-            match tokio::fs::metadata(&path).await {
-                Ok(md) => {
-                    let size = md.len();
+            if path.extension().and_then(|e| e.to_str()) != Some("sealed") {
+                continue;
+            }
 
-                    WAL_PENDING_FILES.inc();
-                    WAL_PENDING_BYTES.add(size as i64);
-                    self.spawn_upload(path, size).await;
-                }
-                Err(e) => {
-                    tracing::warn!("leftover stat failed for {:?}: {e}", path);
-                }
+            if let Ok(md) = tokio::fs::metadata(&path).await {
+                let size = md.len();
+                self.spawn_upload(path, size).await;
             }
         }
     }
 
-    async fn rotate_locked(&self, cur: &mut Current) -> Result<()> {
-        if let Some(f) = cur.file.take() {
-            f.sync_data().await?;
-            drop(f);
-        }
-        let sealed = cur.path.clone();
-        let sealed_bytes = cur.bytes as u64;
+    async fn rotate(&self) -> Result<()> {
+        // Do not hold the cur lock while uploading
+        let (sealed_ready, sealed_bytes) = {
+            let mut cur = self.cur.lock().await;
+            if cur.bytes == 0 {
+                return Ok(());
+            }
 
-        WAL_SEALED_FILES_TOTAL.inc();
-        WAL_SEALED_BYTES_TOTAL.inc_by(sealed_bytes);
-        WAL_PENDING_FILES.inc();
-        WAL_PENDING_BYTES.add(sealed_bytes as i64);
+            if let Some(f) = cur.file.take() {
+                f.sync_data().await?;
+            }
 
-        self.spawn_upload(sealed, sealed_bytes).await;
+            let sealed = cur.path.clone();
+            let sealed_bytes = cur.bytes as u64;
 
-        let new_path = make_path(&self.dir);
-        let newf = tokio::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&new_path)
-            .await?;
-        cur.path = new_path;
-        cur.file = Some(newf);
-        cur.bytes = 0;
+            let sealed_ready = sealed.with_extension("sealed");
+            tokio::fs::rename(&sealed, &sealed_ready).await?;
+
+            let new_path = make_path(&self.dir);
+            let newf = tokio::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&new_path)
+                .await?;
+            cur.path = new_path;
+            cur.file = Some(newf);
+            cur.bytes = 0;
+            cur.created_at = Instant::now();
+
+            WAL_SEALED_FILES_TOTAL.inc();
+            WAL_SEALED_BYTES_TOTAL.inc_by(sealed_bytes);
+            WAL_PENDING_FILES.inc();
+            WAL_PENDING_BYTES.add(sealed_bytes as i64);
+
+            (sealed_ready, sealed_bytes)
+        };
+
+        self.spawn_upload(sealed_ready, sealed_bytes).await;
         Ok(())
     }
 
@@ -133,7 +176,7 @@ impl DurableFileSink {
         self.inflight.fetch_add(1, Ordering::AcqRel);
         let inner = self.inner.clone();
         let inflight = self.inflight.clone();
-        tokio::spawn(async move {
+        let fut = async move {
             let res = async {
                 inner.write_path(&path).await?;
                 tokio::fs::remove_file(&path).await?;
@@ -148,14 +191,17 @@ impl DurableFileSink {
                     SINK_BYTES_TOTAL.inc_by(size);
                     WAL_PENDING_FILES.dec();
                     WAL_PENDING_BYTES.sub(size as i64);
-                    tracing::info!(uploaded=%path.display(), bytes=size, "WAL uploaded & removed");
+                    tracing::debug!(uploaded=%path.display(), bytes=size, "WAL uploaded & removed");
                 }
                 Err(e) => {
                     tracing::warn!("upload retryable error for {:?}: {e}", path);
                 }
             }
             inflight.fetch_sub(1, Ordering::AcqRel);
-        });
+        };
+
+        let mut js = self.uploads.lock().await;
+        js.spawn(fut);
     }
 }
 
@@ -168,16 +214,18 @@ impl Sink for DurableFileSink {
         let mut cur = self.cur.lock().await;
 
         if cur.bytes + payload.len() > self.max_file_size {
-            self.rotate_locked(&mut cur).await?;
+            drop(cur);
+            self.rotate().await?;
+            cur = self.cur.lock().await;
         }
 
         let f = cur.file.as_mut().expect("current file missing");
         f.write_all(payload.as_ref()).await?;
-        f.sync_data().await?;
         cur.bytes += payload.len();
 
         if cur.bytes >= self.max_file_size {
-            self.rotate_locked(&mut cur).await?;
+            drop(cur);
+            self.rotate().await?;
         }
 
         Ok(())
@@ -185,42 +233,51 @@ impl Sink for DurableFileSink {
 
     async fn flush(&self) -> Result<()> {
         {
-            let mut cur = self.cur.lock().await;
-            if cur.bytes > 0 {
-                self.rotate_locked(&mut cur).await?;
-            } else if let Some(f) = cur.file.as_mut() {
-                f.sync_data().await?;
+            let need_rotate = {
+                let cur = self.cur.lock().await;
+                cur.bytes > 0
+            };
+            if need_rotate {
+                self.rotate().await?;
             }
         }
 
         loop {
-            let mut rd = tokio::fs::read_dir(&self.dir).await?;
-            let mut any_sealed = false;
-            while let Some(ent) = rd.next_entry().await? {
-                let p = ent.path();
-                let is_current = {
-                    let cur = self.cur.lock().await;
-                    p == cur.path
-                };
-                if !is_current {
-                    any_sealed = true;
-                    break;
+            self.retry_leftovers().await;
+            let mut js = {
+                let mut g = self.uploads.lock().await;
+                std::mem::take(&mut *g)
+            };
+            while js.join_next().await.is_some() {}
+            *self.uploads.lock().await = js;
+
+            let current_path = { self.cur.lock().await.path.clone() };
+            let any_ready = {
+                let mut rd = tokio::fs::read_dir(&self.dir).await?;
+                let mut found = false;
+                while let Some(ent) = rd.next_entry().await? {
+                    if !ent.file_type().await.map(|t| t.is_file()).unwrap_or(false) {
+                        continue;
+                    }
+                    let p = ent.path();
+                    if p != current_path && p.extension().and_then(|e| e.to_str()) == Some("sealed")
+                    {
+                        found = true;
+                        break;
+                    }
                 }
-            }
-            let inflight = self.inflight.load(Acquire);
-            if !any_sealed && inflight == 0 {
+                found
+            };
+            if !any_ready && self.inflight.load(Ordering::Acquire) == 0 {
                 break;
             }
-            if any_sealed {
-                self.retry_leftovers().await;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
+
         Ok(())
     }
 }
 
-fn make_path(dir: &PathBuf) -> std::path::PathBuf {
+fn make_path(dir: &Path) -> std::path::PathBuf {
     let ulid = Ulid::new();
     let name = format!("{}.bin", ulid.to_string());
     dir.join(name)

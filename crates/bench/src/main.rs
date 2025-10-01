@@ -148,6 +148,7 @@ async fn run_bench(
             consumer_bytes: drained.consumer_bytes - before.consumer_bytes,
             consumer_objects: drained.consumer_objects - before.consumer_objects,
             inflight: drained.inflight,
+            wal_pending: drained.wal_pending,
         };
 
         println!(

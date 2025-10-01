@@ -56,6 +56,9 @@ pub struct CommonSinkOptions {
 
     #[serde(default = "wal_path")]
     pub wal_path: PathBuf,
+
+    #[serde(default = "max_file_age_seconds")]
+    pub max_file_age_seconds: u64,
 }
 
 fn object_max_bytes() -> usize {
@@ -68,6 +71,10 @@ fn in_flight_limit() -> usize {
 
 fn wal_path() -> PathBuf {
     "/tmp/wal".into()
+}
+
+fn max_file_age_seconds() -> u64 {
+    60
 }
 
 #[derive(Debug, Deserialize)]

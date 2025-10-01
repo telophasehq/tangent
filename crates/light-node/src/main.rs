@@ -2,11 +2,14 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use std::{path::PathBuf, sync::Arc};
 use tangent_shared::{Config, SinkConfig, SourceConfig};
-use tokio::signal;
 use tokio::time::{timeout, Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
+
+use tokio::signal;
+#[cfg(unix)]
+use tokio::signal::unix::{signal, SignalKind};
 
 use prometheus::{
     register_histogram, register_int_counter, register_int_gauge, Histogram, IntCounter, IntGauge,
@@ -106,8 +109,12 @@ async fn main() -> Result<()> {
         bail!("Sink name or config was missing from config.");
     }
 
+    let shutdown = CancellationToken::new();
+
     // Allow queueing 10 batches for now. Should use a WAL in the future.
-    let sink_manager = Arc::new(SinkManager::new(name, sink_cfg, cfg.batch_size_kb() * 10).await?);
+    let sink_manager = Arc::new(
+        SinkManager::new(name, sink_cfg, cfg.batch_size_kb() * 10, shutdown.clone()).await?,
+    );
 
     let engine = wasm::WasmEngine::new().expect("engine");
 
@@ -116,8 +123,6 @@ async fn main() -> Result<()> {
         cfg.batch_size,
         cfg.batch_age_ms()
     );
-
-    let shutdown = CancellationToken::new();
 
     let pool = Arc::new(
         worker::WorkerPool::new(
@@ -132,8 +137,10 @@ async fn main() -> Result<()> {
 
     let consumer_handles = run_all_consumers(cfg, pool.clone(), shutdown.clone()).await;
 
-    signal::ctrl_c().await?;
+    wait_for_shutdown().await?;
+
     shutdown.cancel();
+    sink_manager.cancel();
 
     info!("received shutdown signal...");
 
@@ -155,7 +162,9 @@ async fn main() -> Result<()> {
     })?;
 
     info!("waiting on sinks to flush and shutdown...");
-    let _ = timeout(Duration::from_secs(10), sink_manager_owned.join()).await;
+    if let Err(e) = sink_manager_owned.join().await {
+        tracing::warn!("sink manager join failed: {e}");
+    }
 
     Ok(())
 }
@@ -198,4 +207,20 @@ async fn run_all_consumers(
     }
 
     handles
+}
+
+#[cfg(unix)]
+async fn wait_for_shutdown() -> Result<()> {
+    let mut term = signal(SignalKind::terminate())?;
+    tokio::select! {
+        _ = signal::ctrl_c() => {},
+        _ = term.recv() => {},
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn wait_for_shutdown() -> Result<()> {
+    signal::ctrl_c().await?;
+    Ok(())
 }
