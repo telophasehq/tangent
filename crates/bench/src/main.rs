@@ -136,6 +136,8 @@ async fn run_bench(
 
         let in_bytes = (drained.consumer_bytes - before.consumer_bytes) as f64;
         let out_bytes = (drained.sink_bytes - before.sink_bytes) as f64;
+        let out_bytes_uncompressed =
+            (drained.sink_bytes_uncompressed - before.sink_bytes_uncompressed) as f64;
         let amp = if in_bytes > 0.0 {
             out_bytes / in_bytes
         } else {
@@ -144,12 +146,14 @@ async fn run_bench(
 
         let in_mibs = in_bytes / (1024.0 * 1024.0);
         let out_mibs = out_bytes / (1024.0 * 1024.0);
+        let out_mibs_uncompressed = out_bytes_uncompressed / (1024.0 * 1024.0);
         let in_mibs_s = in_mibs / elapsed;
         let out_mibs_s = out_mibs / elapsed;
+        let out_mibs_uncompressed_s = out_bytes_uncompressed / elapsed;
 
         println!(
-            "end-to-end: uploaded={:.2} MiB over {:.2}s → {:.2} MiB/s (amplification x{:.2})",
-            out_mibs, elapsed, out_mibs_s, amp
+            "end-to-end: uploaded={:.2} MiB ({:.2} MiB uncompressed) over {:.2}s → {:.2} MiB/s ({:.2} MiB/s uncompressed) (amplification x{:.5})",
+            out_mibs, out_mibs_uncompressed, elapsed, out_mibs_s, out_mibs_uncompressed_s, amp
         );
         println!(
             "producer bytes (consumed): {:.2} MiB → {:.2} MiB/s",

@@ -23,6 +23,7 @@ use tokio_util::sync::CancellationToken;
 use ulid::Ulid;
 
 use crate::sinks::manager::Sink;
+use crate::SINK_BYTES_UNCOMPRESSED_TOTAL;
 use crate::{
     SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL, WAL_PENDING_BYTES, WAL_PENDING_FILES,
     WAL_SEALED_BYTES_TOTAL, WAL_SEALED_FILES_TOTAL,
@@ -201,6 +202,7 @@ impl DurableFileSink {
                 Ok(uploaded) => {
                     SINK_OBJECTS_TOTAL.inc();
                     SINK_BYTES_TOTAL.inc_by(uploaded);
+                    SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(orig_size);
                     WAL_PENDING_FILES.dec();
                     WAL_PENDING_BYTES.sub(orig_size as i64);
                     tracing::debug!(bytes = uploaded, "WAL uploaded & removed");

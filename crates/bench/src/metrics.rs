@@ -2,6 +2,7 @@ use reqwest;
 
 pub struct Stats {
     pub sink_bytes: f64,
+    pub sink_bytes_uncompressed: f64,
     pub inflight: f64,
     pub wal_pending: f64,
     pub consumer_bytes: f64,
@@ -29,6 +30,7 @@ pub async fn scrape_stats(url: &str) -> anyhow::Result<Stats> {
         inflight: sum("tangent_inflight"),
         wal_pending: sum("tangent_wal_pending_files"),
         consumer_bytes: sum("tangent_consumer_bytes_total"),
+        sink_bytes_uncompressed: sum("tangent_sink_bytes_uncompressed_total"),
     })
 }
 

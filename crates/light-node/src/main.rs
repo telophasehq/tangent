@@ -52,6 +52,9 @@ lazy_static::lazy_static! {
     static ref SINK_BYTES_TOTAL: IntCounter = register_int_counter!(
         "tangent_sink_bytes_total", "Bytes uploaded to sink"
     ).unwrap();
+    static ref SINK_BYTES_UNCOMPRESSED_TOTAL: IntCounter = register_int_counter!(
+        "tangent_sink_bytes_uncompressed_total", "Bytes (uncompressed) uploaded to sink"
+    ).unwrap();
     static ref SINK_OBJECTS_TOTAL: IntCounter = register_int_counter!(
         "tangent_sink_objects_total", "Objects sent to sink"
     ).unwrap();
