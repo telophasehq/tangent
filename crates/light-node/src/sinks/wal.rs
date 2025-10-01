@@ -1,16 +1,22 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
+use flate2::write::GzEncoder;
+use flate2::Compression as f2Compression;
 use std::cmp::max;
+use std::fs::metadata;
+use std::fs::File as stdFile;
+use std::io::copy;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use tangent_shared::Compression;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore};
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::{spawn_blocking, JoinHandle, JoinSet};
 use tokio::time::{sleep, Duration, Instant};
 use tokio_util::sync::CancellationToken;
 use ulid::Ulid;
@@ -28,6 +34,7 @@ pub struct DurableFileSink {
     max_inflight: Arc<Semaphore>,
     max_file_size: usize,
     max_file_age: Duration,
+    compression: Compression,
     cur: Mutex<Current>,
     rotator: Mutex<Option<JoinHandle<()>>>,
     uploads: tokio::sync::Mutex<JoinSet<()>>,
@@ -52,6 +59,7 @@ impl DurableFileSink {
         max_inflight: usize,
         max_file_size: usize,
         max_file_age: Duration,
+        compression: Compression,
         cancel: CancellationToken,
     ) -> Result<Arc<Self>> {
         let dir = dir.as_ref().to_path_buf();
@@ -77,6 +85,7 @@ impl DurableFileSink {
                 bytes: 0,
                 created_at: Instant::now(),
             }),
+            compression: compression,
             rotator: Mutex::new(None),
             uploads: Mutex::new(JoinSet::new()),
         });
@@ -171,30 +180,41 @@ impl DurableFileSink {
         Ok(())
     }
 
-    async fn spawn_upload(&self, path: PathBuf, size: u64) {
+    async fn spawn_upload(&self, path: PathBuf, orig_size: u64) {
         let permit = self.max_inflight.clone().acquire_owned().await.unwrap();
         self.inflight.fetch_add(1, Ordering::AcqRel);
         let inner = self.inner.clone();
         let inflight = self.inflight.clone();
+        let compression = self.compression.clone();
         let fut = async move {
-            let res = async {
-                inner.write_path(&path).await?;
-                tokio::fs::remove_file(&path).await?;
-                anyhow::Ok(())
+            let path_cl = path.clone();
+            let res = async move {
+                let (upload_path, upload_size) = match compression {
+                    Compression::None => (path_cl.clone(), orig_size),
+                    Compression::Gzip { level } => compress_gzip_to_file(&path_cl, level).await?,
+                    Compression::Zstd { level } => compress_zstd_to_file(&path_cl, level).await?,
+                };
+
+                inner.write_path(&path_cl).await?;
+
+                let _ = tokio::fs::remove_file(&upload_path).await;
+                let _ = tokio::fs::remove_file(&path_cl).await;
+
+                anyhow::Ok(upload_size)
             }
             .await;
 
             drop(permit);
             match res {
-                Ok(()) => {
+                Ok(uploaded) => {
                     SINK_OBJECTS_TOTAL.inc();
-                    SINK_BYTES_TOTAL.inc_by(size);
+                    SINK_BYTES_TOTAL.inc_by(uploaded);
                     WAL_PENDING_FILES.dec();
-                    WAL_PENDING_BYTES.sub(size as i64);
-                    tracing::debug!(uploaded=%path.display(), bytes=size, "WAL uploaded & removed");
+                    WAL_PENDING_BYTES.sub(orig_size as i64);
+                    tracing::debug!(bytes = uploaded, "WAL uploaded & removed");
                 }
                 Err(e) => {
-                    tracing::warn!("upload retryable error for {:?}: {e}", path);
+                    tracing::warn!("upload error for {:?}: {e}", path);
                 }
             }
             inflight.fetch_sub(1, Ordering::AcqRel);
@@ -281,4 +301,36 @@ fn make_path(dir: &Path) -> std::path::PathBuf {
     let ulid = Ulid::new();
     let name = format!("{}.bin", ulid.to_string());
     dir.join(name)
+}
+
+async fn compress_zstd_to_file(src: &Path, level: i32) -> Result<(PathBuf, u64)> {
+    let dst = src.with_extension("sealed.zst");
+    let src = src.to_path_buf();
+    let dst2 = dst.clone();
+    let size = spawn_blocking(move || -> Result<u64> {
+        let mut fin = stdFile::open(&src)?;
+        let mut fout = stdFile::create(&dst2)?;
+        let mut enc = zstd::stream::Encoder::new(&mut fout, level)?;
+        copy(&mut fin, &mut enc)?;
+        enc.finish()?;
+        Ok(metadata(&dst2)?.len())
+    })
+    .await??;
+    Ok((dst, size))
+}
+
+async fn compress_gzip_to_file(src: &Path, level: u32) -> Result<(PathBuf, u64)> {
+    let dst = src.with_extension("sealed.gz");
+    let src = src.to_path_buf();
+    let dst2 = dst.clone();
+    let size = spawn_blocking(move || -> Result<u64> {
+        let mut fin = stdFile::open(&src)?;
+        let mut fout = stdFile::create(&dst2)?;
+        let mut enc = GzEncoder::new(&mut fout, f2Compression::new(level));
+        copy(&mut fin, &mut enc)?;
+        enc.finish()?;
+        Ok(metadata(&dst2)?.len())
+    })
+    .await??;
+    Ok((dst, size))
 }

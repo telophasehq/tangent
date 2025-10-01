@@ -2295,6 +2295,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "flate2",
  "futures",
  "futures-util",
  "lazy_static",
@@ -2318,6 +2319,7 @@ dependencies = [
  "ulid",
  "wasmtime",
  "wasmtime-wasi",
+ "zstd",
 ]
 
 [[package]]
