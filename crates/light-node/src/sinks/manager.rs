@@ -64,72 +64,73 @@ impl SinkManager {
         let (tx, mut rx) = mpsc::channel::<SinkItem>(queue_capacity);
         let sem = Arc::new(Semaphore::new(cfg.common.in_flight_limit));
 
-        let sink_cloned = sink.clone();
-        let sem_cloned = sem.clone();
-        let cancel_cloned = cancel.clone();
+        let h = tokio::spawn({
+            let sink = sink.clone();
+            let sem = sem.clone();
+            let cancel = cancel.clone();
+            async move {
+                let mut js = JoinSet::new();
 
-        let h = tokio::spawn(async move {
-            let mut js = JoinSet::new();
-            while let Some(mut item) = rx.recv().await {
-                if cancel_cloned.is_cancelled() {
-                    break;
-                }
-
-                let sink = sink_cloned.clone();
-                let permit = match sem_cloned.clone().acquire_owned().await {
-                    Ok(p) => p,
-                    Err(_) => break,
-                };
-                let token = cancel_cloned.child_token();
-
-                js.spawn(async move {
-                    let _permit: OwnedSemaphorePermit = permit;
-                    let start = Instant::now();
-                    let mut delay = Duration::from_millis(50);
-
-                    loop {
-                        if token.is_cancelled() {
-                            tracing::debug!("task cancelled before write");
-                            INFLIGHT.dec();
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => {
                             break;
                         }
+                        maybe = rx.recv() => {
+                            let mut item = match maybe {
+                                Some(it) => it,
+                                None => break,
+                            };
 
-                        match sink.write(item.payload.clone()).await {
-                            Ok(()) => {
-                                for a in item.acks.drain(..) {
-                                    if let Err(e) = a.ack().await {
-                                        tracing::warn!("ack failed: {e}");
+                            let sink = sink.clone();
+                            let permit = match sem.clone().acquire_owned().await {
+                                Ok(p) => p,
+                                Err(_) => break,
+                            };
+                            let token = cancel.child_token();
+
+                            js.spawn(async move {
+                                let _permit: OwnedSemaphorePermit = permit;
+                                let start = Instant::now();
+                                let mut delay = Duration::from_millis(50);
+                                loop {
+                                    if token.is_cancelled() {
+                                        INFLIGHT.dec();
+                                        break;
+                                    }
+                                    match sink.write(item.payload.clone()).await {
+                                        Ok(()) => {
+                                            for a in item.acks.drain(..) {
+                                                if let Err(e) = a.ack().await {
+                                                    tracing::warn!("ack failed: {e}");
+                                                }
+                                            }
+                                            tracing::debug!(bytes = item.payload.len(),
+                                                            took_us = start.elapsed().as_micros(),
+                                                            "wrote batch");
+                                            INFLIGHT.dec();
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            if token.is_cancelled() {
+                                                tracing::warn!("cancelling retries due to shutdown");
+                                                INFLIGHT.dec();
+                                                break;
+                                            }
+                                            tracing::warn!("sink write failed: {e}");
+                                            let j = rng().random_range(0..=delay.as_millis() as u64 / 4);
+                                            sleep(delay + Duration::from_millis(j)).await;
+                                            delay = (delay * 2).min(Duration::from_secs(5));
+                                        }
                                     }
                                 }
-
-                                tracing::debug!(
-                                    target: "sidecar",
-                                    bytes = item.payload.len(),
-                                    took_us = start.elapsed().as_micros(),
-                                    "wrote batch"
-                                );
-                                INFLIGHT.dec();
-                                break;
-                            }
-                            Err(e) => {
-                                if token.is_cancelled() {
-                                    tracing::warn!("cancelling retries due to shutdown");
-                                    INFLIGHT.dec();
-                                    break;
-                                }
-
-                                tracing::warn!("sink write failed: {e}");
-                                let j = rng().random_range(0..=delay.as_millis() as u64 / 4);
-                                sleep(delay + Duration::from_millis(j)).await;
-                                delay = (delay * 2).min(Duration::from_secs(5));
-                                // TODO: DLQ
-                            }
+                            });
                         }
                     }
-                });
-            }
+                }
 
-            while js.join_next().await.is_some() {}
+                while js.join_next().await.is_some() {}
+            }
         });
         handles.push(h);
         Ok(Self {
