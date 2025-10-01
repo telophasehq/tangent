@@ -13,6 +13,7 @@ use std::sync::{
     Arc,
 };
 use tangent_shared::Compression;
+use tokio::fs;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore};
@@ -110,31 +111,22 @@ impl DurableFileSink {
     }
 
     async fn retry_leftovers(&self) {
+        let current_path = { self.cur.lock().await.path.clone() };
+
         let mut rd = match tokio::fs::read_dir(&self.dir).await {
             Ok(r) => r,
             Err(_) => return,
         };
+
         while let Some(ent) = rd.next_entry().await.ok().flatten() {
-            if !ent.file_type().await.map(|t| t.is_file()).unwrap_or(false) {
-                continue;
-            }
-            let path = ent.path();
-
-            let is_current = {
-                let cur = self.cur.lock().await;
-                path == cur.path
-            };
-            if is_current {
+            let p = ent.path();
+            if !is_ready_wal_file(&p, &current_path).await {
                 continue;
             }
 
-            if path.extension().and_then(|e| e.to_str()) != Some("sealed") {
-                continue;
-            }
-
-            if let Ok(md) = tokio::fs::metadata(&path).await {
+            if let Ok(md) = tokio::fs::metadata(&p).await {
                 let size = md.len();
-                self.spawn_upload(path, size).await;
+                self.spawn_upload(p, size).await;
             }
         }
     }
@@ -276,12 +268,8 @@ impl Sink for DurableFileSink {
                 let mut rd = tokio::fs::read_dir(&self.dir).await?;
                 let mut found = false;
                 while let Some(ent) = rd.next_entry().await? {
-                    if !ent.file_type().await.map(|t| t.is_file()).unwrap_or(false) {
-                        continue;
-                    }
                     let p = ent.path();
-                    if p != current_path && p.extension().and_then(|e| e.to_str()) == Some("sealed")
-                    {
+                    if is_ready_wal_file(&p, &current_path).await {
                         found = true;
                         break;
                     }
@@ -333,4 +321,36 @@ async fn compress_gzip_to_file(src: &Path, level: u32) -> Result<(PathBuf, u64)>
     })
     .await??;
     Ok((dst, size))
+}
+
+#[inline]
+async fn is_ready_wal_file(path: &Path, current_path: &Path) -> bool {
+    if path == current_path {
+        return false;
+    }
+    if !fs::metadata(path)
+        .await
+        .map(|m| m.is_file())
+        .unwrap_or(false)
+    {
+        return false;
+    }
+
+    let ext = path.extension().and_then(|e| e.to_str());
+    let stem = path.file_stem().and_then(|s| s.to_str());
+
+    match (ext, stem) {
+        (Some("zst") | Some("gz"), Some(st)) if st.ends_with(".sealed") => true,
+
+        (Some("sealed"), _) => {
+            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let zst = path.with_file_name(format!("{fname}.zst"));
+            let gz = path.with_file_name(format!("{fname}.gz"));
+            let has_comp = fs::try_exists(&zst).await.unwrap_or(false)
+                || fs::try_exists(&gz).await.unwrap_or(false);
+            !has_comp
+        }
+
+        _ => false,
+    }
 }

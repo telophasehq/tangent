@@ -5,6 +5,7 @@ use rdkafka::{
     consumer::{Consumer, ConsumerContext, StreamConsumer},
     ClientContext, Message,
 };
+use secrecy::ExposeSecret;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -141,7 +142,7 @@ pub fn build_consumer(kc: &MSKConfig) -> Result<StreamConsumer<Ctx>> {
         } => {
             cfg.set("sasl.mechanism", sasl_mechanism)
                 .set("sasl.username", username)
-                .set("sasl.password", password);
+                .set("sasl.password", password.expose_secret());
         }
     };
 

@@ -105,6 +105,8 @@ async fn main() -> Result<()> {
         bail!("You must configure exactly one sink.");
     }
 
+    tracing::info!(target="startup", config = ?cfg);
+
     let name: &String;
     let sink_cfg: &SinkConfig;
     if let Some((n, s)) = cfg.sinks.first_key_value() {
