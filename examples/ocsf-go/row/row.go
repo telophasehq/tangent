@@ -4,7 +4,7 @@ import "github.com/vmihailenco/msgpack/v5"
 
 type Row struct {
 	Raw      map[string]msgpack.RawMessage
-	RawBytes []byte
+	RawBytes msgpack.RawMessage
 }
 
 func (r Row) Len() int          { return len(r.Raw) }

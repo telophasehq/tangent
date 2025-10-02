@@ -31,6 +31,10 @@ type Handler interface {
 func Wire(h Handler) {
 	processor.Exports.ProcessLogs = func(input cm.List[uint8]) (r cm.Result[cm.List[uint8], cm.List[uint8], string]) {
 		br.Reset()
+		if _, err := br.Write(input.Slice()); err != nil {
+			r.SetErr(err.Error())
+			return
+		}
 		dec := msgpack.NewDecoder(&br)
 
 		outBuf = outBuf[:0]
@@ -38,6 +42,15 @@ func Wire(h Handler) {
 		enc.SetEscapeHTML(false)
 
 		for {
+			var raw msgpack.RawMessage
+			if err := dec.Decode(&raw); err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				r.SetErr(err.Error())
+				return
+			}
+
 			var m map[string]msgpack.RawMessage
 			if err := dec.Decode(&m); err != nil {
 				if errors.Is(err, io.EOF) {
@@ -46,7 +59,7 @@ func Wire(h Handler) {
 				r.SetErr(err.Error())
 				return
 			}
-			out, err := h.ProcessRow(row.Row{Raw: m})
+			out, err := h.ProcessRow(row.Row{Raw: m, RawBytes: raw})
 			if err != nil {
 				r.SetErr(err.Error())
 				return
