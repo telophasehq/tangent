@@ -57,18 +57,37 @@ func Wire(h Handler) {
 		enc.SetEscapeHTML(false)
 
 		for {
-			var m map[string]any
+			m := mapPool.Get().(map[string]any)
+			for k := range m {
+				delete(m, k)
+			}
+
 			if err := dec.Decode(&m); err != nil {
 				if errors.Is(err, io.EOF) {
+					mapPool.Put(m)
 					break
 				}
 				r.SetErr(err.Error())
+				mapPool.Put(m)
 				return
 			}
-			if out, err := h.ProcessLog(m); err != nil {
-				enc.Encode(out)
+
+			out, err := h.ProcessLog(m)
+			for k := range m {
+				delete(m, k)
+			}
+			mapPool.Put(m)
+
+			if err != nil {
 				r.SetErr(err.Error())
 				return
+			}
+
+			for i := range out {
+				if err := enc.Encode(out[i]); err != nil {
+					r.SetErr(err.Error())
+					return
+				}
 			}
 		}
 
