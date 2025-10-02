@@ -56,6 +56,7 @@ impl SinkManager {
                     cfg.common.object_max_bytes,
                     Duration::from_secs(cfg.common.max_file_age_seconds),
                     cfg.common.compression.clone(),
+                    cfg.common.encoding.clone(),
                     cancel.clone(),
                 )
                 .await?

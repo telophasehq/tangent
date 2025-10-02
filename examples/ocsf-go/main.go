@@ -1,48 +1,63 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"ocsf-go/mappers"
+
+	"ocsf-go/row"
+
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 type Processor struct{}
 
-func (p Processor) ProcessLog(log map[string]any) ([]any, error) {
-	var normalized []any
-	ctx := context.Background()
-	if len(log) == 0 {
-		return normalized, nil
+func (p Processor) ProcessRow(row row.Row) ([]any, error) {
+	var out []any
+	if row.Len() == 0 {
+		return out, nil
 	}
-	if _, ok := log["source_type"]; ok {
-		sourceType, ok := log["source_type"].(string)
-		if !ok {
-			return nil, errors.New("source_type is not a string")
-		}
-		switch sourceType {
+
+	if src, ok := row.String("source_type"); ok {
+		switch src {
 		case "docker_logs":
-			mapped, err := mappers.EKSToOCSF(log)
+			var event mappers.DockerLog
+			err := msgpack.Unmarshal(row.RawBytes, &event)
 			if err != nil {
 				return nil, err
 			}
-			normalized = append(normalized, mapped)
+			mapped, err := mappers.EKSToOCSF(&event)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, mapped)
 		case "syslog":
-			mapped, err := mappers.SyslogToOCSF(log)
+			var event mappers.SysLog
+			err := msgpack.Unmarshal(row.RawBytes, &event)
 			if err != nil {
 				return nil, err
 			}
-			normalized = append(normalized, mapped)
+			mapped, err := mappers.SyslogToOCSF(&event)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, mapped)
 		}
-	} else if _, ok := log["eventType"]; ok {
-		mapped, err := mappers.CloudtrailToOCSF(ctx, log)
+		return out, nil
+	}
+
+	if _, ok := row.String("eventType"); ok {
+		var cloudtrailLog mappers.CloudtrailEvent
+		err := msgpack.Unmarshal(row.RawBytes, &cloudtrailLog)
 		if err != nil {
 			return nil, err
 		}
-		normalized = append(normalized, mapped)
-	} else {
-		return nil, fmt.Errorf("unknown log: {}", log)
+		mapped, err := mappers.CloudtrailToOCSF(&cloudtrailLog)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, mapped)
+		return out, nil
 	}
 
-	return normalized, nil
+	return nil, fmt.Errorf("unknown log")
 }

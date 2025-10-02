@@ -51,6 +51,9 @@ pub struct CommonSinkOptions {
     #[serde(default)]
     pub compression: Compression,
 
+    #[serde(default)]
+    pub encoding: Encoding,
+
     #[serde(default = "object_max_bytes")]
     pub object_max_bytes: usize,
 
@@ -62,6 +65,41 @@ pub struct CommonSinkOptions {
 
     #[serde(default = "max_file_age_seconds")]
     pub max_file_age_seconds: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Encoding {
+    NDJSON,
+    JSON,
+    Avro,
+    Parquet,
+}
+
+impl Default for Encoding {
+    fn default() -> Self {
+        Encoding::NDJSON
+    }
+}
+
+impl Encoding {
+    pub fn content_type(&self) -> &'static str {
+        match self {
+            Encoding::NDJSON => "application/x-ndjson",
+            Encoding::JSON => "application/json",
+            Encoding::Avro => "application/avro",
+            Encoding::Parquet => "application/vnd.apache.parquet",
+        }
+    }
+
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Encoding::NDJSON => "ndjson",
+            Encoding::JSON => "json",
+            Encoding::Avro => "avro",
+            Encoding::Parquet => "parquet",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

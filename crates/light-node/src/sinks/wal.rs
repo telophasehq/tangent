@@ -13,6 +13,7 @@ use std::sync::{
     Arc,
 };
 use tangent_shared::Compression;
+use tangent_shared::Encoding;
 use tokio::fs;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -37,6 +38,7 @@ pub struct DurableFileSink {
     max_file_size: usize,
     max_file_age: Duration,
     compression: Compression,
+    encoding: Encoding,
     cur: Mutex<Current>,
     rotator: Mutex<Option<JoinHandle<()>>>,
     uploads: tokio::sync::Mutex<JoinSet<()>>,
@@ -51,7 +53,7 @@ struct Current {
 
 #[async_trait]
 pub trait WALSink: Send + Sync {
-    async fn write_path(&self, path: &Path) -> Result<()>;
+    async fn write_path(&self, path: &Path, encoding: &Encoding) -> Result<()>;
 }
 
 impl DurableFileSink {
@@ -62,6 +64,7 @@ impl DurableFileSink {
         max_file_size: usize,
         max_file_age: Duration,
         compression: Compression,
+        encoding: Encoding,
         cancel: CancellationToken,
     ) -> Result<Arc<Self>> {
         let dir = dir.as_ref().to_path_buf();
@@ -88,6 +91,7 @@ impl DurableFileSink {
                 created_at: Instant::now(),
             }),
             compression: compression,
+            encoding: encoding,
             rotator: Mutex::new(None),
             uploads: Mutex::new(JoinSet::new()),
         });
@@ -179,6 +183,7 @@ impl DurableFileSink {
         let inner = self.inner.clone();
         let inflight = self.inflight.clone();
         let compression = self.compression.clone();
+        let encoding = self.encoding.clone();
         let fut = async move {
             let path_cl = path.clone();
             let res = async move {
@@ -188,7 +193,7 @@ impl DurableFileSink {
                     Compression::Zstd { level } => compress_zstd_to_file(&path_cl, level).await?,
                 };
 
-                inner.write_path(&upload_path).await?;
+                inner.write_path(&upload_path, &encoding).await?;
 
                 let _ = tokio::fs::remove_file(&upload_path).await;
                 let _ = tokio::fs::remove_file(&path_cl).await;

@@ -11,18 +11,22 @@ var (
 	logonActivity  = "Logon"
 )
 
-func SyslogToOCSF(log map[string]any) (*v1_5_0.Authentication, error) {
-	ts, err := time.Parse(time.RFC3339Nano, log["timestamp"].(string))
-	if err != nil {
-		return nil, err
-	}
-	message := log["message"].(string)
+type SysLog struct {
+	Timestamp  time.Time `json:"timestamp"`
+	Host       string    `json:"host"`
+	SourceType string    `json:"source_type"`
+	Stream     string    `json:"stream"`
+	Level      string    `json:"level"`
+	Message    string    `json:"message"`
+}
+
+func SyslogToOCSF(log *SysLog) (*v1_5_0.Authentication, error) {
 
 	return &v1_5_0.Authentication{
 		ActivityId:   1,
 		ActivityName: &logonActivity,
-		Time:         ts.UnixMilli(),
-		Message:      &message,
+		Time:         log.Timestamp.UnixMilli(),
+		Message:      &log.Message,
 		SeverityId:   1,
 		Severity:     &syslogSeverity,
 	}, nil

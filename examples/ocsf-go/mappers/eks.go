@@ -1,8 +1,6 @@
 package mappers
 
 import (
-	"errors"
-	"fmt"
 	"regexp"
 	"strconv"
 	"time"
@@ -10,17 +8,30 @@ import (
 	v1_5_0 "github.com/Santiago-Labs/go-ocsf/ocsf/v1_5_0"
 )
 
-type eksLog struct {
-	Timestamp   string            `json:"timestamp"`
-	ContainerID string            `json:"container_id"`
-	Container   string            `json:"container_name"`
-	Image       string            `json:"image"`
-	Host        string            `json:"host"`
-	SourceType  string            `json:"source_type"`
-	Stream      string            `json:"stream"`
-	Label       map[string]string `json:"label"`
-	Message     string            `json:"message"`
-	Extra       map[string]any    `json:"extra"`
+type DockerLog struct {
+	Timestamp     time.Time `json:"timestamp"     msgpack:"timestamp"`
+	ContainerID   string    `json:"container_id"  msgpack:"container_id"`
+	ContainerName string    `json:"container_name" msgpack:"container_name"`
+	Image         string    `json:"image"         msgpack:"image"`
+	Host          string    `json:"host"          msgpack:"host"`
+	SourceType    string    `json:"source_type"   msgpack:"source_type"`
+	Stream        string    `json:"stream"        msgpack:"stream"`
+	Label         Label     `json:"label"         msgpack:"label"`
+	Message       string    `json:"message"       msgpack:"message"`
+	Extra         Extra     `json:"extra"         msgpack:"extra"`
+}
+
+type Label struct {
+	App        string `json:"app"        msgpack:"app"`
+	Env        string `json:"env"        msgpack:"env"`
+	Maintainer string `json:"maintainer" msgpack:"maintainer"`
+}
+
+type Extra struct {
+	TraceID string `json:"trace_id" msgpack:"trace_id"`
+	SpanID  string `json:"span_id"  msgpack:"span_id"`
+	UserID  int64  `json:"user_id"  msgpack:"user_id"`
+	Region  string `json:"region"   msgpack:"region"`
 }
 
 var (
@@ -49,22 +60,9 @@ func parseAccessLine(s string) (method, path string, status int32, latencyMs int
 	return method, path, status, latencyMs, true
 }
 
-func EKSToOCSF(log map[string]any) (*v1_5_0.APIActivity, error) {
-	rec, err := toEksLog(log)
-	if err != nil {
-		return nil, err
-	}
-
-	var epochMs int64
-	if rec.Timestamp != "" {
-		if ts, err := time.Parse(time.RFC3339Nano, rec.Timestamp); err == nil {
-			epochMs = ts.UnixMilli()
-		}
-	}
-
-	method, path, status, latency, okHTTP := parseAccessLine(rec.Message)
-
-	region := getString(rec.Extra, "region")
+func EKSToOCSF(log *DockerLog) (*v1_5_0.APIActivity, error) {
+	epochMs := log.Timestamp.UnixMilli()
+	method, path, status, latency, okHTTP := parseAccessLine(log.Message)
 
 	activityId, activityName := httpReqToActivity(method)
 	ev := &v1_5_0.APIActivity{
@@ -82,21 +80,21 @@ func EKSToOCSF(log map[string]any) (*v1_5_0.APIActivity, error) {
 		},
 		Cloud: v1_5_0.Cloud{
 			Provider: provider,
-			Region:   &region,
+			Region:   &log.Extra.Region,
 		},
 		DstEndpoint: &v1_5_0.NetworkEndpoint{
 			Container: &v1_5_0.Container{
 				Image: &v1_5_0.Image{
-					Name: &rec.Image,
+					Name: &log.Image,
 				},
-				Uid:  &rec.ContainerID,
-				Name: &rec.Container,
+				Uid:  &log.ContainerID,
+				Name: &log.ContainerName,
 			},
 		},
 	}
 
-	if rec.Message != "" {
-		msg := rec.Message
+	if log.Message != "" {
+		msg := log.Message
 		ev.Message = &msg
 	}
 
@@ -131,70 +129,3 @@ func httpReqToActivity(method string) (int, string) {
 		return 0, "Unknown"
 	}
 }
-
-func toEksLog(m map[string]any) (*eksLog, error) {
-	if m == nil {
-		return nil, errors.New("nil log")
-	}
-	rec := &eksLog{
-		Timestamp:   getString(m, "timestamp"),
-		ContainerID: getString(m, "container_id"),
-		Container:   getString(m, "container_name"),
-		Image:       getString(m, "image"),
-		Host:        getString(m, "host"),
-		SourceType:  getString(m, "source_type"),
-		Stream:      getString(m, "stream"),
-		Message:     getString(m, "message"),
-	}
-	if v, ok := m["label"].(map[string]any); ok && v != nil {
-		rec.Label = make(map[string]string, len(v))
-		for k, vv := range v {
-			rec.Label[k] = toString(vv)
-		}
-	} else if v2, ok := m["label"].(map[string]string); ok && v2 != nil {
-		rec.Label = v2
-	}
-	if v, ok := m["extra"].(map[string]any); ok && v != nil {
-		rec.Extra = v
-	}
-	return rec, nil
-}
-
-func getString(m map[string]any, key string) string {
-	if m == nil {
-		return ""
-	}
-	if v, ok := m[key]; ok && v != nil {
-		return toString(v)
-	}
-	return ""
-}
-
-func toString(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []byte:
-		return string(t)
-	case float64:
-		if t == float64(int64(t)) {
-			return strconv.FormatInt(int64(t), 10)
-		}
-		return strconv.FormatFloat(t, 'f', -1, 64)
-	case int64:
-		return strconv.FormatInt(t, 10)
-	case int:
-		return strconv.Itoa(t)
-	case uint64:
-		return strconv.FormatUint(t, 10)
-	case bool:
-		if t {
-			return "true"
-		}
-		return "false"
-	default:
-		return fmt.Sprint(v)
-	}
-}
-
-func strPtr(s string) *string { return &s }

@@ -4,16 +4,18 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"ocsf-go/internal/tangent/logs/processor"
+	"ocsf-go/row"
 
-	"github.com/segmentio/encoding/json"
-
+	"github.com/vmihailenco/msgpack/v5"
 	"go.bytecodealliance.org/cm"
 )
 
 var outBuf []byte
+var br bytes.Buffer
 
 type byteSliceWriter struct{ p *[]byte }
 
@@ -23,24 +25,20 @@ func (w byteSliceWriter) Write(b []byte) (int, error) {
 }
 
 type Handler interface {
-	// Input: slice of objects decoded.
-	// Output: slice of objects to emit.
-	ProcessLog(log map[string]any) ([]any, error)
+	ProcessRow(row.Row) ([]any, error)
 }
 
 func Wire(h Handler) {
 	processor.Exports.ProcessLogs = func(input cm.List[uint8]) (r cm.Result[cm.List[uint8], cm.List[uint8], string]) {
+		br.Reset()
+		dec := msgpack.NewDecoder(&br)
+
 		outBuf = outBuf[:0]
-
-		in := input.Slice()
-		dec := json.NewDecoder(bytes.NewReader(in))
-		dec.UseNumber()
-
 		enc := json.NewEncoder(byteSliceWriter{&outBuf})
 		enc.SetEscapeHTML(false)
 
 		for {
-			var m map[string]any
+			var m map[string]msgpack.RawMessage
 			if err := dec.Decode(&m); err != nil {
 				if errors.Is(err, io.EOF) {
 					break
@@ -48,12 +46,11 @@ func Wire(h Handler) {
 				r.SetErr(err.Error())
 				return
 			}
-			out, err := h.ProcessLog(m)
+			out, err := h.ProcessRow(row.Row{Raw: m})
 			if err != nil {
 				r.SetErr(err.Error())
 				return
 			}
-
 			for i := range out {
 				if err := enc.Encode(out[i]); err != nil {
 					r.SetErr(err.Error())
@@ -61,7 +58,6 @@ func Wire(h Handler) {
 				}
 			}
 		}
-
 		r.SetOK(cm.ToList(outBuf))
 		return
 	}
