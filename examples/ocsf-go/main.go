@@ -1,63 +1,48 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"ocsf-go/mappers"
-
-	"ocsf-go/row"
-
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 type Processor struct{}
 
-func (p Processor) ProcessRow(row row.Row) ([]any, error) {
-	var out []any
-	if row.Len() == 0 {
-		return out, nil
+func (p Processor) ProcessLog(log map[string]any) ([]any, error) {
+	var normalized []any
+	ctx := context.Background()
+	if len(log) == 0 {
+		return normalized, nil
 	}
-
-	if src, ok := row.String("source_type"); ok {
-		switch src {
+	if _, ok := log["source_type"]; ok {
+		sourceType, ok := log["source_type"].(string)
+		if !ok {
+			return nil, errors.New("source_type is not a string")
+		}
+		switch sourceType {
 		case "docker_logs":
-			var event mappers.DockerLog
-			err := msgpack.Unmarshal(row.RawBytes, &event)
+			mapped, err := mappers.EKSToOCSF(log)
 			if err != nil {
 				return nil, err
 			}
-			mapped, err := mappers.EKSToOCSF(&event)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, mapped)
+			normalized = append(normalized, mapped)
 		case "syslog":
-			var event mappers.SysLog
-			err := msgpack.Unmarshal(row.RawBytes, &event)
+			mapped, err := mappers.SyslogToOCSF(log)
 			if err != nil {
 				return nil, err
 			}
-			mapped, err := mappers.SyslogToOCSF(&event)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, mapped)
+			normalized = append(normalized, mapped)
 		}
-		return out, nil
-	}
-
-	if _, ok := row.String("eventType"); ok {
-		var cloudtrailLog mappers.CloudtrailEvent
-		err := msgpack.Unmarshal(row.RawBytes, &cloudtrailLog)
+	} else if _, ok := log["eventType"]; ok {
+		mapped, err := mappers.CloudtrailToOCSF(ctx, log)
 		if err != nil {
 			return nil, err
 		}
-		mapped, err := mappers.CloudtrailToOCSF(&cloudtrailLog)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, mapped)
-		return out, nil
+		normalized = append(normalized, mapped)
+	} else {
+		return nil, fmt.Errorf("unknown log: {}", log)
 	}
 
-	return nil, fmt.Errorf("unknown log")
+	return normalized, nil
 }
