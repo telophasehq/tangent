@@ -1,3 +1,4 @@
+use secrecy::SecretString;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -27,7 +28,7 @@ pub enum MSKAuth {
         #[serde(default = "default_scram_mech")]
         sasl_mechanism: String,
         username: String,
-        password: String,
+        password: SecretString,
     },
 }
 

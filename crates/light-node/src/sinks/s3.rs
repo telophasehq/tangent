@@ -5,6 +5,8 @@ use aws_sdk_s3::Client;
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::byte_stream::ByteStream;
 use std::path::Path;
+use tangent_shared::Encoding;
+use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use ulid::Ulid;
 
@@ -19,51 +21,64 @@ pub struct S3Sink {
 
 #[async_trait]
 impl WALSink for S3Sink {
-    async fn write_path(&self, path: &Path) -> Result<()> {
-        let key = path
-            .file_name()
-            .and_then(|os| os.to_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| format!("tangent-{}.ndjson", Ulid::new()));
+    async fn write_path(&self, path: &Path, encoding: &Encoding) -> Result<()> {
+        let key = derive_key_from_path(path, &encoding);
 
-        let create_res = self
+        let content_type = Encoding::content_type(&encoding);
+        let content_encoding = match path.extension().and_then(|e| e.to_str()) {
+            Some("gz") => Some("gzip"),
+            Some("zst") => Some("zstd"),
+            _ => None,
+        };
+
+        let size = tokio::fs::metadata(path).await?.len();
+
+        if size < 5 * 1024 * 1024 {
+            let mut put = self
+                .client
+                .put_object()
+                .bucket(&self.bucket_name)
+                .key(&key)
+                .content_type(content_type)
+                .body(ByteStream::from_path(path).await?);
+
+            if let Some(enc) = content_encoding {
+                put = put.content_encoding(enc);
+            }
+            put.send().await?;
+            return Ok(());
+        }
+
+        let mut create = self
             .client
             .create_multipart_upload()
             .bucket(&self.bucket_name)
             .key(&key)
-            .send()
-            .await;
+            .content_type(content_type);
 
-        let create = match create_res {
-            Ok(o) => o,
-            Err(e) => {
-                match &e {
-                    SdkError::ServiceError(se) => {
-                        let err = se.err();
-                        tracing::warn!(
-                            "create_multipart_upload failed: code={:?} msg={:?} status={:?}",
-                            err.meta().code(),
-                            err.meta().message(),
-                            se.raw().status(),
-                        );
-                    }
-                    other => tracing::warn!("create_multipart_upload transport error: {:?}", other),
-                }
-                bail!(
-                    "create_multipart_upload {}/{}: {:?}",
-                    self.bucket_name,
-                    key,
-                    e
+        if let Some(enc) = content_encoding {
+            create = create.content_encoding(enc);
+        }
+
+        let create = create.send().await.map_err(|e| {
+            if let SdkError::ServiceError(se) = &e {
+                let err = se.err();
+                tracing::warn!(
+                    "create MPU failed: code={:?} msg={:?} status={:?}",
+                    err.meta().code(),
+                    err.meta().message(),
+                    se.raw().status()
                 );
             }
-        };
+            anyhow::anyhow!("create_multipart_upload {}/{}: {e}", self.bucket_name, key)
+        })?;
 
         let upload_id = create
             .upload_id()
             .context("missing upload_id from create_multipart_upload")?
             .to_string();
 
-        let mut file = tokio::fs::File::open(path)
+        let mut file = File::open(path)
             .await
             .with_context(|| format!("open {:?}", path))?;
         let mut parts: Vec<CompletedPart> = Vec::new();
@@ -170,5 +185,28 @@ impl S3Sink {
             bucket_name: cfg.bucket_name.clone(),
             part_size: 8 * 1024 * 1024,
         })
+    }
+}
+
+fn derive_key_from_path(path: &Path, enc: &Encoding) -> String {
+    let mut stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("tangent");
+    if stem.ends_with(".sealed") {
+        stem = &stem[..stem.len() - ".sealed".len()];
+    }
+    let base = if stem.is_empty() {
+        Ulid::new().to_string()
+    } else {
+        stem.to_string()
+    };
+
+    let ext = Encoding::extension(enc);
+    let comp = path.extension().and_then(|e| e.to_str());
+    match comp {
+        Some("zst") => format!("{base}.{ext}.zst"),
+        Some("gz") => format!("{base}.{ext}.gz"),
+        _ => format!("{base}.{ext}"),
     }
 }

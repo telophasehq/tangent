@@ -12,7 +12,8 @@ use tokio::signal;
 use tokio::signal::unix::{signal, SignalKind};
 
 use prometheus::{
-    register_histogram, register_int_counter, register_int_gauge, Histogram, IntCounter, IntGauge,
+    register_histogram_vec, register_int_counter, register_int_gauge, HistogramVec, IntCounter,
+    IntGauge,
 };
 use prometheus_exporter;
 
@@ -24,14 +25,15 @@ mod wasm;
 mod worker;
 
 lazy_static::lazy_static! {
-    static ref BATCH_LATENCY: Histogram = register_histogram!(
-        "tangent_batch_seconds", "Batch call latency (sec)",
+    static ref GUEST_LATENCY: HistogramVec = register_histogram_vec!(
+        "tangent_guest_seconds",
+        "WASM guest call latency (sec)",
+        &["worker"],
         vec![5e-5,1e-4,2e-4,4e-4,8e-4,1.6e-3,3.2e-3,6.4e-3,1.28e-2,2.56e-2,5.12e-2,0.102,0.204,0.409,0.819,1.638]
     ).unwrap();
 
-    static ref BATCH_EVENTS: IntCounter = register_int_counter!(
-        "tangent_batch_objects_total", "Objects processed in batches"
-    ).unwrap();
+    static ref GUEST_BYTES_TOTAL: IntCounter =
+    register_int_counter!("tangent_guest_bytes_total", "Bytes fed to WASM guest").unwrap();
 
     static ref CONSUMER_BYTES_TOTAL: IntCounter = register_int_counter!(
         "tangent_consumer_bytes_total", "Bytes consumed (raw input)"
@@ -51,6 +53,9 @@ lazy_static::lazy_static! {
 
     static ref SINK_BYTES_TOTAL: IntCounter = register_int_counter!(
         "tangent_sink_bytes_total", "Bytes uploaded to sink"
+    ).unwrap();
+    static ref SINK_BYTES_UNCOMPRESSED_TOTAL: IntCounter = register_int_counter!(
+        "tangent_sink_bytes_uncompressed_total", "Bytes (uncompressed) uploaded to sink"
     ).unwrap();
     static ref SINK_OBJECTS_TOTAL: IntCounter = register_int_counter!(
         "tangent_sink_objects_total", "Objects sent to sink"
@@ -104,6 +109,8 @@ async fn main() -> Result<()> {
     if cfg.sinks.len() > 1 {
         bail!("You must configure exactly one sink.");
     }
+
+    tracing::info!(target="startup", config = ?cfg);
 
     let name: &String;
     let sink_cfg: &SinkConfig;

@@ -136,6 +136,8 @@ async fn run_bench(
 
         let in_bytes = (drained.consumer_bytes - before.consumer_bytes) as f64;
         let out_bytes = (drained.sink_bytes - before.sink_bytes) as f64;
+        let out_bytes_uncompressed =
+            (drained.sink_bytes_uncompressed - before.sink_bytes_uncompressed) as f64;
         let amp = if in_bytes > 0.0 {
             out_bytes / in_bytes
         } else {
@@ -144,16 +146,35 @@ async fn run_bench(
 
         let in_mibs = in_bytes / (1024.0 * 1024.0);
         let out_mibs = out_bytes / (1024.0 * 1024.0);
+        let out_mibs_uncompressed = out_bytes_uncompressed / (1024.0 * 1024.0);
         let in_mibs_s = in_mibs / elapsed;
         let out_mibs_s = out_mibs / elapsed;
+        let out_mibs_uncompressed_s = out_mibs_uncompressed / elapsed;
 
         println!(
-            "end-to-end: uploaded={:.2} MiB over {:.2}s → {:.2} MiB/s (amplification x{:.2})",
-            out_mibs, elapsed, out_mibs_s, amp
+            "end-to-end: uploaded={:.2} MiB ({:.2} MiB uncompressed) over {:.2}s → {:.2} MiB/s ({:.2} MiB/s uncompressed) (amplification x{:.5})",
+            out_mibs, out_mibs_uncompressed, elapsed, out_mibs_s, out_mibs_uncompressed_s, amp
         );
         println!(
             "producer bytes (consumed): {:.2} MiB → {:.2} MiB/s",
             in_mibs, in_mibs_s
+        );
+
+        let guest_bytes_delta = drained.guest_bytes - before.guest_bytes;
+        let guest_sum_delta = drained.guest_seconds_sum - before.guest_seconds_sum;
+        let guest_cnt_delta = drained.guest_seconds_count - before.guest_seconds_count;
+
+        let guest_avg_ms = if guest_cnt_delta > 0.0 {
+            (guest_sum_delta / guest_cnt_delta) * 1_000.0
+        } else {
+            0.0
+        };
+
+        println!(
+            "guest: bytes_in={:.2} MiB, avg_latency={:.3} ms (over {:.0} calls)",
+            guest_bytes_delta / (1024.0 * 1024.0),
+            guest_avg_ms,
+            guest_cnt_delta
         );
     }
 

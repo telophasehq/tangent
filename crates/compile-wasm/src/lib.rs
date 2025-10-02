@@ -97,6 +97,8 @@ fn run_go_compile(
         .arg("build")
         .arg("-x")
         .arg("-target=wasip2")
+        .arg("-opt=2")
+        .arg("-scheduler=none")
         .arg("-o")
         .arg(&wasm_out)
         .arg("--wit-package")

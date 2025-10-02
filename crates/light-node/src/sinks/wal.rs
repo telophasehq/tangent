@@ -1,21 +1,30 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
+use flate2::write::GzEncoder;
+use flate2::Compression as f2Compression;
 use std::cmp::max;
+use std::fs::metadata;
+use std::fs::File as stdFile;
+use std::io::copy;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use tangent_shared::Compression;
+use tangent_shared::Encoding;
+use tokio::fs;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore};
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::{spawn_blocking, JoinHandle, JoinSet};
 use tokio::time::{sleep, Duration, Instant};
 use tokio_util::sync::CancellationToken;
 use ulid::Ulid;
 
 use crate::sinks::manager::Sink;
+use crate::SINK_BYTES_UNCOMPRESSED_TOTAL;
 use crate::{
     SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL, WAL_PENDING_BYTES, WAL_PENDING_FILES,
     WAL_SEALED_BYTES_TOTAL, WAL_SEALED_FILES_TOTAL,
@@ -28,6 +37,8 @@ pub struct DurableFileSink {
     max_inflight: Arc<Semaphore>,
     max_file_size: usize,
     max_file_age: Duration,
+    compression: Compression,
+    encoding: Encoding,
     cur: Mutex<Current>,
     rotator: Mutex<Option<JoinHandle<()>>>,
     uploads: tokio::sync::Mutex<JoinSet<()>>,
@@ -42,7 +53,7 @@ struct Current {
 
 #[async_trait]
 pub trait WALSink: Send + Sync {
-    async fn write_path(&self, path: &Path) -> Result<()>;
+    async fn write_path(&self, path: &Path, encoding: &Encoding) -> Result<()>;
 }
 
 impl DurableFileSink {
@@ -52,6 +63,8 @@ impl DurableFileSink {
         max_inflight: usize,
         max_file_size: usize,
         max_file_age: Duration,
+        compression: Compression,
+        encoding: Encoding,
         cancel: CancellationToken,
     ) -> Result<Arc<Self>> {
         let dir = dir.as_ref().to_path_buf();
@@ -77,6 +90,8 @@ impl DurableFileSink {
                 bytes: 0,
                 created_at: Instant::now(),
             }),
+            compression: compression,
+            encoding: encoding,
             rotator: Mutex::new(None),
             uploads: Mutex::new(JoinSet::new()),
         });
@@ -101,37 +116,28 @@ impl DurableFileSink {
     }
 
     async fn retry_leftovers(&self) {
+        let current_path = { self.cur.lock().await.path.clone() };
+
         let mut rd = match tokio::fs::read_dir(&self.dir).await {
             Ok(r) => r,
             Err(_) => return,
         };
+
         while let Some(ent) = rd.next_entry().await.ok().flatten() {
-            if !ent.file_type().await.map(|t| t.is_file()).unwrap_or(false) {
-                continue;
-            }
-            let path = ent.path();
-
-            let is_current = {
-                let cur = self.cur.lock().await;
-                path == cur.path
-            };
-            if is_current {
+            let p = ent.path();
+            if !is_ready_wal_file(&p, &current_path).await {
                 continue;
             }
 
-            if path.extension().and_then(|e| e.to_str()) != Some("sealed") {
-                continue;
-            }
-
-            if let Ok(md) = tokio::fs::metadata(&path).await {
+            if let Ok(md) = tokio::fs::metadata(&p).await {
                 let size = md.len();
-                self.spawn_upload(path, size).await;
+                self.spawn_upload(p, size).await;
             }
         }
     }
 
     async fn rotate(&self) -> Result<()> {
-        // Do not hold the cur lock while uploading
+        // Important: Do not hold the cur lock while uploading
         let (sealed_ready, sealed_bytes) = {
             let mut cur = self.cur.lock().await;
             if cur.bytes == 0 {
@@ -171,30 +177,43 @@ impl DurableFileSink {
         Ok(())
     }
 
-    async fn spawn_upload(&self, path: PathBuf, size: u64) {
+    async fn spawn_upload(&self, path: PathBuf, orig_size: u64) {
         let permit = self.max_inflight.clone().acquire_owned().await.unwrap();
         self.inflight.fetch_add(1, Ordering::AcqRel);
         let inner = self.inner.clone();
         let inflight = self.inflight.clone();
+        let compression = self.compression.clone();
+        let encoding = self.encoding.clone();
         let fut = async move {
-            let res = async {
-                inner.write_path(&path).await?;
-                tokio::fs::remove_file(&path).await?;
-                anyhow::Ok(())
+            let path_cl = path.clone();
+            let res = async move {
+                let (upload_path, upload_size) = match compression {
+                    Compression::None => (path_cl.clone(), orig_size),
+                    Compression::Gzip { level } => compress_gzip_to_file(&path_cl, level).await?,
+                    Compression::Zstd { level } => compress_zstd_to_file(&path_cl, level).await?,
+                };
+
+                inner.write_path(&upload_path, &encoding).await?;
+
+                let _ = tokio::fs::remove_file(&upload_path).await;
+                let _ = tokio::fs::remove_file(&path_cl).await;
+
+                anyhow::Ok(upload_size)
             }
             .await;
 
             drop(permit);
             match res {
-                Ok(()) => {
+                Ok(uploaded) => {
                     SINK_OBJECTS_TOTAL.inc();
-                    SINK_BYTES_TOTAL.inc_by(size);
+                    SINK_BYTES_TOTAL.inc_by(uploaded);
+                    SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(orig_size);
                     WAL_PENDING_FILES.dec();
-                    WAL_PENDING_BYTES.sub(size as i64);
-                    tracing::debug!(uploaded=%path.display(), bytes=size, "WAL uploaded & removed");
+                    WAL_PENDING_BYTES.sub(orig_size as i64);
+                    tracing::debug!(bytes = uploaded, "WAL uploaded & removed");
                 }
                 Err(e) => {
-                    tracing::warn!("upload retryable error for {:?}: {e}", path);
+                    tracing::warn!("upload error for {:?}: {e}", path);
                 }
             }
             inflight.fetch_sub(1, Ordering::AcqRel);
@@ -256,12 +275,8 @@ impl Sink for DurableFileSink {
                 let mut rd = tokio::fs::read_dir(&self.dir).await?;
                 let mut found = false;
                 while let Some(ent) = rd.next_entry().await? {
-                    if !ent.file_type().await.map(|t| t.is_file()).unwrap_or(false) {
-                        continue;
-                    }
                     let p = ent.path();
-                    if p != current_path && p.extension().and_then(|e| e.to_str()) == Some("sealed")
-                    {
+                    if is_ready_wal_file(&p, &current_path).await {
                         found = true;
                         break;
                     }
@@ -281,4 +296,68 @@ fn make_path(dir: &Path) -> std::path::PathBuf {
     let ulid = Ulid::new();
     let name = format!("{}.bin", ulid.to_string());
     dir.join(name)
+}
+
+async fn compress_zstd_to_file(src: &Path, level: i32) -> Result<(PathBuf, u64)> {
+    let dst = src.with_extension("sealed.zst");
+    let src = src.to_path_buf();
+    let dst2 = dst.clone();
+    let size = spawn_blocking(move || -> Result<u64> {
+        let mut fin = stdFile::open(&src)?;
+        let mut fout = stdFile::create(&dst2)?;
+        let mut enc = zstd::stream::Encoder::new(&mut fout, level)?;
+        copy(&mut fin, &mut enc)?;
+        enc.finish()?;
+        Ok(metadata(&dst2)?.len())
+    })
+    .await??;
+    Ok((dst, size))
+}
+
+async fn compress_gzip_to_file(src: &Path, level: u32) -> Result<(PathBuf, u64)> {
+    let dst = src.with_extension("sealed.gz");
+    let src = src.to_path_buf();
+    let dst2 = dst.clone();
+    let size = spawn_blocking(move || -> Result<u64> {
+        let mut fin = stdFile::open(&src)?;
+        let mut fout = stdFile::create(&dst2)?;
+        let mut enc = GzEncoder::new(&mut fout, f2Compression::new(level));
+        copy(&mut fin, &mut enc)?;
+        enc.finish()?;
+        Ok(metadata(&dst2)?.len())
+    })
+    .await??;
+    Ok((dst, size))
+}
+
+#[inline]
+async fn is_ready_wal_file(path: &Path, current_path: &Path) -> bool {
+    if path == current_path {
+        return false;
+    }
+    if !fs::metadata(path)
+        .await
+        .map(|m| m.is_file())
+        .unwrap_or(false)
+    {
+        return false;
+    }
+
+    let ext = path.extension().and_then(|e| e.to_str());
+    let stem = path.file_stem().and_then(|s| s.to_str());
+
+    match (ext, stem) {
+        (Some("zst") | Some("gz"), Some(st)) if st.ends_with(".sealed") => true,
+
+        (Some("sealed"), _) => {
+            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let zst = path.with_file_name(format!("{fname}.zst"));
+            let gz = path.with_file_name(format!("{fname}.gz"));
+            let has_comp = fs::try_exists(&zst).await.unwrap_or(false)
+                || fs::try_exists(&gz).await.unwrap_or(false);
+            !has_comp
+        }
+
+        _ => false,
+    }
 }

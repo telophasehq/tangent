@@ -6,6 +6,8 @@ toolchain go1.24.7
 
 require (
 	github.com/Santiago-Labs/go-ocsf v0.1.1-0.20250915021911-3c18fd5a0a47
+	github.com/segmentio/encoding v0.5.3
+	github.com/vmihailenco/msgpack/v5 v5.4.1
 	go.bytecodealliance.org/cm v0.3.0
 )
 
@@ -20,11 +22,11 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/regclient/regclient v0.8.3 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
-	github.com/segmentio/encoding v0.5.3 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/tetratelabs/wazero v1.9.0 // indirect
 	github.com/ulikunitz/xz v0.5.12 // indirect
 	github.com/urfave/cli/v3 v3.3.3 // indirect
+	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.bytecodealliance.org v0.7.0 // indirect
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
 	golang.org/x/mod v0.26.0 // indirect

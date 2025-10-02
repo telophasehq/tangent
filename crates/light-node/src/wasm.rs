@@ -37,8 +37,10 @@ impl WasmEngine {
         cfg.wasm_component_model(true)
             .async_support(true)
             .wasm_simd(true)
-            .allocation_strategy(wasmtime::InstanceAllocationStrategy::pooling())
-            .cranelift_opt_level(wasmtime::OptLevel::Speed);
+            .cranelift_opt_level(wasmtime::OptLevel::Speed)
+            .allocation_strategy(wasmtime::InstanceAllocationStrategy::Pooling(
+                wasmtime::PoolingAllocationConfig::default(),
+            ));
 
         let engine = Engine::new(&cfg)?;
         let path = std::env::var("WASM_COMPONENT")

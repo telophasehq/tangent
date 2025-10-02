@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use bytes::BytesMut;
 use rdkafka::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
+use secrecy::ExposeSecret;
 use serde_json::Value;
 use std::{
     fs,
@@ -60,7 +61,7 @@ pub async fn run_bench(
             sasl_mechanism: _,
             username,
             password,
-        } => build_scram_producer(&kcfg.bootstrap_servers, username, password),
+        } => build_scram_producer(&kcfg.bootstrap_servers, username, password.expose_secret()),
     };
 
     let topic = kcfg.topic.clone();

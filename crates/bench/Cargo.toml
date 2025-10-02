@@ -24,4 +24,5 @@ aws-sdk-sqs = "1.84.1"
 aws-config = "1.8.6"
 chrono = "0.4.42"
 prometheus-parse = "0.2.5"
+secrecy = { version = "0.10.3", features = ["serde"] }
 

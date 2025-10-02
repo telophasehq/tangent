@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -48,6 +48,12 @@ pub enum SourceConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct CommonSinkOptions {
+    #[serde(default)]
+    pub compression: Compression,
+
+    #[serde(default)]
+    pub encoding: Encoding,
+
     #[serde(default = "object_max_bytes")]
     pub object_max_bytes: usize,
 
@@ -59,6 +65,70 @@ pub struct CommonSinkOptions {
 
     #[serde(default = "max_file_age_seconds")]
     pub max_file_age_seconds: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Encoding {
+    NDJSON,
+    JSON,
+    Avro,
+    Parquet,
+}
+
+impl Default for Encoding {
+    fn default() -> Self {
+        Encoding::NDJSON
+    }
+}
+
+impl Encoding {
+    pub fn content_type(&self) -> &'static str {
+        match self {
+            Encoding::NDJSON => "application/x-ndjson",
+            Encoding::JSON => "application/json",
+            Encoding::Avro => "application/avro",
+            Encoding::Parquet => "application/vnd.apache.parquet",
+        }
+    }
+
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Encoding::NDJSON => "ndjson",
+            Encoding::JSON => "json",
+            Encoding::Avro => "avro",
+            Encoding::Parquet => "parquet",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Compression {
+    None,
+    Gzip {
+        #[serde(default = "default_gzip_level")]
+        level: u32,
+    },
+    Zstd {
+        #[serde(default = "default_zstd_level")]
+        level: i32,
+    },
+}
+
+impl Default for Compression {
+    fn default() -> Self {
+        Compression::Zstd {
+            level: default_zstd_level(),
+        }
+    }
+}
+
+fn default_gzip_level() -> u32 {
+    6
+}
+fn default_zstd_level() -> i32 {
+    3
 }
 
 fn object_max_bytes() -> usize {
