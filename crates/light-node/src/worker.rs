@@ -1,6 +1,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
+use memchr::memchr_iter;
+use rmp_serde::Serializer;
+use serde_json::de::Deserializer;
+use serde_transcode::transcode;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -109,7 +113,8 @@ impl Worker {
         let s: &mut Store<Host> = &mut self.store;
 
         let start = Instant::now();
-        let out = match self.processor.call_process_logs(s, &batch).await {
+        let msgpack_bytes = ndjson_to_msgpack(batch)?;
+        let out = match self.processor.call_process_logs(s, &msgpack_bytes).await {
             Err(host) => {
                 return Err(anyhow::anyhow!("process_logs host error: {host}"));
             }
@@ -179,7 +184,9 @@ impl WorkerPool {
             let processor = engine.make_processor(&mut store).await?;
 
             let start = Instant::now();
-            match processor.call_process_logs(&mut store, b"{}").await? {
+            let empty_msg_bytes = BytesMut::from("{}");
+            let empty_msg = ndjson_to_msgpack(&empty_msg_bytes)?;
+            match processor.call_process_logs(&mut store, &empty_msg).await? {
                 Ok(_) => {
                     tracing::info!(target:"sidecar",
                         "worker {i} warmup in {} µs", start.elapsed().as_micros());
@@ -254,4 +261,27 @@ impl WorkerPool {
             let _ = h.await;
         }
     }
+}
+
+pub fn ndjson_to_msgpack(batch: &BytesMut) -> Result<Vec<u8>> {
+    let bytes = &batch[..];
+    let mut start = 0usize;
+
+    let mut mp = BytesMut::with_capacity(bytes.len() + bytes.len() / 8 + 1024);
+    let mut writer = (&mut mp).writer();
+
+    for nl in memchr_iter(b'\n', bytes) {
+        let line = &bytes[start..nl];
+        start = nl + 1;
+
+        if line.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+
+        let mut de = Deserializer::from_slice(line);
+        let mut ser = Serializer::new(&mut writer);
+        transcode(&mut de, &mut ser)?;
+    }
+
+    Ok(mp.to_vec())
 }
