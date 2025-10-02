@@ -7,13 +7,22 @@ import (
 	"errors"
 	"io"
 	"ocsf-go/internal/tangent/logs/processor"
+	"sync"
 
 	"github.com/segmentio/encoding/json"
 
 	"go.bytecodealliance.org/cm"
 )
 
-var outBuf []byte
+var (
+	outBuf  []byte
+	decPool = sync.Pool{New: func() any { return json.NewDecoder(bytes.NewReader(nil)) }}
+	encPool = sync.Pool{New: func() any { return json.NewEncoder(io.Discard) }}
+	rdrPool = sync.Pool{New: func() any { return new(bytes.Reader) }}
+	mapPool = sync.Pool{
+		New: func() any { return make(map[string]any, 64) },
+	}
+)
 
 type byteSliceWriter struct{ p *[]byte }
 
@@ -30,10 +39,18 @@ type Handler interface {
 
 func Wire(h Handler) {
 	processor.Exports.ProcessLogs = func(input cm.List[uint8]) (r cm.Result[cm.List[uint8], cm.List[uint8], string]) {
-		outBuf = outBuf[:0]
-
 		in := input.Slice()
-		dec := json.NewDecoder(bytes.NewReader(in))
+
+		outBuf = outBuf[:0]
+		if cap(outBuf) < len(in) {
+			outBuf = make([]byte, 0, len(in))
+		}
+
+		rdr := rdrPool.Get().(*bytes.Reader)
+		rdr.Reset(in)
+		defer rdrPool.Put(rdr)
+
+		dec := json.NewDecoder(rdr)
 		dec.UseNumber()
 
 		enc := json.NewEncoder(byteSliceWriter{&outBuf})
@@ -48,17 +65,10 @@ func Wire(h Handler) {
 				r.SetErr(err.Error())
 				return
 			}
-			out, err := h.ProcessLog(m)
-			if err != nil {
+			if out, err := h.ProcessLog(m); err != nil {
+				enc.Encode(out)
 				r.SetErr(err.Error())
 				return
-			}
-
-			for i := range out {
-				if err := enc.Encode(out[i]); err != nil {
-					r.SetErr(err.Error())
-					return
-				}
 			}
 		}
 
