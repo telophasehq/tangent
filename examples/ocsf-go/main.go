@@ -4,16 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ocsf-go/internal/tangent/logs/processor"
 	"ocsf-go/mappers"
 )
 
 type Processor struct{}
 
-func (p Processor) ProcessLog(log map[string]any) ([]any, error) {
-	var normalized []any
+func (p Processor) ProcessLog(log map[string]any) (*LogOutput, error) {
 	ctx := context.Background()
 	if len(log) == 0 {
-		return normalized, nil
+		return nil, nil
 	}
 	if _, ok := log["source_type"]; ok {
 		sourceType, ok := log["source_type"].(string)
@@ -26,23 +26,41 @@ func (p Processor) ProcessLog(log map[string]any) ([]any, error) {
 			if err != nil {
 				return nil, err
 			}
-			normalized = append(normalized, mapped)
+			prefix := "eks/"
+			return &LogOutput{
+				Data: mapped,
+				Sinks: []processor.Sink{
+					S3("s3_bucket", &prefix),
+				},
+			}, nil
 		case "syslog":
 			mapped, err := mappers.SyslogToOCSF(log)
 			if err != nil {
 				return nil, err
 			}
-			normalized = append(normalized, mapped)
+			prefix := "syslog/"
+			return &LogOutput{
+				Data: mapped,
+				Sinks: []processor.Sink{
+					S3("s3_bucket", &prefix),
+				},
+			}, nil
 		}
 	} else if _, ok := log["eventType"]; ok {
 		mapped, err := mappers.CloudtrailToOCSF(ctx, log)
 		if err != nil {
 			return nil, err
 		}
-		normalized = append(normalized, mapped)
+		prefix := "cloudtrail/"
+		return &LogOutput{
+			Data: mapped,
+			Sinks: []processor.Sink{
+				S3("s3_bucket", &prefix),
+			},
+		}, nil
 	} else {
 		return nil, fmt.Errorf("unknown log: {}", log)
 	}
 
-	return normalized, nil
+	return nil, nil
 }

@@ -2,3 +2,57 @@
 
 // Package processor represents the world "tangent:logs/processor@0.1.0".
 package processor
+
+import (
+	"go.bytecodealliance.org/cm"
+)
+
+// S3Sink represents the record "tangent:logs/processor@0.1.0#s3-sink".
+//
+//	record s3-sink {
+//		name: string,
+//		key-prefix: option<string>,
+//	}
+type S3Sink struct {
+	_         cm.HostLayout     `json:"-"`
+	Name      string            `json:"name"`
+	KeyPrefix cm.Option[string] `json:"key-prefix"`
+}
+
+// Sink represents the variant "tangent:logs/processor@0.1.0#sink".
+//
+//	variant sink {
+//		s3(s3-sink),
+//	}
+type Sink cm.Variant[uint8, S3Sink, S3Sink]
+
+// SinkS3 returns a [Sink] of case "s3".
+func SinkS3(data S3Sink) Sink {
+	return cm.New[Sink](0, data)
+}
+
+// S3 returns a non-nil *[S3Sink] if [Sink] represents the variant case "s3".
+func (self *Sink) S3() *S3Sink {
+	return cm.Case[S3Sink](self, 0)
+}
+
+var _SinkStrings = [1]string{
+	"s3",
+}
+
+// String implements [fmt.Stringer], returning the variant case name of v.
+func (v Sink) String() string {
+	return _SinkStrings[v.Tag()]
+}
+
+// Output represents the record "tangent:logs/processor@0.1.0#output".
+//
+//	record output {
+//		sinks: list<sink>,
+//		data: list<u8>,
+//	}
+type Output struct {
+	_     cm.HostLayout  `json:"-"`
+	Sinks cm.List[Sink]  `json:"sinks"`
+	Data  cm.List[uint8] `json:"data"`
+}

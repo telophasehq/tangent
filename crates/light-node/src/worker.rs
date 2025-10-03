@@ -1,24 +1,54 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
 use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::JoinHandle;
 use tokio::time::{self, Instant as TokioInstant};
 use wasmtime::Store;
 
-use crate::sinks::manager::{SinkItem, SinkManager};
-use crate::wasm::{self, Host, Processor};
+use crate::sinks::{manager::SinkManager, wal::RouteKey};
+use crate::wasm::{self, Host, Processor, Sink};
 use crate::{CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, GUEST_BYTES_TOTAL, GUEST_LATENCY};
 
 #[async_trait]
 pub trait Ack: Send + Sync {
     async fn ack(&self) -> Result<()>;
+}
+
+#[derive(Clone)]
+struct RefCountAck {
+    remaining: Arc<AtomicUsize>,
+    inners: Arc<Vec<Arc<dyn Ack>>>,
+}
+
+impl RefCountAck {
+    fn new(inner: Vec<Arc<dyn Ack>>, n: usize) -> Self {
+        Self {
+            remaining: Arc::new(AtomicUsize::new(n)),
+            inners: Arc::new(inner),
+        }
+    }
+}
+
+#[async_trait]
+impl Ack for RefCountAck {
+    async fn ack(&self) -> Result<()> {
+        if self.remaining.fetch_sub(1, Ordering::AcqRel) == 1 {
+            for a in self.inners.iter() {
+                let _ = a.ack().await;
+            }
+        }
+        Ok(())
+    }
 }
 
 pub struct Record {
@@ -107,38 +137,68 @@ impl Worker {
         }
 
         let s: &mut Store<Host> = &mut self.store;
-
         let start = Instant::now();
-        let out = match self.processor.call_process_logs(s, &batch).await {
+
+        let outs = match self.processor.call_process_logs(s, &batch).await {
             Err(host) => {
                 return Err(anyhow::anyhow!("process_logs host error: {host}"));
             }
-            Ok(Ok(out)) => out,
+            Ok(Ok(outs)) => outs,
             Ok(Err(guest)) => {
                 tracing::warn!(target: "sidecar",
                     %guest,
                     batch_bytes = batch.len(),
                     "process_logs guest error; skipping batch");
+                batch.clear();
+                *events_in_batch = 0;
                 return Ok(());
             }
         };
+
         let secs = start.elapsed().as_secs_f64();
         GUEST_LATENCY
             .with_label_values(&[&self.id.to_string()])
             .observe(secs);
-
         GUEST_BYTES_TOTAL.inc_by(batch.len() as u64);
 
-        let sink_payload: Bytes = Bytes::from(out);
-        let pending_acks = std::mem::take(acks);
-        self.sink_manager
-            .enqueue(SinkItem {
-                payload: sink_payload,
-                acks: pending_acks,
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("sink queue full: {e}"))?;
+        let mut sink_routes: HashMap<RouteKey, BytesMut> = HashMap::new();
+        for o in outs {
+            let data = &o.data;
 
+            for s in o.sinks {
+                match s {
+                    Sink::S3(s3v) => {
+                        let key = RouteKey {
+                            sink_name: s3v.name.clone(),
+                            prefix: s3v.key_prefix.clone(),
+                        };
+                        let buf = sink_routes
+                            .entry(key)
+                            .or_insert_with(|| BytesMut::with_capacity(data.len()));
+                        buf.extend_from_slice(data);
+                    }
+                }
+            }
+        }
+
+        let total_writes = sink_routes.len().max(1);
+        let rc = {
+            let batch_acks = std::mem::take(acks);
+            RefCountAck::new(batch_acks, total_writes)
+        };
+
+        for (rk, buf) in sink_routes {
+            let payload = buf.freeze();
+            self.sink_manager
+                .enqueue(
+                    rk.sink_name.clone(),
+                    rk.prefix.clone(),
+                    payload,
+                    vec![Arc::new(rc.clone()) as Arc<dyn Ack>],
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("sink queue full: {e}"))?;
+        }
         tracing::debug!(
             target: "sidecar",
             worker = self.id,
@@ -147,6 +207,7 @@ impl Worker {
             took_us = start.elapsed().as_micros(),
             "processed batch"
         );
+
         batch.clear();
         *events_in_batch = 0;
         Ok(())

@@ -1,7 +1,10 @@
+use ahash::AHasher;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use rand::{rng, Rng};
+use std::collections::HashMap;
+use std::hash::Hasher;
 use std::{sync::Arc, time::Duration};
 use tangent_shared::{SinkConfig, SinkKind};
 use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
@@ -15,9 +18,15 @@ use crate::{
     worker::Ack,
 };
 
+pub struct SinkWrite {
+    pub sink_name: String,
+    pub payload: Bytes,
+    pub s3: Option<s3::S3SinkItem>,
+}
+
 #[async_trait]
 pub trait Sink: Send + Sync {
-    async fn write(&self, payload: Bytes) -> Result<()>;
+    async fn write(&self, req: SinkWrite) -> Result<()>;
 
     async fn flush(&self) -> Result<()> {
         Ok(())
@@ -25,14 +34,18 @@ pub trait Sink: Send + Sync {
 }
 
 pub struct SinkItem {
-    pub payload: Bytes,
     pub acks: Vec<Arc<dyn Ack>>,
+    pub req: SinkWrite,
+}
+
+struct Shard {
+    tx: mpsc::Sender<SinkItem>,
+    handle: JoinHandle<()>,
 }
 
 pub struct SinkManager {
-    tx: mpsc::Sender<SinkItem>,
-    handles: Vec<JoinHandle<()>>,
-    sink: Arc<dyn Sink>,
+    shards: Vec<Shard>,
+    sinks: HashMap<String, Arc<dyn Sink>>,
     cancel: CancellationToken,
 }
 
@@ -43,13 +56,13 @@ impl SinkManager {
         queue_capacity: usize,
         cancel: CancellationToken,
     ) -> Result<Self> {
-        let mut handles = Vec::with_capacity(1usize);
+        let mut sinks = HashMap::new();
 
-        let sink: Arc<dyn Sink> = match &cfg.kind {
+        match &cfg.kind {
             SinkKind::S3(s3cfg) => {
                 let remote = Arc::new(s3::S3Sink::new(name, s3cfg).await?);
 
-                wal::DurableFileSink::new(
+                let s3_sink = wal::DurableFileSink::new(
                     remote,
                     cfg.common.wal_path.clone(),
                     cfg.common.in_flight_limit,
@@ -59,37 +72,46 @@ impl SinkManager {
                     cfg.common.encoding.clone(),
                     cancel.clone(),
                 )
-                .await?
+                .await?;
+                sinks.insert(name.clone(), s3_sink as Arc<dyn Sink>);
             }
         };
 
-        let (tx, mut rx) = mpsc::channel::<SinkItem>(queue_capacity);
+        let num_shards = 4usize;
+        let mut shards = Vec::with_capacity(num_shards);
         let sem = Arc::new(Semaphore::new(cfg.common.in_flight_limit));
 
-        let h = tokio::spawn({
-            let sink = sink.clone();
+        for _ in 0..num_shards {
+            let (tx, mut rx) = mpsc::channel::<SinkItem>(queue_capacity);
+            let sinks_map = sinks.clone();
             let sem = sem.clone();
-            let cancel = cancel.clone();
-            async move {
+            let cancel_shard = cancel.clone();
+
+            let handle = tokio::spawn(async move {
                 let mut js = JoinSet::new();
 
                 loop {
                     tokio::select! {
-                        _ = cancel.cancelled() => {
-                            break;
-                        }
+                        _ = cancel_shard.cancelled() => break,
                         maybe = rx.recv() => {
-                            let mut item = match maybe {
-                                Some(it) => it,
-                                None => break,
+                            let mut item = match maybe { Some(it) => it, None => break };
+
+                            let sink_name = item.req.sink_name;
+
+                            let sink = match sinks_map.get(&sink_name) {
+                                Some(s) => s.clone(),
+                                None => {
+                                    tracing::warn!("no sink named '{sink_name}'; dropping item");
+                                    for a in item.acks.drain(..) { let _ = a.ack().await; }
+                                    continue;
+                                }
                             };
 
-                            let sink = sink.clone();
                             let permit = match sem.clone().acquire_owned().await {
                                 Ok(p) => p,
                                 Err(_) => break,
                             };
-                            let token = cancel.child_token();
+                            let token = cancel_shard.child_token();
 
                             js.spawn(async move {
                                 let _permit: OwnedSemaphorePermit = permit;
@@ -100,16 +122,22 @@ impl SinkManager {
                                         INFLIGHT.dec();
                                         break;
                                     }
-                                    match sink.write(item.payload.clone()).await {
+                                    match sink.write(SinkWrite {
+                                        sink_name: sink_name.clone(),
+                                        payload: item.req.payload.clone(),
+                                        s3: item.req.s3.clone(),
+                                    }).await {
                                         Ok(()) => {
                                             for a in item.acks.drain(..) {
                                                 if let Err(e) = a.ack().await {
                                                     tracing::warn!("ack failed: {e}");
                                                 }
                                             }
-                                            tracing::debug!(bytes = item.payload.len(),
-                                                            took_us = start.elapsed().as_micros(),
-                                                            "wrote batch");
+                                            tracing::debug!(
+                                                bytes = item.req.payload.len(),
+                                                took_us = start.elapsed().as_micros(),
+                                                "wrote route chunk"
+                                            );
                                             INFLIGHT.dec();
                                             break;
                                         }
@@ -132,14 +160,15 @@ impl SinkManager {
                 }
 
                 while js.join_next().await.is_some() {}
-            }
-        });
-        handles.push(h);
+            });
+
+            shards.push(Shard { tx, handle });
+        }
+
         Ok(Self {
-            tx: tx,
-            handles: handles,
-            sink: sink,
-            cancel: cancel,
+            shards,
+            sinks,
+            cancel,
         })
     }
 
@@ -147,24 +176,69 @@ impl SinkManager {
         self.cancel.cancel();
     }
 
-    pub async fn enqueue(&self, item: SinkItem) -> Result<(), mpsc::error::SendError<SinkItem>> {
-        match self.tx.send(item).await {
-            Ok(()) => {
-                INFLIGHT.inc();
-                Ok(())
-            }
-            Err(e) => Err(e),
+    pub async fn enqueue(
+        &self,
+        sink_name: String,
+        key_prefix: Option<String>,
+        payload: Bytes,
+        acks: Vec<Arc<dyn Ack>>,
+    ) -> Result<()> {
+        let route_key = if let Some(prefix) = &key_prefix {
+            format!("{}|{}", sink_name, prefix)
+        } else {
+            sink_name.clone()
+        };
+
+        let shard_ix = (hash_route(&route_key) as usize) % self.shards.len();
+
+        let item: Option<SinkItem> = if let Some(_sink) = self.sinks.get(&sink_name) {
+            let meta = s3::S3SinkItem {
+                bucket_name: sink_name.clone(),
+                key_prefix: key_prefix.clone(),
+            };
+
+            Some(SinkItem {
+                acks,
+                req: SinkWrite {
+                    sink_name: sink_name.clone(),
+                    payload: payload.clone(),
+                    s3: Some(meta),
+                },
+            })
+        } else {
+            tracing::warn!("no sink named '{}'; dropping item", sink_name);
+            None
+        };
+
+        match item {
+            Some(sink_item) => self.shards[shard_ix]
+                .tx
+                .send(sink_item)
+                .await
+                .map(|_| {
+                    INFLIGHT.inc();
+                })
+                .map_err(|e| anyhow::anyhow!("send to shard {shard_ix} failed: {e}")),
+            None => anyhow::bail!("unknown sink: {sink_name}"),
         }
     }
 
     pub async fn join(self) -> Result<()> {
-        for h in self.handles {
-            h.await?;
+        for s in &self.shards {
+            s.handle.abort();
         }
-        if let Err(e) = self.sink.flush().await {
-            tracing::warn!("sink flush failed during shutdown: {e}");
-            return Err(e);
+        for (nm, s) in &self.sinks {
+            if let Err(e) = s.flush().await {
+                tracing::warn!("sink '{nm}' flush failed during shutdown: {e}");
+                return Err(e);
+            }
         }
         Ok(())
     }
+}
+
+fn hash_route(route_key: &str) -> u64 {
+    let mut h = AHasher::default();
+    h.write(route_key.as_bytes());
+    h.finish()
 }

@@ -19,10 +19,27 @@ pub struct S3Sink {
     part_size: usize,
 }
 
+#[derive(Clone)]
+
+pub struct S3SinkItem {
+    pub bucket_name: String,
+    pub key_prefix: Option<String>,
+}
+
 #[async_trait]
 impl WALSink for S3Sink {
-    async fn write_path(&self, path: &Path, encoding: &Encoding) -> Result<()> {
-        let key = derive_key_from_path(path, &encoding);
+    async fn write_path_with(
+        &self,
+        path: &Path,
+        encoding: &Encoding,
+        meta: &S3SinkItem,
+    ) -> Result<()> {
+        let base = derive_key_from_path(&path, encoding);
+        let key = if let Some(prefix) = &meta.key_prefix {
+            format!("{}/{}", prefix.trim_end_matches('/'), base)
+        } else {
+            base
+        };
 
         let content_type = Encoding::content_type(&encoding);
         let content_encoding = match path.extension().and_then(|e| e.to_str()) {
@@ -45,7 +62,21 @@ impl WALSink for S3Sink {
             if let Some(enc) = content_encoding {
                 put = put.content_encoding(enc);
             }
-            put.send().await?;
+            put.send().await.map_err(|e| {
+                if let SdkError::ServiceError(se) = &e {
+                    let err = se.err();
+                    tracing::warn!(
+                        target: "s3",
+                        code = ?err.meta().code(),
+                        msg  = ?err.meta().message(),
+                        status = ?se.raw().status(),
+                        bucket = %self.bucket_name,
+                        key = %key,
+                        "put_object failed"
+                    );
+                }
+                anyhow::anyhow!("put_object {} {}: {}", self.bucket_name, key, e)
+            })?;
             return Ok(());
         }
 
@@ -127,7 +158,7 @@ impl WALSink for S3Sink {
                         "upload_part failed for sink {} key {} part {}: {e}",
                         self.name,
                         key,
-                        part_number
+                        part_number,
                     );
                 }
             };

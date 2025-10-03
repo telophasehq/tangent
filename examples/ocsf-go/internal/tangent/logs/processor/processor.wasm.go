@@ -10,7 +10,7 @@ import (
 
 //go:wasmexport process-logs
 //export process-logs
-func wasmexport_ProcessLogs(logs0 *uint8, logs1 uint32) (result *cm.Result[cm.List[uint8], cm.List[uint8], string]) {
+func wasmexport_ProcessLogs(logs0 *uint8, logs1 uint32) (result *cm.Result[cm.List[Output], cm.List[Output], string]) {
 	logs := cm.LiftList[cm.List[uint8]]((*uint8)(logs0), (uint32)(logs1))
 	result_ := Exports.ProcessLogs(logs)
 	result = &result_
