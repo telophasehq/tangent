@@ -2295,53 +2295,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "light-node"
-version = "0.1.0"
-dependencies = [
- "ahash",
- "anyhow",
- "async-trait",
- "aws-config",
- "aws-sdk-s3",
- "aws-sdk-sqs",
- "aws-smithy-http",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "clap",
- "flate2",
- "futures",
- "futures-util",
- "lazy_static",
- "log",
- "memchr",
- "num_cpus",
- "prometheus",
- "prometheus_exporter",
- "rand 0.9.2",
- "rdkafka",
- "rmp-serde",
- "secrecy",
- "serde",
- "serde-transcode",
- "serde_json",
- "serde_yaml",
- "tangent-shared",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "ulid",
- "wasmtime",
- "wasmtime-wasi",
- "zstd",
-]
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3654,6 +3607,67 @@ dependencies = [
  "rustix 0.38.44",
  "windows-sys 0.59.0",
  "winx",
+]
+
+[[package]]
+name = "tangent-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bench",
+ "clap",
+ "compile-wasm",
+ "tangent-runtime",
+ "tangent-shared",
+ "tokio",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "tangent-runtime"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-s3",
+ "aws-sdk-sqs",
+ "aws-smithy-http",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "clap",
+ "flate2",
+ "futures",
+ "futures-util",
+ "lazy_static",
+ "log",
+ "memchr",
+ "num_cpus",
+ "prometheus",
+ "prometheus_exporter",
+ "rand 0.9.2",
+ "rdkafka",
+ "rmp-serde",
+ "secrecy",
+ "serde",
+ "serde-transcode",
+ "serde_json",
+ "serde_yaml",
+ "tangent-shared",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "ulid",
+ "wasmtime",
+ "wasmtime-wasi",
+ "zstd",
 ]
 
 [[package]]

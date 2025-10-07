@@ -7,23 +7,22 @@ use std::{
 use tangent_shared::Config;
 use which::which;
 
-const OUT_DIR: &str = "compiled";
 const WORLD: &str = "processor";
 
-pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()> {
+pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf, out: &PathBuf) -> Result<()> {
     let cfg = Config::from_file(cfg_path)?;
 
     let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
     let entry_point_path = config_dir.join(&cfg.entry_point);
 
-    fs::create_dir_all(&OUT_DIR)?;
+    fs::create_dir_all(&out)?;
 
     // Build only the entry point
-    let out = PathBuf::from(format!("{OUT_DIR}/app.component.wasm"));
+    let full_out = &out.join("app.component.wasm");
 
     match cfg.module_type.as_str() {
-        "py" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &out)?,
-        "go" => run_go_compile(&wit_path, WORLD, &entry_point_path, &out)?,
+        "py" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &full_out)?,
+        "go" => run_go_compile(&wit_path, WORLD, &entry_point_path, &full_out)?,
         ext => anyhow::bail!(
             "unsupported filetype: {} for wasm entrypoint: {}",
             ext,
@@ -31,7 +30,7 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
         ),
     }
 
-    println!("✅ Compiled {} → {}", cfg.entry_point, OUT_DIR);
+    println!("✅ Compiled {} → {}", cfg.entry_point, full_out.display());
     println!("   Entry: app.component.wasm");
     Ok(())
 }

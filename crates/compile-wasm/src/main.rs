@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
@@ -14,9 +14,21 @@ struct Args {
     /// Path to WIT directory
     #[arg(long, default_value = "./wit")]
     wit: PathBuf,
+    /// Path to output
+    #[arg(long, default_value = "compiled/")]
+    out: PathBuf,
 }
 
 fn main() -> Result<()> {
-    let args = &Args::parse();
-    compile_wasm::compile_from_config(&args.config, &args.wit)
+    let args = Args::parse();
+    let config = args
+        .config
+        .canonicalize()
+        .with_context(|| format!("config path not found: {}", args.config.display()))?;
+    let wit = args
+        .wit
+        .canonicalize()
+        .with_context(|| format!("WIT path not found: {}", args.wit.display()))?;
+
+    compile_wasm::compile_from_config(&config, &wit, &args.out)
 }
