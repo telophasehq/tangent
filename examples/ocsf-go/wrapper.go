@@ -94,22 +94,24 @@ func Wire(h Handler) {
 
 			for _, s := range out.Sinks {
 				var k sinkKey
-				switch s.String() {
-				case "s3":
-					s3 := s.S3()
+				if s3 := s.S3(); s3 != nil {
 					k = sinkKey{name: s3.Name, prefix: s3.KeyPrefix}
-				default:
+				} else {
 					r.SetErr("unknown sink type")
 					return
 				}
-				if _, ok := states[k]; !ok {
+
+				st, ok := states[k]
+				if !ok {
 					buf := bufPool.Get().(*bytes.Buffer)
 					buf.Reset()
 					enc := json.NewEncoder(buf)
 					enc.SetEscapeHTML(false)
-					states[k] = &sinkState{key: k, buf: buf, enc: enc}
+					st = &sinkState{key: k, buf: buf, enc: enc}
+					states[k] = st
 				}
-				if err := states[k].enc.Encode(out.Data); err != nil {
+
+				if err := st.enc.Encode(out.Data); err != nil {
 					r.SetErr(err.Error())
 					return
 				}
