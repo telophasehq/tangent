@@ -11,7 +11,7 @@ ci = "github"
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.30.0"
 # The installers to generate for each app
-installers = ["shell", "powershell", "homebrew"]
+installers = ["shell", "homebrew"]
 # A GitHub repo to push Homebrew formulas to
 tap = "Santiago-Labs/homebrew-telophase"
 # Path that installers should place binaries in

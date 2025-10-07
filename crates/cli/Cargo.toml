@@ -10,9 +10,9 @@ readme.workspace = true
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 compile-wasm = { path = "../compile-wasm" }
-bench = { path = "../bench" }
 tangent_runtime = { path = "../tangent", package = "tangent-runtime" }
 tangent_shared = { path = "../shared", package = "tangent-shared" }
+tangent_bench = { path = "../bench", package = "tangent-bench" }
 tokio = "1.47.1"
 anyhow = "1.0.100"
 tracing-subscriber = "0.3.20"

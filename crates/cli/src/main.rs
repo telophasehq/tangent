@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
+use tangent_bench::BenchOptions;
 use tangent_runtime::RuntimeOptions;
 
 #[derive(Parser, Debug)]
@@ -36,6 +37,39 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         once: bool,
     },
+
+    Bench {
+        /// Path to tangent.yaml
+        #[arg(long, value_name = "FILE")]
+        config: PathBuf,
+
+        /// Duration (seconds)
+        #[arg(long, default_value_t = 15)]
+        seconds: u64,
+
+        /// Concurrent connections
+        #[arg(long, default_value_t = 2)]
+        connections: u16,
+
+        /// Payload filepath. If omitted, runs all files in `test_data/`
+        #[arg(long)]
+        payload: Option<PathBuf>,
+
+        /// Batch-bytes cap per write (0 = disabled)
+        #[arg(long, default_value_t = 65_536)]
+        max_bytes: usize,
+
+        /// Prometheus metrics endpoint
+        #[arg(long, default_value = "http://127.0.0.1:9184/metrics")]
+        metrics_url: String,
+
+        /// For S3 + SQS bench
+        #[arg(long)]
+        bucket: Option<String>,
+
+        #[arg(long)]
+        object_prefix: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -60,6 +94,28 @@ async fn main() -> Result<()> {
                 ..Default::default()
             };
             tangent_runtime::run(&cfg, opts).await?;
+        }
+        Commands::Bench {
+            config,
+            seconds,
+            connections,
+            payload,
+            max_bytes,
+            metrics_url,
+            bucket,
+            object_prefix,
+        } => {
+            let opts = BenchOptions {
+                config_path: Some(config.clone()),
+                seconds,
+                connections,
+                payload,
+                max_bytes,
+                metrics_url,
+                bucket,
+                object_prefix,
+            };
+            tangent_bench::run(&config, opts).await?;
         }
     }
 

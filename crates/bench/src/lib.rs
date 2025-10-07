@@ -1,61 +1,59 @@
 use anyhow::{Context, Result};
-use clap::Parser;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 use tangent_shared::{Config, SourceConfig};
 
-mod metrics;
-mod msk;
-mod socket;
-mod sqs;
-/// NDJSON UDS load generator
-#[derive(Parser, Debug)]
-struct Args {
-    /// Path to tangent.yaml
-    #[arg(long)]
-    config: PathBuf,
+pub mod metrics;
+pub mod msk;
+pub mod socket;
+pub mod sqs;
+
+/// Options for running the benchmark.
+#[derive(Debug, Clone)]
+pub struct BenchOptions {
+    /// Path to tangent.yaml (already parsed in `run_with_config`, here for symmetry)
+    pub config_path: Option<PathBuf>,
     /// Duration (seconds)
-    #[arg(long, default_value_t = 15)]
-    seconds: u64,
+    pub seconds: u64,
     /// Concurrent connections
-    #[arg(long, default_value_t = 2)]
-    connections: u16,
-    /// Payload filepath. Leave empty to run all test payloads.
-    #[arg(long)]
-    payload: Option<PathBuf>,
+    pub connections: u16,
+    /// Payload filepath. If None, runs all files in `test_data/`.
+    pub payload: Option<PathBuf>,
     /// Batch-bytes cap per write (0 = disabled)
-    #[arg(long, default_value_t = 65536)]
-    max_bytes: usize,
-
-    #[arg(long, default_value = "http://127.0.0.1:9184/metrics")]
-    metrics_url: String,
-    /// For S3 + SQS Bench.
-    #[arg(long)]
-    bucket: Option<String>,
-    #[arg(long)]
-    object_prefix: Option<String>,
+    pub max_bytes: usize,
+    /// Prometheus metrics endpoint
+    pub metrics_url: String,
+    /// For S3 + SQS bench
+    pub bucket: Option<String>,
+    pub object_prefix: Option<String>,
 }
 
-fn crate_root() -> &'static str {
-    env!("CARGO_MANIFEST_DIR")
+impl Default for BenchOptions {
+    fn default() -> Self {
+        Self {
+            config_path: None,
+            seconds: 15,
+            connections: 2,
+            payload: None,
+            max_bytes: 65_536,
+            metrics_url: "http://127.0.0.1:9184/metrics".to_string(),
+            bucket: None,
+            object_prefix: None,
+        }
+    }
 }
 
-fn test_data_dir() -> PathBuf {
-    Path::new(crate_root()).join("test_data")
+pub async fn run(config_path: &PathBuf, opts: BenchOptions) -> Result<()> {
+    let cfg = Config::from_file(config_path)?;
+    run_with_config(&cfg, opts).await
 }
 
-#[tokio::main(flavor = "multi_thread")]
-async fn main() -> Result<()> {
-    tracing_subscriber::fmt().init();
-
-    let args = Args::parse();
-    let cfg = Config::from_file(&args.config)?;
-
+pub async fn run_with_config(cfg: &Config, opts: BenchOptions) -> Result<()> {
     let mut payloads: Vec<PathBuf> = Vec::new();
-    if let Some(payload) = args.payload {
-        payloads.push(payload);
+    if let Some(payload) = &opts.payload {
+        payloads.push(payload.clone());
     } else {
         for entry in fs::read_dir(test_data_dir()).context(format!(
             "reading test data dir: {}",
@@ -66,25 +64,33 @@ async fn main() -> Result<()> {
     }
 
     for payload in payloads {
-        run_bench(
-            &cfg,
-            &args.metrics_url,
-            args.connections,
-            args.max_bytes,
-            args.seconds,
+        run_one_payload(
+            cfg,
+            &opts.metrics_url,
+            opts.connections,
+            opts.max_bytes,
+            opts.seconds,
             payload,
-            args.bucket.clone(),
-            args.object_prefix.clone(),
+            opts.bucket.clone(),
+            opts.object_prefix.clone(),
         )
-        .await?
+        .await?;
     }
 
     Ok(())
 }
 
-async fn run_bench(
+fn crate_root() -> &'static str {
+    env!("CARGO_MANIFEST_DIR")
+}
+
+fn test_data_dir() -> PathBuf {
+    Path::new(crate_root()).join("test_data")
+}
+
+pub async fn run_one_payload(
     cfg: &Config,
-    metrics_url: &String,
+    metrics_url: &str,
     connections: u16,
     max_bytes: usize,
     seconds: u64,
@@ -94,7 +100,7 @@ async fn run_bench(
 ) -> Result<()> {
     for src in &cfg.sources {
         let pd = payload.clone();
-        let before = metrics::scrape_stats(&metrics_url).await?;
+        let before = metrics::scrape_stats(metrics_url).await?;
         let t0 = std::time::Instant::now();
 
         match src {
@@ -126,12 +132,12 @@ async fn run_bench(
                     )
                     .await?;
                 } else {
-                    anyhow::bail!("--bucket is a required arg for sqs bench");
+                    anyhow::bail!("--bucket is required for SQS bench");
                 }
             }
         }
 
-        let drained = metrics::wait_for_drain(&metrics_url).await?;
+        let drained = metrics::wait_for_drain(metrics_url).await?;
         let elapsed = t0.elapsed().as_secs_f64();
 
         let in_bytes = (drained.consumer_bytes - before.consumer_bytes) as f64;
