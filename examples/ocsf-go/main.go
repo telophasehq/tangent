@@ -59,7 +59,7 @@ func (p Processor) ProcessLog(log map[string]any) (*LogOutput, error) {
 			},
 		}, nil
 	} else {
-		return nil, fmt.Errorf("unknown log: {}", log)
+		return nil, fmt.Errorf("unknown log: {%v}", log)
 	}
 
 	return nil, nil

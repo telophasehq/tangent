@@ -19,14 +19,8 @@ var (
 	mapPool = sync.Pool{
 		New: func() any { return make(map[string]any, 64) },
 	}
+	bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 )
-
-type byteSliceWriter struct{ p *[]byte }
-
-func (w byteSliceWriter) Write(b []byte) (int, error) {
-	*w.p = append(*w.p, b...)
-	return len(b), nil
-}
 
 type LogOutput struct {
 	Sinks []processor.Sink
@@ -57,26 +51,17 @@ func Wire(h Handler) {
 		dec := json.NewDecoder(rdr)
 		dec.UseNumber()
 
-		type bucket struct {
-			sinks []processor.Sink
-			buf   []byte
-			enc   *json.Encoder
+		type sinkKey struct {
+			name   string
+			prefix cm.Option[string]
 		}
-		buckets := make(map[string]*bucket, 64)
+		type sinkState struct {
+			key sinkKey
+			buf *bytes.Buffer
+			enc *json.Encoder
+		}
 
-		getKeyAndSink := func(s processor.Sink) (key string, single []processor.Sink, ok bool) {
-			if s3 := s.S3(); s3 != nil {
-				key = s3.Name
-				if s3.KeyPrefix.Some() != nil {
-					key = s3.Name + "\x00" + s3.KeyPrefix.Value()
-				}
-				single = []processor.Sink{processor.SinkS3(processor.S3Sink{
-					Name: s3.Name, KeyPrefix: s3.KeyPrefix,
-				})}
-				return key, single, true
-			}
-			return "", nil, false
-		}
+		states := make(map[sinkKey]*sinkState, 4)
 
 		for {
 			m := mapPool.Get().(map[string]any)
@@ -95,9 +80,7 @@ func Wire(h Handler) {
 			}
 
 			out, err := h.ProcessLog(m)
-			for k := range m {
-				delete(m, k)
-			}
+			clear(m)
 			mapPool.Put(m)
 
 			if err != nil {
@@ -110,33 +93,49 @@ func Wire(h Handler) {
 			}
 
 			for _, s := range out.Sinks {
-				key, single, ok := getKeyAndSink(s)
-				if !ok {
-					continue
+				var k sinkKey
+				switch s.String() {
+				case "s3":
+					s3 := s.S3()
+					k = sinkKey{name: s3.Name, prefix: s3.KeyPrefix}
+				default:
+					r.SetErr("unknown sink type")
+					return
 				}
-				b := buckets[key]
-				if b == nil {
-					b = &bucket{sinks: single}
-					b.enc = json.NewEncoder(byteSliceWriter{&b.buf})
-					b.enc.SetEscapeHTML(false)
-					buckets[key] = b
+				if _, ok := states[k]; !ok {
+					buf := bufPool.Get().(*bytes.Buffer)
+					buf.Reset()
+					enc := json.NewEncoder(buf)
+					enc.SetEscapeHTML(false)
+					states[k] = &sinkState{key: k, buf: buf, enc: enc}
 				}
-				if err := b.enc.Encode(out.Data); err != nil {
+				if err := states[k].enc.Encode(out.Data); err != nil {
 					r.SetErr(err.Error())
 					return
 				}
 			}
+
 		}
 
-		outSlice := make([]processor.Output, 0, len(buckets))
-		for _, b := range buckets {
-			outSlice = append(outSlice, processor.Output{
-				Sinks: cm.ToList(b.sinks),
-				Data:  cm.ToList(b.buf),
+		outputs := make([]processor.Output, 0, len(states))
+		for _, st := range states {
+			data := st.buf.Bytes()
+			sinks := []processor.Sink{processor.SinkS3(processor.S3Sink{
+				Name:      st.key.name,
+				KeyPrefix: st.key.prefix,
+			})}
+			outputs = append(outputs, processor.Output{
+				Data:  cm.ToList(data),
+				Sinks: cm.ToList(sinks),
 			})
 		}
 
-		r.SetOK(cm.ToList(outSlice))
+		for _, st := range states {
+			st.buf.Reset()
+			bufPool.Put(st.buf)
+		}
+
+		r.SetOK(cm.ToList(outputs))
 		return
 	}
 }
