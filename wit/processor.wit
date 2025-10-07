@@ -29,5 +29,19 @@ world processor {
   import wasi:random/insecure@0.2.0;
   import wasi:random/insecure-seed@0.2.0;
 
-  export process-logs: func(logs: list<u8>) -> result<list<u8>, string>;
+  record s3-sink {
+    name: string,
+    key-prefix: option<string>,
+  }
+
+  variant sink {
+    s3(s3-sink),
+  }
+
+  record output {
+    sinks: list<sink>,
+    data: list<u8>,
+  }
+
+  export process-logs: func(logs: list<u8>) -> result<list<output>, string>;
 }

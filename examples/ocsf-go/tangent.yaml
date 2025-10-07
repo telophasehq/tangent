@@ -25,5 +25,6 @@ sources:
 sinks:
   s3_bucket:
     type: s3
-    bucket_name: my_bucket
+    bucket_name: tangent-bench-no-notification
     max_inflight: 4
+    max_file_age_seconds: 15
