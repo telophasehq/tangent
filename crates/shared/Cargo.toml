@@ -1,9 +1,14 @@
 [package]
 name = "tangent-shared"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
 
 [lib]
+name = "tangent_shared"
 path = "src/config.rs"
 
 [[bin]]
