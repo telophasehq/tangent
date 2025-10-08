@@ -7,6 +7,9 @@ use tracing_subscriber::EnvFilter;
 use tangent_bench::BenchOptions;
 use tangent_runtime::RuntimeOptions;
 
+mod scaffold;
+mod wit_assets;
+
 #[derive(Parser, Debug)]
 #[command(name = "tangent", version, about = "Tangent CLI")]
 struct Cli {
@@ -70,6 +73,15 @@ enum Commands {
         #[arg(long)]
         object_prefix: Option<String>,
     },
+
+    Scaffold {
+        /// Project name (folder will be created with this name)
+        #[arg(long)]
+        name: String,
+        /// Language: go|py   (more later)
+        #[arg(long)]
+        lang: String,
+    },
 }
 
 #[tokio::main]
@@ -117,6 +129,7 @@ async fn main() -> Result<()> {
             };
             tangent_bench::run(&config, opts).await?;
         }
+        Commands::Scaffold { name, lang } => scaffold::scaffold(&name, &lang)?,
     }
 
     Ok(())

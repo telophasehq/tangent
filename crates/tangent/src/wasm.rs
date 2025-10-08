@@ -6,7 +6,7 @@ use wasmtime_wasi::p2::{IoView, WasiCtx, WasiCtxBuilder, WasiView};
 
 bindgen!({
     world: "processor",
-    path: "../../wit",
+    path: "../../assets/wit",
     async: true,
 });
 
