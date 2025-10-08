@@ -3,7 +3,7 @@ FROM debian:stable-slim
 
 ARG GO_VERSION=1.24.7
 ARG TINYGO_VERSION=0.33.0
-ARG GH_ORG=Santiago-Labs
+ARG GH_ORG=santiago-labs
 ARG GH_REPO=tangent
 ARG TANGENT_VERSION=v0.1.0
 ARG TARGETOS
