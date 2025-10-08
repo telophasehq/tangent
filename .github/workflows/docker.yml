@@ -1,0 +1,51 @@
+# .github/workflows/docker.yml
+name: Build & Publish Images
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tags
+        id: meta
+        run: |
+          IMG_TOOL=ghcr.io/Santiago-Labs/tangent-toolchain
+          IMG_RUN=ghcr.io/Santiago-Labs/tangent-agent
+          TAG=sha-${GITHUB_SHA::7}
+          if [[ "${{ github.event_name }}" == "release" ]]; then TAG=${{ github.ref_name }}; fi
+          echo "tool=$IMG_TOOL" >> $GITHUB_OUTPUT
+          echo "run=$IMG_RUN"  >> $GITHUB_OUTPUT
+          echo "tag=$TAG"      >> $GITHUB_OUTPUT
+      - name: Build & push toolchain
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/toolchain/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.tool }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.tool }}:latest
+      - name: Build & push runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/runtime/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.run }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.run }}:latest

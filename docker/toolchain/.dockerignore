@@ -1,0 +1,5 @@
+**/target
+**/.git
+**/.cache
+**/node_modules
+**/.venv
