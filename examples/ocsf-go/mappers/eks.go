@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	v1_5_0 "github.com/Santiago-Labs/go-ocsf/ocsf/v1_5_0"
+	v1_5_0 "github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 )
 
 type eksLog struct {

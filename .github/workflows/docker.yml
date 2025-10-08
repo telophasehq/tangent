@@ -22,8 +22,8 @@ jobs:
       - name: Tags
         id: meta
         run: |
-          IMG_TOOL=ghcr.io/santiago-labs/tangent-toolchain
-          IMG_RUN=ghcr.io/santiago-labs/tangent-agent
+          IMG_TOOL=ghcr.io/telophasehq/tangent-toolchain
+          IMG_RUN=ghcr.io/telophasehq/tangent-agent
           TAG=sha-${GITHUB_SHA::7}
           if [[ "${{ github.event_name }}" == "release" ]]; then TAG=${{ github.ref_name }}; fi
           echo "tool=$IMG_TOOL" >> $GITHUB_OUTPUT

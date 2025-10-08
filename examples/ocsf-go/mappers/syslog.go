@@ -3,7 +3,7 @@ package mappers
 import (
 	"time"
 
-	"github.com/Santiago-Labs/go-ocsf/ocsf/v1_5_0"
+	"github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 )
 
 var (

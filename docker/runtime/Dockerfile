@@ -1,4 +1,4 @@
-FROM ghcr.io/santiago-labs/tangent-toolchain
+FROM ghcr.io/telophasehq/tangent-toolchain
 
 WORKDIR /work
 COPY . .

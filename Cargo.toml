@@ -10,9 +10,9 @@ lazy_static = "1"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-repository = "https://github.com/Santiago-Labs/tangent"
-homepage = "https://github.com/Santiago-Labs/tangent"
-documentation = "https://github.com/Santiago-Labs/tangent"
+repository = "https://github.com/telophasehq/tangent"
+homepage = "https://github.com/telophasehq/tangent"
+documentation = "https://github.com/telophasehq/tangent"
 readme = "README.md"
 
 # The profile that 'dist' will build with

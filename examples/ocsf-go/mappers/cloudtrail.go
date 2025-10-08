@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	ocsf "github.com/Santiago-Labs/go-ocsf/ocsf/v1_5_0"
+	ocsf "github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 )
 
 func CloudtrailToOCSF(ctx context.Context, event map[string]any) (*ocsf.APIActivity, error) {

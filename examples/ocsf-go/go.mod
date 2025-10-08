@@ -5,8 +5,8 @@ go 1.24
 toolchain go1.24.7
 
 require (
-	github.com/Santiago-Labs/go-ocsf v0.1.1-0.20250915021911-3c18fd5a0a47
 	github.com/segmentio/encoding v0.5.3
+	github.com/telophasehq/go-ocsf v0.2.0
 	go.bytecodealliance.org/cm v0.3.0
 )
 
