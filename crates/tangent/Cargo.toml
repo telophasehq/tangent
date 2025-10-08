@@ -34,7 +34,7 @@ lazy_static = { workspace = true }
 clap = { version = "4.5.48", features = ["derive"] }
 serde_yaml = "0.9.34"
 tangent_shared = { path = "../shared", package = "tangent-shared" }
-rdkafka = { version = "0.38.0", features = ["cmake-build", "ssl"] }
+rdkafka = { version = "0.38.0", features = ["cmake-build", "ssl-vendored"] }
 bytes = "1.10.1"
 tokio-util = { version = "0.7.16", features = ["codec"] }
 tokio-stream = { version = "0.1.17", features = ["io-util"] }
