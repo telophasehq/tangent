@@ -1,3 +1,4 @@
 target/
 compiled/
 **/__pycache__
+.tangent.yaml

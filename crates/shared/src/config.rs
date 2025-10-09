@@ -4,14 +4,12 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::msk::MSKConfig;
 use crate::s3::S3Config;
-use crate::socket::SocketConfig;
-use crate::sqs::SQSConfig;
 
 pub mod msk;
 pub mod s3;
 pub mod socket;
+pub mod source;
 pub mod sqs;
 
 #[derive(Debug, Deserialize)]
@@ -29,21 +27,10 @@ pub struct Config {
     pub workers: usize,
 
     #[serde(default)]
-    pub sources: std::collections::BTreeMap<String, SourceConfig>,
+    pub sources: std::collections::BTreeMap<String, source::SourceConfig>,
 
     #[serde(default)]
     pub sinks: std::collections::BTreeMap<String, SinkConfig>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type")]
-pub enum SourceConfig {
-    #[serde(rename = "msk")]
-    MSK(MSKConfig),
-    #[serde(rename = "socket")]
-    Socket(SocketConfig),
-    #[serde(rename = "sqs")]
-    SQS(SQSConfig),
 }
 
 #[derive(Debug, Deserialize)]

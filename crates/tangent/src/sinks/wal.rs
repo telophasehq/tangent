@@ -40,6 +40,7 @@ pub struct DurableFileSink {
     encoding: Encoding,
     rotator: Mutex<Option<JoinHandle<()>>>,
     uploads: tokio::sync::Mutex<JoinSet<()>>,
+    shutdown: CancellationToken,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -76,6 +77,7 @@ pub trait WALSink: Send + Sync {
         &self,
         path: &Path,
         encoding: &Encoding,
+        compression: &Compression,
         meta: &s3::S3SinkItem,
     ) -> Result<()>;
 }
@@ -106,6 +108,7 @@ impl DurableFileSink {
             encoding: encoding,
             rotator: Mutex::new(None),
             uploads: Mutex::new(JoinSet::new()),
+            shutdown: cancel.clone(),
         });
         s.retry_leftovers().await;
 
@@ -198,6 +201,7 @@ impl DurableFileSink {
                 Ok(m) => m,
                 Err(e) => {
                     tracing::warn!("missing/corrupt meta for {:?}: {e}", p);
+                    let _ = fs::remove_file(&p).await;
                     continue;
                 }
             };
@@ -224,14 +228,17 @@ impl DurableFileSink {
     ) {
         let permit = self.max_inflight.clone().acquire_owned().await.unwrap();
         self.inflight.fetch_add(1, Ordering::AcqRel);
+
         let inner = self.inner.clone();
         let inflight = self.inflight.clone();
         let compression = self.compression.clone();
         let encoding = self.encoding.clone();
-        let sealed = sealed_path.clone();
+        let sealed_path_clone = sealed_path.clone();
 
         let fut = async move {
-            let meta_path = meta_path_for(&sealed);
+            let _permit = permit;
+
+            let meta_path = meta_path_for(&sealed_path_clone);
             let wal_meta = read_meta(&meta_path).await.unwrap_or_else(|_| WalMeta {
                 bucket_name: route_meta.bucket_name.clone(),
                 key_prefix: route_meta.key_prefix.clone(),
@@ -240,45 +247,52 @@ impl DurableFileSink {
             });
 
             let (upload_path, upload_size) = match compression {
-                Compression::None => (sealed.clone(), orig_size),
-                Compression::Gzip { level } => compress_gzip_to_file(&sealed, level).await?,
-                Compression::Zstd { level } => compress_zstd_to_file(&sealed, level).await?,
+                Compression::None => (sealed_path_clone.clone(), orig_size),
+                Compression::Gzip { level } => {
+                    compress_gzip_to_file(&sealed_path_clone, level).await?
+                }
+                Compression::Zstd { level } => {
+                    compress_zstd_to_file(&sealed_path_clone, level).await?
+                }
             };
 
             inner
                 .write_path_with(
                     &upload_path,
-                    &encoding,
+                    &wal_meta.encoding,
+                    &wal_meta.compression,
                     &s3::S3SinkItem {
-                        bucket_name: wal_meta.bucket_name.clone(),
-                        key_prefix: wal_meta.key_prefix.clone(),
+                        bucket_name: wal_meta.bucket_name,
+                        key_prefix: wal_meta.key_prefix,
                     },
                 )
                 .await?;
 
             let _ = fs::remove_file(&upload_path).await;
-            let _ = fs::remove_file(&sealed).await;
+            let _ = fs::remove_file(&sealed_path_clone).await;
             let _ = fs::remove_file(&meta_path).await;
 
-            anyhow::Ok(upload_size)
-        }
-        .await;
+            Ok::<u64, anyhow::Error>(upload_size)
+        };
 
-        drop(permit);
-        match fut {
-            Ok(uploaded) => {
-                SINK_OBJECTS_TOTAL.inc();
-                SINK_BYTES_TOTAL.inc_by(uploaded);
-                SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(orig_size);
-                WAL_PENDING_FILES.dec();
-                WAL_PENDING_BYTES.sub(orig_size as i64);
-                tracing::debug!(bytes = uploaded, "WAL uploaded & removed");
+        let mut js = self.uploads.lock().await;
+
+        js.spawn(async move {
+            match fut.await {
+                Ok(uploaded) => {
+                    SINK_OBJECTS_TOTAL.inc();
+                    SINK_BYTES_TOTAL.inc_by(uploaded);
+                    SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(orig_size);
+                    WAL_PENDING_FILES.dec();
+                    WAL_PENDING_BYTES.sub(orig_size as i64);
+                    tracing::debug!(bytes = uploaded, "WAL uploaded & removed");
+                }
+                Err(e) => {
+                    tracing::warn!("upload error for {:?}: {e}", sealed_path);
+                }
             }
-            Err(e) => {
-                tracing::warn!("upload error for {:?}: {e}", sealed_path);
-            }
-        }
-        inflight.fetch_sub(1, Ordering::AcqRel);
+            inflight.fetch_sub(1, Ordering::AcqRel);
+        });
     }
 }
 
@@ -347,6 +361,12 @@ impl Sink for DurableFileSink {
     }
 
     async fn flush(&self) -> Result<()> {
+        self.shutdown.cancel();
+
+        if let Some(h) = self.rotator.lock().await.take() {
+            let _ = h.await;
+        }
+
         let keys: Vec<RouteKey> = {
             let routes = self.routes.lock().await;
             routes
@@ -365,7 +385,12 @@ impl Sink for DurableFileSink {
                 let mut g = self.uploads.lock().await;
                 std::mem::take(&mut *g)
             };
-            while js.join_next().await.is_some() {}
+
+            while let Some(res) = js.join_next().await {
+                if let Err(e) = res {
+                    tracing::warn!("upload task join error: {e}");
+                }
+            }
             *self.uploads.lock().await = js;
 
             if self.inflight.load(Ordering::Acquire) == 0 {
@@ -378,15 +403,18 @@ impl Sink for DurableFileSink {
 
 async fn compress_zstd_to_file(src: &Path, level: i32) -> Result<(PathBuf, u64)> {
     let dst = src.with_extension("sealed.zst");
+    let dst_tmp = dst.with_extension("sealed.zst.tmp");
     let src = src.to_path_buf();
-    let dst2 = dst.clone();
+    let dst_clone = dst.clone();
     let size = spawn_blocking(move || -> Result<u64> {
         let mut fin = stdFile::open(&src)?;
-        let mut fout = stdFile::create(&dst2)?;
+        let mut fout = stdFile::create(&dst_tmp)?;
         let mut enc = zstd::stream::Encoder::new(&mut fout, level)?;
         copy(&mut fin, &mut enc)?;
         enc.finish()?;
-        Ok(std::fs::metadata(&dst2)?.len())
+
+        std::fs::rename(&dst_tmp, &dst_clone)?;
+        Ok(std::fs::metadata(&dst_clone)?.len())
     })
     .await??;
     Ok((dst, size))
@@ -394,21 +422,24 @@ async fn compress_zstd_to_file(src: &Path, level: i32) -> Result<(PathBuf, u64)>
 
 async fn compress_gzip_to_file(src: &Path, level: u32) -> Result<(PathBuf, u64)> {
     let dst = src.with_extension("sealed.gz");
+    let dst_tmp = dst.with_extension("sealed.gz.tmp");
     let src = src.to_path_buf();
-    let dst2 = dst.clone();
+    let dst_clone = dst.clone();
     let size = spawn_blocking(move || -> Result<u64> {
         let mut fin = stdFile::open(&src)?;
-        let mut fout = stdFile::create(&dst2)?;
+        let mut fout = stdFile::create(&dst_tmp)?;
         let mut enc = GzEncoder::new(&mut fout, f2Compression::new(level));
         copy(&mut fin, &mut enc)?;
         enc.finish()?;
-        Ok(std::fs::metadata(&dst2)?.len())
+
+        std::fs::rename(&dst_tmp, &dst_clone)?;
+        Ok(std::fs::metadata(&dst_clone)?.len())
     })
     .await??;
     Ok((dst, size))
 }
 
-fn base_for(path: &Path) -> PathBuf {
+pub fn base_for(path: &Path) -> PathBuf {
     let name = match path.file_name().and_then(|s| s.to_str()) {
         Some(s) => s,
         None => return path.to_path_buf(),

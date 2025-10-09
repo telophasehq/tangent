@@ -1,6 +1,7 @@
 package mappers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -9,19 +10,6 @@ import (
 
 	v1_5_0 "github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 )
-
-type eksLog struct {
-	Timestamp   string            `json:"timestamp"`
-	ContainerID string            `json:"container_id"`
-	Container   string            `json:"container_name"`
-	Image       string            `json:"image"`
-	Host        string            `json:"host"`
-	SourceType  string            `json:"source_type"`
-	Stream      string            `json:"stream"`
-	Label       map[string]string `json:"label"`
-	Message     string            `json:"message"`
-	Extra       map[string]any    `json:"extra"`
-}
 
 var (
 	reAccess     = regexp.MustCompile(`^\s*([A-Z]+)\s+(\S+)\s+(\d{3})\s+(\d+)\s*ms\s+"([^"]*)"\s*$`)
@@ -49,8 +37,9 @@ func parseAccessLine(s string) (method, path string, status int32, latencyMs int
 	return method, path, status, latencyMs, true
 }
 
-func EKSToOCSF(log map[string]any) (*v1_5_0.APIActivity, error) {
-	rec, err := toEksLog(log)
+func EKSToOCSF(log []byte) (*v1_5_0.APIActivity, error) {
+	var rec EksLog
+	err := json.Unmarshal(log, &rec)
 	if err != nil {
 		return nil, err
 	}
@@ -132,11 +121,11 @@ func httpReqToActivity(method string) (int, string) {
 	}
 }
 
-func toEksLog(m map[string]any) (*eksLog, error) {
+func toEksLog(m map[string]any) (*EksLog, error) {
 	if m == nil {
 		return nil, errors.New("nil log")
 	}
-	rec := &eksLog{
+	rec := &EksLog{
 		Timestamp:   getString(m, "timestamp"),
 		ContainerID: getString(m, "container_id"),
 		Container:   getString(m, "container_name"),

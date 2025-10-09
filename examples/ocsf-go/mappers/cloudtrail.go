@@ -1,7 +1,7 @@
 package mappers
 
 import (
-	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -9,18 +9,25 @@ import (
 	ocsf "github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 )
 
-func CloudtrailToOCSF(ctx context.Context, event map[string]any) (*ocsf.APIActivity, error) {
+func CloudtrailToOCSF(event []byte) (*ocsf.APIActivity, error) {
 	classUID := 6003
 	categoryUID := 6
 	categoryName := "Application Activity"
 	className := "API Activity"
+
+	var ctEvent CloudtrailEvent
+	err := json.Unmarshal(event, &ctEvent)
+	if err != nil {
+		return nil, err
+	}
 
 	var activityID int
 	var activityName string
 	var typeUID int
 	var typeName string
 
-	eventName := getString(event, "eventName")
+	eventName := ctEvent.EventName
+
 	if eventName == "" {
 		return nil, errors.New("missing eventName field")
 	}
@@ -58,7 +65,7 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (*ocsf.APIActiv
 	statusID := 0
 	severity := "informational"
 	severityID := 1
-	if event["errorCode"] == nil || event["errorCode"] == "" {
+	if ctEvent.ErrorCode == nil || *ctEvent.ErrorCode == "" {
 		status = "success"
 		statusID = 1
 	} else {
@@ -69,72 +76,65 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (*ocsf.APIActiv
 	}
 
 	var actor ocsf.Actor
-	userIdentity := event["userIdentity"].(map[string]any)
-	username := getString(userIdentity, "userName")
-	eventSource := getString(event, "eventSource")
+	userIdentity := ctEvent.UserIdentity
+	username := userIdentity.UserName
+	eventSource := ctEvent.EventSource
 
-	if username != "" {
+	if username != nil {
 		actor = ocsf.Actor{
-			AppName: stringPtr(eventSource),
+			AppName: &eventSource,
 			User: &ocsf.User{
-				Name: stringPtr(username),
+				Name: username,
 			},
 		}
-		acctID := getString(userIdentity, "accountId")
-		if acctID != "" {
+		acctID := userIdentity.AccountID
+		if acctID != nil {
 			actor.User.Account = &ocsf.Account{
 				TypeId: int32Ptr(10),
 				Type:   stringPtr("AWS Account"),
-				Uid:    stringPtr(acctID),
+				Uid:    acctID,
 			}
 		}
 	} else {
 		actor = ocsf.Actor{
-			AppName: stringPtr(eventSource),
+			AppName: &eventSource,
 		}
 	}
 
-	// Parse API information
 	api := ocsf.API{
 		Operation: eventName,
 		Service: &ocsf.Service{
-			Name: stringPtr(eventSource),
+			Name: &eventSource,
 		},
 	}
 
-	// Parse resource information
 	var resources []ocsf.ResourceDetails
-	eventResources, ok := event["resources"].([]map[string]any)
-	if ok {
-		for _, resource := range eventResources {
+	if ctEvent.Resources != nil {
+		for _, resource := range ctEvent.Resources {
 			resources = append(resources, ocsf.ResourceDetails{
-				Name: stringPtr(resource["arn"].(string)),
-				Type: stringPtr(resource["type"].(string)),
-				Uid:  stringPtr(resource["arn"].(string)),
+				Name: &resource.ARN,
+				Type: &resource.Type,
+				Uid:  &resource.ARN,
 			})
 		}
 	}
 
-	eventTime, ok := event["eventTime"].(string)
-
-	var epochMs int64
-	if ok && eventTime != "" {
-		if ts, err := time.Parse(time.RFC3339Nano, eventTime); err == nil {
-			epochMs = ts.UnixMilli()
-		}
-	}
-
-	// Parse source endpoint information
 	var srcEndpoint ocsf.NetworkEndpoint
-	sourceIP := getString(event, "sourceIPAddress")
-	if sourceIP != "" {
+	if ctEvent.SourceIP != "" {
 		srcEndpoint = ocsf.NetworkEndpoint{
-			Ip: stringPtr(sourceIP),
+			Ip: &ctEvent.SourceIP,
 		}
 	} else {
 		srcEndpoint = ocsf.NetworkEndpoint{
-			SvcName: stringPtr(eventSource),
+			SvcName: &ctEvent.EventSource,
 		}
+	}
+
+	var ts time.Time
+	if !ctEvent.EventTime.IsZero() {
+		ts = ctEvent.EventTime
+	} else {
+		ts = time.Now()
 	}
 
 	// Create the OCSF API Activity
@@ -151,11 +151,11 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (*ocsf.APIActiv
 		StatusId:     int32Ptr(int32(statusID)),
 		Cloud: ocsf.Cloud{
 			Provider: "AWS",
-			Region:   stringPtr(getString(event, "awsRegion")),
+			Region:   &ctEvent.AwsRegion,
 			Account: &ocsf.Account{
 				TypeId: int32Ptr(10), // AWS Account
 				Type:   stringPtr("AWS Account"),
-				Uid:    stringPtr(getString(event, "recipientAccountId")),
+				Uid:    &ctEvent.RecipientAccountID,
 			},
 		},
 
@@ -164,11 +164,11 @@ func CloudtrailToOCSF(ctx context.Context, event map[string]any) (*ocsf.APIActiv
 		SeverityId: int32(severityID),
 
 		Metadata: ocsf.Metadata{
-			CorrelationUid: stringPtr(getString(event, "eventId")),
+			CorrelationUid: &ctEvent.EventID,
 		},
 
 		SrcEndpoint:    srcEndpoint,
-		Time:           epochMs,
+		Time:           ts.UnixMilli(),
 		TypeName:       &typeName,
 		TypeUid:        int64(typeUID),
 		TimezoneOffset: int32Ptr(0),

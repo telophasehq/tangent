@@ -240,7 +240,7 @@ impl WorkerPool {
             let processor = engine.make_processor(&mut store).await?;
 
             let start = Instant::now();
-            match processor.call_process_logs(&mut store, b"{}").await? {
+            match processor.call_process_logs(&mut store, b"").await? {
                 Ok(_) => {
                     tracing::info!(target:"sidecar",
                         "worker {i} warmup in {} µs", start.elapsed().as_micros());
