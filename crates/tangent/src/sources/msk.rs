@@ -11,7 +11,13 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 use crate::worker::{Record, WorkerPool};
-use tangent_shared::msk::{MSKAuth, MSKConfig};
+use rdkafka::message::Headers;
+use tangent_shared::{
+    msk::{MSKAuth, MSKConfig},
+    source::Decoding,
+};
+
+use crate::sources::decoding;
 
 #[derive(Default)]
 struct StatState {
@@ -75,8 +81,22 @@ impl ClientContext for Ctx {
 }
 impl ConsumerContext for Ctx {}
 
+fn header_str<'a>(m: &'a rdkafka::message::BorrowedMessage<'a>, key: &str) -> Option<&'a str> {
+    m.headers().and_then(|hs| {
+        (0..hs.count()).find_map(|i| {
+            let h = hs.get(i);
+            if h.key == key {
+                std::str::from_utf8(h.value?).ok()
+            } else {
+                None
+            }
+        })
+    })
+}
+
 pub async fn run_consumer(
     kc: MSKConfig,
+    dc: Decoding,
     pool: Arc<WorkerPool>,
     shutdown: CancellationToken,
 ) -> Result<()> {
@@ -84,33 +104,40 @@ pub async fn run_consumer(
     consumer.subscribe(&[kc.topic.as_str()])?;
 
     let fwd_shutdown = shutdown.clone();
-    let pool2 = pool.clone();
 
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = fwd_shutdown.cancelled() => break,
-                msg = consumer.recv() => {
-                    match msg {
-                        Ok(m) => {
-                            if let Some(p) = m.payload() {
-                                let _ = pool2.dispatch(Record{
-                                    payload: Bytes::copy_from_slice(p),
-                                    ack: None,
+    loop {
+        tokio::select! {
+            _ = fwd_shutdown.cancelled() => break,
+            msg = consumer.recv() => {
+                match msg {
+                    Ok(m) => {
+                        if let Some(p) = m.payload() {
+                            let meta_ce   = header_str(&m, "content-encoding");
+                            let filename  = header_str(&m, "filename");
+                            let sniff     = &p[..std::cmp::min(8, p.len())];
+                            let comp = dc.resolve_compression(meta_ce, filename, sniff);
+
+                            let raw = decoding::decompress_bytes(comp, p)?;
+
+                            let fmt = dc.resolve_format(&raw);
+
+                            let ndjson = decoding::normalize_to_ndjson(fmt, &raw);
+
+                            let _ = pool.dispatch(Record {
+                                payload: Bytes::from(ndjson),
+                                ack: None,
                             }).await;
-                            }
                         }
-                        Err(e) => {
-                            tracing::warn!("kafka recv error: {e}");
-                            tokio::time::sleep(Duration::from_millis(10)).await;
-                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("kafka recv error: {e}");
+                        tokio::time::sleep(Duration::from_millis(10)).await;
                     }
                 }
             }
         }
-    });
+    }
 
-    shutdown.cancelled().await;
     Ok(())
 }
 

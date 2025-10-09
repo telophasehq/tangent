@@ -5,13 +5,15 @@ go 1.24
 toolchain go1.24.7
 
 require (
-	github.com/segmentio/encoding v0.5.3
+	github.com/aws/aws-sdk-go-v2/service/securityhub v1.57.0
+	github.com/buger/jsonparser v1.1.1
 	github.com/telophasehq/go-ocsf v0.2.0
 	go.bytecodealliance.org/cm v0.3.0
 )
 
 require (
 	github.com/apache/arrow-go/v18 v18.2.1-0.20250425153947-5ae8b27ab357 // indirect
+	github.com/aws/smithy-go v1.22.3 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
@@ -20,7 +22,6 @@ require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/regclient/regclient v0.8.3 // indirect
-	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/tetratelabs/wazero v1.9.0 // indirect
 	github.com/ulikunitz/xz v0.5.12 // indirect

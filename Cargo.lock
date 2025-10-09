@@ -3826,6 +3826,7 @@ dependencies = [
  "log",
  "memchr",
  "num_cpus",
+ "percent-encoding",
  "prometheus",
  "prometheus_exporter",
  "rand 0.9.2",
@@ -3856,8 +3857,10 @@ dependencies = [
  "anyhow",
  "clap",
  "num_cpus",
+ "rmp-serde",
  "secrecy",
  "serde",
+ "serde_json",
  "serde_yaml",
 ]
 

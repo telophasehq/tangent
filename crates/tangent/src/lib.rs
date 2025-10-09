@@ -9,7 +9,7 @@ use prometheus::{
     IntGauge,
 };
 
-use tangent_shared::{Config, SinkConfig, SourceConfig};
+use tangent_shared::{source::SourceKind, Config, SinkConfig};
 
 pub mod sinks;
 pub mod sources;
@@ -176,26 +176,45 @@ async fn spawn_consumers(
     for src in cfg.sources {
         let pool = pool.clone();
         let shutdown = shutdown.clone();
-        match src {
-            (_, SourceConfig::MSK(kc)) => {
+        match src.1.kind {
+            SourceKind::MSK(kc) => {
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::msk::run_consumer(kc, pool, shutdown.clone()).await {
+                    if let Err(e) = sources::msk::run_consumer(
+                        kc,
+                        src.1.common.decoding,
+                        pool,
+                        shutdown.clone(),
+                    )
+                    .await
+                    {
                         tracing::error!("msk consumer error: {e}");
                     }
                 }));
             }
-            (_, SourceConfig::Socket(sc)) => {
+            SourceKind::Socket(sc) => {
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::socket::run_consumer(sc, pool, shutdown.clone()).await
+                    if let Err(e) = sources::socket::run_consumer(
+                        sc,
+                        src.1.common.decoding,
+                        pool,
+                        shutdown.clone(),
+                    )
+                    .await
                     {
                         tracing::error!("socket listener error: {e}");
                     }
                 }));
             }
-            (_, SourceConfig::SQS(sq)) => {
+            SourceKind::SQS(sq) => {
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) =
-                        sources::sqs::run_consumer(sq, cfg.batch_size, pool, shutdown.clone()).await
+                    if let Err(e) = sources::sqs::run_consumer(
+                        sq,
+                        src.1.common.decoding,
+                        cfg.batch_size,
+                        pool,
+                        shutdown.clone(),
+                    )
+                    .await
                     {
                         tracing::error!("SQS consumer error: {e}");
                     }

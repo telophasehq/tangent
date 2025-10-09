@@ -5,12 +5,11 @@ use aws_sdk_s3::Client;
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::byte_stream::ByteStream;
 use std::path::Path;
-use tangent_shared::Encoding;
+use tangent_shared::{Compression, Encoding};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
-use ulid::Ulid;
 
-use crate::sinks::wal::WALSink;
+use crate::sinks::wal::{base_for, WALSink};
 
 pub struct S3Sink {
     name: String,
@@ -32,20 +31,16 @@ impl WALSink for S3Sink {
         &self,
         path: &Path,
         encoding: &Encoding,
+        compression: &Compression,
         meta: &S3SinkItem,
     ) -> Result<()> {
-        let base = derive_key_from_path(&path, encoding);
-        let key = if let Some(prefix) = &meta.key_prefix {
-            format!("{}/{}", prefix.trim_end_matches('/'), base)
-        } else {
-            base
-        };
+        let key = object_key_from(path, meta.key_prefix.as_deref(), encoding, compression);
 
         let content_type = Encoding::content_type(&encoding);
-        let content_encoding = match path.extension().and_then(|e| e.to_str()) {
-            Some("gz") => Some("gzip"),
-            Some("zst") => Some("zstd"),
-            _ => None,
+        let content_encoding = match compression {
+            Compression::None => None,
+            Compression::Gzip { .. } => Some("gzip"),
+            Compression::Zstd { .. } => Some("zstd"),
         };
 
         let size = tokio::fs::metadata(path).await?.len();
@@ -219,25 +214,35 @@ impl S3Sink {
     }
 }
 
-fn derive_key_from_path(path: &Path, enc: &Encoding) -> String {
-    let mut stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("tangent");
-    if stem.ends_with(".sealed") {
-        stem = &stem[..stem.len() - ".sealed".len()];
-    }
-    let base = if stem.is_empty() {
-        Ulid::new().to_string()
-    } else {
-        stem.to_string()
-    };
+fn object_key_from(
+    local_path: &Path,
+    prefix: Option<&str>,
+    enc: &Encoding,
+    comp: &Compression,
+) -> String {
+    let base = base_for(local_path);
+    let stem = base.file_name().unwrap().to_string_lossy();
 
-    let ext = Encoding::extension(enc);
-    let comp = path.extension().and_then(|e| e.to_str());
+    let mut name = String::from(stem.as_ref());
+    match enc {
+        Encoding::NDJSON => name.push_str(".ndjson"),
+        Encoding::JSON => name.push_str(".json"),
+        Encoding::Avro => name.push_str(".avro"),
+        Encoding::Parquet => name.push_str(".parquet"),
+    }
     match comp {
-        Some("zst") => format!("{base}.{ext}.zst"),
-        Some("gz") => format!("{base}.{ext}.gz"),
-        _ => format!("{base}.{ext}"),
+        Compression::None => {}
+        Compression::Gzip { .. } => name.push_str(".gz"),
+        Compression::Zstd { .. } => name.push_str(".zst"),
+    }
+
+    if let Some(p) = prefix {
+        if p.is_empty() {
+            name
+        } else {
+            format!("{}/{}", p.trim_end_matches('/'), name)
+        }
+    } else {
+        name
     }
 }

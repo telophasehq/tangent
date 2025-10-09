@@ -92,7 +92,12 @@ impl SinkManager {
 
                 loop {
                     tokio::select! {
-                        _ = cancel_shard.cancelled() => break,
+                        _ = cancel_shard.cancelled() => {
+                            while let Ok(_) = rx.try_recv() {
+                                INFLIGHT.dec();
+                            }
+                            break;
+                        }
                         maybe = rx.recv() => {
                             let mut item = match maybe { Some(it) => it, None => break };
 
@@ -224,10 +229,19 @@ impl SinkManager {
     }
 
     pub async fn join(self) -> Result<()> {
-        for s in &self.shards {
-            s.handle.abort();
+        self.cancel.cancel();
+
+        let SinkManager {
+            mut shards, sinks, ..
+        } = self;
+
+        for sh in shards.drain(..) {
+            if let Err(e) = sh.handle.await {
+                tracing::warn!("shard join error: {e}");
+            }
         }
-        for (nm, s) in &self.sinks {
+
+        for (nm, s) in &sinks {
             if let Err(e) = s.flush().await {
                 tracing::warn!("sink '{nm}' flush failed during shutdown: {e}");
                 return Err(e);
