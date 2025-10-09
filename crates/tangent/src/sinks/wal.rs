@@ -110,7 +110,7 @@ impl DurableFileSink {
             uploads: Mutex::new(JoinSet::new()),
             shutdown: cancel.clone(),
         });
-        s.retry_leftovers().await;
+        s.retry_leftovers(false).await;
 
         let s_cloned = s.clone();
         let handle = tokio::spawn(async move {
@@ -176,12 +176,12 @@ impl DurableFileSink {
         WAL_PENDING_FILES.inc();
         WAL_PENDING_BYTES.add(sealed_bytes as i64);
 
-        self.spawn_upload_with_meta(sealed_ready, sealed_bytes, meta)
+        self.spawn_upload_with_meta(sealed_ready, sealed_bytes, meta, true)
             .await;
         Ok(())
     }
 
-    async fn retry_leftovers(&self) {
+    async fn retry_leftovers(&self, incr_counters: bool) {
         let mut rd = match fs::read_dir(&self.dir).await {
             Ok(r) => r,
             Err(_) => return,
@@ -214,6 +214,7 @@ impl DurableFileSink {
                         bucket_name: meta.bucket_name,
                         key_prefix: meta.key_prefix,
                     },
+                    incr_counters,
                 )
                 .await;
             }
@@ -225,6 +226,7 @@ impl DurableFileSink {
         sealed_path: PathBuf,
         orig_size: u64,
         route_meta: s3::S3SinkItem,
+        incr_metrics: bool,
     ) {
         let permit = self.max_inflight.clone().acquire_owned().await.unwrap();
         self.inflight.fetch_add(1, Ordering::AcqRel);
@@ -280,11 +282,14 @@ impl DurableFileSink {
         js.spawn(async move {
             match fut.await {
                 Ok(uploaded) => {
-                    SINK_OBJECTS_TOTAL.inc();
-                    SINK_BYTES_TOTAL.inc_by(uploaded);
-                    SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(orig_size);
-                    WAL_PENDING_FILES.dec();
-                    WAL_PENDING_BYTES.sub(orig_size as i64);
+                    // Don't incr metrics on restart.
+                    if incr_metrics {
+                        SINK_OBJECTS_TOTAL.inc();
+                        SINK_BYTES_TOTAL.inc_by(uploaded);
+                        SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(orig_size);
+                        WAL_PENDING_FILES.dec();
+                        WAL_PENDING_BYTES.sub(orig_size as i64);
+                    }
                     tracing::debug!(bytes = uploaded, "WAL uploaded & removed");
                 }
                 Err(e) => {
@@ -380,7 +385,7 @@ impl Sink for DurableFileSink {
         }
 
         loop {
-            self.retry_leftovers().await;
+            self.retry_leftovers(true).await;
             let mut js = {
                 let mut g = self.uploads.lock().await;
                 std::mem::take(&mut *g)

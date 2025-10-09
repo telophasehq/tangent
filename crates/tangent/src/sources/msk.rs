@@ -12,10 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::worker::{Record, WorkerPool};
 use rdkafka::message::Headers;
-use tangent_shared::{
-    msk::{MSKAuth, MSKConfig},
-    source::Decoding,
-};
+use tangent_shared::msk::{MSKAuth, MSKConfig};
 
 use crate::sources::decoding;
 
@@ -96,7 +93,6 @@ fn header_str<'a>(m: &'a rdkafka::message::BorrowedMessage<'a>, key: &str) -> Op
 
 pub async fn run_consumer(
     kc: MSKConfig,
-    dc: Decoding,
     pool: Arc<WorkerPool>,
     shutdown: CancellationToken,
 ) -> Result<()> {
@@ -104,6 +100,7 @@ pub async fn run_consumer(
     consumer.subscribe(&[kc.topic.as_str()])?;
 
     let fwd_shutdown = shutdown.clone();
+    let dc = kc.decoding.clone();
 
     loop {
         tokio::select! {

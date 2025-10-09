@@ -50,7 +50,7 @@ pub async fn run_bench(
             let mut buf = Vec::with_capacity(max_bytes.max(line_cl.len()));
 
             let mut events_per_buff: u64 = 0;
-            while max_bytes < line_cl.len() || buf.len() + line_cl.len() <= max_bytes {
+            while buf.len() + line_cl.len() <= max_bytes {
                 buf.extend_from_slice(&line_cl);
                 events_per_buff += 1;
             }

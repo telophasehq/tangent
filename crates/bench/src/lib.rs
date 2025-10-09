@@ -3,7 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tangent_shared::{source::SourceKind, Config};
+use tangent_shared::{source::SourceConfig, Config};
 
 pub mod metrics;
 pub mod msk;
@@ -104,8 +104,8 @@ pub async fn run_one_payload(
         let t0 = std::time::Instant::now();
 
         let name = src.0;
-        match &src.1.kind {
-            SourceKind::Socket(sc) => {
+        match &src.1 {
+            SourceConfig::Socket(sc) => {
                 socket::run_bench(
                     name,
                     sc.socket_path.clone(),
@@ -116,10 +116,10 @@ pub async fn run_one_payload(
                 )
                 .await?;
             }
-            SourceKind::MSK(mc) => {
+            SourceConfig::MSK(mc) => {
                 msk::run_bench(name, &mc, connections, pd, max_bytes, seconds).await?;
             }
-            SourceKind::SQS(sq) => {
+            SourceConfig::SQS(sq) => {
                 if let Some(ref b) = bucket {
                     sqs::run_bench(
                         name,

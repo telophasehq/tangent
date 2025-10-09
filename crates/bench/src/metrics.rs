@@ -1,4 +1,5 @@
 use reqwest;
+use std::time::Duration;
 
 pub struct Stats {
     pub sink_bytes: f64,
@@ -41,7 +42,7 @@ pub async fn scrape_stats(url: &str) -> anyhow::Result<Stats> {
 }
 
 pub async fn wait_for_drain(url: &str) -> anyhow::Result<Stats> {
-    use std::time::Duration;
+    tracing::info!("waiting for drain");
 
     loop {
         tokio::time::sleep(Duration::from_millis(500)).await;

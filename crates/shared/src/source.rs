@@ -5,17 +5,8 @@ use crate::socket::SocketConfig;
 use crate::sqs::SQSConfig;
 
 #[derive(Debug, Deserialize)]
-pub struct SourceConfig {
-    #[serde(flatten)]
-    pub common: CommonSourceOptions,
-
-    #[serde(flatten)]
-    pub kind: SourceKind,
-}
-
-#[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
-pub enum SourceKind {
+pub enum SourceConfig {
     #[serde(rename = "msk")]
     MSK(MSKConfig),
     #[serde(rename = "socket")]
@@ -167,10 +158,4 @@ impl Default for DecodeCompression {
     fn default() -> Self {
         Self::Auto
     }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct CommonSourceOptions {
-    #[serde(default)]
-    pub decoding: Decoding,
 }

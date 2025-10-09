@@ -1,6 +1,8 @@
 use secrecy::SecretString;
 use serde::Deserialize;
 
+use crate::source::Decoding;
+
 #[derive(Debug, Deserialize)]
 pub struct MSKConfig {
     pub bootstrap_servers: String,
@@ -19,6 +21,9 @@ pub struct MSKConfig {
     pub ssl_key_location: Option<String>,
 
     pub auth: MSKAuth,
+
+    #[serde(default)]
+    pub decoding: Decoding,
 }
 
 #[derive(Debug, Deserialize)]

@@ -8,7 +8,7 @@ use bytes::{Bytes, BytesMut};
 use memchr::memchr_iter;
 use percent_encoding::percent_decode_str;
 use std::{sync::Arc, time::Duration};
-use tangent_shared::{source::Decoding, sqs::SQSConfig};
+use tangent_shared::sqs::SQSConfig;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -18,7 +18,6 @@ use crate::{
 
 pub async fn run_consumer(
     cfg: SQSConfig,
-    dc: Decoding,
     max_chunk: usize,
     pool: Arc<WorkerPool>,
     shutdown: CancellationToken,
@@ -27,6 +26,7 @@ pub async fn run_consumer(
     let sqs_client = SQSClient::new(&aws_cfg);
     let s3_client = S3Client::new(&aws_cfg);
     let qurl = Arc::new(cfg.queue_url);
+    let dc = cfg.decoding.clone();
 
     let fwd_shutdown = shutdown.clone();
 
