@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::source::Decoding;
+use crate::sources::common::Decoding;
 
 #[derive(Debug, Deserialize)]
 pub struct SQSConfig {

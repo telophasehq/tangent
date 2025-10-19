@@ -34,12 +34,22 @@ world processor {
     key-prefix: option<string>,
   }
 
+  record default-sink {
+    name: string,
+  }
+
+  record file-sink {
+    name: string,
+  }
+
   variant sink {
     s3(s3-sink),
+    file(file-sink),
+    default(default-sink),
   }
 
   record output {
-    sinks: list<sink>,
+    sink: sink,
     data: list<u8>,
   }
 

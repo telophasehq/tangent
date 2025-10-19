@@ -11,14 +11,12 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
-use tangent_shared::Compression;
-use tangent_shared::Encoding;
+use tangent_shared::sinks::common::{Compression, Encoding};
 use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::{spawn_blocking, JoinHandle, JoinSet};
 use tokio::time::{sleep, Duration, Instant};
-use tokio_util::sync::CancellationToken;
 
 use crate::sinks::manager::{Sink, SinkWrite};
 use crate::sinks::s3;
@@ -40,7 +38,6 @@ pub struct DurableFileSink {
     encoding: Encoding,
     rotator: Mutex<Option<JoinHandle<()>>>,
     uploads: tokio::sync::Mutex<JoinSet<()>>,
-    shutdown: CancellationToken,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -91,7 +88,6 @@ impl DurableFileSink {
         max_file_age: Duration,
         compression: Compression,
         encoding: Encoding,
-        cancel: CancellationToken,
     ) -> Result<Arc<Self>> {
         let dir = dir.as_ref().to_path_buf();
         tokio::fs::create_dir_all(&dir).await?;
@@ -108,7 +104,6 @@ impl DurableFileSink {
             encoding: encoding,
             rotator: Mutex::new(None),
             uploads: Mutex::new(JoinSet::new()),
-            shutdown: cancel.clone(),
         });
         s.retry_leftovers(false).await;
 
@@ -117,7 +112,6 @@ impl DurableFileSink {
             let tick = max(Duration::from_millis(250), max_file_age / 4);
             loop {
                 tokio::select! {
-                    _ = cancel.cancelled() => break,
                     _ = sleep(tick) => {
                         let to_rotate: Vec<RouteKey> = {
                             let routes = s_cloned.routes.lock().await;
@@ -366,8 +360,6 @@ impl Sink for DurableFileSink {
     }
 
     async fn flush(&self) -> Result<()> {
-        self.shutdown.cancel();
-
         if let Some(h) = self.rotator.lock().await.take() {
             let _ = h.await;
         }

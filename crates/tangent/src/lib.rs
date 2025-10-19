@@ -9,7 +9,13 @@ use prometheus::{
     IntGauge,
 };
 
-use tangent_shared::{source::SourceConfig, Config, SinkConfig};
+use tangent_shared::{
+    sinks::common::{SinkConfig, SinkKind},
+    sources::common::SourceConfig,
+    Config,
+};
+
+use crate::wasm::{FileSink, S3Sink, Sink};
 
 pub mod sinks;
 pub mod sources;
@@ -96,6 +102,25 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
         bail!("You must configure exactly one sink.");
     }
 
+    let mut default_sink: Option<Sink> = None;
+    for (sink_name, s) in &cfg.sinks {
+        if s.common.default {
+            if !default_sink.is_none() {
+                bail!("Only one sink can be configured as default.");
+            }
+
+            default_sink = match s.kind {
+                SinkKind::S3(_) => Some(Sink::S3(S3Sink {
+                    name: sink_name.to_string(),
+                    key_prefix: None,
+                })),
+                SinkKind::File(_) => Some(Sink::File(FileSink {
+                    name: sink_name.to_string(),
+                })),
+            }
+        }
+    }
+
     tracing::info!(target = "startup", config = ?cfg);
 
     let (name, sink_cfg): (&String, &SinkConfig) = cfg
@@ -103,17 +128,10 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
         .first_key_value()
         .ok_or_else(|| anyhow!("Sink name or config was missing from config."))?;
 
-    let shutdown = CancellationToken::new();
+    let ingest_shutdown = CancellationToken::new();
 
-    let sink_manager = Arc::new(
-        sinks::manager::SinkManager::new(
-            name,
-            sink_cfg,
-            cfg.batch_size_kb() * 10,
-            shutdown.clone(),
-        )
-        .await?,
-    );
+    let sink_manager =
+        Arc::new(sinks::manager::SinkManager::new(name, sink_cfg, cfg.batch_size_kb() * 10).await?);
 
     let engine = wasm::WasmEngine::new().expect("engine");
     info!(
@@ -129,20 +147,20 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
             Arc::clone(&sink_manager),
             cfg.batch_size_kb(),
             cfg.batch_age_ms(),
+            default_sink,
         )
         .await?,
     );
 
-    let consumer_handles = spawn_consumers(cfg, pool.clone(), shutdown.clone()).await;
+    let consumer_handles = spawn_consumers(cfg, pool.clone(), ingest_shutdown.clone()).await;
 
     if opts.once {
-        shutdown.cancel();
+        ingest_shutdown.cancel();
     } else {
         wait_for_shutdown_signal().await?;
-        shutdown.cancel();
+        ingest_shutdown.cancel();
     }
 
-    sink_manager.cancel();
     info!("received shutdown signal...");
 
     info!("waiting on consumers to shutdown...");
@@ -184,6 +202,13 @@ async fn spawn_consumers(
                     }
                 }));
             }
+            SourceConfig::File(fc) => {
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) = sources::file::run_consumer(fc, pool, shutdown.clone()).await {
+                        tracing::error!("file consumer error: {e}");
+                    }
+                }));
+            }
             SourceConfig::Socket(sc) => {
                 handles.push(tokio::spawn(async move {
                     if let Err(e) = sources::socket::run_consumer(sc, pool, shutdown.clone()).await
@@ -207,7 +232,6 @@ async fn spawn_consumers(
     handles
 }
 
-/// If a caller wants the lib to handle Ctrl-C on its own.
 pub async fn wait_for_shutdown_signal() -> Result<()> {
     #[cfg(unix)]
     {

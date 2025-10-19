@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bytes::{BufMut, BytesMut};
 use serde::Deserialize;
-use tangent_shared::source::{DecodeCompression, DecodeFormat};
+use tangent_shared::sources::common::{DecodeCompression, DecodeFormat};
 
 pub fn decompress_bytes(comp: DecodeCompression, data: &[u8]) -> Result<Vec<u8>> {
     Ok(match comp {

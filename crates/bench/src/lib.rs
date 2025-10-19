@@ -3,7 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tangent_shared::{source::SourceConfig, Config};
+use tangent_shared::{sources::common::SourceConfig, Config};
 
 pub mod metrics;
 pub mod msk;
@@ -136,6 +136,7 @@ pub async fn run_one_payload(
                     anyhow::bail!("--bucket is required for SQS bench");
                 }
             }
+            SourceConfig::File(_) => unimplemented!("not implemented"),
         }
 
         let drained = metrics::wait_for_drain(metrics_url).await?;

@@ -8,6 +8,7 @@ use tangent_bench::BenchOptions;
 use tangent_runtime::RuntimeOptions;
 
 mod scaffold;
+mod test;
 mod wit_assets;
 
 #[derive(Parser, Debug)]
@@ -82,6 +83,16 @@ enum Commands {
         #[arg(long)]
         lang: String,
     },
+
+    Test {
+        /// NDJSON/JSON fixture file to feed into the runtime
+        #[arg(long, value_name = "FILE")]
+        input: PathBuf,
+
+        /// Expected NDJSON file
+        #[arg(long, value_name = "FILE")]
+        expected: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -130,6 +141,9 @@ async fn main() -> Result<()> {
             tangent_bench::run(&config, opts).await?;
         }
         Commands::Scaffold { name, lang } => scaffold::scaffold(&name, &lang)?,
+        Commands::Test { input, expected } => {
+            test::run(test::TestOptions { input, expected }).await?;
+        }
     }
 
     Ok(())

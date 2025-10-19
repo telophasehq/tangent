@@ -5,7 +5,8 @@ use aws_sdk_s3::Client;
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::byte_stream::ByteStream;
 use std::path::Path;
-use tangent_shared::{Compression, Encoding};
+use tangent_shared::sinks::common::{Compression, Encoding};
+use tangent_shared::sinks::s3::S3Config;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -201,7 +202,7 @@ impl WALSink for S3Sink {
 }
 
 impl S3Sink {
-    pub async fn new(name: &String, cfg: &tangent_shared::s3::S3Config) -> Result<Self> {
+    pub async fn new(name: &String, cfg: &S3Config) -> Result<Self> {
         let aws_cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = Client::new(&aws_cfg);
 

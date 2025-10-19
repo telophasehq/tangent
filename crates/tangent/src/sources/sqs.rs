@@ -8,7 +8,7 @@ use bytes::{Bytes, BytesMut};
 use memchr::memchr_iter;
 use percent_encoding::percent_decode_str;
 use std::{sync::Arc, time::Duration};
-use tangent_shared::sqs::SQSConfig;
+use tangent_shared::sources::sqs::SQSConfig;
 use tokio_util::sync::CancellationToken;
 
 use crate::{

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bytes::BytesMut;
 use std::sync::Arc;
-use tangent_shared::socket::SocketConfig;
+use tangent_shared::sources::socket::SocketConfig;
 use tokio::net::UnixListener;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
