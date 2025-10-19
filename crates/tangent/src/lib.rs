@@ -15,7 +15,7 @@ use tangent_shared::{
     Config,
 };
 
-use crate::wasm::{FileSink, S3Sink, Sink};
+use crate::wasm::{BlackholeSink, FileSink, S3Sink, Sink};
 
 pub mod sinks;
 pub mod sources;
@@ -115,6 +115,9 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
                     key_prefix: None,
                 })),
                 SinkKind::File(_) => Some(Sink::File(FileSink {
+                    name: sink_name.to_string(),
+                })),
+                SinkKind::Blackhole(_) => Some(Sink::Blackhole(BlackholeSink {
                     name: sink_name.to_string(),
                 })),
             }

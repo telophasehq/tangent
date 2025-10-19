@@ -11,6 +11,7 @@ use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{sleep, Instant};
 
+use crate::sinks::blackhole;
 use crate::sinks::file;
 use crate::INFLIGHT;
 use crate::{
@@ -71,6 +72,10 @@ impl SinkManager {
             SinkKind::File(filecfg) => {
                 let file_sink = file::FileSink::new(filecfg.path.clone()).await?;
                 sinks.insert(name.clone(), file_sink);
+            }
+            SinkKind::Blackhole(_) => {
+                let bh = blackhole::BlackholeSink::new().await;
+                sinks.insert(name.clone(), bh);
             }
         };
 

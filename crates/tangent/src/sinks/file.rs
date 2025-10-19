@@ -7,6 +7,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use crate::sinks::manager::{Sink, SinkWrite};
+use crate::{SINK_BYTES_TOTAL, SINK_BYTES_UNCOMPRESSED_TOTAL, SINK_OBJECTS_TOTAL};
 
 pub struct FileSinkItem {
     pub path: String,
@@ -54,6 +55,10 @@ impl Sink for FileSink {
     async fn write(&self, req: SinkWrite) -> Result<()> {
         let mut f = self.file.lock().await;
         f.write_all(&req.payload).await?;
+
+        SINK_OBJECTS_TOTAL.inc();
+        SINK_BYTES_TOTAL.inc_by(req.payload.len() as u64);
+        SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(req.payload.len() as u64);
         Ok(())
     }
 

@@ -347,6 +347,12 @@ fn sink_key(s: Sink) -> RouteKey {
                 prefix: None,
             };
         }
+        Sink::Blackhole(bc) => {
+            return RouteKey {
+                sink_name: bc.name.clone(),
+                prefix: None,
+            };
+        }
         Sink::Default(_) => unreachable!(),
     }
 }

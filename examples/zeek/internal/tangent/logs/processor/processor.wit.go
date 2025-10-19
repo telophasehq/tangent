@@ -39,11 +39,22 @@ type FileSink struct {
 	Name string        `json:"name"`
 }
 
+// BlackholeSink represents the record "tangent:logs/processor@0.1.0#blackhole-sink".
+//
+//	record blackhole-sink {
+//		name: string,
+//	}
+type BlackholeSink struct {
+	_    cm.HostLayout `json:"-"`
+	Name string        `json:"name"`
+}
+
 // Sink represents the variant "tangent:logs/processor@0.1.0#sink".
 //
 //	variant sink {
 //		s3(s3-sink),
 //		file(file-sink),
+//		blackhole(blackhole-sink),
 //		default(default-sink),
 //	}
 type Sink cm.Variant[uint8, S3SinkShape, S3Sink]
@@ -68,19 +79,30 @@ func (self *Sink) File() *FileSink {
 	return cm.Case[FileSink](self, 1)
 }
 
+// SinkBlackhole returns a [Sink] of case "blackhole".
+func SinkBlackhole(data BlackholeSink) Sink {
+	return cm.New[Sink](2, data)
+}
+
+// Blackhole returns a non-nil *[BlackholeSink] if [Sink] represents the variant case "blackhole".
+func (self *Sink) Blackhole() *BlackholeSink {
+	return cm.Case[BlackholeSink](self, 2)
+}
+
 // SinkDefault returns a [Sink] of case "default".
 func SinkDefault(data DefaultSink) Sink {
-	return cm.New[Sink](2, data)
+	return cm.New[Sink](3, data)
 }
 
 // Default returns a non-nil *[DefaultSink] if [Sink] represents the variant case "default".
 func (self *Sink) Default() *DefaultSink {
-	return cm.Case[DefaultSink](self, 2)
+	return cm.Case[DefaultSink](self, 3)
 }
 
-var _SinkStrings = [3]string{
+var _SinkStrings = [4]string{
 	"s3",
 	"file",
+	"blackhole",
 	"default",
 }
 
