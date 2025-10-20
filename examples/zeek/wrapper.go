@@ -2,8 +2,7 @@ package main
 
 import (
 	"bytes"
-	"errors"
-	"io"
+	"fmt"
 	"sync"
 	"zeek/internal/tangent/logs/processor"
 
@@ -13,16 +12,22 @@ import (
 )
 
 var (
-	rdrPool = sync.Pool{New: func() any { return new(bytes.Reader) }}
-	mapPool = sync.Pool{
-		New: func() any { return make(map[string]any, 64) },
-	}
 	bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 )
 
+type sinkKey struct {
+	name     string
+	prefix   cm.Option[string]
+	sinkType string
+}
+type sinkState struct {
+	key sinkKey
+	buf *bytes.Buffer
+}
+
 type LogOutput struct {
 	Sinks []processor.Sink
-	Data  any
+	Items []any
 }
 
 func S3(name string, prefix *string) processor.Sink {
@@ -35,112 +40,39 @@ func S3(name string, prefix *string) processor.Sink {
 type Handler interface {
 	// Input: slice of objects decoded.
 	// Output: slice of objects to emit.
-	ProcessLog(log map[string]any) (*LogOutput, error)
+	ProcessLog(log []byte) (*LogOutput, error)
 }
 
 func Wire(h Handler) {
 	processor.Exports.ProcessLogs = func(input cm.List[uint8]) (r cm.Result[cm.List[processor.Output], cm.List[processor.Output], string]) {
 		in := input.Slice()
 
-		rdr := rdrPool.Get().(*bytes.Reader)
-		rdr.Reset(in)
-		defer rdrPool.Put(rdr)
-
-		dec := json.NewDecoder(rdr)
-		dec.UseNumber()
-
-		type sinkKey struct {
-			name     string
-			prefix   cm.Option[string]
-			sinkType string
-		}
-		type sinkState struct {
-			key sinkKey
-			buf *bytes.Buffer
-			enc *json.Encoder
+		if len(in) == 0 {
+			return
 		}
 
 		states := make(map[sinkKey]*sinkState, 4)
 
-		for {
-			m := mapPool.Get().(map[string]any)
-			for k := range m {
-				delete(m, k)
-			}
+		start := 0
+		for start < len(in) {
+			i := bytes.IndexByte(in[start:], '\n')
+			if i < 0 {
+				if err := processBatch(h, states, in[start:]); err != nil {
+					r.SetErr(err.Error())
 
-			if err := dec.Decode(&m); err != nil {
-				if errors.Is(err, io.EOF) {
-					mapPool.Put(m)
-					break
+					return
 				}
-				r.SetErr(err.Error())
-				mapPool.Put(m)
-				return
+				break
 			}
-
-			out, err := h.ProcessLog(m)
-			clear(m)
-			mapPool.Put(m)
-
-			if err != nil {
+			if err := processBatch(h, states, in[start:start+i]); err != nil {
 				r.SetErr(err.Error())
 				return
 			}
-
-			if out == nil {
-				continue
-			}
-
-			if len(out.Sinks) == 0 {
-				k := sinkKey{sinkType: "default"}
-
-				st, ok := states[k]
-				if !ok {
-					buf := bufPool.Get().(*bytes.Buffer)
-					buf.Reset()
-					enc := json.NewEncoder(buf)
-					enc.SetEscapeHTML(false)
-					st = &sinkState{key: k, buf: buf, enc: enc}
-					states[k] = st
-				}
-
-				if err := st.enc.Encode(out.Data); err != nil {
-					r.SetErr(err.Error())
-					return
-				}
-			}
-
-			for _, s := range out.Sinks {
-				var k sinkKey
-				if s3 := s.S3(); s3 != nil {
-					k = sinkKey{name: s3.Name, prefix: s3.KeyPrefix, sinkType: "s3"}
-				} else if f := s.File(); f != nil {
-					k = sinkKey{name: f.Name, sinkType: "file"}
-				} else {
-					r.SetErr("unknown sink type")
-					return
-				}
-
-				st, ok := states[k]
-				if !ok {
-					buf := bufPool.Get().(*bytes.Buffer)
-					buf.Reset()
-					enc := json.NewEncoder(buf)
-					enc.SetEscapeHTML(false)
-					st = &sinkState{key: k, buf: buf, enc: enc}
-					states[k] = st
-				}
-
-				if err := st.enc.Encode(out.Data); err != nil {
-					r.SetErr(err.Error())
-					return
-				}
-			}
+			start += i + 1
 		}
 
 		outputs := make([]processor.Output, 0, len(states))
 		for _, st := range states {
-			data := st.buf.Bytes()
 			var sink processor.Sink
 			switch st.key.sinkType {
 			case "default":
@@ -154,9 +86,13 @@ func Wire(h Handler) {
 				sink = processor.SinkFile(processor.FileSink{
 					Name: st.key.name,
 				})
+			case "blackhole":
+				sink = processor.SinkBlackhole(processor.BlackholeSink{
+					Name: st.key.name,
+				})
 			}
 			outputs = append(outputs, processor.Output{
-				Data: cm.ToList(data),
+				Data: cm.ToList(st.buf.Bytes()),
 				Sink: sink,
 			})
 		}
@@ -169,6 +105,64 @@ func Wire(h Handler) {
 		r.SetOK(cm.ToList(outputs))
 		return
 	}
+}
+
+func sinkKeyFrom(s processor.Sink) (sinkKey, error) {
+
+	if s3 := s.S3(); s3 != nil {
+		return sinkKey{name: s3.Name, prefix: s3.KeyPrefix, sinkType: "s3"}, nil
+	} else if fileSink := s.File(); fileSink != nil {
+		return sinkKey{name: fileSink.Name, sinkType: "file"}, nil
+	} else if blackhole := s.Blackhole(); blackhole != nil {
+		return sinkKey{name: blackhole.Name, sinkType: "blackhole"}, nil
+	} else if s.Default() != nil {
+		return sinkKey{sinkType: "default"}, nil
+	}
+
+	return sinkKey{}, fmt.Errorf("unknown sink type")
+}
+
+func processBatch(h Handler, states map[sinkKey]*sinkState, in []byte) error {
+	out, err := h.ProcessLog(in)
+
+	if err != nil {
+		return err
+	}
+
+	if out == nil {
+		return nil
+	}
+
+	sinks := out.Sinks
+	if len(sinks) == 0 {
+		sinks = []processor.Sink{processor.SinkDefault(processor.DefaultSink{})}
+	}
+
+	for _, s := range sinks {
+		k, err := sinkKeyFrom(s)
+		if err != nil {
+			return err
+		}
+
+		st, ok := states[k]
+		if !ok {
+			buf := bufPool.Get().(*bytes.Buffer)
+			buf.Reset()
+			st = &sinkState{key: k, buf: buf}
+			states[k] = st
+		}
+
+		enc := json.NewEncoder(st.buf)
+		enc.SetEscapeHTML(false)
+
+		for _, item := range out.Items {
+			if err := enc.Encode(item); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func init() {

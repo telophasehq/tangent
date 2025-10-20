@@ -5,7 +5,7 @@
         "name": "Zeek",
         "vendor_name": "Zeek"
       },
-      "logged_time": 1729051691,
+      "logged_time": 1729051691828,
       "loggers": [
         {
           "name": "sensor"

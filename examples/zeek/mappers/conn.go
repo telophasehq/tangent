@@ -4,15 +4,12 @@ import (
 	"encoding/json"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 )
 
 type ZeekConn struct {
-	// --- normalized times ---
-	TimeMs      int64 // from "ts" (RFC3339 or float seconds)
-	WriteTimeMs int64 // from "_write_ts" (RFC3339)
-
 	// --- raw time & meta (optional, useful for debugging/round-trips) ---
 	RawTS      string `json:"ts,omitempty"`
 	RawWriteTS string `json:"_write_ts,omitempty"`
@@ -68,11 +65,24 @@ type ZeekConn struct {
 	History          string   `json:"history,omitempty"`
 }
 
-func MapZeekConn(in map[string]any) v1_5_0.NetworkActivity {
-	zc := FromGenericConn(in)
+func MapZeekConn(in []byte) (*v1_5_0.NetworkActivity, error) {
+	var zc ZeekConn
 
-	_, tms := parseZeekTime(in, "ts")
-	_, writeMs := parseZeekTime(in, "_write_ts")
+	if err := json.Unmarshal(in, &zc); err != nil {
+		return nil, err
+	}
+
+	ts, err := time.Parse(time.RFC3339Nano, zc.RawTS)
+	if err != nil {
+		return nil, err
+	}
+	timeMs := ts.UnixMilli()
+
+	wts, err := time.Parse(time.RFC3339Nano, zc.RawWriteTS)
+	if err != nil {
+		return nil, err
+	}
+	writeTimeMs := wts.UnixMilli()
 
 	const classUID int32 = 4001 // network_activity
 	const categoryUID int32 = 4 // Network Activity
@@ -88,8 +98,8 @@ func MapZeekConn(in map[string]any) v1_5_0.NetworkActivity {
 
 	var startTime, endTime int64
 	if duration != nil {
-		endTime = tms + *duration
-		startTime = tms
+		endTime = timeMs + *duration
+		startTime = timeMs
 	}
 
 	var directionID *int32
@@ -156,16 +166,16 @@ func MapZeekConn(in map[string]any) v1_5_0.NetworkActivity {
 
 	// Endpoints
 	src := toNetEndpoint(zc.OrigH, zc.OrigP)
-	if mac := getString(in, "orig_l2_addr"); mac != "" {
-		src.Mac = &mac
+	if zc.OrigMAC != nil && *zc.OrigMAC != "" {
+		src.Mac = zc.OrigMAC
 	}
 	dst := toNetEndpoint(zc.RespH, zc.RespP)
-	if mac := getString(in, "resp_l2_addr"); mac != "" {
-		dst.Mac = &mac
+	if zc.RespMAC != nil && *zc.RespMAC != "" {
+		dst.Mac = zc.RespMAC
 	}
 	// dst geolocation
-	if cc := getString(in, "resp_cc"); cc != "" {
-		dst.Location = &v1_5_0.GeoLocation{Country: &cc}
+	if zc.RespCC != nil && *zc.RespCC != "" {
+		dst.Location = &v1_5_0.GeoLocation{Country: zc.RespCC}
 	}
 
 	// Metadata (1.5)
@@ -184,19 +194,19 @@ func MapZeekConn(in map[string]any) v1_5_0.NetworkActivity {
 		LogName: &logName,
 	}
 
-	if writeMs != 0 {
-		sec := writeMs / 1000
+	if writeTimeMs != 0 {
+		sec := writeTimeMs
 		md.LoggedTime = sec
 	}
-	if name := getString(in, "_system_name"); name != "" {
-		md.Loggers = []v1_5_0.Logger{{Name: &name}}
+	if zc.SystemName != "" {
+		md.Loggers = []v1_5_0.Logger{{Name: &zc.SystemName}}
 	}
-	if p := getString(in, "_path"); p != "" {
-		md.LogName = &p
+	if zc.Path != "" {
+		md.LogName = &zc.Path
 	}
 
 	var appName *string
-	if s := strings.TrimSpace(getString(in, "service")); s != "" {
+	if s := strings.TrimSpace(zc.Service); s != "" {
 		appName = &s
 	}
 
@@ -206,35 +216,44 @@ func MapZeekConn(in map[string]any) v1_5_0.NetworkActivity {
 		statusCode = &cs
 	}
 
-	observables := buildConnObservables(in)
+	observables := buildConnObservables(&zc)
 
 	unmappedObj := map[string]any{}
-	copyIfPresent := func(key string) {
-		if v, ok := in[key]; ok {
-			parentKeys := strings.Split(key, ".")
-			childMap := unmappedObj
+	if zc.MissedBytes != nil {
+		unmappedObj["missed_bytes"] = *zc.MissedBytes
+	}
+	if zc.VLAN != nil {
+		unmappedObj["vlan"] = *zc.VLAN
+	}
+	unmappedObj["app"] = zc.App
+	unmappedObj["tunnel_parents"] = zc.TunnelParents
+	unmappedObj["suri_ids"] = zc.SuriIDs
+	unmappedObj["spcap"] = map[string]any{}
+	unmappedObj["spcap"].(map[string]any)["trigger"] = zc.SpcapTrigger
+	unmappedObj["spcap"].(map[string]any)["url"] = zc.SpcapURL
 
-			for idx, pKey := range parentKeys {
-				if idx+1 == len(parentKeys) {
-					childMap[pKey] = v
-				} else {
-					if _, ok := childMap[pKey]; !ok {
-						childMap[pKey] = map[string]any{}
-					}
-					childMap = childMap[pKey].(map[string]any)
-				}
-			}
-		}
+	if zc.LocalOrig != nil {
+		unmappedObj["local_orig"] = *zc.LocalOrig
 	}
-	for _, k := range []string{
-		"missed_bytes", "vlan",
-		"app", "tunnel_parents", "local_orig",
-		"local_resp", "orig_ip_bytes", "resp_ip_bytes",
-		"suri_ids", "spcap.rule", "spcap.trigger", "spcap.url",
-		"pcr", "corelight_shunted",
-	} {
-		copyIfPresent(k)
+	if zc.LocalResp != nil {
+		unmappedObj["local_resp"] = *zc.LocalResp
 	}
+	if zc.OrigIPBytes != nil {
+		unmappedObj["orig_ip_bytes"] = *zc.OrigIPBytes
+	}
+	if zc.RespIPBytes != nil {
+		unmappedObj["resp_ip_bytes"] = *zc.RespIPBytes
+	}
+	if zc.SpcapRule != nil {
+		unmappedObj["spcap"].(map[string]any)["rule"] = zc.SpcapRule
+	}
+	if zc.PCR != nil {
+		unmappedObj["pcr"] = *zc.PCR
+	}
+	if zc.CorelightShunted != nil {
+		unmappedObj["corelight_shunted"] = *zc.CorelightShunted
+	}
+
 	var unmappedPtr *string
 	if b, err := json.Marshal(unmappedObj); err == nil && len(unmappedObj) > 0 {
 		s := string(b)
@@ -247,7 +266,7 @@ func MapZeekConn(in map[string]any) v1_5_0.NetworkActivity {
 		ClassUid:    classUID,
 		SeverityId:  severityID,
 		TypeUid:     typeUID,
-		Time:        tms,
+		Time:        timeMs,
 		Metadata:    md,
 
 		AppName: appName,
@@ -270,129 +289,50 @@ func MapZeekConn(in map[string]any) v1_5_0.NetworkActivity {
 		na.EndTime = endTime
 	}
 
-	return na
+	return &na, nil
 }
 
-// TODO: use struct directly.
-func FromGenericConn(m map[string]any) ZeekConn {
-	c := ZeekConn{}
-
-	// Parse ts / _write_ts from RFC3339 OR float seconds
-	_, c.TimeMs = parseZeekTime(m, "ts")
-	_, c.WriteTimeMs = parseZeekTime(m, "_write_ts")
-
-	c.UID = getString(m, "uid")
-	c.OrigH = getString(m, "id.orig_h")
-	c.OrigP = int(getInt64(m, "id.orig_p"))
-	c.RespH = getString(m, "id.resp_h")
-	c.RespP = int(getInt64(m, "id.resp_p"))
-
-	c.Proto = getString(m, "proto")
-	c.Service = getString(m, "service")
-
-	if v, ok := getAny(m, "duration"); ok {
-		f := toFloat(v)
-		c.Duration = &f
-	}
-	if v, ok := getAny(m, "orig_bytes"); ok {
-		iv := toInt64(v)
-		c.OrigBytes = &iv
-	}
-	if v, ok := getAny(m, "resp_bytes"); ok {
-		iv := toInt64(v)
-		c.RespBytes = &iv
-	}
-	c.ConnState = getString(m, "conn_state")
-	if v, ok := getAny(m, "local_orig"); ok {
-		b := toBool(v)
-		c.LocalOrig = &b
-	}
-	if v, ok := getAny(m, "local_resp"); ok {
-		b := toBool(v)
-		c.LocalResp = &b
-	}
-	if v, ok := getAny(m, "missed_bytes"); ok {
-		iv := toInt64(v)
-		c.MissedBytes = &iv
-	}
-	c.History = getString(m, "history")
-	if v, ok := getAny(m, "orig_pkts"); ok {
-		iv := toInt64(v)
-		c.OrigPkts = &iv
-	}
-	if v, ok := getAny(m, "resp_pkts"); ok {
-		iv := toInt64(v)
-		c.RespPkts = &iv
-	}
-	if v, ok := getAny(m, "orig_ip_bytes"); ok {
-		iv := toInt64(v)
-		c.OrigIPBytes = &iv
-	}
-	if v, ok := getAny(m, "resp_ip_bytes"); ok {
-		iv := toInt64(v)
-		c.RespIPBytes = &iv
-	}
-
-	if s := getString(m, "orig_l2_addr"); s != "" {
-		c.OrigMAC = &s
-	}
-	if s := getString(m, "resp_l2_addr"); s != "" {
-		c.RespMAC = &s
-	}
-	if s := getString(m, "resp_cc"); s != "" {
-		c.RespCC = &s
-	}
-	if s := getString(m, "community_id"); s != "" {
-		c.CommunityID = &s
-	}
-
-	return c
-}
-
-func buildConnObservables(in map[string]any) []v1_5_0.Observable {
+func buildConnObservables(zc *ZeekConn) []v1_5_0.Observable {
 	var out []v1_5_0.Observable
 
-	srcProvider := getString(in, "id.orig_h_name.src")
-	if vals, ok := getAny(in, "id.orig_h_name.vals"); ok {
-		for _, s := range toStringSlice(vals) {
-			name := "src_endpoint.hostname"
-			typ := int32(1)
-			val := s
-			base := float64(0)
-			scoreID := int32(0)
-			reputation := &v1_5_0.Reputation{
-				Provider:  &srcProvider,
-				BaseScore: base,
-				ScoreId:   scoreID,
-			}
-			out = append(out, v1_5_0.Observable{
-				Name:       &name,
-				TypeId:     typ,
-				Value:      &val,
-				Reputation: reputation,
-			})
+	srcProvider := zc.OrigHNameSrc
+	for _, s := range zc.OrigHNameVals {
+		name := "src_endpoint.hostname"
+		typ := int32(1)
+		val := s
+		base := float64(0)
+		scoreID := int32(0)
+		reputation := &v1_5_0.Reputation{
+			Provider:  &srcProvider,
+			BaseScore: base,
+			ScoreId:   scoreID,
 		}
+		out = append(out, v1_5_0.Observable{
+			Name:       &name,
+			TypeId:     typ,
+			Value:      &val,
+			Reputation: reputation,
+		})
 	}
-	dstProvider := getString(in, "id.resp_h_name.src")
-	if vals, ok := getAny(in, "id.resp_h_name.vals"); ok {
-		for _, s := range toStringSlice(vals) {
-			name := "dst_endpoint.hostname"
-			typ := int32(1)
-			val := s
-			base := float64(0)
-			scoreID := int32(0)
-			reputation := &v1_5_0.Reputation{
-				Provider:  &dstProvider,
-				BaseScore: base,
-				ScoreId:   scoreID,
-			}
-			out = append(out, v1_5_0.Observable{
-				Name:       &name,
-				TypeId:     typ,
-				Value:      &val,
-				Reputation: reputation,
-			})
+
+	dstProvider := zc.RespHNameSrc
+	for _, s := range zc.RespHNameVals {
+		name := "dst_endpoint.hostname"
+		typ := int32(1)
+		val := s
+		base := float64(0)
+		scoreID := int32(0)
+		reputation := &v1_5_0.Reputation{
+			Provider:  &dstProvider,
+			BaseScore: base,
+			ScoreId:   scoreID,
 		}
+		out = append(out, v1_5_0.Observable{
+			Name:       &name,
+			TypeId:     typ,
+			Value:      &val,
+			Reputation: reputation,
+		})
 	}
 	return out
 }

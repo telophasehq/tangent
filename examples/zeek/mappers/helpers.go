@@ -4,28 +4,9 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 )
-
-func parseZeekTime(m map[string]any, key string) (ns int64, ms int64) {
-	if v, ok := m[key]; ok {
-		switch t := v.(type) {
-		case string:
-			if ts, err := time.Parse(time.RFC3339Nano, t); err == nil {
-				return ts.UnixNano(), ts.UnixMilli()
-			}
-		default:
-			f := toFloat(v)
-			sec := int64(f)
-			nsec := int64((f - float64(sec)) * 1e9)
-			ts := time.Unix(sec, nsec).UTC()
-			return ts.UnixNano(), ts.UnixMilli()
-		}
-	}
-	return 0, 0
-}
 
 func toEndpoint(ip string, port int) v1_5_0.Endpoint {
 	if ip == "" {

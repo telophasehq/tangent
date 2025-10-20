@@ -2,48 +2,71 @@ package mappers
 
 import (
 	"encoding/json"
-	"strings"
+	"time"
 
 	"github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 )
 
 type ZeekDNS struct {
-	TimeMs      int64
-	WriteTimeMs int64
 
-	UID   string
-	Proto string
+	// ---- raw meta/time ----
+	Path       string `json:"_path,omitempty"`        // "dns"
+	SystemName string `json:"_system_name,omitempty"` // "sensor"
+	RawWriteTS string `json:"_write_ts,omitempty"`    // RFC3339
+	RawTS      string `json:"ts"`                     // RFC3339
 
-	OrigH string
-	OrigP int
-	RespH string
-	RespP int
+	// ---- ids / endpoints ----
+	UID   string `json:"uid"`
+	Proto string `json:"proto"` // "udp"/"tcp"
 
-	Query      string
-	QClass     *int
-	QClassName *string
-	QType      *int
-	QTypeName  *string
-	TransID    *int
-	RTT        *float64
+	OrigH string `json:"id.orig_h"`
+	OrigP int    `json:"id.orig_p"`
+	RespH string `json:"id.resp_h"`
+	RespP int    `json:"id.resp_p"`
 
-	Rcode     *int
-	RcodeName *string
+	// ---- query / response ----
+	Query      string   `json:"query"`
+	QClass     *int     `json:"qclass,omitempty"`
+	QClassName *string  `json:"qclass_name,omitempty"`
+	QType      *int     `json:"qtype,omitempty"`
+	QTypeName  *string  `json:"qtype_name,omitempty"`
+	TransID    *int     `json:"trans_id,omitempty"`
+	RTT        *float64 `json:"rtt,omitempty"` // seconds
 
-	AA *bool
-	TC *bool
-	RD *bool
-	RA *bool
-	Z  *int
+	Rcode     *int    `json:"rcode,omitempty"`
+	RcodeName *string `json:"rcode_name,omitempty"`
 
-	Answers []string
-	TTLs    []int64
+	// ---- flags ----
+	AA *bool `json:"AA,omitempty"`
+	TC *bool `json:"TC,omitempty"`
+	RD *bool `json:"RD,omitempty"`
+	RA *bool `json:"RA,omitempty"`
+	Z  *int  `json:"Z,omitempty"`
 
-	Rejected *bool
+	Answers []string `json:"answers,omitempty"`
+	TTLs    []int64  `json:"TTLs,omitempty"`
+
+	Rejected *bool `json:"rejected,omitempty"`
+
+	// ---- extra ICANN/enrichment fields ----
+	ICANNDomain        *string `json:"icann_domain,omitempty"`
+	ICANNHostSubdomain *string `json:"icann_host_subdomain,omitempty"`
+	ICANNTLD           *string `json:"icann_tld,omitempty"`
+	IsTrustedDomain    *bool   `json:"is_trusted_domain,omitempty"`
 }
 
-func MapZeekDNS(in map[string]any) v1_5_0.DNSActivity {
-	z := FromGenericDNS(in)
+func MapZeekDNS(in []byte) (*v1_5_0.DNSActivity, error) {
+	var z ZeekDNS
+
+	if err := json.Unmarshal(in, &z); err != nil {
+		return nil, err
+	}
+
+	wts, err := time.Parse(time.RFC3339Nano, z.RawWriteTS)
+	if err != nil {
+		return nil, err
+	}
+	writeTimeMs := wts.UnixMilli()
 
 	const classUID int32 = 4003
 	const categoryUID int32 = 4
@@ -123,16 +146,11 @@ func MapZeekDNS(in map[string]any) v1_5_0.DNSActivity {
 		Product: v1_5_0.Product{Name: &product, VendorName: &vendor},
 		LogName: &logName,
 	}
-	if z.WriteTimeMs != 0 {
-		sec := z.WriteTimeMs
-		md.LoggedTime = sec
+	if writeTimeMs != 0 {
+		md.LoggedTime = writeTimeMs
 	}
-	if sys := getString(in, "_system_name"); sys != "" {
-		md.Loggers = []v1_5_0.Logger{{Name: &sys}}
-	}
-	if p := getString(in, "_path"); p != "" {
-		md.LogName = &p
-	}
+	md.Loggers = []v1_5_0.Logger{{Name: &z.SystemName}}
+	md.LogName = &z.Path
 
 	var rtPtr float64
 	if z.RTT != nil {
@@ -151,13 +169,23 @@ func MapZeekDNS(in map[string]any) v1_5_0.DNSActivity {
 	}
 
 	unmapped := map[string]any{}
-	for _, k := range []string{
-		"icann_host_subdomain", "icann_domain", "icann_tld",
-		"is_trusted_domain", "qclass", "qtype",
-	} {
-		if v, ok := in[k]; ok {
-			unmapped[k] = v
-		}
+	if z.ICANNHostSubdomain != nil {
+		unmapped["icann_host_subdomain"] = *z.ICANNHostSubdomain
+	}
+	if z.ICANNDomain != nil {
+		unmapped["icann_domain"] = *z.ICANNDomain
+	}
+	if z.ICANNTLD != nil {
+		unmapped["icann_tld"] = *z.ICANNTLD
+	}
+	if z.IsTrustedDomain != nil {
+		unmapped["is_trusted_domain"] = *z.IsTrustedDomain
+	}
+	if z.QClass != nil {
+		unmapped["qclass"] = *z.QClass
+	}
+	if z.QType != nil {
+		unmapped["qtype"] = *z.QType
 	}
 	var unmappedPtr *string
 	if len(unmapped) > 0 {
@@ -175,8 +203,8 @@ func MapZeekDNS(in map[string]any) v1_5_0.DNSActivity {
 		StatusId:    statusId,
 		TypeUid:     typeUID,
 
-		Time:      z.WriteTimeMs,
-		StartTime: z.WriteTimeMs,
+		Time:      writeTimeMs,
+		StartTime: writeTimeMs,
 
 		Metadata:       md,
 		SrcEndpoint:    toNetEndpoint(z.OrigH, z.OrigP),
@@ -192,7 +220,7 @@ func MapZeekDNS(in map[string]any) v1_5_0.DNSActivity {
 		Unmapped: unmappedPtr,
 	}
 
-	return out
+	return &out, nil
 }
 
 func dnsFlagIDs(z ZeekDNS) []int32 {
@@ -228,90 +256,4 @@ func dnsActivityID(z ZeekDNS) int32 {
 		activity = 0 // Unknown
 	}
 	return int32(activity)
-}
-
-func FromGenericDNS(m map[string]any) ZeekDNS {
-	z := ZeekDNS{}
-
-	// times
-	_, z.TimeMs = parseZeekTime(m, "ts")
-	_, z.WriteTimeMs = parseZeekTime(m, "_write_ts")
-
-	z.UID = getString(m, "uid")
-	z.Proto = strings.ToLower(getString(m, "proto"))
-	z.Query = getString(m, "query")
-
-	z.OrigH = getString(m, "id.orig_h")
-	z.OrigP = int(getInt64(m, "id.orig_p"))
-	z.RespH = getString(m, "id.resp_h")
-	z.RespP = int(getInt64(m, "id.resp_p"))
-
-	if v, ok := getAny(m, "qclass"); ok {
-		iv, _ := toInt(v)
-		z.QClass = &iv
-	}
-	if v, ok := getAny(m, "qclass_name"); ok {
-		s := toString(v)
-		z.QClassName = &s
-	}
-	if v, ok := getAny(m, "qtype"); ok {
-		iv, _ := toInt(v)
-		z.QType = &iv
-	}
-	if v, ok := getAny(m, "qtype_name"); ok {
-		s := toString(v)
-		z.QTypeName = &s
-	}
-	if v, ok := getAny(m, "trans_id"); ok {
-		iv, _ := toInt(v)
-		z.TransID = &iv
-	}
-	if v, ok := getAny(m, "rtt"); ok {
-		f := toFloat(v)
-		z.RTT = &f
-	}
-
-	if v, ok := getAny(m, "rcode"); ok {
-		iv, _ := toInt(v)
-		z.Rcode = &iv
-	}
-	if v, ok := getAny(m, "rcode_name"); ok {
-		s := toString(v)
-		z.RcodeName = &s
-	}
-
-	if v, ok := getAny(m, "AA"); ok {
-		b := toBool(v)
-		z.AA = &b
-	}
-	if v, ok := getAny(m, "TC"); ok {
-		b := toBool(v)
-		z.TC = &b
-	}
-	if v, ok := getAny(m, "RD"); ok {
-		b := toBool(v)
-		z.RD = &b
-	}
-	if v, ok := getAny(m, "RA"); ok {
-		b := toBool(v)
-		z.RA = &b
-	}
-	if v, ok := getAny(m, "Z"); ok {
-		iv, _ := toInt(v)
-		z.Z = &iv
-	}
-
-	if v, ok := getAny(m, "answers"); ok {
-		z.Answers = toStringSlice(v)
-	}
-	if v, ok := getAny(m, "TTLs"); ok {
-		z.TTLs = toInt64Slice(v)
-	}
-
-	if v, ok := getAny(m, "rejected"); ok {
-		b := toBool(v)
-		z.Rejected = &b
-	}
-
-	return z
 }
