@@ -5,6 +5,7 @@ go 1.24
 toolchain go1.24.7
 
 require (
+	github.com/buger/jsonparser v1.1.1
 	github.com/segmentio/encoding v0.5.3
 	github.com/telophasehq/go-ocsf v0.2.1
 	go.bytecodealliance.org/cm v0.3.0
@@ -12,7 +13,6 @@ require (
 
 require (
 	github.com/apache/arrow-go/v18 v18.2.1-0.20250425153947-5ae8b27ab357 // indirect
-	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
