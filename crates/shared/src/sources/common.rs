@@ -1,14 +1,17 @@
 use serde::{Deserialize, Serialize};
 
-use crate::msk::MSKConfig;
-use crate::socket::SocketConfig;
-use crate::sqs::SQSConfig;
+use crate::sources::file::FileConfig;
+use crate::sources::msk::MSKConfig;
+use crate::sources::socket::SocketConfig;
+use crate::sources::sqs::SQSConfig;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum SourceConfig {
     #[serde(rename = "msk")]
     MSK(MSKConfig),
+    #[serde(rename = "file")]
+    File(FileConfig),
     #[serde(rename = "socket")]
     Socket(SocketConfig),
     #[serde(rename = "sqs")]

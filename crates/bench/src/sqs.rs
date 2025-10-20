@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use aws_sdk_s3::Client as S3Client;
 use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::Client as S3Client;
 use bytes::{BufMut, BytesMut};
 use serde_json::Value;
 use std::{
@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tangent_shared::sqs::SQSConfig;
+use tangent_shared::sources::sqs::SQSConfig;
 use tokio::task::JoinHandle;
 use tracing::info;
 

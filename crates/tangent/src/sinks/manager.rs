@@ -6,12 +6,13 @@ use rand::{rng, Rng};
 use std::collections::HashMap;
 use std::hash::Hasher;
 use std::{sync::Arc, time::Duration};
-use tangent_shared::{SinkConfig, SinkKind};
+use tangent_shared::sinks::common::{SinkConfig, SinkKind};
 use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{sleep, Instant};
-use tokio_util::sync::CancellationToken;
 
+use crate::sinks::blackhole;
+use crate::sinks::file;
 use crate::INFLIGHT;
 use crate::{
     sinks::{s3, wal},
@@ -46,16 +47,10 @@ struct Shard {
 pub struct SinkManager {
     shards: Vec<Shard>,
     sinks: HashMap<String, Arc<dyn Sink>>,
-    cancel: CancellationToken,
 }
 
 impl SinkManager {
-    pub async fn new(
-        name: &String,
-        cfg: &SinkConfig,
-        queue_capacity: usize,
-        cancel: CancellationToken,
-    ) -> Result<Self> {
+    pub async fn new(name: &String, cfg: &SinkConfig, queue_capacity: usize) -> Result<Self> {
         let mut sinks = HashMap::new();
 
         match &cfg.kind {
@@ -64,16 +59,23 @@ impl SinkManager {
 
                 let s3_sink = wal::DurableFileSink::new(
                     remote,
-                    cfg.common.wal_path.clone(),
+                    s3cfg.wal_path.clone(),
                     cfg.common.in_flight_limit,
                     cfg.common.object_max_bytes,
-                    Duration::from_secs(cfg.common.max_file_age_seconds),
+                    Duration::from_secs(s3cfg.max_file_age_seconds),
                     cfg.common.compression.clone(),
                     cfg.common.encoding.clone(),
-                    cancel.clone(),
                 )
                 .await?;
                 sinks.insert(name.clone(), s3_sink as Arc<dyn Sink>);
+            }
+            SinkKind::File(filecfg) => {
+                let file_sink = file::FileSink::new(filecfg.path.clone()).await?;
+                sinks.insert(name.clone(), file_sink);
+            }
+            SinkKind::Blackhole(_) => {
+                let bh = blackhole::BlackholeSink::new().await;
+                sinks.insert(name.clone(), bh);
             }
         };
 
@@ -85,19 +87,12 @@ impl SinkManager {
             let (tx, mut rx) = mpsc::channel::<SinkItem>(queue_capacity);
             let sinks_map = sinks.clone();
             let sem = sem.clone();
-            let cancel_shard = cancel.clone();
 
             let handle = tokio::spawn(async move {
                 let mut js = JoinSet::new();
 
                 loop {
                     tokio::select! {
-                        _ = cancel_shard.cancelled() => {
-                            while let Ok(_) = rx.try_recv() {
-                                INFLIGHT.dec();
-                            }
-                            break;
-                        }
                         maybe = rx.recv() => {
                             let mut item = match maybe { Some(it) => it, None => break };
 
@@ -116,17 +111,12 @@ impl SinkManager {
                                 Ok(p) => p,
                                 Err(_) => break,
                             };
-                            let token = cancel_shard.child_token();
 
                             js.spawn(async move {
                                 let _permit: OwnedSemaphorePermit = permit;
                                 let start = Instant::now();
                                 let mut delay = Duration::from_millis(50);
                                 loop {
-                                    if token.is_cancelled() {
-                                        INFLIGHT.dec();
-                                        break;
-                                    }
                                     match sink.write(SinkWrite {
                                         sink_name: sink_name.clone(),
                                         payload: item.req.payload.clone(),
@@ -147,11 +137,6 @@ impl SinkManager {
                                             break;
                                         }
                                         Err(e) => {
-                                            if token.is_cancelled() {
-                                                tracing::warn!("cancelling retries due to shutdown");
-                                                INFLIGHT.dec();
-                                                break;
-                                            }
                                             tracing::warn!("sink write failed: {e}");
                                             let j = rng().random_range(0..=delay.as_millis() as u64 / 4);
                                             sleep(delay + Duration::from_millis(j)).await;
@@ -170,15 +155,7 @@ impl SinkManager {
             shards.push(Shard { tx, handle });
         }
 
-        Ok(Self {
-            shards,
-            sinks,
-            cancel,
-        })
-    }
-
-    pub fn cancel(&self) {
-        self.cancel.cancel();
+        Ok(Self { shards, sinks })
     }
 
     pub async fn enqueue(
@@ -229,13 +206,12 @@ impl SinkManager {
     }
 
     pub async fn join(self) -> Result<()> {
-        self.cancel.cancel();
-
         let SinkManager {
             mut shards, sinks, ..
         } = self;
 
         for sh in shards.drain(..) {
+            drop(sh.tx);
             if let Err(e) = sh.handle.await {
                 tracing::warn!("shard join error: {e}");
             }

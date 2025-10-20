@@ -1,0 +1,11 @@
+module_type: go
+entry_point: .
+batch_size: 1024
+sources:
+    socket_main:
+        type: socket
+        path: "/tmp/sidecar.sock"
+sinks:
+    blackhole:
+        type: blackhole
+        default: true

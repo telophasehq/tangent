@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use bytes::BytesMut;
-use rdkafka::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::ClientConfig;
 use secrecy::ExposeSecret;
 use serde_json::Value;
 use std::{
@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
-use tangent_shared::msk::{MSKAuth, MSKConfig};
+use tangent_shared::sources::msk::{MSKAuth, MSKConfig};
 use tokio::task;
 use tracing::info;
 

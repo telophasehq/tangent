@@ -64,6 +64,7 @@ pub struct Worker {
     batch_max_size: usize,
     batch_max_age: Duration,
     sink_manager: Arc<SinkManager>,
+    default_sink: Option<Sink>,
 }
 
 impl Worker {
@@ -162,21 +163,33 @@ impl Worker {
         GUEST_BYTES_TOTAL.inc_by(batch.len() as u64);
 
         let mut sink_routes: HashMap<RouteKey, BytesMut> = HashMap::new();
+
+        if outs.len() == 0 {
+            tracing::warn!("no output from process_logs");
+        }
         for o in outs {
             let data = &o.data;
 
-            for s in o.sinks {
-                match s {
-                    Sink::S3(s3v) => {
-                        let key = RouteKey {
-                            sink_name: s3v.name.clone(),
-                            prefix: s3v.key_prefix.clone(),
-                        };
+            match o.sink {
+                Sink::Default(_) => {
+                    if self.default_sink.is_none() {
+                        tracing::warn!(
+                                "No sink specified for log and no default sink configured. Dropping log."
+                            );
+                    } else {
+                        let key = sink_key(self.default_sink.clone().unwrap());
                         let buf = sink_routes
                             .entry(key)
                             .or_insert_with(|| BytesMut::with_capacity(data.len()));
                         buf.extend_from_slice(data);
                     }
+                }
+                _ => {
+                    let key = sink_key(o.sink);
+                    let buf = sink_routes
+                        .entry(key)
+                        .or_insert_with(|| BytesMut::with_capacity(data.len()));
+                    buf.extend_from_slice(data);
                 }
             }
         }
@@ -189,6 +202,7 @@ impl Worker {
 
         for (rk, buf) in sink_routes {
             let payload = buf.freeze();
+
             self.sink_manager
                 .enqueue(
                     rk.sink_name.clone(),
@@ -227,6 +241,7 @@ impl WorkerPool {
         sink_manager: Arc<SinkManager>,
         batch_max_size: usize,
         batch_max_age: Duration,
+        default_sink: Option<Sink>,
     ) -> anyhow::Result<Self> {
         let mut senders = Vec::with_capacity(size);
         let mut handles = Vec::with_capacity(size);
@@ -260,6 +275,7 @@ impl WorkerPool {
                 processor,
                 batch_max_size,
                 batch_max_age,
+                default_sink: default_sink.clone(),
             };
             let h = tokio::spawn(async move {
                 if let Err(e) = worker.run().await {
@@ -314,5 +330,29 @@ impl WorkerPool {
         for h in self.handles {
             let _ = h.await;
         }
+    }
+}
+
+fn sink_key(s: Sink) -> RouteKey {
+    match s {
+        Sink::S3(s3c) => {
+            return RouteKey {
+                sink_name: s3c.name.clone(),
+                prefix: s3c.key_prefix.clone(),
+            };
+        }
+        Sink::File(fc) => {
+            return RouteKey {
+                sink_name: fc.name.clone(),
+                prefix: None,
+            };
+        }
+        Sink::Blackhole(bc) => {
+            return RouteKey {
+                sink_name: bc.name.clone(),
+                prefix: None,
+            };
+        }
+        Sink::Default(_) => unreachable!(),
     }
 }

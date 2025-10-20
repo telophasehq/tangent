@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::worker::{Record, WorkerPool};
 use rdkafka::message::Headers;
-use tangent_shared::msk::{MSKAuth, MSKConfig};
+use tangent_shared::sources::msk::{MSKAuth, MSKConfig};
 
 use crate::sources::decoding;
 
