@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use serde_json::Value;
+use simd_json::prelude::{ValueAsArray, ValueAsObject, ValueObjectAccess};
+use simd_json::{BorrowedValue, StaticNode};
 use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
 use wasmtime_wasi::p2::{IoView, WasiCtx, WasiView};
 
@@ -47,22 +48,39 @@ impl WasiView for HostEngine {
 
 #[derive(Clone)]
 pub struct JsonLogView {
-    doc: Arc<Value>,
+    raw: Arc<Vec<u8>>,
+    doc: Arc<BorrowedValue<'static>>,
 }
 
 impl JsonLogView {
-    pub const fn new(doc: Arc<Value>) -> Self {
-        Self { doc }
+    pub fn from_bytes(mut line: Vec<u8>) -> anyhow::Result<Self> {
+        let v: BorrowedValue<'_> = simd_json::to_borrowed_value(line.as_mut_slice())?;
+        let v_static: BorrowedValue<'static> =
+            unsafe { std::mem::transmute::<BorrowedValue<'_>, BorrowedValue<'static>>(v) };
+        Ok(Self {
+            raw: Arc::new(line),
+            doc: Arc::new(v_static),
+        })
     }
 
-    pub fn lookup(&self, path: &str) -> Option<&Value> {
+    pub fn lookup<'a>(&'a self, path: &str) -> Option<&'a BorrowedValue<'a>> {
         let mut v = &*self.doc;
         for seg in path.split('.') {
-            if let Some((key, _)) = seg.split_once('[') {
-                let start = seg.find('[')? + 1;
-                let end = seg.len().checked_sub(1)?;
-                let idx: usize = seg[start..end].parse().ok()?;
-                v = v.get(key)?.get(idx)?;
+            if let Some((key, bracket)) = seg.split_once('[') {
+                v = v.get(key)?;
+                let mut rest = bracket;
+                loop {
+                    let start = 0;
+                    let close = rest.find(']')?;
+                    let idx: usize = rest[start..close].parse().ok()?;
+                    v = v.as_array()?.get(idx)?;
+
+                    if let Some(next_open) = rest[close + 1..].find('[') {
+                        rest = &rest[close + 2 + next_open..];
+                    } else {
+                        break;
+                    }
+                }
             } else {
                 v = v.get(seg)?;
             }
@@ -70,14 +88,14 @@ impl JsonLogView {
         Some(v)
     }
 
-    pub fn to_scalar(v: &Value) -> Option<log::Scalar> {
+    pub fn to_scalar(v: &BorrowedValue) -> Option<Scalar> {
         match v {
-            Value::String(s) => Some(Scalar::Str(s.to_string())),
-            Value::Number(n) => n
-                .as_i64()
-                .map_or_else(|| n.as_f64().map(Scalar::Float), |i| Some(Scalar::Int(i))),
-            Value::Bool(b) => Some(Scalar::Boolean(*b)),
-            Value::Array(_) | Value::Object(_) | Value::Null => None,
+            BorrowedValue::String(s) => Some(Scalar::Str(s.to_string())),
+            BorrowedValue::Static(StaticNode::I64(i)) => Some(Scalar::Int(*i)),
+            BorrowedValue::Static(StaticNode::U64(i)) => Some(Scalar::Int(*i as i64)),
+            BorrowedValue::Static(StaticNode::F64(f)) => Some(Scalar::Float(*f)),
+            BorrowedValue::Static(StaticNode::Bool(b)) => Some(Scalar::Boolean(*b)),
+            _ => None,
         }
     }
 }
@@ -95,11 +113,8 @@ impl log::HostLogview for HostEngine {
     }
 
     async fn get(&mut self, h: Resource<JsonLogView>, path: String) -> Option<log::Scalar> {
-        let out = {
-            let v: &JsonLogView = self.table.get(&h).ok()?;
-            v.lookup(&path).and_then(JsonLogView::to_scalar)
-        };
-        out
+        let v: &JsonLogView = self.table.get(&h).ok()?;
+        v.lookup(&path).and_then(JsonLogView::to_scalar)
     }
 
     async fn get_list(
@@ -107,13 +122,10 @@ impl log::HostLogview for HostEngine {
         h: Resource<JsonLogView>,
         path: String,
     ) -> Option<Vec<log::Scalar>> {
-        let out = {
-            let v: &JsonLogView = self.table.get(&h).ok()?;
-            v.lookup(&path)?
-                .as_array()
-                .map(|arr| arr.iter().filter_map(JsonLogView::to_scalar).collect())
-        };
-        out
+        let v: &JsonLogView = self.table.get(&h).ok()?;
+        v.lookup(&path)?
+            .as_array()
+            .map(|arr| arr.iter().filter_map(JsonLogView::to_scalar).collect())
     }
 
     async fn get_map(
@@ -121,15 +133,12 @@ impl log::HostLogview for HostEngine {
         h: Resource<JsonLogView>,
         path: String,
     ) -> Option<Vec<(String, log::Scalar)>> {
-        let out = {
-            let v: &JsonLogView = self.table.get(&h).ok()?;
-            v.lookup(&path)?.as_object().map(|obj| {
-                obj.iter()
-                    .filter_map(|(k, v)| JsonLogView::to_scalar(v).map(|s| (k.clone(), s)))
-                    .collect()
-            })
-        };
-        out
+        let v: &JsonLogView = self.table.get(&h).ok()?;
+        v.lookup(&path)?.as_object().map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| JsonLogView::to_scalar(v).map(|s| (k.to_string(), s)))
+                .collect::<Vec<(String, log::Scalar)>>()
+        })
     }
 
     async fn keys(&mut self, h: Resource<JsonLogView>, path: String) -> Vec<String> {
@@ -139,7 +148,10 @@ impl log::HostLogview for HostEngine {
                 Err(_) => return vec![],
             };
             v.lookup(&path)
-                .and_then(|vv| vv.as_object().map(|m| m.keys().cloned().collect()))
+                .and_then(|vv| {
+                    vv.as_object()
+                        .map(|m| m.keys().map(|k| k.to_string()).collect())
+                })
                 .unwrap_or_default()
         };
         out

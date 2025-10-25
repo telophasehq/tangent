@@ -136,24 +136,22 @@ impl Worker {
         let start = Instant::now();
         let mut output_frames: Vec<Bytes> = Vec::with_capacity(events_in_batch * 2);
 
-        let mut groups: HashMap<usize, Vec<Arc<serde_json::Value>>> = HashMap::default();
+        let mut groups: HashMap<usize, Vec<JsonLogView>> = HashMap::default();
         for b in batch.iter() {
-            let raw: serde_json::Value = serde_json::from_slice(b)?;
-            let shared = Arc::new(raw);
-            let lv = JsonLogView::new(Arc::clone(&shared));
+            let lv = JsonLogView::from_bytes(b.to_vec())?;
             for (idx, m) in self.mappers.mappers.iter_mut().enumerate() {
-                if m.selectors.iter().any(|s| eval_selector(s, &lv)) {
-                    groups.entry(idx).or_default().push(Arc::clone(&shared));
+                if m.selectors.iter().any(|s| eval_selector(s, &lv.clone())) {
+                    groups.entry(idx).or_default().push(lv.clone());
                 }
             }
         }
 
-        for (idx, raws) in groups {
+        for (idx, lvs) in groups {
             let m = &mut self.mappers.mappers[idx];
 
             let mut owned: Vec<Resource<JsonLogView>> = Vec::new();
-            for raw in raws {
-                let h = m.store.data_mut().table.push(JsonLogView::new(raw))?;
+            for lv in lvs {
+                let h = m.store.data_mut().table.push(lv)?;
                 owned.push(h);
             }
 
