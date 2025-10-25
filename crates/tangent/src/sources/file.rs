@@ -24,9 +24,9 @@ pub async fn run_consumer(
 
     let sniff = &buf[..buf.len().min(8)];
     let comp = dc.resolve_compression(None, path.file_name().and_then(|s| s.to_str()), sniff);
-    let raw = decoding::decompress_bytes(comp, &buf)?;
+    let raw = decoding::decompress_bytes(&comp, &buf)?;
     let fmt = dc.resolve_format(&raw);
-    let ndjson = decoding::normalize_to_ndjson(fmt, &raw);
+    let ndjson = decoding::normalize_to_ndjson(&fmt, &raw);
 
     let mut cur = BytesMut::with_capacity(ndjson.len());
     for line in ndjson.split(|&b| b == b'\n') {
@@ -39,9 +39,9 @@ pub async fn run_consumer(
             payload: cur.split().freeze(),
             ack: None,
         })
-        .await;
+        .await?;
     }
 
-    let _ = shutdown.cancelled().await;
+    let () = shutdown.cancelled().await;
     Ok(())
 }

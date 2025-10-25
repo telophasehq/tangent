@@ -28,6 +28,7 @@ pub struct Decoding {
 }
 
 impl Decoding {
+    #[must_use]
     pub fn resolve_compression(
         &self,
         meta: Option<&str>,
@@ -39,7 +40,7 @@ impl Decoding {
             other => return other.clone(),
         }
 
-        if let Some(enc) = meta.map(|m| m.to_ascii_lowercase()) {
+        if let Some(enc) = meta.map(str::to_ascii_lowercase) {
             if enc.contains("gzip") {
                 return DecodeCompression::Gzip;
             }
@@ -70,6 +71,8 @@ impl Decoding {
 
         DecodeCompression::None
     }
+
+    #[must_use]
     pub fn resolve_format(&self, bytes: &[u8]) -> DecodeFormat {
         if !matches!(self.format, DecodeFormat::Auto) {
             return self.format.clone();

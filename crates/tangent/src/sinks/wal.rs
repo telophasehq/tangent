@@ -95,13 +95,13 @@ impl DurableFileSink {
         let s = Arc::new(Self {
             inner,
             dir,
-            inflight: Default::default(),
+            inflight: Arc::default(),
             routes: Mutex::new(HashMap::new()),
             max_inflight: Arc::new(Semaphore::new(max_inflight)),
-            max_file_size: max_file_size.into(),
-            max_file_age: max_file_age,
-            compression: compression,
-            encoding: encoding,
+            max_file_size,
+            max_file_age,
+            compression,
+            encoding,
             rotator: Mutex::new(None),
             uploads: Mutex::new(JoinSet::new()),
         });
@@ -112,7 +112,7 @@ impl DurableFileSink {
             let tick = max(Duration::from_millis(250), max_file_age / 4);
             loop {
                 tokio::select! {
-                    _ = sleep(tick) => {
+                    () = sleep(tick) => {
                         let to_rotate: Vec<RouteKey> = {
                             let routes = s_cloned.routes.lock().await;
                             routes.iter()
@@ -176,9 +176,8 @@ impl DurableFileSink {
     }
 
     async fn retry_leftovers(&self, incr_counters: bool) {
-        let mut rd = match fs::read_dir(&self.dir).await {
-            Ok(r) => r,
-            Err(_) => return,
+        let Ok(mut rd) = fs::read_dir(&self.dir).await else {
+            return;
         };
         while let Ok(Some(ent)) = rd.next_entry().await {
             let p = ent.path();
@@ -298,9 +297,8 @@ impl DurableFileSink {
 #[async_trait::async_trait]
 impl Sink for DurableFileSink {
     async fn write(&self, req: SinkWrite) -> Result<()> {
-        let meta = match req.s3 {
-            Some(m) => m,
-            None => anyhow::bail!("DurableFileSink requires s3 meta (bucket/prefix)"),
+        let Some(meta) = req.s3 else {
+            anyhow::bail!("DurableFileSink requires s3 meta (bucket/prefix)")
         };
         let rkey = RouteKey {
             sink_name: req.sink_name,
@@ -360,7 +358,8 @@ impl Sink for DurableFileSink {
     }
 
     async fn flush(&self) -> Result<()> {
-        if let Some(h) = self.rotator.lock().await.take() {
+        let value = self.rotator.lock().await.take();
+        if let Some(h) = value {
             let _ = h.await;
         }
 
@@ -436,10 +435,10 @@ async fn compress_gzip_to_file(src: &Path, level: u32) -> Result<(PathBuf, u64)>
     Ok((dst, size))
 }
 
+#[must_use]
 pub fn base_for(path: &Path) -> PathBuf {
-    let name = match path.file_name().and_then(|s| s.to_str()) {
-        Some(s) => s,
-        None => return path.to_path_buf(),
+    let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+        return path.to_path_buf();
     };
     let mut out = name.to_owned();
 

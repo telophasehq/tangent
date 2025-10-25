@@ -1,6 +1,6 @@
 # zeek
 
-Go/TinyGo WASI component for Tangent.
+Use the Zeek Tangent plugin.
 
 ## Build
 ```bash

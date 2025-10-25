@@ -9,13 +9,10 @@ use prometheus::{
     IntGauge,
 };
 
-use tangent_shared::{
-    sinks::common::{SinkConfig, SinkKind},
-    sources::common::SourceConfig,
-    Config,
-};
+use tangent_shared::{sinks::common::SinkConfig, sources::common::SourceConfig, Config};
 
-use crate::wasm::{BlackholeSink, FileSink, S3Sink, Sink};
+use crate::wasm::engine::WasmEngine;
+use wasmtime::component::Component;
 
 pub mod sinks;
 pub mod sources;
@@ -86,11 +83,9 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
 }
 
 pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
-    let _exporter_guard = if let Some(addr) = opts.prometheus_bind {
-        Some(prometheus_exporter::start(addr).expect("failed to start prometheus exporter"))
-    } else {
-        None
-    };
+    let _exporter_guard = opts
+        .prometheus_bind
+        .map(|addr| prometheus_exporter::start(addr).expect("failed to start prometheus exporter"));
 
     if cfg.sources.is_empty() {
         bail!("At least one source is required.");
@@ -100,28 +95,6 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
     }
     if cfg.sinks.len() > 1 {
         bail!("You must configure exactly one sink.");
-    }
-
-    let mut default_sink: Option<Sink> = None;
-    for (sink_name, s) in &cfg.sinks {
-        if s.common.default {
-            if !default_sink.is_none() {
-                bail!("Only one sink can be configured as default.");
-            }
-
-            default_sink = match s.kind {
-                SinkKind::S3(_) => Some(Sink::S3(S3Sink {
-                    name: sink_name.to_string(),
-                    key_prefix: None,
-                })),
-                SinkKind::File(_) => Some(Sink::File(FileSink {
-                    name: sink_name.to_string(),
-                })),
-                SinkKind::Blackhole(_) => Some(Sink::Blackhole(BlackholeSink {
-                    name: sink_name.to_string(),
-                })),
-            }
-        }
     }
 
     tracing::info!(target = "startup", config = ?cfg);
@@ -136,7 +109,11 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
     let sink_manager =
         Arc::new(sinks::manager::SinkManager::new(name, sink_cfg, cfg.batch_size_kb() * 10).await?);
 
-    let engine = wasm::WasmEngine::new().expect("engine");
+    let engine = WasmEngine::new()?;
+    let mut components: Vec<Component> = Vec::with_capacity(cfg.plugins.len());
+    for path in &cfg.plugins {
+        components.push(engine.load_component(path)?);
+    }
     info!(
         "Batch size: {} KiB, max age: {:?}",
         cfg.batch_size,
@@ -147,22 +124,20 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
         worker::WorkerPool::new(
             cfg.workers,
             engine,
+            components,
             Arc::clone(&sink_manager),
             cfg.batch_size_kb(),
             cfg.batch_age_ms(),
-            default_sink,
         )
         .await?,
     );
 
-    let consumer_handles = spawn_consumers(cfg, pool.clone(), ingest_shutdown.clone()).await;
+    let consumer_handles = spawn_consumers(cfg, pool.clone(), ingest_shutdown.clone());
 
-    if opts.once {
-        ingest_shutdown.cancel();
-    } else {
+    if !opts.once {
         wait_for_shutdown_signal().await?;
-        ingest_shutdown.cancel();
     }
+    ingest_shutdown.cancel();
 
     info!("received shutdown signal...");
 
@@ -188,7 +163,7 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
     Ok(())
 }
 
-async fn spawn_consumers(
+fn spawn_consumers(
     cfg: Config,
     pool: Arc<worker::WorkerPool>,
     shutdown: CancellationToken,

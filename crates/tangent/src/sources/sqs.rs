@@ -45,7 +45,7 @@ pub async fn run_consumer(
                                 let ack = Arc::new(SqsAck::new(sqs_client.clone(), qurl.clone(), handle));
 
                                 let mut s3_notification = false;
-                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
                                     if let Some(recs) = v.get("Records").and_then(|r| r.as_array()) {
                                         for (idx, r) in recs.iter().enumerate() {
                                             let bucket = r.pointer("/s3/bucket/name").and_then(|x| x.as_str());
@@ -64,12 +64,12 @@ pub async fn run_consumer(
                                                    Err(e) => { tracing::error!("S3 collect {bucket}/{key}: {e}"); continue; }
                                                };
 
-                                                let bytes = aws_smithy_types::byte_stream::AggregatedBytes::from(collected).to_vec();
+                                                let bytes = collected.to_vec();
                                                 let fmt = dc.resolve_format(&bytes);
-                                                let ndjson = decoding::normalize_to_ndjson(fmt, &bytes);
+                                                let ndjson = decoding::normalize_to_ndjson(&fmt, &bytes);
 
                                                 let final_ack = if idx + 1 == recs.len() { Some(ack.clone() as Arc<dyn Ack>) } else { None };
-                                                dispatch_ndjson_chunks(pool.clone(), ndjson, max_chunk, final_ack).await;
+                                                dispatch_ndjson_chunks(pool.clone(), ndjson, max_chunk, final_ack).await?;
                                                 s3_notification = true;
                                             }
                                         }
@@ -83,7 +83,7 @@ pub async fn run_consumer(
                                 let sniff = &bytes[..bytes.len().min(8)];
                                 let comp = dc.resolve_compression(None, None, sniff);
 
-                                let raw = match decoding::decompress_bytes(comp, &bytes) {
+                                let raw = match decoding::decompress_bytes(&comp, &bytes) {
                                     Ok(v) => v,
                                     Err(e) => {
                                         tracing::warn!(error=?e, "decompress failed; emitting raw body");
@@ -96,8 +96,8 @@ pub async fn run_consumer(
                                 };
 
                                 let fmt = dc.resolve_format(&raw);
-                                let ndjson = decoding::normalize_to_ndjson(fmt, &raw);
-                                dispatch_ndjson_chunks(pool.clone(), ndjson, max_chunk, Some(ack)).await;
+                                let ndjson = decoding::normalize_to_ndjson(&fmt, &raw);
+                                dispatch_ndjson_chunks(pool.clone(), ndjson, max_chunk, Some(ack)).await?;
                             }
                         }
                     }
@@ -144,16 +144,13 @@ async fn dispatch_ndjson_chunks(
     data: Vec<u8>,
     max_chunk: usize,
     ack: Option<Arc<dyn Ack>>,
-) {
+) -> Result<()> {
     let mut cur = BytesMut::with_capacity(max_chunk.min(data.len()).max(1));
 
     let mut start = 0usize;
     let mut line_ends: Vec<usize> = memchr_iter(b'\n', &data).collect();
 
-    let had_trailing_newline = line_ends
-        .last()
-        .map(|&i| i + 1 == data.len())
-        .unwrap_or(false);
+    let had_trailing_newline = line_ends.last().is_some_and(|&i| i + 1 == data.len());
     if !had_trailing_newline {
         line_ends.push(data.len());
     }
@@ -164,7 +161,7 @@ async fn dispatch_ndjson_chunks(
         let line_len = end - start;
         if line_len > max_chunk {
             chunks_to_go_estimate += 1;
-            start = end + 0;
+            start = end;
             continue;
         }
         if est_size + line_len > max_chunk {
@@ -172,7 +169,7 @@ async fn dispatch_ndjson_chunks(
             est_size = 0;
         }
         est_size += line_len;
-        start = end + 0;
+        start = end;
     }
     if est_size > 0 {
         chunks_to_go_estimate += 1;
@@ -199,7 +196,7 @@ async fn dispatch_ndjson_chunks(
                 payload: Bytes::copy_from_slice(line),
                 ack: final_ack,
             })
-            .await;
+            .await?;
         } else {
             if cur.len() + line.len() > max_chunk {
                 chunks_left -= 1;
@@ -208,7 +205,7 @@ async fn dispatch_ndjson_chunks(
                     payload: cur.split().freeze(),
                     ack: final_ack,
                 })
-                .await;
+                .await?;
             }
             cur.extend_from_slice(line);
         }
@@ -223,8 +220,10 @@ async fn dispatch_ndjson_chunks(
             payload: cur.freeze(),
             ack: final_ack,
         })
-        .await;
+        .await?;
     }
+
+    Ok(())
 }
 
 pub struct SqsAck {
@@ -234,7 +233,8 @@ pub struct SqsAck {
 }
 
 impl SqsAck {
-    pub fn new(client: SQSClient, queue_url: Arc<String>, receipt_handle: String) -> Self {
+    #[must_use]
+    pub const fn new(client: SQSClient, queue_url: Arc<String>, receipt_handle: String) -> Self {
         Self {
             client,
             queue_url,

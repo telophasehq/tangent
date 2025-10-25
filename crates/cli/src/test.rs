@@ -22,6 +22,7 @@ use tangent_shared::sources::file;
 pub struct TestOptions {
     pub input: PathBuf,
     pub expected: PathBuf,
+    pub plugin: PathBuf,
 }
 
 pub async fn run(opts: TestOptions) -> Result<()> {
@@ -69,6 +70,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
             workers: 1,
             sources: sources,
             sinks: sinks,
+            plugins: vec![opts.plugin],
         },
         rt,
     )

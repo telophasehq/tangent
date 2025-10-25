@@ -3,7 +3,7 @@ use bytes::{BufMut, BytesMut};
 use serde::Deserialize;
 use tangent_shared::sources::common::{DecodeCompression, DecodeFormat};
 
-pub fn decompress_bytes(comp: DecodeCompression, data: &[u8]) -> Result<Vec<u8>> {
+pub fn decompress_bytes(comp: &DecodeCompression, data: &[u8]) -> Result<Vec<u8>> {
     Ok(match comp {
         DecodeCompression::None | DecodeCompression::Auto => data.to_vec(),
         DecodeCompression::Gzip => {
@@ -22,6 +22,7 @@ pub fn decompress_bytes(comp: DecodeCompression, data: &[u8]) -> Result<Vec<u8>>
     })
 }
 
+#[must_use]
 pub fn json_to_ndjson(v: &serde_json::Value) -> Vec<u8> {
     match v {
         serde_json::Value::Array(a) => {
@@ -48,7 +49,7 @@ pub fn msgpack_to_ndjson(data: &[u8]) -> Result<Vec<u8>> {
     Ok(json_to_ndjson(&val))
 }
 
-pub fn normalize_to_ndjson(fmt: DecodeFormat, raw: &[u8]) -> Vec<u8> {
+pub fn normalize_to_ndjson(fmt: &DecodeFormat, raw: &[u8]) -> Vec<u8> {
     match fmt {
         DecodeFormat::Ndjson | DecodeFormat::Text => {
             let mut b = raw.to_vec();

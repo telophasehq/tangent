@@ -92,6 +92,10 @@ enum Commands {
         /// Expected NDJSON file
         #[arg(long, value_name = "FILE")]
         expected: PathBuf,
+
+        /// Expected plugin
+        #[arg(long, value_name = "FILE")]
+        plugin: PathBuf,
     },
 }
 
@@ -141,8 +145,17 @@ async fn main() -> Result<()> {
             tangent_bench::run(&config, opts).await?;
         }
         Commands::Scaffold { name, lang } => scaffold::scaffold(&name, &lang)?,
-        Commands::Test { input, expected } => {
-            test::run(test::TestOptions { input, expected }).await?;
+        Commands::Test {
+            input,
+            expected,
+            plugin,
+        } => {
+            test::run(test::TestOptions {
+                input,
+                expected,
+                plugin,
+            })
+            .await?;
         }
     }
 

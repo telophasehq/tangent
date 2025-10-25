@@ -29,30 +29,36 @@ pub struct Config {
 
     #[serde(default)]
     pub sinks: std::collections::BTreeMap<String, SinkConfig>,
+
+    #[serde(default)]
+    pub plugins: Vec<PathBuf>,
 }
 
 impl Config {
     pub fn from_file(path: &PathBuf) -> Result<Self> {
         let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-        let cfg: Config = serde_yaml::from_slice(&bytes)
+        let cfg = serde_yaml::from_slice(&bytes)
             .with_context(|| format!("parsing YAML {}", path.display()))?;
 
         Ok(cfg)
     }
 
-    pub fn batch_age_ms(&self) -> Duration {
+    pub const fn batch_age_ms(&self) -> Duration {
         Duration::from_millis(self.batch_age)
     }
 
-    pub fn batch_size_kb(&self) -> usize {
+    pub const fn batch_size_kb(&self) -> usize {
         self.batch_size << 10
     }
 }
 
-fn default_batch_size() -> usize {
+#[must_use]
+const fn default_batch_size() -> usize {
     256
 }
-fn default_batch_age() -> u64 {
+
+#[must_use]
+const fn default_batch_age() -> u64 {
     5
 }
 fn default_workers() -> usize {

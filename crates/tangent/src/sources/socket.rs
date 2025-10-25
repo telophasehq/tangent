@@ -4,6 +4,7 @@ use memchr::memchr;
 use std::sync::Arc;
 use tangent_shared::sources::socket::SocketConfig;
 use tokio::net::UnixListener;
+use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Decoder, FramedRead};
 use tokio_util::sync::CancellationToken;
@@ -17,12 +18,13 @@ impl Decoder for BytesLines {
     type Error = std::io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Bytes>, std::io::Error> {
-        if let Some(nl) = memchr(b'\n', buf) {
-            let line = buf.split_to(nl + 1);
-            Ok(Some(line.freeze()))
-        } else {
-            Ok(None)
-        }
+        memchr(b'\n', buf).map_or_else(
+            || Ok(None),
+            |nl| {
+                let line = buf.split_to(nl + 1);
+                Ok(Some(line.freeze()))
+            },
+        )
     }
 }
 
@@ -33,21 +35,24 @@ pub async fn run_consumer(
 ) -> Result<()> {
     let _ = std::fs::remove_file(&cfg.socket_path);
     let listener = UnixListener::bind(&cfg.socket_path)?;
+    let (err_tx, mut err_rx) = mpsc::channel::<anyhow::Error>(64);
 
     loop {
         tokio::select! {
-            _ = shutdown.cancelled() => break,
+            () = shutdown.cancelled() => break,
             Ok((us, _)) = listener.accept() => {
                 let pool = pool.clone();
+                let err_tx = err_tx.clone();
+
                 tokio::spawn(async move {
                     let mut framed = FramedRead::new(us, BytesLines);
                     while let Some(line_res) = framed.next().await {
                         match line_res {
                             Ok(line) => {
-                                let _ = pool.dispatch(Record{
-                                    payload: line,
-                                    ack: None,
-                            }).await;
+                                if let Err(e) = pool.dispatch(Record { payload: line, ack: None }).await {
+                                    let _ = err_tx.send(e).await;
+                                    break;
+                                }
                             }
                             Err(e) => {
                                 tracing::warn!("socket read error: {e}");
@@ -56,6 +61,9 @@ pub async fn run_consumer(
                         }
                     }
                 });
+            }
+            Some(err) = err_rx.recv() => {
+                return Err(err);
             }
         }
     }

@@ -14,10 +14,10 @@ pub struct SQSConfig {
     pub decoding: Decoding,
 }
 
-fn default_wait_time_seconds() -> i64 {
+const fn default_wait_time_seconds() -> i64 {
     20
 }
 
-fn default_visibility_timeout() -> i64 {
+const fn default_visibility_timeout() -> i64 {
     60
 }

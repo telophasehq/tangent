@@ -18,6 +18,6 @@ fn wal_path() -> PathBuf {
     "/tmp/wal".into()
 }
 
-fn max_file_age_seconds() -> u64 {
+const fn max_file_age_seconds() -> u64 {
     60
 }

@@ -50,7 +50,7 @@ pub struct SinkManager {
 }
 
 impl SinkManager {
-    pub async fn new(name: &String, cfg: &SinkConfig, queue_capacity: usize) -> Result<Self> {
+    pub async fn new(name: &str, cfg: &SinkConfig, queue_capacity: usize) -> Result<Self> {
         let mut sinks = HashMap::new();
 
         match &cfg.kind {
@@ -67,15 +67,15 @@ impl SinkManager {
                     cfg.common.encoding.clone(),
                 )
                 .await?;
-                sinks.insert(name.clone(), s3_sink as Arc<dyn Sink>);
+                sinks.insert(name.to_owned(), s3_sink as Arc<dyn Sink>);
             }
             SinkKind::File(filecfg) => {
                 let file_sink = file::FileSink::new(filecfg.path.clone()).await?;
-                sinks.insert(name.clone(), file_sink);
+                sinks.insert(name.to_owned(), file_sink);
             }
             SinkKind::Blackhole(_) => {
-                let bh = blackhole::BlackholeSink::new().await;
-                sinks.insert(name.clone(), bh);
+                let bh = blackhole::BlackholeSink::new();
+                sinks.insert(name.to_owned(), bh);
             }
         };
 
@@ -94,7 +94,7 @@ impl SinkManager {
                 loop {
                     tokio::select! {
                         maybe = rx.recv() => {
-                            let mut item = match maybe { Some(it) => it, None => break };
+                            let Some(mut item) = maybe else { break };
 
                             let sink_name = item.req.sink_name;
 
@@ -107,10 +107,7 @@ impl SinkManager {
                                 }
                             };
 
-                            let permit = match sem.clone().acquire_owned().await {
-                                Ok(p) => p,
-                                Err(_) => break,
-                            };
+                            let Ok(permit) = sem.clone().acquire_owned().await else { break };
 
                             js.spawn(async move {
                                 let _permit: OwnedSemaphorePermit = permit;
@@ -165,11 +162,10 @@ impl SinkManager {
         payload: Bytes,
         acks: Vec<Arc<dyn Ack>>,
     ) -> Result<()> {
-        let route_key = if let Some(prefix) = &key_prefix {
-            format!("{}|{}", sink_name, prefix)
-        } else {
-            sink_name.clone()
-        };
+        let route_key = key_prefix.as_ref().map_or_else(
+            || sink_name.clone(),
+            |prefix| format!("{sink_name}|{prefix}"),
+        );
 
         let shard_ix = (hash_route(&route_key) as usize) % self.shards.len();
 
@@ -197,7 +193,7 @@ impl SinkManager {
                 .tx
                 .send(sink_item)
                 .await
-                .map(|_| {
+                .map(|()| {
                     INFLIGHT.inc();
                 })
                 .map_err(|e| anyhow::anyhow!("send to shard {shard_ix} failed: {e}")),
@@ -206,11 +202,9 @@ impl SinkManager {
     }
 
     pub async fn join(self) -> Result<()> {
-        let SinkManager {
-            mut shards, sinks, ..
-        } = self;
+        let Self { shards, sinks, .. } = self;
 
-        for sh in shards.drain(..) {
+        for sh in shards.into_iter() {
             drop(sh.tx);
             if let Err(e) = sh.handle.await {
                 tracing::warn!("shard join error: {e}");

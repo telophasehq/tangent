@@ -8,5 +8,5 @@ pub struct SocketConfig {
 }
 
 fn default_socket_path() -> PathBuf {
-    "/tmp/sidecar.sock".into()
+    PathBuf::from("/tmp/sidecar.sock")
 }

@@ -53,8 +53,7 @@ impl FileSink {
 #[async_trait]
 impl Sink for FileSink {
     async fn write(&self, req: SinkWrite) -> Result<()> {
-        let mut f = self.file.lock().await;
-        f.write_all(&req.payload).await?;
+        self.file.lock().await.write_all(&req.payload).await?;
 
         SINK_OBJECTS_TOTAL.inc();
         SINK_BYTES_TOTAL.inc_by(req.payload.len() as u64);
@@ -63,8 +62,7 @@ impl Sink for FileSink {
     }
 
     async fn flush(&self) -> Result<()> {
-        let f = self.file.lock().await;
-        f.sync_data().await?;
+        self.file.lock().await.sync_data().await?;
         Ok(())
     }
 }

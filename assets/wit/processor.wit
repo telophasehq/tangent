@@ -1,5 +1,55 @@
 package tangent:logs@0.1.0;
 
+interface log {
+  variant scalar {
+    str(string),
+    int(s64),
+    float(f64),
+    boolean(bool),
+    bytes(list<u8>),
+  }
+
+  resource logview {
+    // JSONPath/dot-path style, e.g. "detail.findings[0].CompanyName"
+    has:      func(path: string) -> bool;
+    get:      func(path: string) -> option<scalar>;
+    get-list: func(path: string) -> option<list<scalar>>;
+    get-map:  func(path: string) -> option<list<tuple<string, scalar>>>;
+    keys:     func(path: string) -> list<string>;
+  }
+}
+
+
+interface mapper {
+  use log.{logview, scalar};
+
+  record meta {
+    name: string,
+    version: string,
+  }
+
+  variant pred {
+    has(string),
+    eq(tuple<string, scalar>),
+    prefix(tuple<string, string>),
+    in(tuple<string, list<scalar>>),
+    gt(tuple<string, f64>),
+    regex(tuple<string, string>),
+  }
+
+  record selector {
+    any: list<pred>,             // OR of predicates
+    all: list<pred>,             // AND of predicates
+    none: list<pred>,            // NOT of predicates
+  }
+
+  metadata: func() -> meta;
+
+  probe: func() -> list<selector>;
+
+  process-logs: func(input: list<own<logview>>) -> result<list<u8>, string>;
+}
+
 world processor {
   import wasi:cli/environment@0.2.0;
   import wasi:cli/exit@0.2.0;
@@ -29,34 +79,6 @@ world processor {
   import wasi:random/insecure@0.2.0;
   import wasi:random/insecure-seed@0.2.0;
 
-  record s3-sink {
-    name: string,
-    key-prefix: option<string>,
-  }
-
-  record default-sink {
-    name: string,
-  }
-
-  record file-sink {
-    name: string,
-  }
-
-  record blackhole-sink {
-    name: string,
-  }
-
-  variant sink {
-    s3(s3-sink),
-    file(file-sink),
-    blackhole(blackhole-sink),
-    default(default-sink),
-  }
-
-  record output {
-    sink: sink,
-    data: list<u8>,
-  }
-
-  export process-logs: func(logs: list<u8>) -> result<list<output>, string>;
+  import log;
+  export mapper;
 }

@@ -1,6 +1,8 @@
 module_type: go
 entry_point: .
 batch_size: 1024
+plugins:
+    - "compiled/app.component.wasm"
 sources:
     socket_main:
         type: socket
