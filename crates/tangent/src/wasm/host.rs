@@ -72,7 +72,7 @@ impl JsonLogView {
 
     pub fn to_scalar(v: &Value) -> Option<log::Scalar> {
         match v {
-            Value::String(s) => Some(Scalar::Str(s.clone())),
+            Value::String(s) => Some(Scalar::Str(s.to_string())),
             Value::Number(n) => n
                 .as_i64()
                 .map_or_else(|| n.as_f64().map(Scalar::Float), |i| Some(Scalar::Int(i))),

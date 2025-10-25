@@ -97,6 +97,10 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
         bail!("You must configure exactly one sink.");
     }
 
+    if std::env::var("DEBUG").is_ok_and(|x| x == "1") {
+        console_subscriber::init();
+    }
+
     tracing::info!(target = "startup", config = ?cfg);
 
     let (name, sink_cfg): (&String, &SinkConfig) = cfg

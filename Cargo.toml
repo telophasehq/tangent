@@ -19,3 +19,6 @@ readme = "README.md"
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+[profile.release]
+debug = true
