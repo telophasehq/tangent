@@ -121,18 +121,6 @@ func (self Logview) GetList(path string) (result cm.Option[cm.List[Scalar]]) {
 	return
 }
 
-// GetMany represents the imported method "get-many".
-//
-//	get-many: func(paths: list<string>) -> list<option<scalar>>
-//
-//go:nosplit
-func (self Logview) GetMany(paths cm.List[string]) (result cm.List[cm.Option[Scalar]]) {
-	self0 := cm.Reinterpret[uint32](self)
-	paths0, paths1 := cm.LowerList(paths)
-	wasmimport_LogviewGetMany((uint32)(self0), (*string)(paths0), (uint32)(paths1), &result)
-	return
-}
-
 // GetMap represents the imported method "get-map".
 //
 //	get-map: func(path: string) -> option<list<tuple<string, scalar>>>

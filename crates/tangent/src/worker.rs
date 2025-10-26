@@ -140,7 +140,7 @@ impl Worker {
         for b in batch.iter() {
             let lv = JsonLogView::from_bytes(b.to_vec())?;
             for (idx, m) in self.mappers.mappers.iter_mut().enumerate() {
-                if m.selectors.iter().any(|s| eval_selector(s, &lv.clone())) {
+                if m.selectors.iter().any(|s| eval_selector(s, &lv)) {
                     groups.entry(idx).or_default().push(lv.clone());
                 }
             }

@@ -16,7 +16,6 @@ interface log {
     get-list: func(path: string) -> option<list<scalar>>;
     get-map:  func(path: string) -> option<list<tuple<string, scalar>>>;
     keys:     func(path: string) -> list<string>;
-    get-many: func(paths: list<string>) -> list<option<scalar>>;
   }
 }
 

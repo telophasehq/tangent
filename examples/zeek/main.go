@@ -16,17 +16,7 @@ import (
 )
 
 var (
-	bufPool = sync.Pool{
-		New: func() any { return bytes.NewBuffer(make([]byte, 0, 16<<10)) },
-	}
-	encPool = sync.Pool{
-		New: func() any {
-			buf := bytes.NewBuffer(make([]byte, 0, 16<<10))
-			e := json.NewEncoder(buf)
-			e.SetEscapeHTML(false)
-			return e
-		},
-	}
+	bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 )
 
 func Wire() {
@@ -57,33 +47,13 @@ func Wire() {
 	mapper.Exports.ProcessLogs = func(input cm.List[log.Logview]) (res cm.Result[cm.List[uint8], cm.List[uint8], string]) {
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
-		enc := encPool.Get().(*json.Encoder)
-		enc.SetEscapeHTML(false)
-
-		defer func() {
-			encPool.Put(enc)
-			bufPool.Put(buf)
-		}()
 
 		var items []log.Logview
 		items = append(items, input.Slice()...)
-
-		paths := []string{
-			"ts", "_write_ts", "uid", "_path", "_system_name",
-			"local_orig", "local_resp", "duration",
-			"id.orig_h", "id.orig_p", "id.resp_h", "id.resp_p",
-			"proto", "history",
-			"orig_l2_addr", "resp_l2_addr", "resp_cc",
-			"orig_bytes", "resp_bytes", "missed_bytes", "orig_pkts", "resp_pkts",
-			"service", "conn_state",
-		}
-
 		for idx := range items {
 			lv := log.Logview(items[idx])
-			vals := lv.GetMany(cm.ToList(paths))
-
-			rawTS, _ := getStringI(vals, 0)
-			rawWTS, _ := getStringI(vals, 1)
+			rawTS, _ := getString(lv, "ts")
+			rawWTS, _ := getString(lv, "_write_ts")
 
 			ts, err := time.Parse(time.RFC3339Nano, rawTS)
 			if err != nil {
@@ -105,12 +75,12 @@ func Wire() {
 			var severityID int32 = 1
 			typeUID := int64(classUID)*100 + int64(activityID)
 
-			uid, _ := getStringI(vals, 2)
-			path, _ := getStringI(vals, 3)
-			systemName, _ := getStringI(vals, 4)
+			uid, _ := getString(lv, "uid")
+			path, _ := getString(lv, "_path")
+			systemName, _ := getString(lv, "_system_name")
 
-			localOrig := getBoolPtrI(vals, 5)
-			localResp := getBoolPtrI(vals, 6)
+			localOrig := getBoolPtr(lv, "local_orig")
+			localResp := getBoolPtr(lv, "local_resp")
 
 			var directionID *int32
 			switch {
@@ -123,7 +93,7 @@ func Wire() {
 			}
 
 			var duration *int64
-			if d := getFloatPtrI(vals, 7); d != nil {
+			if d := getFloatPtr(lv, "duration"); d != nil {
 				ms := int64(math.Round(*d * 1000.0))
 				duration = &ms
 			}
@@ -134,25 +104,25 @@ func Wire() {
 				endTime = timeMs + *duration
 			}
 
-			origH, _ := getStringI(vals, 8)
-			origP, _ := getIntI(vals, 9)
-			respH, _ := getStringI(vals, 10)
-			respP, _ := getIntI(vals, 11)
+			origH, _ := getString(lv, "id.orig_h")
+			origP, _ := getInt(lv, "id.orig_p")
+			respH, _ := getString(lv, "id.resp_h")
+			respP, _ := getInt(lv, "id.resp_p")
 
 			src := toNetEndpoint(origH, origP)
 			dst := toNetEndpoint(respH, respP)
 
-			if mac := getStringPtrI(vals, 12); mac != nil && *mac != "" {
+			if mac := getStringPtr(lv, "orig_l2_addr"); mac != nil && *mac != "" {
 				src.Mac = mac
 			}
-			if mac := getStringPtrI(vals, 13); mac != nil && *mac != "" {
+			if mac := getStringPtr(lv, "resp_l2_addr"); mac != nil && *mac != "" {
 				dst.Mac = mac
 			}
-			if cc := getStringPtrI(vals, 14); cc != nil && *cc != "" {
+			if cc := getStringPtr(lv, "resp_cc"); cc != nil && *cc != "" {
 				dst.Location = &v1_5_0.GeoLocation{Country: cc}
 			}
 
-			proto, _ := getStringI(vals, 15)
+			proto, _ := getString(lv, "proto")
 			pn, pName := protoToOCSF(proto)
 			connInfo := &v1_5_0.NetworkConnectionInformation{}
 			if pName != "" {
@@ -166,7 +136,7 @@ func Wire() {
 			if directionID != nil {
 				connInfo.DirectionId = *directionID
 			}
-			if h, ok := getStringI(vals, 16); ok && h != "" {
+			if h, ok := getString(lv, "history"); ok && h != "" {
 				connInfo.FlagHistory = &h
 			}
 			if connInfo.ProtocolName == nil && connInfo.ProtocolNum == nil && connInfo.FlagHistory == nil {
@@ -174,11 +144,11 @@ func Wire() {
 			}
 
 			// Traffic counters
-			ob := getInt64PtrI(vals, 17)
-			rb := getInt64PtrI(vals, 18)
-			mb := getInt64PtrI(vals, 19)
-			op := getInt64PtrI(vals, 20)
-			rp := getInt64PtrI(vals, 21)
+			ob := getInt64Ptr(lv, "orig_bytes")
+			rb := getInt64Ptr(lv, "resp_bytes")
+			mb := getInt64Ptr(lv, "missed_bytes")
+			op := getInt64Ptr(lv, "orig_pkts")
+			rp := getInt64Ptr(lv, "resp_pkts")
 
 			var totalBytes, totalPkts *int64
 			if ob != nil || rb != nil || op != nil || rp != nil {
@@ -233,11 +203,11 @@ func Wire() {
 
 			// Optional strings
 			var appName *string
-			if s, ok := getStringI(vals, 22); ok && s != "" {
+			if s, ok := getString(lv, "service"); ok && s != "" {
 				appName = &s
 			}
 			var statusCode *string
-			if cs, ok := getStringI(vals, 23); ok && cs != "" {
+			if cs, ok := getString(lv, "conn_state"); ok && cs != "" {
 				statusCode = &cs
 			}
 
@@ -266,10 +236,14 @@ func Wire() {
 				na.EndTime = endTime
 			}
 
-			if err := enc.Encode(&na); err != nil {
+			line, err := json.Marshal(na)
+			if err != nil {
 				res.SetErr(err.Error())
 				return
 			}
+
+			buf.Write(line)
+			buf.WriteByte('\n')
 		}
 
 		res.SetOK(cm.ToList(buf.Bytes()))
@@ -277,152 +251,20 @@ func Wire() {
 	}
 }
 
-// ---- GetMany-backed helpers (I-suffixed) ----
-
-func getStringI(vals cm.List[cm.Option[mapper.Scalar]], idx int) (string, bool) {
-	opt := vals.Slice()[idx]
-	if opt.None() {
-		return "", false
-	}
-	s := opt.Value() // make addressable
-	if p := s.Str(); p != nil {
-		return *p, true
-	}
-	return "", false
+func get(v log.Logview, path string) cm.Option[mapper.Scalar] {
+	return v.Get(path)
 }
-
-func getStringPtrI(vals cm.List[cm.Option[mapper.Scalar]], idx int) *string {
-	if s, ok := getStringI(vals, idx); ok {
-		return &s // stable pointer
-	}
-	return nil
-}
-
-func getBoolPtrI(vals cm.List[cm.Option[mapper.Scalar]], idx int) *bool {
-	opt := vals.Slice()[idx]
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value() // make addressable
-	if p := s.Boolean(); p != nil {
-		b := *p
-		return &b
-	}
-	return nil
-}
-
-func getIntI(vals cm.List[cm.Option[mapper.Scalar]], idx int) (int, bool) {
-	opt := vals.Slice()[idx]
-	if opt.None() {
-		return 0, false
-	}
-	s := opt.Value() // make addressable
-	if p := s.Int(); p != nil {
-		return int(*p), true
-	}
-	return 0, false
-}
-
-func getInt64PtrI(vals cm.List[cm.Option[mapper.Scalar]], idx int) *int64 {
-	opt := vals.Slice()[idx]
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value() // make addressable
-	if p := s.Int(); p != nil {
-		v := *p
-		return &v
-	}
-	return nil
-}
-
-func getFloatPtrI(vals cm.List[cm.Option[mapper.Scalar]], idx int) *float64 {
-	opt := vals.Slice()[idx]
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value() // make addressable
-	if p := s.Float(); p != nil {
-		v := *p
-		return &v
-	}
-	return nil
-}
-
-// ---- Per-path helpers (same fix for pointer-receiver methods) ----
 
 func getString(v log.Logview, path string) (string, bool) {
 	opt := v.Get(path)
 	if opt.None() {
 		return "", false
 	}
-	s := opt.Value() // make addressable
+	s := opt.Value()
 	if p := s.Str(); p != nil {
 		return *p, true
 	}
 	return "", false
-}
-
-func getStringPtr(v log.Logview, path string) *string {
-	if s, ok := getString(v, path); ok {
-		return &s
-	}
-	return nil
-}
-
-func getBoolPtr(v log.Logview, path string) *bool {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	if p := s.Boolean(); p != nil {
-		b := *p
-		return &b
-	}
-	return nil
-}
-
-func getInt(v log.Logview, path string) (int, bool) {
-	opt := v.Get(path)
-	if opt.None() {
-		return 0, false
-	}
-	s := opt.Value()
-	if p := s.Int(); p != nil {
-		return int(*p), true
-	}
-	return 0, false
-}
-
-func getInt64Ptr(v log.Logview, path string) *int64 {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	if p := s.Int(); p != nil {
-		v := *p
-		return &v
-	}
-	return nil
-}
-
-func getFloatPtr(v log.Logview, path string) *float64 {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	if p := s.Float(); p != nil {
-		v := *p
-		return &v
-	}
-	return nil
-}
-
-func get(v log.Logview, path string) cm.Option[mapper.Scalar] {
-	return v.Get(path)
 }
 
 func getStringList(v log.Logview, path string) ([]string, bool) {
@@ -441,6 +283,52 @@ func getStringList(v log.Logview, path string) ([]string, bool) {
 	return out, true
 }
 
+func getStringPtr(v log.Logview, path string) *string {
+	if s, ok := getString(v, path); ok {
+		return &s
+	}
+	return nil
+}
+
+func getBoolPtr(v log.Logview, path string) *bool {
+	opt := get(v, path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return s.Boolean()
+}
+
+func getInt(v log.Logview, path string) (int, bool) {
+	opt := get(v, path)
+	if opt.None() {
+		return 0, false
+	}
+	s := opt.Value()
+	if s.Int() != nil {
+		return int(*s.Int()), true
+	}
+	return 0, false
+}
+func getInt64Ptr(v log.Logview, path string) *int64 {
+	opt := get(v, path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return s.Int()
+}
+func getFloatPtr(v log.Logview, path string) *float64 {
+	opt := get(v, path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return s.Float()
+}
+
+/* ---------------- helpers: domain-specific ---------------- */
+
 func toNetEndpoint(ip string, port int) *v1_5_0.NetworkEndpoint {
 	ep := &v1_5_0.NetworkEndpoint{}
 	if ip != "" {
@@ -453,6 +341,7 @@ func toNetEndpoint(ip string, port int) *v1_5_0.NetworkEndpoint {
 	return ep
 }
 
+// Simplified: return (num, name) for OCSF proto fields.
 func protoToOCSF(p string) (int, string) {
 	switch p {
 	case "tcp":

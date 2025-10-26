@@ -119,21 +119,6 @@ impl log::HostLogview for HostEngine {
         v.lookup(&path).and_then(JsonLogView::to_scalar)
     }
 
-    async fn get_many(
-        &mut self,
-        h: Resource<JsonLogView>,
-        paths: Vec<String>,
-    ) -> Vec<Option<log::Scalar>> {
-        let v: &JsonLogView = match self.table.get(&h) {
-            Ok(v) => v,
-            Err(_) => return vec![None; paths.len()],
-        };
-        paths
-            .into_iter()
-            .map(|p| v.lookup(&p).and_then(JsonLogView::to_scalar))
-            .collect()
-    }
-
     async fn get_list(
         &mut self,
         h: Resource<JsonLogView>,
