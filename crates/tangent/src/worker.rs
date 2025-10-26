@@ -1,20 +1,25 @@
 use ahash::HashMap;
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::BytesMut;
+use rdkafka::message::ToBytes;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
 use std::time::{Duration, Instant};
+use tangent_shared::dag::NodeRef;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::JoinHandle;
 use tokio::time::{self, Instant as TokioInstant};
 use wasmtime::component::{Component, Resource};
 
-use crate::wasm::{self, mapper::Mappers, probe::eval_selector};
-use crate::{sinks::manager::SinkManager, wasm::host::JsonLogView};
+use crate::wasm::host::JsonLogView;
+use crate::{
+    router::Router,
+    wasm::{self, mapper::Mappers, probe::eval_selector},
+};
 use crate::{CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, GUEST_BYTES_TOTAL, GUEST_LATENCY};
 
 #[async_trait]
@@ -22,35 +27,8 @@ pub trait Ack: Send + Sync {
     async fn ack(&self) -> Result<()>;
 }
 
-#[derive(Clone)]
-struct RefCountAck {
-    remaining: Arc<AtomicUsize>,
-    inners: Arc<Vec<Arc<dyn Ack>>>,
-}
-
-impl RefCountAck {
-    fn new(inner: Vec<Arc<dyn Ack>>, n: usize) -> Self {
-        Self {
-            remaining: Arc::new(AtomicUsize::new(n)),
-            inners: Arc::new(inner),
-        }
-    }
-}
-
-#[async_trait]
-impl Ack for RefCountAck {
-    async fn ack(&self) -> Result<()> {
-        if self.remaining.fetch_sub(1, Ordering::AcqRel) == 1 {
-            for a in self.inners.iter() {
-                let _ = a.ack().await;
-            }
-        }
-        Ok(())
-    }
-}
-
 pub struct Record {
-    pub payload: Bytes,
+    pub payload: BytesMut,
     pub ack: Option<Arc<dyn Ack>>,
 }
 
@@ -60,12 +38,12 @@ pub struct Worker {
     mappers: Mappers,
     batch_max_size: usize,
     batch_max_age: Duration,
-    sink_manager: Arc<SinkManager>,
+    router: Arc<Router>,
 }
 
 impl Worker {
     pub async fn run(mut self) -> Result<()> {
-        let mut batch = Vec::<Bytes>::new();
+        let mut batch = Vec::<BytesMut>::new();
         let mut acks: Vec<Arc<dyn Ack>> = Vec::with_capacity(1024);
         let mut total_size = 0usize;
 
@@ -124,7 +102,7 @@ impl Worker {
 
     pub async fn flush_batch(
         &mut self,
-        batch: &mut Vec<Bytes>,
+        batch: &mut Vec<BytesMut>,
         acks: &mut Vec<Arc<dyn Ack>>,
         total_size: &mut usize,
     ) -> Result<()> {
@@ -132,19 +110,19 @@ impl Worker {
             return Ok(());
         }
 
-        let events_in_batch = &batch.len();
-        let start = Instant::now();
-        let mut output_frames: Vec<Bytes> = Vec::with_capacity(events_in_batch * 2);
-
         let mut groups: HashMap<usize, Vec<JsonLogView>> = HashMap::default();
+        let mut sizes: HashMap<usize, usize> = HashMap::default();
         for b in batch.iter() {
-            let lv = JsonLogView::from_bytes(b.to_vec())?;
+            let lv = JsonLogView::from_bytes(b.clone())?;
             for (idx, m) in self.mappers.mappers.iter_mut().enumerate() {
                 if m.selectors.iter().any(|s| eval_selector(s, &lv)) {
                     groups.entry(idx).or_default().push(lv.clone());
+                    *sizes.entry(idx).or_default() += b.len();
                 }
             }
         }
+
+        let mut plugin_outputs: HashMap<String, Vec<BytesMut>> = HashMap::default();
 
         for (idx, lvs) in groups {
             let m = &mut self.mappers.mappers[idx];
@@ -155,11 +133,18 @@ impl Worker {
                 owned.push(h);
             }
 
+            let start = Instant::now();
             let res = m
                 .proc
                 .tangent_logs_mapper()
                 .call_process_logs(&mut m.store, &owned)
                 .await;
+
+            let secs = start.elapsed().as_secs_f64();
+            GUEST_LATENCY
+                .with_label_values(&[&self.id.to_string()])
+                .observe(secs);
+            GUEST_BYTES_TOTAL.inc_by(*sizes.get(&idx).unwrap() as u64);
 
             for h in owned {
                 m.store.data_mut().table.delete(h)?;
@@ -182,36 +167,23 @@ impl Worker {
                 continue;
             }
 
-            output_frames.push(Bytes::from(out));
+            plugin_outputs
+                .entry(m.cfg_name.clone())
+                .or_default()
+                .push(BytesMut::from(out.to_bytes()))
         }
 
-        let secs = start.elapsed().as_secs_f64();
-        GUEST_LATENCY
-            .with_label_values(&[&self.id.to_string()])
-            .observe(secs);
-        GUEST_BYTES_TOTAL.inc_by(*total_size as u64);
+        let upstream_acks = std::mem::take(acks);
+        let mut remaining = upstream_acks;
 
-        let total_writes = output_frames.len();
-        let rc = RefCountAck::new(std::mem::take(acks), total_writes);
-
-        for output in output_frames {
-            self.sink_manager
-                .enqueue(
-                    String::from("blackhole"),
-                    None,
-                    output,
-                    vec![Arc::new(rc.clone()) as Arc<dyn Ack>],
+        for (plugin_name, frames) in plugin_outputs {
+            self.router
+                .forward(
+                    &NodeRef::Plugin { name: plugin_name },
+                    frames,
+                    std::mem::take(&mut remaining),
                 )
-                .await
-                .map_err(|e| anyhow::anyhow!("sink queue full: {e}"))?;
-            tracing::debug!(
-                target: "sidecar",
-                worker = self.id,
-                events = *events_in_batch,
-                bytes = *total_size,
-                took_us = start.elapsed().as_micros(),
-                "processed batch"
-            );
+                .await?;
         }
 
         batch.clear();
@@ -230,10 +202,10 @@ impl WorkerPool {
     pub async fn new(
         size: usize,
         engine: wasm::engine::WasmEngine,
-        components: Vec<Component>,
-        sink_manager: Arc<SinkManager>,
+        components: Vec<(&String, Component)>,
         batch_max_size: usize,
         batch_max_age: Duration,
+        router: Arc<Router>,
     ) -> anyhow::Result<Self> {
         let mut senders = Vec::with_capacity(size);
         let mut handles = Vec::with_capacity(size);
@@ -269,9 +241,9 @@ impl WorkerPool {
                 id: i,
                 rx,
                 mappers,
-                sink_manager: Arc::clone(&sink_manager),
                 batch_max_size,
                 batch_max_age,
+                router: Arc::clone(&router),
             };
             let h = tokio::spawn(async move {
                 if let Err(e) = worker.run().await {

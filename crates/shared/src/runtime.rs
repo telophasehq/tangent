@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfig {
     #[serde(default = "default_batch_size")]
     pub batch_size: usize,

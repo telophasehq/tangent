@@ -5,7 +5,7 @@ use crate::sources::msk::MSKConfig;
 use crate::sources::socket::SocketConfig;
 use crate::sources::sqs::SQSConfig;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum SourceConfig {
     #[serde(rename = "msk")]

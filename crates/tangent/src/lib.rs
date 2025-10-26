@@ -1,6 +1,6 @@
-use anyhow::{anyhow, bail, Result};
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio::time::{timeout, Duration};
+use anyhow::{bail, Result};
+use std::{net::SocketAddr, path::PathBuf};
+use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -9,11 +9,12 @@ use prometheus::{
     IntGauge,
 };
 
-use tangent_shared::{sinks::common::SinkConfig, sources::common::SourceConfig, Config};
+use tangent_shared::{sources::common::SourceConfig, Config};
 
-use crate::wasm::engine::WasmEngine;
-use wasmtime::component::Component;
+use crate::dag::DagRuntime;
 
+pub mod dag;
+pub mod router;
 pub mod sinks;
 pub mod sources;
 pub mod wasm;
@@ -79,10 +80,7 @@ lazy_static::lazy_static! {
 
 pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     let cfg = Config::from_file(config_path)?;
-    run_with_config(cfg, opts).await
-}
 
-pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
     let _exporter_guard = opts
         .prometheus_bind
         .map(|addr| prometheus_exporter::start(addr).expect("failed to start prometheus exporter"));
@@ -93,35 +91,16 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
     if cfg.sinks.is_empty() {
         bail!("At least one sink is required.");
     }
-    if cfg.sinks.len() > 1 {
-        bail!("You must configure exactly one sink.");
+    if cfg.dag.is_empty() {
+        bail!("Must configure dag.");
     }
 
     if std::env::var("DEBUG").is_ok_and(|x| x == "1") {
         console_subscriber::init();
     }
-
     tracing::info!(target = "startup", config = ?cfg);
 
-    let (name, sink_cfg): (&String, &SinkConfig) = cfg
-        .sinks
-        .first_key_value()
-        .ok_or_else(|| anyhow!("Sink name or config was missing from config."))?;
-
     let ingest_shutdown = CancellationToken::new();
-
-    let sink_manager =
-        Arc::new(sinks::manager::SinkManager::new(name, sink_cfg, cfg.batch_size_kb() * 10).await?);
-
-    let engine = WasmEngine::new()?;
-    let mut components: Vec<Component> = Vec::with_capacity(cfg.plugins.len());
-    for (name, _) in &cfg.plugins {
-        let plugin_path = PathBuf::from(format!(
-            "{}/{name}.compiled.wasm",
-            cfg.runtime.plugins_path.display()
-        ));
-        components.push(engine.load_component(&plugin_path)?);
-    }
 
     info!(
         "Batch size: {} KiB, max age: {:?}",
@@ -129,19 +108,9 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
         cfg.batch_age_ms()
     );
 
-    let pool = Arc::new(
-        worker::WorkerPool::new(
-            cfg.runtime.workers,
-            engine,
-            components,
-            Arc::clone(&sink_manager),
-            cfg.batch_size_kb(),
-            cfg.batch_age_ms(),
-        )
-        .await?,
-    );
+    let dag_runtime = DagRuntime::build(&cfg, &config_path).await?;
 
-    let consumer_handles = spawn_consumers(cfg, pool.clone(), ingest_shutdown.clone());
+    let consumer_handles = spawn_consumers(cfg, dag_runtime, ingest_shutdown.clone());
 
     if !opts.once {
         wait_for_shutdown_signal().await?;
@@ -155,61 +124,57 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
         let _ = tokio::time::timeout(Duration::from_secs(10), h).await;
     }
 
-    let mut pool_owned = Arc::try_unwrap(pool)
-        .map_err(|_| anyhow!("pool still has refs; drop all clones before shutdown"))?;
-    pool_owned.close();
-
-    info!("waiting on workers to shutdown...");
-    let _ = timeout(Duration::from_secs(15), pool_owned.join()).await;
-
-    let sink_manager_owned = Arc::try_unwrap(sink_manager)
-        .map_err(|_| anyhow!("sink_manager still has refs; drop all clones before shutdown"))?;
-    info!("waiting on sinks to flush and shutdown...");
-    if let Err(e) = sink_manager_owned.join().await {
-        tracing::warn!("sink manager join failed: {e}");
-    }
+    info!("waiting on workers and sink_manager to shutdown...");
 
     Ok(())
 }
 
 fn spawn_consumers(
     cfg: Config,
-    pool: Arc<worker::WorkerPool>,
+    dag: DagRuntime,
     shutdown: CancellationToken,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let mut handles = Vec::new();
     for src in cfg.sources {
-        let pool = pool.clone();
         let shutdown = shutdown.clone();
-        match src.1 {
-            SourceConfig::MSK(kc) => {
+        match src {
+            (name, SourceConfig::MSK(kc)) => {
+                let dc = dag.clone();
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::msk::run_consumer(kc, pool, shutdown.clone()).await {
+                    if let Err(e) = sources::msk::run_consumer(name, kc, dc, shutdown.clone()).await
+                    {
                         tracing::error!("msk consumer error: {e}");
                     }
                 }));
             }
-            SourceConfig::File(fc) => {
+            (name, SourceConfig::File(fc)) => {
+                let dc = dag.clone();
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::file::run_consumer(fc, pool, shutdown.clone()).await {
+                    if let Err(e) =
+                        sources::file::run_consumer(name, fc, dc, shutdown.clone()).await
+                    {
                         tracing::error!("file consumer error: {e}");
                     }
                 }));
             }
-            SourceConfig::Socket(sc) => {
+            (name, SourceConfig::Socket(sc)) => {
+                let dc = dag.clone();
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::socket::run_consumer(sc, pool, shutdown.clone()).await
+                    if let Err(e) =
+                        sources::socket::run_consumer(name, sc, dc, shutdown.clone()).await
                     {
                         tracing::error!("socket listener error: {e}");
                     }
                 }));
             }
-            SourceConfig::SQS(sq) => {
+            (name, SourceConfig::SQS(sq)) => {
+                let dc = dag.clone();
                 handles.push(tokio::spawn(async move {
                     if let Err(e) = sources::sqs::run_consumer(
+                        name,
                         sq,
                         cfg.runtime.batch_size,
-                        pool,
+                        dc,
                         shutdown.clone(),
                     )
                     .await

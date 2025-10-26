@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, Context, Result};
+use tangent_shared::dag::{Edge, NodeRef};
 use tangent_shared::plugins::PluginConfig;
 use tangent_shared::runtime::RuntimeConfig;
 use tangent_shared::sinks::common::{CommonSinkOptions, Compression, Encoding};
@@ -61,7 +62,6 @@ pub async fn run(opts: TestOptions) -> Result<()> {
     };
 
     let plugin_config = PluginConfig {
-        entry_point: "".to_string(), // not used
         module_type: "".to_string(), // not used
         path: opts.plugin,
     };
@@ -73,6 +73,22 @@ pub async fn run(opts: TestOptions) -> Result<()> {
         workers: 1,
     };
 
+    let entry = Edge {
+        from: NodeRef::Source {
+            name: "input".into(),
+        },
+        to: vec![NodeRef::Plugin {
+            name: "test_plugin".into(),
+        }],
+    };
+
+    let exit = Edge {
+        from: NodeRef::Plugin {
+            name: "test_plugin".into(),
+        },
+        to: vec![NodeRef::Plugin { name: "out".into() }],
+    };
+
     let mut sinks = BTreeMap::new();
     sinks.insert(String::from("out"), file_sink);
 
@@ -82,16 +98,20 @@ pub async fn run(opts: TestOptions) -> Result<()> {
     let mut plugins = BTreeMap::new();
     plugins.insert(String::from("test_plugin"), plugin_config);
 
-    tangent_runtime::run_with_config(
-        tangent_shared::Config {
-            runtime,
-            sources,
-            sinks,
-            plugins,
-        },
-        rt,
-    )
-    .await?;
+    let test_config = tangent_shared::Config {
+        runtime,
+        sources,
+        sinks,
+        plugins,
+        dag: vec![entry, exit],
+    };
+
+    let yaml = serde_yaml::to_string(&test_config)?;
+    fs::write(".test.yaml", yaml)?;
+
+    let cfg_path: PathBuf = ".test.yaml".into();
+
+    tangent_runtime::run(&cfg_path, rt).await?;
 
     let produced = read_json(&out_file).context("reading produced JSON")?;
     let expected = read_json(&expected)?;

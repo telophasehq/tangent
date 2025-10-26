@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::sources::common::Decoding;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SQSConfig {
     pub queue_url: String,
     #[serde(default = "default_wait_time_seconds")]

@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use bytes::Bytes;
+use bytes::BytesMut;
 use rdkafka::{
     config::ClientConfig,
     consumer::{Consumer, ConsumerContext, StreamConsumer},
@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-use crate::worker::{Record, WorkerPool};
+use crate::dag::DagRuntime;
 use rdkafka::message::Headers;
 use tangent_shared::sources::msk::{MSKAuth, MSKConfig};
 
@@ -92,8 +92,9 @@ fn header_str<'a>(m: &'a rdkafka::message::BorrowedMessage<'a>, key: &str) -> Op
 }
 
 pub async fn run_consumer(
+    name: String,
     kc: MSKConfig,
-    pool: Arc<WorkerPool>,
+    dag_runtime: DagRuntime,
     shutdown: CancellationToken,
 ) -> Result<()> {
     let consumer: StreamConsumer<Ctx> = build_consumer(&kc)?;
@@ -114,16 +115,13 @@ pub async fn run_consumer(
                             let sniff     = &p[..std::cmp::min(8, p.len())];
                             let comp = dc.resolve_compression(meta_ce, filename, sniff);
 
-                            let raw = decoding::decompress_bytes(&comp, p)?;
+                            let raw = decoding::decompress_vec(&comp, p)?;
 
                             let fmt = dc.resolve_format(&raw);
 
-                            let ndjson = decoding::normalize_to_ndjson(&fmt, &raw);
+                            let ndjson = decoding::normalize_to_ndjson(&fmt, raw);
 
-                            pool.dispatch(Record {
-                                payload: Bytes::from(ndjson),
-                                ack: None,
-                            }).await?;
+                            dag_runtime.push_from_source(name.as_str(), vec![BytesMut::from(ndjson)], vec![]).await?;
                         }
                     }
                     Err(e) => {

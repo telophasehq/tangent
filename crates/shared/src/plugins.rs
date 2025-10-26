@@ -1,9 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginConfig {
-    pub entry_point: String,
     pub module_type: String,
     pub path: PathBuf,
 }

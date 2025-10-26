@@ -1,9 +1,9 @@
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::sources::common::Decoding;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MSKConfig {
     pub bootstrap_servers: String,
     pub topic: String,
@@ -26,13 +26,15 @@ pub struct MSKConfig {
     pub decoding: Decoding,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "mode", rename_all = "lowercase")]
 pub enum MSKAuth {
     Scram {
         #[serde(default = "default_scram_mech")]
         sasl_mechanism: String,
         username: String,
+
+        #[serde(skip_serializing)]
         password: SecretString,
     },
 }

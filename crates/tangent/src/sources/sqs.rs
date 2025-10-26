@@ -4,22 +4,46 @@ use aws_config;
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_sqs::Client as SQSClient;
 use aws_smithy_runtime_api::client::result::SdkError;
-use bytes::{Bytes, BytesMut};
-use memchr::memchr_iter;
+use bytes::BytesMut;
+use memchr::{memchr, memrchr};
 use percent_encoding::percent_decode_str;
 use std::{sync::Arc, time::Duration};
 use tangent_shared::sources::sqs::SQSConfig;
 use tokio_util::sync::CancellationToken;
 
-use crate::{
-    sources::decoding,
-    worker::{Ack, Record, WorkerPool},
-};
+use crate::{dag::DagRuntime, sources::decoding, worker::Ack};
+
+fn chunk_ndjson(mut data: BytesMut, max_chunk: usize) -> Vec<BytesMut> {
+    let max_chunk = max_chunk.max(1);
+
+    if !data.ends_with(b"\n") {
+        data.extend_from_slice(b"\n");
+    }
+
+    let mut frames: Vec<BytesMut> = Vec::with_capacity((data.len() / max_chunk).saturating_add(1));
+
+    while !data.is_empty() {
+        let limit = max_chunk.min(data.len());
+
+        let cut = if let Some(idx) = memrchr(b'\n', &data[..limit]) {
+            idx + 1
+        } else if let Some(fwd) = memchr(b'\n', &data[limit..]) {
+            limit + fwd + 1
+        } else {
+            data.len()
+        };
+
+        frames.push(data.split_to(cut));
+    }
+
+    frames
+}
 
 pub async fn run_consumer(
+    name: String,
     cfg: SQSConfig,
     max_chunk: usize,
-    pool: Arc<WorkerPool>,
+    dag_runtime: DagRuntime,
     shutdown: CancellationToken,
 ) -> Result<()> {
     let aws_cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
@@ -28,199 +52,130 @@ pub async fn run_consumer(
     let qurl = Arc::new(cfg.queue_url);
     let dc = cfg.decoding.clone();
 
-    let fwd_shutdown = shutdown.clone();
-
     loop {
         tokio::select! {
-            _ = fwd_shutdown.cancelled() => break,
+            _ = shutdown.cancelled() => break,
+
             res = sqs_client.receive_message()
-                    .queue_url(qurl.as_str())
-                    .wait_time_seconds(20)
-                    .max_number_of_messages(10)
-                    .send() => {
+                .queue_url(qurl.as_str())
+                .wait_time_seconds(20)
+                .max_number_of_messages(10)
+                .send() => {
+
                 match res {
                     Ok(out) => {
                         for msg in out.messages.unwrap_or_default() {
-                            if let (Some(body), Some(handle)) = (msg.body(), msg.receipt_handle().map(|s| s.to_string())){
-                                let ack = Arc::new(SqsAck::new(sqs_client.clone(), qurl.clone(), handle));
+                            let (Some(body), Some(handle)) = (msg.body(), msg.receipt_handle().map(|s| s.to_string())) else {
+                                continue;
+                            };
 
-                                let mut s3_notification = false;
-                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
-                                    if let Some(recs) = v.get("Records").and_then(|r| r.as_array()) {
-                                        for (idx, r) in recs.iter().enumerate() {
-                                            let bucket = r.pointer("/s3/bucket/name").and_then(|x| x.as_str());
-                                            let key_enc = r.pointer("/s3/object/key").and_then(|x| x.as_str());
-                                            if let (Some(bucket), Some(key_enc)) = (bucket, key_enc) {
-                                                let mut key = percent_decode_str(key_enc).decode_utf8_lossy().into_owned();
-                                                if key.contains('+') { key = key.replace('+', " "); }
+                            let ack: Arc<dyn Ack> = Arc::new(SqsAck::new(
+                                sqs_client.clone(),
+                                qurl.clone(),
+                                handle,
+                            ));
 
-                                                let obj = match s3_client.get_object().bucket(bucket).key(&key).send().await {
-                                                    Ok(o) => o,
-                                                    Err(e) => { tracing::error!("S3 get {bucket}/{key}: {e}"); continue; }
-                                                };
-                                                let aws_sdk_s3::operation::get_object::GetObjectOutput { body: body_stream, .. } = obj;
-                                                let collected = match body_stream.collect().await {
-                                                   Ok(b) => b,
-                                                   Err(e) => { tracing::error!("S3 collect {bucket}/{key}: {e}"); continue; }
-                                               };
+                            let mut frames_all: Vec<BytesMut> = Vec::new();
 
-                                                let bytes = collected.to_vec();
-                                                let fmt = dc.resolve_format(&bytes);
-                                                let ndjson = decoding::normalize_to_ndjson(&fmt, &bytes);
+                            let mut s3_notification = false;
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
+                                if let Some(recs) = v.get("Records").and_then(|r| r.as_array()) {
+                                    s3_notification = true;
 
-                                                let final_ack = if idx + 1 == recs.len() { Some(ack.clone() as Arc<dyn Ack>) } else { None };
-                                                dispatch_ndjson_chunks(pool.clone(), ndjson, max_chunk, final_ack).await?;
-                                                s3_notification = true;
+                                    for r in recs {
+                                        let bucket = r.pointer("/s3/bucket/name").and_then(|x| x.as_str());
+                                        let key_enc = r.pointer("/s3/object/key").and_then(|x| x.as_str());
+                                        if let (Some(bucket), Some(key_enc)) = (bucket, key_enc) {
+                                            let mut key = percent_decode_str(key_enc).decode_utf8_lossy().into_owned();
+                                            if key.contains('+') {
+                                                key = key.replace('+', " ");
+                                            }
+
+                                            match s3_client.get_object().bucket(bucket).key(&key).send().await {
+                                                Ok(obj) => {
+                                                    let aws_sdk_s3::operation::get_object::GetObjectOutput { body: body_stream, .. } = obj;
+                                                    match body_stream.collect().await {
+                                                        Ok(collected) => {
+                                                            let bytes = collected.into_bytes();
+                                                            let fmt = dc.resolve_format(&bytes);
+                                                            let ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, BytesMut::from(bytes.as_ref()));
+                                                            frames_all.extend(chunk_ndjson(ndjson, max_chunk));
+                                                        }
+                                                        Err(e) => {
+                                                            tracing::error!("S3 collect {bucket}/{key}: {e}");
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("S3 get {bucket}/{key}: {e}");
+                                                }
                                             }
                                         }
                                     }
                                 }
-                                if s3_notification {
-                                    continue;
-                                }
+                            }
 
-                                let bytes = body.as_bytes().to_vec();
-                                let sniff = &bytes[..bytes.len().min(8)];
+                            if !s3_notification {
+                                let body_mut = BytesMut::from(body.as_bytes());
+
+                                let sniff = &body_mut[..body_mut.len().min(8)];
                                 let comp = dc.resolve_compression(None, None, sniff);
 
-                                let raw = match decoding::decompress_bytes(&comp, &bytes) {
+                                let raw = match decoding::decompress_bytes(&comp, body_mut) {
                                     Ok(v) => v,
                                     Err(e) => {
-                                        tracing::warn!(error=?e, "decompress failed; emitting raw body");
-                                        let mut b = BytesMut::with_capacity(bytes.len() + 1);
-                                        b.extend_from_slice(&bytes);
-                                        if !bytes.ends_with(b"\n") { b.extend_from_slice(b"\n"); }
-                                        let _ = pool.dispatch(Record { payload: b.freeze(), ack: Some(ack) }).await;
-                                        continue;
+                                        tracing::warn!(error=?e, "decompress failed; treating body as already NDJSON");
+                                        BytesMut::from(msg.body().unwrap_or_default().as_bytes())
                                     }
                                 };
 
                                 let fmt = dc.resolve_format(&raw);
-                                let ndjson = decoding::normalize_to_ndjson(&fmt, &raw);
-                                dispatch_ndjson_chunks(pool.clone(), ndjson, max_chunk, Some(ack)).await?;
+                                let ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, raw);
+                                frames_all.extend(chunk_ndjson(ndjson, max_chunk));
+                            }
+
+                            if !frames_all.is_empty() {
+                                if let Err(e) = dag_runtime.push_from_source(&name, frames_all, vec![ack]).await {
+                                    tracing::error!("push_from_source error: {e:#}");
+                                }
+                            } else {
+                                if let Err(e) = SqsAck::new(sqs_client.clone(), qurl.clone(), msg.receipt_handle().unwrap_or_default().to_string()).ack().await {
+                                    tracing::warn!("ack empty message failed: {e}");
+                                }
                             }
                         }
                     }
                     Err(e) => {
-                            match &e {
-                                SdkError::ServiceError(err) => {
-                                    let msg  = err.err().meta().message().unwrap_or("empty");
-
-                                    tracing::warn!(
-                                        error_code = ?err.err().meta().code(),
-                                        status = ?err.raw().status(),
-                                        "SQS ReceiveMessage service error: {}",
-                                        msg
-                                    );
-                                }
-                                SdkError::DispatchFailure(df) => {
-                                    tracing::warn!(cause = ?df, "SQS ReceiveMessage dispatch failure");
-                                }
-                                SdkError::TimeoutError(_) => {
-                                    tracing::warn!("SQS ReceiveMessage timeout");
-                                }
-                                SdkError::ResponseError (err) => {
-                                    tracing::warn!(error = ?err, "SQS ReceiveMessage response error");
-                                }
-                                SdkError::ConstructionFailure(err) => {
-                                    tracing::warn!(error = ?err, "SQS ReceiveMessage construction failure");
-                                }
-                                _ => {
-                                    tracing::warn!(error = ?e, "SQS ReceiveMessage error");
-                                }
+                        match &e {
+                            SdkError::ServiceError(err) => {
+                                let msg  = err.err().meta().message().unwrap_or("empty");
+                                tracing::warn!(
+                                    error_code = ?err.err().meta().code(),
+                                    status = ?err.raw().status(),
+                                    "SQS ReceiveMessage service error: {msg}"
+                                );
                             }
-                            tokio::time::sleep(Duration::from_millis(200)).await;
+                            SdkError::DispatchFailure(df) => {
+                                tracing::warn!(cause = ?df, "SQS ReceiveMessage dispatch failure");
+                            }
+                            SdkError::TimeoutError(_) => {
+                                tracing::warn!("SQS ReceiveMessage timeout");
+                            }
+                            SdkError::ResponseError (err) => {
+                                tracing::warn!(error = ?err, "SQS ReceiveMessage response error");
+                            }
+                            SdkError::ConstructionFailure(err) => {
+                                tracing::warn!(error = ?err, "SQS ReceiveMessage construction failure");
+                            }
+                            _ => {
+                                tracing::warn!(error = ?e, "SQS ReceiveMessage error");
+                            }
+                        }
+                        tokio::time::sleep(Duration::from_millis(200)).await;
                     }
                 }
             }
         }
-    }
-
-    Ok(())
-}
-
-async fn dispatch_ndjson_chunks(
-    pool: Arc<WorkerPool>,
-    data: Vec<u8>,
-    max_chunk: usize,
-    ack: Option<Arc<dyn Ack>>,
-) -> Result<()> {
-    let mut cur = BytesMut::with_capacity(max_chunk.min(data.len()).max(1));
-
-    let mut start = 0usize;
-    let mut line_ends: Vec<usize> = memchr_iter(b'\n', &data).collect();
-
-    let had_trailing_newline = line_ends.last().is_some_and(|&i| i + 1 == data.len());
-    if !had_trailing_newline {
-        line_ends.push(data.len());
-    }
-
-    let mut chunks_to_go_estimate = 0usize;
-    let mut est_size = 0usize;
-    for &end in &line_ends {
-        let line_len = end - start;
-        if line_len > max_chunk {
-            chunks_to_go_estimate += 1;
-            start = end;
-            continue;
-        }
-        if est_size + line_len > max_chunk {
-            chunks_to_go_estimate += 1;
-            est_size = 0;
-        }
-        est_size += line_len;
-        start = end;
-    }
-    if est_size > 0 {
-        chunks_to_go_estimate += 1;
-    }
-
-    cur.clear();
-    start = 0;
-    let mut chunks_left = chunks_to_go_estimate;
-
-    tracing::debug!(
-        chunks = chunks_left,
-        est_size = est_size,
-        buf_size = data.len(),
-        "dispatching chunks"
-    );
-
-    for &end in &line_ends {
-        let line = &data[start..end];
-
-        if line.len() > max_chunk && cur.is_empty() {
-            chunks_left -= 1;
-            let final_ack = if chunks_left == 0 { ack.clone() } else { None };
-            pool.dispatch(Record {
-                payload: Bytes::copy_from_slice(line),
-                ack: final_ack,
-            })
-            .await?;
-        } else {
-            if cur.len() + line.len() > max_chunk {
-                chunks_left -= 1;
-                let final_ack = if chunks_left == 0 { ack.clone() } else { None };
-                pool.dispatch(Record {
-                    payload: cur.split().freeze(),
-                    ack: final_ack,
-                })
-                .await?;
-            }
-            cur.extend_from_slice(line);
-        }
-
-        start = end + 1;
-    }
-
-    if !cur.is_empty() {
-        chunks_left -= 1;
-        let final_ack = if chunks_left == 0 { ack } else { None };
-        pool.dispatch(Record {
-            payload: cur.freeze(),
-            ack: final_ack,
-        })
-        .await?;
     }
 
     Ok(())

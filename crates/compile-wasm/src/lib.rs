@@ -13,13 +13,13 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
     let cfg = Config::from_file(cfg_path)?;
 
     let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
-    let out = &cfg.runtime.plugins_path;
-    fs::create_dir_all(out)?;
+    let out = config_dir.join(&cfg.runtime.plugins_path).canonicalize()?;
+    fs::create_dir_all(&out)?;
 
     for (name, plugin) in cfg.plugins {
-        let entry_point_path = config_dir.join(&plugin.entry_point);
+        let entry_point_path = config_dir.join(&plugin.path).canonicalize()?;
+        println!("⚙️ Compiling {}", entry_point_path.display());
 
-        // Build only the entry point
         let full_out = &out.join(format!("{}.component.wasm", name));
 
         match plugin.module_type.as_str() {
@@ -34,7 +34,7 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
 
         println!(
             "✅ Compiled {} → {}",
-            plugin.entry_point,
+            entry_point_path.display(),
             full_out.display()
         );
     }
@@ -65,6 +65,7 @@ fn run_componentize_py(
     let stem = file_stem(&entry_point_path)?;
     let app_module = stem.clone();
     let status = Command::new("componentize-py")
+        .current_dir(&entry_point_path)
         .arg("--wit-path")
         .arg(wit_path)
         .arg("--world")
@@ -97,21 +98,21 @@ fn run_go_compile(
 ) -> Result<()> {
     ensure_tinygo()?;
 
-    let wasm_out = out_component.with_file_name("app.component.wasm");
     let status = Command::new("tinygo")
+        .current_dir(&entry_point_path)
         .arg("build")
         .arg("-x")
         .arg("-target=wasip2")
         .arg("-opt=2")
         .arg("-scheduler=none")
         .arg("-o")
-        .arg(&wasm_out)
+        .arg(&out_component)
         .arg("--wit-package")
         .arg(&wit_path)
         .arg("--wit-world")
         .arg(world)
         .arg("-no-debug")
-        .arg(entry_point_path)
+        .arg(".")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()

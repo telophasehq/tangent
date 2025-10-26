@@ -8,6 +8,7 @@ use crate::wasm::host::{HostEngine, Processor};
 use crate::wasm::probe::{compile_selector, CompiledSelector};
 
 pub struct MapperCtx {
+    pub cfg_name: String,
     pub name: String,
     pub version: String,
     pub store: Store<HostEngine>,
@@ -20,10 +21,13 @@ pub struct Mappers {
 }
 
 impl Mappers {
-    pub async fn load_all(engine: &WasmEngine, components: &[Component]) -> anyhow::Result<Self> {
+    pub async fn load_all(
+        engine: &WasmEngine,
+        components: &Vec<(&String, Component)>,
+    ) -> anyhow::Result<Self> {
         let mut mappers = Vec::with_capacity(components.len());
 
-        for component in components {
+        for (name, component) in components {
             let mut store = engine.make_store();
 
             let proc = engine.make_processor(&mut store, component).await?;
@@ -38,6 +42,7 @@ impl Mappers {
                 .collect::<anyhow::Result<_>>()?;
 
             mappers.push(MapperCtx {
+                cfg_name: name.to_string(),
                 name: meta.name,
                 version: meta.version,
                 store,

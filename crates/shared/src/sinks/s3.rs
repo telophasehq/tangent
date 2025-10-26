@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct S3Config {
     pub bucket_name: String,
     pub region: Option<String>,

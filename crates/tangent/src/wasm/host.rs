@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bytes::{Bytes, BytesMut};
 use simd_json::prelude::{ValueAsArray, ValueAsObject, ValueObjectAccess};
 use simd_json::{BorrowedValue, StaticNode};
 use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
@@ -47,7 +48,7 @@ impl WasiView for HostEngine {
 }
 
 struct JsonDoc {
-    raw: Vec<u8>,
+    _raw: Bytes,
     doc: BorrowedValue<'static>,
 }
 
@@ -55,12 +56,14 @@ struct JsonDoc {
 pub struct JsonLogView(Arc<JsonDoc>);
 
 impl JsonLogView {
-    pub fn from_bytes(mut line: Vec<u8>) -> anyhow::Result<Self> {
-        let v: BorrowedValue<'_> = simd_json::to_borrowed_value(line.as_mut_slice())?;
-        let v_static: BorrowedValue<'static> =
-            unsafe { std::mem::transmute::<BorrowedValue<'_>, BorrowedValue<'static>>(v) };
+    pub fn from_bytes(mut line: BytesMut) -> anyhow::Result<Self> {
+        let v: simd_json::BorrowedValue<'_> = simd_json::to_borrowed_value(line.as_mut())?;
+        let v_static: simd_json::BorrowedValue<'static> = unsafe { std::mem::transmute(v) };
+
+        let raw = line.freeze();
+
         Ok(Self(Arc::new(JsonDoc {
-            raw: line,
+            _raw: raw,
             doc: v_static,
         })))
     }

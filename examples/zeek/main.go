@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -10,6 +9,8 @@ import (
 	"time"
 	"zeek/internal/tangent/logs/log"
 	"zeek/internal/tangent/logs/mapper"
+
+	"github.com/segmentio/encoding/json"
 
 	"github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 	"go.bytecodealliance.org/cm"

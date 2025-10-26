@@ -3,10 +3,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(
-    version,
-    about = "Compile Python scripts to WASI WebAssembly via py2wasm"
-)]
+#[command(version, about = "Compile Python/Go to WASI Components")]
 struct Args {
     /// Path to YAML config
     #[arg(long)]

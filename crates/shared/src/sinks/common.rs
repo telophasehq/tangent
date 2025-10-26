@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::sinks::{blackhole, file, s3};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SinkConfig {
     #[serde(flatten)]
     pub common: CommonSinkOptions,
@@ -11,7 +11,7 @@ pub struct SinkConfig {
     pub kind: SinkKind,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum SinkKind {
     #[serde(rename = "s3")]
@@ -22,7 +22,7 @@ pub enum SinkKind {
     Blackhole(blackhole::BlackholeConfig),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CommonSinkOptions {
     #[serde(default)]
     pub compression: Compression,
