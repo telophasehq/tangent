@@ -46,25 +46,27 @@ impl WasiView for HostEngine {
     }
 }
 
-#[derive(Clone)]
-pub struct JsonLogView {
-    raw: Arc<Vec<u8>>,
-    doc: Arc<BorrowedValue<'static>>,
+struct JsonDoc {
+    raw: Vec<u8>,
+    doc: BorrowedValue<'static>,
 }
+
+#[derive(Clone)]
+pub struct JsonLogView(Arc<JsonDoc>);
 
 impl JsonLogView {
     pub fn from_bytes(mut line: Vec<u8>) -> anyhow::Result<Self> {
         let v: BorrowedValue<'_> = simd_json::to_borrowed_value(line.as_mut_slice())?;
         let v_static: BorrowedValue<'static> =
             unsafe { std::mem::transmute::<BorrowedValue<'_>, BorrowedValue<'static>>(v) };
-        Ok(Self {
-            raw: Arc::new(line),
-            doc: Arc::new(v_static),
-        })
+        Ok(Self(Arc::new(JsonDoc {
+            raw: line,
+            doc: v_static,
+        })))
     }
 
     pub fn lookup<'a>(&'a self, path: &str) -> Option<&'a BorrowedValue<'a>> {
-        let mut v = &*self.doc;
+        let mut v = &self.0.doc;
         for seg in path.split('.') {
             if let Some((key, bracket)) = seg.split_once('[') {
                 v = v.get(key)?;
@@ -115,6 +117,21 @@ impl log::HostLogview for HostEngine {
     async fn get(&mut self, h: Resource<JsonLogView>, path: String) -> Option<log::Scalar> {
         let v: &JsonLogView = self.table.get(&h).ok()?;
         v.lookup(&path).and_then(JsonLogView::to_scalar)
+    }
+
+    async fn get_many(
+        &mut self,
+        h: Resource<JsonLogView>,
+        paths: Vec<String>,
+    ) -> Vec<Option<log::Scalar>> {
+        let v: &JsonLogView = match self.table.get(&h) {
+            Ok(v) => v,
+            Err(_) => return vec![None; paths.len()],
+        };
+        paths
+            .into_iter()
+            .map(|p| v.lookup(&p).and_then(JsonLogView::to_scalar))
+            .collect()
     }
 
     async fn get_list(

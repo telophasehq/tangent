@@ -1,25 +1,36 @@
 package tangenthelpers
 
-import (
-	"github.com/segmentio/encoding/json"
-
-	"github.com/buger/jsonparser"
-)
-
-func Has(b []byte, keys ...string) bool {
-	_, _, _, err := jsonparser.Get(b, keys...)
-	return err == nil
-}
-
-func GetString(b []byte, keys ...string) (string, bool) {
-	v, t, _, err := jsonparser.Get(b, keys...)
-	return string(v), err == nil && t == jsonparser.String
-}
-
-func ToRaw[T any](v T) (json.RawMessage, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(b), nil
-}
+// func getString(i int) (string, bool) {
+// 	s := vals.Get(i)
+// 	if s.None() {
+// 		return "", false
+// 	}
+// 	if p := s.Value().Str(); p != nil {
+// 		return *p, true
+// 	}
+// 	return "", false
+// }
+// func getInt(i int) (int64, bool) {
+// 	s := vals.Get(i)
+// 	if s.None() {
+// 		return 0, false
+// 	}
+// 	if p := s.Value().Int(); p != nil {
+// 		return *p, true
+// 	}
+// 	return 0, false
+// }
+// func getFloatPtr(i int) *float64 {
+// 	s := vals.Get(i)
+// 	if s.None() {
+// 		return nil
+// 	}
+// 	return s.Value().Float()
+// }
+// func getBoolPtr(i int) *bool {
+// 	s := vals.Get(i)
+// 	if s.None() {
+// 		return nil
+// 	}
+// 	return s.Value().Boolean()
+// }

@@ -20,6 +20,10 @@ func wasmimport_LogviewGet(self0 uint32, path0 *uint8, path1 uint32, result *cm.
 //go:noescape
 func wasmimport_LogviewGetList(self0 uint32, path0 *uint8, path1 uint32, result *cm.Option[cm.List[Scalar]])
 
+//go:wasmimport tangent:logs/log@0.1.0 [method]logview.get-many
+//go:noescape
+func wasmimport_LogviewGetMany(self0 uint32, paths0 *string, paths1 uint32, result *cm.List[cm.Option[Scalar]])
+
 //go:wasmimport tangent:logs/log@0.1.0 [method]logview.get-map
 //go:noescape
 func wasmimport_LogviewGetMap(self0 uint32, path0 *uint8, path1 uint32, result *cm.Option[cm.List[cm.Tuple[string, Scalar]]])
