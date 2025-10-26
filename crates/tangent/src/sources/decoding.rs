@@ -2,7 +2,7 @@ use std::io::{self, Write};
 
 use anyhow::Result;
 use bytes::{BufMut, Bytes, BytesMut};
-use memchr::memchr_iter;
+use memchr::{memchr, memchr_iter};
 use serde::Deserialize;
 use tangent_shared::sources::common::{DecodeCompression, DecodeFormat};
 
@@ -119,6 +119,21 @@ pub fn normalize_to_ndjson(fmt: &DecodeFormat, mut raw: BytesMut) -> BytesMut {
         },
         DecodeFormat::Auto => unreachable!(),
     }
+}
+
+pub fn chunk_ndjson(buf: &mut BytesMut, max_lines: usize) -> Vec<BytesMut> {
+    let mut out = Vec::with_capacity(max_lines.max(1));
+    let mut produced = 0usize;
+    while produced < max_lines {
+        match memchr(b'\n', &buf[..]) {
+            Some(nl) => {
+                out.push(buf.split_to(nl + 1));
+                produced += 1;
+            }
+            None => break,
+        }
+    }
+    out
 }
 
 pub fn ndjson_chunk_slices(buf: Bytes, max_chunk: usize) -> Vec<Bytes> {

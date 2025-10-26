@@ -5,39 +5,12 @@ use aws_sdk_s3::Client as S3Client;
 use aws_sdk_sqs::Client as SQSClient;
 use aws_smithy_runtime_api::client::result::SdkError;
 use bytes::BytesMut;
-use memchr::{memchr, memrchr};
 use percent_encoding::percent_decode_str;
 use std::{sync::Arc, time::Duration};
 use tangent_shared::sources::sqs::SQSConfig;
 use tokio_util::sync::CancellationToken;
 
 use crate::{dag::DagRuntime, sources::decoding, worker::Ack};
-
-fn chunk_ndjson(mut data: BytesMut, max_chunk: usize) -> Vec<BytesMut> {
-    let max_chunk = max_chunk.max(1);
-
-    if !data.ends_with(b"\n") {
-        data.extend_from_slice(b"\n");
-    }
-
-    let mut frames: Vec<BytesMut> = Vec::with_capacity((data.len() / max_chunk).saturating_add(1));
-
-    while !data.is_empty() {
-        let limit = max_chunk.min(data.len());
-
-        let cut = if let Some(idx) = memrchr(b'\n', &data[..limit]) {
-            idx + 1
-        } else if let Some(fwd) = memchr(b'\n', &data[limit..]) {
-            limit + fwd + 1
-        } else {
-            data.len()
-        };
-
-        frames.push(data.split_to(cut));
-    }
-
-    frames
-}
 
 pub async fn run_consumer(
     name: String,
@@ -98,8 +71,11 @@ pub async fn run_consumer(
                                                         Ok(collected) => {
                                                             let bytes = collected.into_bytes();
                                                             let fmt = dc.resolve_format(&bytes);
-                                                            let ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, BytesMut::from(bytes.as_ref()));
-                                                            frames_all.extend(chunk_ndjson(ndjson, max_chunk));
+                                                            let mut ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, BytesMut::from(bytes.as_ref()));
+                                                            if !ndjson.ends_with(b"\n") {
+                                                                ndjson.extend_from_slice(b"\n");
+                                                            }
+                                                            frames_all.extend(decoding::chunk_ndjson(&mut ndjson, max_chunk));
                                                         }
                                                         Err(e) => {
                                                             tracing::error!("S3 collect {bucket}/{key}: {e}");
@@ -130,8 +106,8 @@ pub async fn run_consumer(
                                 };
 
                                 let fmt = dc.resolve_format(&raw);
-                                let ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, raw);
-                                frames_all.extend(chunk_ndjson(ndjson, max_chunk));
+                                let mut ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, raw);
+                                frames_all.extend(decoding::chunk_ndjson(&mut ndjson, max_chunk));
                             }
 
                             if !frames_all.is_empty() {

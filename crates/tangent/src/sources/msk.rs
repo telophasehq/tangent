@@ -118,10 +118,13 @@ pub async fn run_consumer(
                             let raw = decoding::decompress_vec(&comp, p)?;
 
                             let fmt = dc.resolve_format(&raw);
+                            let mut ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, raw);
 
-                            let ndjson = decoding::normalize_to_ndjson(&fmt, raw);
+                        if !ndjson.ends_with(b"\n") { ndjson.extend_from_slice(b"\n"); }
 
-                            dag_runtime.push_from_source(name.as_str(), vec![BytesMut::from(ndjson)], vec![]).await?;
+                        let frames_mut = decoding::chunk_ndjson(&mut ndjson, usize::MAX);
+
+                            dag_runtime.push_from_source(name.as_str(), frames_mut, vec![]).await?;
                         }
                     }
                     Err(e) => {
