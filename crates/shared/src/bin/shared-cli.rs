@@ -24,15 +24,13 @@ fn main() -> Result<()> {
     let batch_kb = cfg.batch_size_kb();
     let batch_bytes = batch_kb << 10;
     let batch_age_ms = cfg.batch_age_ms();
-    let workers = cfg.workers;
+    let workers = cfg.runtime.workers;
 
     if args.json {
         println!(
-            "{{\"entry_point\":\"{entry}\",\"module_type\":\"{mtype}\",\
+            "{{
               \"sources\":\"{c:?}\",\"batch_size_kb\":{kb},\"batch_size_bytes\":{bytes},\
               \"batch_age_ms\":{age:?},\"workers\":{workers}}}",
-            entry = cfg.entry_point,
-            mtype = cfg.module_type,
             c = sources,
             kb = batch_kb,
             bytes = batch_bytes,
@@ -41,8 +39,6 @@ fn main() -> Result<()> {
         );
     } else {
         println!("Config:");
-        println!("  entry_point : {}", cfg.entry_point);
-        println!("  module_type : {}", cfg.module_type);
         println!("  consumers : {:?}", sources);
         println!("  batch_size  : {} KB ({} bytes)", batch_kb, batch_bytes);
         println!("  batch_age   : {:?} ms", batch_age_ms);

@@ -7,22 +7,14 @@ use std::time::Duration;
 use crate::sinks::common::SinkConfig;
 use crate::sources::common::SourceConfig;
 
+pub mod plugins;
+pub mod runtime;
 pub mod sinks;
 pub mod sources;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub entry_point: String,
-    pub module_type: String,
-
-    #[serde(default = "default_batch_size")]
-    pub batch_size: usize,
-
-    #[serde(default = "default_batch_age")]
-    pub batch_age: u64,
-
-    #[serde(default = "default_workers")]
-    pub workers: usize,
+    pub runtime: runtime::RuntimeConfig,
 
     #[serde(default)]
     pub sources: std::collections::BTreeMap<String, SourceConfig>,
@@ -31,7 +23,7 @@ pub struct Config {
     pub sinks: std::collections::BTreeMap<String, SinkConfig>,
 
     #[serde(default)]
-    pub plugins: Vec<PathBuf>,
+    pub plugins: std::collections::BTreeMap<String, plugins::PluginConfig>,
 }
 
 impl Config {
@@ -44,23 +36,10 @@ impl Config {
     }
 
     pub const fn batch_age_ms(&self) -> Duration {
-        Duration::from_millis(self.batch_age)
+        Duration::from_millis(self.runtime.batch_age)
     }
 
     pub const fn batch_size_kb(&self) -> usize {
-        self.batch_size << 10
+        self.runtime.batch_size << 10
     }
-}
-
-#[must_use]
-const fn default_batch_size() -> usize {
-    256
-}
-
-#[must_use]
-const fn default_batch_age() -> u64 {
-    5
-}
-fn default_workers() -> usize {
-    num_cpus::get()
 }

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -9,29 +9,35 @@ use which::which;
 
 const WORLD: &str = "processor";
 
-pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf, out: &PathBuf) -> Result<()> {
+pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()> {
     let cfg = Config::from_file(cfg_path)?;
 
     let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
-    let entry_point_path = config_dir.join(&cfg.entry_point);
+    let out = &cfg.runtime.plugins_path;
+    fs::create_dir_all(out)?;
 
-    fs::create_dir_all(&out)?;
+    for (name, plugin) in cfg.plugins {
+        let entry_point_path = config_dir.join(&plugin.entry_point);
 
-    // Build only the entry point
-    let full_out = &out.join("app.component.wasm");
+        // Build only the entry point
+        let full_out = &out.join(format!("{}.component.wasm", name));
 
-    match cfg.module_type.as_str() {
-        "py" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &full_out)?,
-        "go" => run_go_compile(&wit_path, WORLD, &entry_point_path, &full_out)?,
-        ext => anyhow::bail!(
-            "unsupported filetype: {} for wasm entrypoint: {}",
-            ext,
-            entry_point_path.display()
-        ),
+        match plugin.module_type.as_str() {
+            "py" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &full_out)?,
+            "go" => run_go_compile(&wit_path, WORLD, &entry_point_path, &full_out)?,
+            ext => anyhow::bail!(
+                "unsupported filetype: {} for wasm entrypoint: {}",
+                ext,
+                entry_point_path.display()
+            ),
+        }
+
+        println!(
+            "✅ Compiled {} → {}",
+            plugin.entry_point,
+            full_out.display()
+        );
     }
-
-    println!("✅ Compiled {} → {}", cfg.entry_point, full_out.display());
-    println!("   Entry: app.component.wasm");
     Ok(())
 }
 

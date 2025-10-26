@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, Context, Result};
+use tangent_shared::plugins::PluginConfig;
+use tangent_shared::runtime::RuntimeConfig;
 use tangent_shared::sinks::common::{CommonSinkOptions, Compression, Encoding};
+use tangent_shared::Config;
 use tracing::{info, warn};
 
 use serde_json::{Map, Value};
@@ -23,11 +26,13 @@ pub struct TestOptions {
     pub input: PathBuf,
     pub expected: PathBuf,
     pub plugin: PathBuf,
+    pub config_path: PathBuf,
 }
 
 pub async fn run(opts: TestOptions) -> Result<()> {
     let input = opts.input.canonicalize().unwrap_or(opts.input);
     let expected = opts.expected;
+    let cfg = Config::from_file(&opts.config_path)?;
 
     let mut rt = RuntimeOptions::default();
     rt.once = true;
@@ -55,22 +60,34 @@ pub async fn run(opts: TestOptions) -> Result<()> {
         },
     };
 
+    let plugin_config = PluginConfig {
+        entry_point: "".to_string(), // not used
+        module_type: "".to_string(), // not used
+        path: opts.plugin,
+    };
+
+    let runtime = RuntimeConfig {
+        plugins_path: cfg.runtime.plugins_path,
+        batch_size: 1,
+        batch_age: 1,
+        workers: 1,
+    };
+
     let mut sinks = BTreeMap::new();
     sinks.insert(String::from("out"), file_sink);
 
     let mut sources = BTreeMap::new();
     sources.insert(String::from("input"), input_source);
 
+    let mut plugins = BTreeMap::new();
+    plugins.insert(String::from("test_plugin"), plugin_config);
+
     tangent_runtime::run_with_config(
         tangent_shared::Config {
-            entry_point: String::from(""), // not used in tests.
-            module_type: String::from(""), // not used in tests.
-            batch_size: 1 << 6,
-            batch_age: 1,
-            workers: 1,
-            sources: sources,
-            sinks: sinks,
-            plugins: vec![opts.plugin],
+            runtime,
+            sources,
+            sinks,
+            plugins,
         },
         rt,
     )

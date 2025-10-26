@@ -28,9 +28,6 @@ enum Commands {
         /// Path to WIT directory (folder with the `processor` world)
         #[arg(long, default_value = "./wit", value_name = "DIR")]
         wit: PathBuf,
-        /// Path to out directory
-        #[arg(long, default_value = "./compiled", value_name = "DIR")]
-        out: PathBuf,
     },
 
     Run {
@@ -96,6 +93,9 @@ enum Commands {
         /// Expected plugin
         #[arg(long, value_name = "FILE")]
         plugin: PathBuf,
+
+        #[arg(long, value_name = "FILE")]
+        config: PathBuf,
     },
 }
 
@@ -107,11 +107,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::CompileWasm { config, wit, out } => {
+        Commands::CompileWasm { config, wit } => {
             // resolve to absolute paths to help downstream error messages
             let cfg = config.canonicalize().unwrap_or(config);
             let wit = wit.canonicalize().unwrap_or(wit);
-            compile_wasm::compile_from_config(&cfg, &wit, &out)?;
+            compile_wasm::compile_from_config(&cfg, &wit)?;
         }
 
         Commands::Run { config, once } => {
@@ -149,11 +149,14 @@ async fn main() -> Result<()> {
             input,
             expected,
             plugin,
+            config,
         } => {
+            let config = config.canonicalize().unwrap_or(config);
             test::run(test::TestOptions {
                 input,
                 expected,
                 plugin,
+                config_path: config,
             })
             .await?;
         }

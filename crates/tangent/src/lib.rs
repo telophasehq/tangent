@@ -115,18 +115,23 @@ pub async fn run_with_config(cfg: Config, opts: RuntimeOptions) -> Result<()> {
 
     let engine = WasmEngine::new()?;
     let mut components: Vec<Component> = Vec::with_capacity(cfg.plugins.len());
-    for path in &cfg.plugins {
-        components.push(engine.load_component(path)?);
+    for (name, _) in &cfg.plugins {
+        let plugin_path = PathBuf::from(format!(
+            "{}/{name}.compiled.wasm",
+            cfg.runtime.plugins_path.display()
+        ));
+        components.push(engine.load_component(&plugin_path)?);
     }
+
     info!(
         "Batch size: {} KiB, max age: {:?}",
-        cfg.batch_size,
+        cfg.runtime.batch_size,
         cfg.batch_age_ms()
     );
 
     let pool = Arc::new(
         worker::WorkerPool::new(
-            cfg.workers,
+            cfg.runtime.workers,
             engine,
             components,
             Arc::clone(&sink_manager),
@@ -201,8 +206,13 @@ fn spawn_consumers(
             }
             SourceConfig::SQS(sq) => {
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) =
-                        sources::sqs::run_consumer(sq, cfg.batch_size, pool, shutdown.clone()).await
+                    if let Err(e) = sources::sqs::run_consumer(
+                        sq,
+                        cfg.runtime.batch_size,
+                        pool,
+                        shutdown.clone(),
+                    )
+                    .await
                     {
                         tracing::error!("SQS consumer error: {e}");
                     }

@@ -14,9 +14,6 @@ struct Args {
     /// Path to WIT directory
     #[arg(long, default_value = "./wit")]
     wit: PathBuf,
-    /// Path to output
-    #[arg(long, default_value = "compiled/")]
-    out: PathBuf,
 }
 
 fn main() -> Result<()> {
@@ -30,5 +27,5 @@ fn main() -> Result<()> {
         .canonicalize()
         .with_context(|| format!("WIT path not found: {}", args.wit.display()))?;
 
-    compile_wasm::compile_from_config(&config, &wit, &args.out)
+    compile_wasm::compile_from_config(&config, &wit)
 }
