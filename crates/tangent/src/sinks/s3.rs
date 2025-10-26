@@ -37,7 +37,7 @@ impl WALSink for S3Sink {
     ) -> Result<()> {
         let key = object_key_from(path, meta.key_prefix.as_deref(), encoding, compression);
 
-        let content_type = Encoding::content_type(&encoding);
+        let content_type = Encoding::content_type(encoding);
         let content_encoding = match compression {
             Compression::None => None,
             Compression::Gzip { .. } => Some("gzip"),
@@ -107,7 +107,7 @@ impl WALSink for S3Sink {
 
         let mut file = File::open(path)
             .await
-            .with_context(|| format!("open {:?}", path))?;
+            .with_context(|| format!("open {}", path.display()))?;
         let mut parts: Vec<CompletedPart> = Vec::new();
         let mut buf = vec![0u8; self.part_size];
         let mut part_number: i32 = 1;
@@ -179,7 +179,7 @@ impl WALSink for S3Sink {
                 .upload_id(&upload_id)
                 .send()
                 .await;
-            bail!("no data read for multipart upload: {:?}", path);
+            bail!("no data read for multipart upload: {}", path.display());
         }
 
         self.client
@@ -202,12 +202,12 @@ impl WALSink for S3Sink {
 }
 
 impl S3Sink {
-    pub async fn new(name: &String, cfg: &S3Config) -> Result<Self> {
+    pub async fn new(name: &str, cfg: &S3Config) -> Result<Self> {
         let aws_cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = Client::new(&aws_cfg);
 
         Ok(Self {
-            name: name.clone(),
+            name: name.to_owned(),
             client,
             bucket_name: cfg.bucket_name.clone(),
             part_size: 8 * 1024 * 1024,

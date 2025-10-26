@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::sources::common::Decoding;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SQSConfig {
     pub queue_url: String,
     #[serde(default = "default_wait_time_seconds")]
@@ -14,10 +14,10 @@ pub struct SQSConfig {
     pub decoding: Decoding,
 }
 
-fn default_wait_time_seconds() -> i64 {
+const fn default_wait_time_seconds() -> i64 {
     20
 }
 
-fn default_visibility_timeout() -> i64 {
+const fn default_visibility_timeout() -> i64 {
     60
 }

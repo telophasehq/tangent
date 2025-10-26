@@ -11,7 +11,7 @@ use crate::{
 pub struct BlackholeSink;
 
 impl BlackholeSink {
-    pub async fn new() -> Arc<Self> {
+    pub fn new() -> Arc<Self> {
         Arc::new(Self {})
     }
 }

@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use bytes::Bytes;
+use bytes::BytesMut;
 use rdkafka::{
     config::ClientConfig,
     consumer::{Consumer, ConsumerContext, StreamConsumer},
@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-use crate::worker::{Record, WorkerPool};
+use crate::dag::DagRuntime;
 use rdkafka::message::Headers;
 use tangent_shared::sources::msk::{MSKAuth, MSKConfig};
 
@@ -28,8 +28,8 @@ fn lag_from_stats(s: &rdkafka::statistics::Statistics) -> (i64, i64, usize) {
     let mut max_lag: i64 = 0;
     let mut assigned_parts: usize = 0;
 
-    for (_tname, t) in &s.topics {
-        for (_pnum, p) in &t.partitions {
+    for t in s.topics.values() {
+        for p in t.partitions.values() {
             let lag = p.consumer_lag.max(0);
             total_lag += lag;
             if lag > max_lag {
@@ -58,7 +58,7 @@ impl ClientContext for Ctx {
             let mib_per_s = (d_bytes / dt) / (1024.0 * 1024.0);
 
             let (total_lag, max_lag, assigned) = lag_from_stats(&s);
-            let cg_state = s.cgrp.as_ref().map(|c| c.state.as_str()).unwrap_or("n/a");
+            let cg_state = s.cgrp.as_ref().map_or("n/a", |c| c.state.as_str());
 
             tracing::debug!(target:"kafka_stats",
                 msgs_per_s = format_args!("{:.0}", msgs_per_s),
@@ -92,8 +92,9 @@ fn header_str<'a>(m: &'a rdkafka::message::BorrowedMessage<'a>, key: &str) -> Op
 }
 
 pub async fn run_consumer(
+    name: String,
     kc: MSKConfig,
-    pool: Arc<WorkerPool>,
+    dag_runtime: DagRuntime,
     shutdown: CancellationToken,
 ) -> Result<()> {
     let consumer: StreamConsumer<Ctx> = build_consumer(&kc)?;
@@ -104,7 +105,7 @@ pub async fn run_consumer(
 
     loop {
         tokio::select! {
-            _ = fwd_shutdown.cancelled() => break,
+            () = fwd_shutdown.cancelled() => break,
             msg = consumer.recv() => {
                 match msg {
                     Ok(m) => {
@@ -114,16 +115,16 @@ pub async fn run_consumer(
                             let sniff     = &p[..std::cmp::min(8, p.len())];
                             let comp = dc.resolve_compression(meta_ce, filename, sniff);
 
-                            let raw = decoding::decompress_bytes(comp, p)?;
+                            let raw = decoding::decompress_vec(&comp, p)?;
 
                             let fmt = dc.resolve_format(&raw);
+                            let mut ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, raw);
 
-                            let ndjson = decoding::normalize_to_ndjson(fmt, &raw);
+                        if !ndjson.ends_with(b"\n") { ndjson.extend_from_slice(b"\n"); }
 
-                            let _ = pool.dispatch(Record {
-                                payload: Bytes::from(ndjson),
-                                ack: None,
-                            }).await;
+                        let frames_mut = decoding::chunk_ndjson(&mut ndjson, usize::MAX);
+
+                            dag_runtime.push_from_source(name.as_str(), frames_mut, vec![]).await?;
                         }
                     }
                     Err(e) => {
@@ -168,7 +169,7 @@ pub fn build_consumer(kc: &MSKConfig) -> Result<StreamConsumer<Ctx>> {
                 .set("sasl.username", username)
                 .set("sasl.password", password.expose_secret());
         }
-    };
+    }
 
     cfg.set("fetch.max.bytes", "10485760");
     cfg.set("max.partition.fetch.bytes", "10485760");

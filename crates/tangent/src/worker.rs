@@ -1,22 +1,25 @@
+use ahash::HashMap;
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
-use std::time::{Duration, Instant};
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+use bytes::BytesMut;
+use rdkafka::message::ToBytes;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
 };
+use std::time::{Duration, Instant};
+use tangent_shared::dag::NodeRef;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::JoinHandle;
 use tokio::time::{self, Instant as TokioInstant};
-use wasmtime::Store;
+use wasmtime::component::{Component, Resource};
 
-use crate::sinks::{manager::SinkManager, wal::RouteKey};
-use crate::wasm::{self, Host, Processor, Sink};
+use crate::wasm::host::JsonLogView;
+use crate::{
+    router::Router,
+    wasm::{self, mapper::Mappers, probe::eval_selector},
+};
 use crate::{CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, GUEST_BYTES_TOTAL, GUEST_LATENCY};
 
 #[async_trait]
@@ -24,54 +27,25 @@ pub trait Ack: Send + Sync {
     async fn ack(&self) -> Result<()>;
 }
 
-#[derive(Clone)]
-struct RefCountAck {
-    remaining: Arc<AtomicUsize>,
-    inners: Arc<Vec<Arc<dyn Ack>>>,
-}
-
-impl RefCountAck {
-    fn new(inner: Vec<Arc<dyn Ack>>, n: usize) -> Self {
-        Self {
-            remaining: Arc::new(AtomicUsize::new(n)),
-            inners: Arc::new(inner),
-        }
-    }
-}
-
-#[async_trait]
-impl Ack for RefCountAck {
-    async fn ack(&self) -> Result<()> {
-        if self.remaining.fetch_sub(1, Ordering::AcqRel) == 1 {
-            for a in self.inners.iter() {
-                let _ = a.ack().await;
-            }
-        }
-        Ok(())
-    }
-}
-
 pub struct Record {
-    pub payload: Bytes,
+    pub payload: BytesMut,
     pub ack: Option<Arc<dyn Ack>>,
 }
 
 pub struct Worker {
     id: usize,
     rx: mpsc::Receiver<Record>,
-    store: Store<Host>,
-    processor: Processor,
+    mappers: Mappers,
     batch_max_size: usize,
     batch_max_age: Duration,
-    sink_manager: Arc<SinkManager>,
-    default_sink: Option<Sink>,
+    router: Arc<Router>,
 }
 
 impl Worker {
     pub async fn run(mut self) -> Result<()> {
-        let mut batch = BytesMut::with_capacity(self.batch_max_size);
+        let mut batch = Vec::<BytesMut>::new();
         let mut acks: Vec<Arc<dyn Ack>> = Vec::with_capacity(1024);
-        let mut events = 0usize;
+        let mut total_size = 0usize;
 
         let mut deadline = TokioInstant::now() + self.batch_max_age;
         let sleeper = time::sleep_until(deadline);
@@ -82,7 +56,7 @@ impl Worker {
                 maybe_job = self.rx.recv() => {
                     match maybe_job {
                         None => {
-                            let _ = self.flush_batch(&mut batch, &mut acks, &mut events).await;
+                            let _ = self.flush_batch(&mut batch, &mut acks, &mut total_size).await;
                             break;
                         }
                         Some(rec) => {
@@ -91,32 +65,31 @@ impl Worker {
                                 sleeper.as_mut().reset(deadline);
                             }
 
-                            let need = rec.payload.len();
+                            let payload_len = rec.payload.len();
 
-                            if batch.len() + need > self.batch_max_size {
-                                self.flush_batch(&mut batch, &mut acks, &mut events).await?;
+                            if total_size + payload_len > self.batch_max_size {
+                                self.flush_batch(&mut batch, &mut acks, &mut total_size).await?;
                                 deadline = TokioInstant::now() + self.batch_max_age;
                                 sleeper.as_mut().reset(deadline);
                             }
 
-                            if need > self.batch_max_size && batch.is_empty() {
-                                let mut single = BytesMut::from(rec.payload.as_ref());
-                                let mut one = 1usize;
-                                self.flush_batch(&mut single, &mut acks, &mut one).await?;
+                            if payload_len > self.batch_max_size && batch.is_empty() {
+                                let mut single = vec![rec.payload];
+                                let mut single_ack = rec.ack.as_slice().to_owned();
+                                self.flush_batch(&mut single, &mut single_ack, &mut total_size).await?;
                                 deadline = TokioInstant::now() + self.batch_max_age;
                                 sleeper.as_mut().reset(deadline);
-                                if let Some(a) = rec.ack { acks.push(a); }
                             } else {
-                                batch.extend_from_slice(&rec.payload);
+                                total_size += payload_len;
+                                batch.push(rec.payload);
                                 if let Some(a) = rec.ack { acks.push(a); }
-                                events += 1;
                             }
                         }
                     }
                 }
-                _ = &mut sleeper => {
+                () = &mut sleeper => {
                     if !batch.is_empty() {
-                        self.flush_batch(&mut batch, &mut acks, &mut events).await?;
+                        self.flush_batch(&mut batch, &mut acks, &mut total_size).await?;
                     }
                     deadline = TokioInstant::now() + self.batch_max_age;
                     sleeper.as_mut().reset(deadline);
@@ -129,101 +102,92 @@ impl Worker {
 
     pub async fn flush_batch(
         &mut self,
-        batch: &mut BytesMut,
+        batch: &mut Vec<BytesMut>,
         acks: &mut Vec<Arc<dyn Ack>>,
-        events_in_batch: &mut usize,
+        total_size: &mut usize,
     ) -> Result<()> {
         if batch.is_empty() {
             return Ok(());
         }
 
-        let s: &mut Store<Host> = &mut self.store;
-        let start = Instant::now();
-
-        let outs = match self.processor.call_process_logs(s, &batch).await {
-            Err(host) => {
-                return Err(anyhow::anyhow!("process_logs host error: {host}"));
-            }
-            Ok(Ok(outs)) => outs,
-            Ok(Err(guest)) => {
-                tracing::warn!(target: "sidecar",
-                    %guest,
-                    batch_bytes = batch.len(),
-                    "process_logs guest error; skipping batch");
-                batch.clear();
-                *events_in_batch = 0;
-                return Ok(());
-            }
-        };
-
-        let secs = start.elapsed().as_secs_f64();
-        GUEST_LATENCY
-            .with_label_values(&[&self.id.to_string()])
-            .observe(secs);
-        GUEST_BYTES_TOTAL.inc_by(batch.len() as u64);
-
-        let mut sink_routes: HashMap<RouteKey, BytesMut> = HashMap::new();
-
-        if outs.len() == 0 {
-            tracing::warn!("no output from process_logs");
-        }
-        for o in outs {
-            let data = &o.data;
-
-            match o.sink {
-                Sink::Default(_) => {
-                    if self.default_sink.is_none() {
-                        tracing::warn!(
-                                "No sink specified for log and no default sink configured. Dropping log."
-                            );
-                    } else {
-                        let key = sink_key(self.default_sink.clone().unwrap());
-                        let buf = sink_routes
-                            .entry(key)
-                            .or_insert_with(|| BytesMut::with_capacity(data.len()));
-                        buf.extend_from_slice(data);
-                    }
-                }
-                _ => {
-                    let key = sink_key(o.sink);
-                    let buf = sink_routes
-                        .entry(key)
-                        .or_insert_with(|| BytesMut::with_capacity(data.len()));
-                    buf.extend_from_slice(data);
+        let mut groups: HashMap<usize, Vec<JsonLogView>> = HashMap::default();
+        let mut sizes: HashMap<usize, usize> = HashMap::default();
+        for b in batch.iter() {
+            let lv = JsonLogView::from_bytes(b.clone())?;
+            for (idx, m) in self.mappers.mappers.iter_mut().enumerate() {
+                if m.selectors.iter().any(|s| eval_selector(s, &lv)) {
+                    groups.entry(idx).or_default().push(lv.clone());
+                    *sizes.entry(idx).or_default() += b.len();
                 }
             }
         }
 
-        let total_writes = sink_routes.len().max(1);
-        let rc = {
-            let batch_acks = std::mem::take(acks);
-            RefCountAck::new(batch_acks, total_writes)
-        };
+        let mut plugin_outputs: HashMap<String, Vec<BytesMut>> = HashMap::default();
 
-        for (rk, buf) in sink_routes {
-            let payload = buf.freeze();
+        for (idx, lvs) in groups {
+            let m = &mut self.mappers.mappers[idx];
 
-            self.sink_manager
-                .enqueue(
-                    rk.sink_name.clone(),
-                    rk.prefix.clone(),
-                    payload,
-                    vec![Arc::new(rc.clone()) as Arc<dyn Ack>],
+            let mut owned: Vec<Resource<JsonLogView>> = Vec::new();
+            for lv in lvs {
+                let h = m.store.data_mut().table.push(lv)?;
+                owned.push(h);
+            }
+
+            let start = Instant::now();
+            let res = m
+                .proc
+                .tangent_logs_mapper()
+                .call_process_logs(&mut m.store, &owned)
+                .await;
+
+            let secs = start.elapsed().as_secs_f64();
+            GUEST_LATENCY
+                .with_label_values(&[&self.id.to_string()])
+                .observe(secs);
+            GUEST_BYTES_TOTAL.inc_by(*sizes.get(&idx).unwrap() as u64);
+
+            for h in owned {
+                m.store.data_mut().table.delete(h)?;
+            }
+
+            let out = match res {
+                Err(host_err) => {
+                    tracing::error!(error = ?host_err, mapper=%m.name, "host error in process_log");
+                    return Err(host_err);
+                }
+                Ok(Ok(frames)) => frames,
+                Ok(Err(guest_err)) => {
+                    tracing::warn!(mapper=%m.name, error = ?guest_err, "guest error; skipping");
+                    continue;
+                }
+            };
+
+            if out.is_empty() {
+                tracing::warn!(mapper=%m.name, "mapper produced empty output");
+                continue;
+            }
+
+            plugin_outputs
+                .entry(m.cfg_name.clone())
+                .or_default()
+                .push(BytesMut::from(out.to_bytes()))
+        }
+
+        let upstream_acks = std::mem::take(acks);
+        let mut remaining = upstream_acks;
+
+        for (plugin_name, frames) in plugin_outputs {
+            self.router
+                .forward(
+                    &NodeRef::Plugin { name: plugin_name },
+                    frames,
+                    std::mem::take(&mut remaining),
                 )
-                .await
-                .map_err(|e| anyhow::anyhow!("sink queue full: {e}"))?;
+                .await?;
         }
-        tracing::debug!(
-            target: "sidecar",
-            worker = self.id,
-            events = *events_in_batch,
-            bytes = batch.len(),
-            took_us = start.elapsed().as_micros(),
-            "processed batch"
-        );
 
         batch.clear();
-        *events_in_batch = 0;
+        *total_size = 0;
         Ok(())
     }
 }
@@ -237,11 +201,11 @@ pub struct WorkerPool {
 impl WorkerPool {
     pub async fn new(
         size: usize,
-        engine: wasm::WasmEngine,
-        sink_manager: Arc<SinkManager>,
+        engine: wasm::engine::WasmEngine,
+        components: Vec<(&String, Component)>,
         batch_max_size: usize,
         batch_max_age: Duration,
-        default_sink: Option<Sink>,
+        router: Arc<Router>,
     ) -> anyhow::Result<Self> {
         let mut senders = Vec::with_capacity(size);
         let mut handles = Vec::with_capacity(size);
@@ -251,31 +215,35 @@ impl WorkerPool {
             let (tx, rx) = mpsc::channel::<Record>(ch_capacity);
             senders.push(tx);
 
-            let mut store = engine.make_store();
-            let processor = engine.make_processor(&mut store).await?;
-
-            let start = Instant::now();
-            match processor.call_process_logs(&mut store, b"").await? {
-                Ok(_) => {
-                    tracing::info!(target:"sidecar",
-                        "worker {i} warmup in {} µs", start.elapsed().as_micros());
-                }
-                Err(e) => {
-                    tracing::error!(target:"sidecar",
+            let mut mappers = Mappers::load_all(&engine, &components).await?;
+            if let Some(first) = mappers.mappers.first_mut() {
+                let start = Instant::now();
+                match first
+                    .proc
+                    .tangent_logs_mapper()
+                    .call_metadata(&mut first.store)
+                    .await
+                {
+                    Ok(_) => tracing::info!(
+                        target:"sidecar",
+                        "worker {i} warmup in {} µs",
+                        start.elapsed().as_micros()
+                    ),
+                    Err(e) => tracing::warn!(
+                        target:"sidecar",
                         "worker {i} warmup failed after {} µs: {e}",
-                        start.elapsed().as_micros());
+                        start.elapsed().as_micros()
+                    ),
                 }
             }
 
             let worker = Worker {
                 id: i,
-                sink_manager: Arc::clone(&sink_manager),
                 rx,
-                store,
-                processor,
+                mappers,
                 batch_max_size,
                 batch_max_age,
-                default_sink: default_sink.clone(),
+                router: Arc::clone(&router),
             };
             let h = tokio::spawn(async move {
                 if let Err(e) = worker.run().await {
@@ -288,15 +256,14 @@ impl WorkerPool {
         Ok(Self {
             senders,
             rr: AtomicUsize::new(0),
-            handles: handles,
+            handles,
         })
     }
 
-    pub async fn dispatch(&self, mut job: Record) {
+    pub async fn dispatch(&self, mut job: Record) -> Result<()> {
         let n = self.senders.len();
         if n == 0 {
-            tracing::warn!("worker pool is closed; dropping job");
-            return;
+            anyhow::bail!("worker pool is closed")
         }
         let start = self.rr.fetch_add(1, Ordering::Relaxed) % n;
 
@@ -306,11 +273,8 @@ impl WorkerPool {
         for i in 0..n {
             let idx = (start + i) % n;
             match self.senders[idx].try_send(job) {
-                Ok(()) => return,
-                Err(TrySendError::Full(j)) => {
-                    job = j;
-                }
-                Err(TrySendError::Closed(j)) => {
+                Ok(()) => return Ok(()),
+                Err(TrySendError::Full(j)) | Err(TrySendError::Closed(j)) => {
                     job = j;
                 }
             }
@@ -319,7 +283,10 @@ impl WorkerPool {
         let idx = start;
         if let Err(_e) = self.senders[idx].send(job).await {
             tracing::warn!("all workers unavailable; dropping job");
+            anyhow::bail!("all workers unavailable")
         }
+
+        Ok(())
     }
 
     pub fn close(&mut self) {
@@ -330,29 +297,5 @@ impl WorkerPool {
         for h in self.handles {
             let _ = h.await;
         }
-    }
-}
-
-fn sink_key(s: Sink) -> RouteKey {
-    match s {
-        Sink::S3(s3c) => {
-            return RouteKey {
-                sink_name: s3c.name.clone(),
-                prefix: s3c.key_prefix.clone(),
-            };
-        }
-        Sink::File(fc) => {
-            return RouteKey {
-                sink_name: fc.name.clone(),
-                prefix: None,
-            };
-        }
-        Sink::Blackhole(bc) => {
-            return RouteKey {
-                sink_name: bc.name.clone(),
-                prefix: None,
-            };
-        }
-        Sink::Default(_) => unreachable!(),
     }
 }

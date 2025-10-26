@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct S3Config {
     pub bucket_name: String,
     pub region: Option<String>,
@@ -18,6 +18,6 @@ fn wal_path() -> PathBuf {
     "/tmp/wal".into()
 }
 
-fn max_file_age_seconds() -> u64 {
+const fn max_file_age_seconds() -> u64 {
     60
 }

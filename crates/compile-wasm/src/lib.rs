@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -9,29 +9,35 @@ use which::which;
 
 const WORLD: &str = "processor";
 
-pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf, out: &PathBuf) -> Result<()> {
+pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()> {
     let cfg = Config::from_file(cfg_path)?;
 
     let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
-    let entry_point_path = config_dir.join(&cfg.entry_point);
-
+    let out = config_dir.join(&cfg.runtime.plugins_path).canonicalize()?;
     fs::create_dir_all(&out)?;
 
-    // Build only the entry point
-    let full_out = &out.join("app.component.wasm");
+    for (name, plugin) in cfg.plugins {
+        let entry_point_path = config_dir.join(&plugin.path).canonicalize()?;
+        println!("⚙️ Compiling {}", entry_point_path.display());
 
-    match cfg.module_type.as_str() {
-        "py" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &full_out)?,
-        "go" => run_go_compile(&wit_path, WORLD, &entry_point_path, &full_out)?,
-        ext => anyhow::bail!(
-            "unsupported filetype: {} for wasm entrypoint: {}",
-            ext,
-            entry_point_path.display()
-        ),
+        let full_out = &out.join(format!("{}.component.wasm", name));
+
+        match plugin.module_type.as_str() {
+            "py" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &full_out)?,
+            "go" => run_go_compile(&wit_path, WORLD, &entry_point_path, &full_out)?,
+            ext => anyhow::bail!(
+                "unsupported filetype: {} for wasm entrypoint: {}",
+                ext,
+                entry_point_path.display()
+            ),
+        }
+
+        println!(
+            "✅ Compiled {} → {}",
+            entry_point_path.display(),
+            full_out.display()
+        );
     }
-
-    println!("✅ Compiled {} → {}", cfg.entry_point, full_out.display());
-    println!("   Entry: app.component.wasm");
     Ok(())
 }
 
@@ -59,6 +65,7 @@ fn run_componentize_py(
     let stem = file_stem(&entry_point_path)?;
     let app_module = stem.clone();
     let status = Command::new("componentize-py")
+        .current_dir(&entry_point_path)
         .arg("--wit-path")
         .arg(wit_path)
         .arg("--world")
@@ -91,21 +98,21 @@ fn run_go_compile(
 ) -> Result<()> {
     ensure_tinygo()?;
 
-    let wasm_out = out_component.with_file_name("app.component.wasm");
     let status = Command::new("tinygo")
+        .current_dir(&entry_point_path)
         .arg("build")
         .arg("-x")
         .arg("-target=wasip2")
         .arg("-opt=2")
         .arg("-scheduler=none")
         .arg("-o")
-        .arg(&wasm_out)
+        .arg(&out_component)
         .arg("--wit-package")
         .arg(&wit_path)
         .arg("--wit-world")
         .arg(world)
         .arg("-no-debug")
-        .arg(entry_point_path)
+        .arg(".")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()

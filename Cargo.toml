@@ -8,7 +8,7 @@ prometheus_exporter = "0.8.5"
 lazy_static = "1"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 repository = "https://github.com/telophasehq/tangent"
 homepage = "https://github.com/telophasehq/tangent"
@@ -19,3 +19,6 @@ readme = "README.md"
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+[profile.release]
+debug = true

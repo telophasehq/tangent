@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::sinks::{blackhole, file, s3};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SinkConfig {
     #[serde(flatten)]
     pub common: CommonSinkOptions,
@@ -11,7 +11,7 @@ pub struct SinkConfig {
     pub kind: SinkKind,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum SinkKind {
     #[serde(rename = "s3")]
@@ -22,7 +22,7 @@ pub enum SinkKind {
     Blackhole(blackhole::BlackholeConfig),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CommonSinkOptions {
     #[serde(default)]
     pub compression: Compression,
@@ -40,37 +40,32 @@ pub struct CommonSinkOptions {
     pub default: bool,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Encoding {
+    #[default]
     NDJSON,
     JSON,
     Avro,
     Parquet,
 }
 
-impl Default for Encoding {
-    fn default() -> Self {
-        Encoding::NDJSON
-    }
-}
-
 impl Encoding {
-    pub fn content_type(&self) -> &'static str {
+    pub const fn content_type(&self) -> &'static str {
         match self {
-            Encoding::NDJSON => "application/x-ndjson",
-            Encoding::JSON => "application/json",
-            Encoding::Avro => "application/avro",
-            Encoding::Parquet => "application/vnd.apache.parquet",
+            Self::NDJSON => "application/x-ndjson",
+            Self::JSON => "application/json",
+            Self::Avro => "application/avro",
+            Self::Parquet => "application/vnd.apache.parquet",
         }
     }
 
-    pub fn extension(&self) -> &'static str {
+    pub const fn extension(&self) -> &'static str {
         match self {
-            Encoding::NDJSON => "ndjson",
-            Encoding::JSON => "json",
-            Encoding::Avro => "avro",
-            Encoding::Parquet => "parquet",
+            Self::NDJSON => "ndjson",
+            Self::JSON => "json",
+            Self::Avro => "avro",
+            Self::Parquet => "parquet",
         }
     }
 }
@@ -91,27 +86,27 @@ pub enum Compression {
 
 impl Default for Compression {
     fn default() -> Self {
-        Compression::Zstd {
+        Self::Zstd {
             level: default_zstd_level(),
         }
     }
 }
 
-fn default_gzip_level() -> u32 {
+const fn default_gzip_level() -> u32 {
     6
 }
-fn default_zstd_level() -> i32 {
+const fn default_zstd_level() -> i32 {
     3
 }
 
-pub fn object_max_bytes() -> usize {
+pub const fn object_max_bytes() -> usize {
     134217728
 }
 
-pub fn in_flight_limit() -> usize {
+pub const fn in_flight_limit() -> usize {
     16
 }
 
-fn default_sink() -> bool {
+const fn default_sink() -> bool {
     false
 }

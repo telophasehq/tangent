@@ -1,12 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::sources::common::Decoding;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileConfig {
+pub struct PluginConfig {
+    pub module_type: String,
     pub path: PathBuf,
-
-    #[serde(default)]
-    pub decoding: Decoding,
 }

@@ -1,5 +1,7 @@
 target/
 compiled/
+plugins/
+**/plugins/
 **/__pycache__
 .tangent.yaml
 test_out.json
