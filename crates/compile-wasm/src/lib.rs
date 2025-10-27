@@ -64,8 +64,9 @@ fn run_componentize_py(
     let py_dir = entry_point_path.parent().unwrap_or(Path::new("."));
     let stem = file_stem(&entry_point_path)?;
     let app_module = stem.clone();
+
     let status = Command::new("componentize-py")
-        .current_dir(&entry_point_path)
+        .current_dir(&py_dir)
         .arg("--wit-path")
         .arg(wit_path)
         .arg("--world")

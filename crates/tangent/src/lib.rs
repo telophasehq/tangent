@@ -110,7 +110,7 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
 
     let dag_runtime = DagRuntime::build(&cfg, &config_path).await?;
 
-    let consumer_handles = spawn_consumers(cfg, dag_runtime, ingest_shutdown.clone());
+    let consumer_handles = spawn_consumers(cfg, dag_runtime.clone(), ingest_shutdown.clone());
 
     if !opts.once {
         wait_for_shutdown_signal().await?;
@@ -124,7 +124,13 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
         let _ = tokio::time::timeout(Duration::from_secs(10), h).await;
     }
 
-    info!("waiting on workers and sink_manager to shutdown...");
+    dag_runtime
+        .shutdown(
+            ingest_shutdown,
+            Duration::from_secs(10),
+            Duration::from_secs(60),
+        )
+        .await?;
 
     Ok(())
 }

@@ -24,113 +24,158 @@ use tangent_shared::sources::file;
 
 #[derive(Debug)]
 pub struct TestOptions {
-    pub input: PathBuf,
-    pub expected: PathBuf,
-    pub plugin: PathBuf,
+    pub plugin: Option<String>,
     pub config_path: PathBuf,
 }
 
 pub async fn run(opts: TestOptions) -> Result<()> {
-    let input = opts.input.canonicalize().unwrap_or(opts.input);
-    let expected = opts.expected;
     let cfg = Config::from_file(&opts.config_path)?;
+    let config_root = &opts
+        .config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .canonicalize()?;
 
     let mut rt = RuntimeOptions::default();
     rt.once = true;
 
-    let input_source = SourceConfig::File(file::FileConfig {
-        path: input,
-        decoding: Decoding::default(),
-    });
+    let mut plugins_to_test = Vec::<(String, PluginConfig)>::new();
 
-    let out_file = PathBuf::from_str("test_out.json")?;
-    if out_file.exists() {
-        fs::remove_file(out_file.clone())?;
-    }
+    if opts.plugin.is_some() {
+        let mut found = false;
+        for (name, plugin_cfg) in cfg.plugins {
+            if Some(&name) == opts.plugin.as_ref() {
+                found = true;
+                plugins_to_test.push((name, plugin_cfg));
+                break;
+            }
+        }
 
-    let file_sink = SinkConfig {
-        kind: SinkKind::File(fileSink::FileConfig {
-            path: out_file.clone(),
-        }),
-        common: CommonSinkOptions {
-            compression: Compression::None,
-            encoding: Encoding::NDJSON,
-            object_max_bytes: tangent_shared::sinks::common::object_max_bytes(),
-            in_flight_limit: tangent_shared::sinks::common::in_flight_limit(),
-            default: true,
-        },
-    };
-
-    let plugin_config = PluginConfig {
-        module_type: "".to_string(), // not used
-        path: opts.plugin,
-    };
-
-    let runtime = RuntimeConfig {
-        plugins_path: cfg.runtime.plugins_path,
-        batch_size: 1,
-        batch_age: 1,
-        workers: 1,
-    };
-
-    let entry = Edge {
-        from: NodeRef::Source {
-            name: "input".into(),
-        },
-        to: vec![NodeRef::Plugin {
-            name: "test_plugin".into(),
-        }],
-    };
-
-    let exit = Edge {
-        from: NodeRef::Plugin {
-            name: "test_plugin".into(),
-        },
-        to: vec![NodeRef::Plugin { name: "out".into() }],
-    };
-
-    let mut sinks = BTreeMap::new();
-    sinks.insert(String::from("out"), file_sink);
-
-    let mut sources = BTreeMap::new();
-    sources.insert(String::from("input"), input_source);
-
-    let mut plugins = BTreeMap::new();
-    plugins.insert(String::from("test_plugin"), plugin_config);
-
-    let test_config = tangent_shared::Config {
-        runtime,
-        sources,
-        sinks,
-        plugins,
-        dag: vec![entry, exit],
-    };
-
-    let yaml = serde_yaml::to_string(&test_config)?;
-    fs::write(".test.yaml", yaml)?;
-
-    let cfg_path: PathBuf = ".test.yaml".into();
-
-    tangent_runtime::run(&cfg_path, rt).await?;
-
-    let produced = read_json(&out_file).context("reading produced JSON")?;
-    let expected = read_json(&expected)?;
-    let diffs = diff_lines(&expected, &produced);
-
-    if diffs.is_empty() {
-        info!("✅ test passed: output matches expected");
-        Ok(())
+        if !found {
+            bail!(
+                "plugin {} not found in tangent config",
+                opts.plugin.unwrap()
+            );
+        }
     } else {
-        warn!("❌ test failed: output differs from expected\n{}", diffs);
-        bail!("output differs from expected");
+        for (name, plugin_cfg) in cfg.plugins {
+            plugins_to_test.push((name, plugin_cfg));
+        }
     }
+
+    for (name, plugin_cfg) in plugins_to_test {
+        for test in plugin_cfg.tests {
+            let input = config_root
+                .join(test.input)
+                .canonicalize()
+                .context("test input file")?;
+            let expected = config_root
+                .join(test.expected)
+                .canonicalize()
+                .context("test expected file")?;
+
+            let plugins_path = config_root
+                .join(plugin_cfg.path.clone())
+                .canonicalize()
+                .context("plugins path")?;
+
+            let input_source = SourceConfig::File(file::FileConfig {
+                path: input,
+                decoding: Decoding::default(),
+            });
+
+            let out_file = PathBuf::from_str("test_out.json")?;
+            if out_file.exists() {
+                fs::remove_file(out_file.clone())?;
+            }
+
+            let file_sink = SinkConfig {
+                kind: SinkKind::File(fileSink::FileConfig {
+                    path: out_file.clone(),
+                }),
+                common: CommonSinkOptions {
+                    compression: Compression::None,
+                    encoding: Encoding::NDJSON,
+                    object_max_bytes: tangent_shared::sinks::common::object_max_bytes(),
+                    in_flight_limit: tangent_shared::sinks::common::in_flight_limit(),
+                    default: true,
+                },
+            };
+
+            let runtime = RuntimeConfig {
+                plugins_path: cfg.runtime.plugins_path.clone(),
+                batch_size: 1,
+                batch_age: 1,
+                workers: 1,
+            };
+
+            let entry = Edge {
+                from: NodeRef::Source {
+                    name: "input".into(),
+                },
+                to: vec![NodeRef::Plugin { name: name.clone() }],
+            };
+
+            let exit = Edge {
+                from: NodeRef::Plugin { name: name.clone() },
+                to: vec![NodeRef::Sink {
+                    name: "out".into(),
+                    key_prefix: None,
+                }],
+            };
+
+            let mut sinks = BTreeMap::new();
+            sinks.insert(String::from("out"), file_sink);
+
+            let mut sources = BTreeMap::new();
+            sources.insert(String::from("input"), input_source);
+
+            let plugin_config = PluginConfig {
+                module_type: "".to_string(), // not used
+                path: plugins_path,
+                tests: vec![],
+            };
+
+            let mut plugins = BTreeMap::new();
+            plugins.insert(name.clone(), plugin_config);
+
+            let test_config = tangent_shared::Config {
+                runtime,
+                sources,
+                sinks,
+                plugins,
+                dag: vec![entry, exit],
+            };
+
+            let yaml = serde_yaml::to_string(&test_config)?;
+
+            let test_file = PathBuf::from(".test.yaml");
+            let test_config_file = config_root.join(&test_file);
+            fs::write(&test_config_file, yaml)?;
+
+            tangent_runtime::run(&test_config_file, rt.clone()).await?;
+
+            let produced = read_json(&out_file).context("reading produced JSON")?;
+            let expected = read_json(&expected)?;
+            let diffs = diff_lines(&expected, &produced);
+
+            if diffs.is_empty() {
+                info!("✅ test passed: output matches expected");
+            } else {
+                warn!("❌ test failed: output differs from expected\n{}", diffs);
+                bail!("output differs from expected");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn read_json(path: &Path) -> Result<Value> {
     let f = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
     let reader = BufReader::new(f);
 
-    let v: Value = serde_json::from_reader(reader)?;
+    let v: Value = serde_json::from_reader(reader)
+        .with_context(|| format!("read json from {}", path.display()))?;
     Ok(stabilize(v))
 }
 

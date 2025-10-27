@@ -1,6 +1,4 @@
 use anyhow::{bail, Context, Result};
-use handlebars::Handlebars;
-use serde_json::json;
 use std::{fs, path::Path, process::Command};
 
 use crate::wit_assets;
@@ -55,10 +53,9 @@ pub fn write_embedded_wit(dest: &Path) -> Result<()> {
 
 fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("go.mod"), go_mod_for(name))?;
-    fs::write(dir.join("wrapper.go"), render_go_wrapper(name)?)?;
-    fs::write(dir.join("main.go"), GO_MAIN)?;
+    fs::write(dir.join("main.go"), go_main_for(name))?;
     fs::write(dir.join("Makefile"), GO_MAKEFILE)?;
-    fs::write(dir.join("tangent.yaml"), tangent_config_for("go"))?;
+    fs::write(dir.join("tangent.yaml"), tangent_config_for("go", name))?;
 
     run_go_download(dir)?;
 
@@ -66,12 +63,30 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn scaffold_py(_name: &str, dir: &Path) -> Result<()> {
+fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("pyproject.toml"), PY_PROJECT)?;
     fs::write(dir.join("requirements.txt"), PY_REQUIREMENTS)?;
-    fs::write(dir.join("wrapper.py"), PY_WRAPPER)?;
-    fs::write(dir.join("app.py"), PY_APP)?;
-    fs::write(dir.join("tangent.yaml"), tangent_config_for("py"))?;
+    fs::write(dir.join("mapper.py"), PY_APP)?;
+    fs::write(dir.join("tangent.yaml"), tangent_config_for("py", name))?;
+
+    run_wit_bindgen_py(dir, "processor", "./.tangent/wit/")?;
+    Ok(())
+}
+
+fn run_wit_bindgen_py(cwd: &Path, world: &str, wit_entry: &str) -> Result<()> {
+    let out = Command::new("componentize-py")
+        .args(["-d", &wit_entry, "-w", world, "bindings", "."])
+        .current_dir(cwd)
+        .output()
+        .with_context(|| format!("failed to spawn componentize-py in {}", cwd.display()))?;
+
+    if !out.status.success() {
+        let mut msg = String::from_utf8_lossy(&out.stderr).to_string();
+        if msg.trim().is_empty() {
+            msg = String::from_utf8_lossy(&out.stdout).to_string();
+        }
+        bail!("componentize-py failed:\n{}", msg);
+    }
     Ok(())
 }
 
@@ -130,12 +145,6 @@ fn run_go_download(cwd: &Path) -> Result<()> {
         bail!("go get failed:\n{}", msg);
     }
     Ok(())
-}
-
-fn render_go_wrapper(module: &str) -> anyhow::Result<String> {
-    let mut hb = Handlebars::new();
-    hb.register_template_string("go_wrapper", GO_WRAPPER_TMPL)?;
-    Ok(hb.render("go_wrapper", &json!({ "module": module }))?)
 }
 
 const GITIGNORE: &str = r#"
@@ -226,11 +235,17 @@ tool go.bytecodealliance.org/cmd/wit-bindgen-go
     )
 }
 
-fn tangent_config_for(language: &str) -> String {
+fn tangent_config_for(language: &str, name: &str) -> String {
+    let path = if language == "py" { "app.py" } else { "." };
+
     format!(
         r#"module_type: {language}
-entry_point: .
-batch_size: 1024
+runtime:
+    plugins_path: "plugins/"
+plugins:
+    {name}:
+	    type: {language}
+		path: {path}
 sources:
     socket_main:
         type: socket
@@ -244,14 +259,18 @@ sinks:
     )
 }
 
-const GO_WRAPPER_TMPL: &str = r#"
-package main
+fn go_main_for(module: &str) -> String {
+    let tpl = r#"package main
 
 import (
 	"bytes"
 	"fmt"
+	"math"
+	"strconv"
 	"sync"
-	"{{module}}/internal/tangent/logs/processor"
+	"time"
+	"{module}/internal/tangent/logs/log"
+	"{module}/internal/tangent/logs/mapper"
 
 	"github.com/segmentio/encoding/json"
 
@@ -262,174 +281,102 @@ var (
 	bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 )
 
-type sinkKey struct {
-	name     string
-	prefix   cm.Option[string]
-	sinkType string
-}
-type sinkState struct {
-	key sinkKey
-	buf *bytes.Buffer
-}
-
-type LogOutput struct {
-	Sinks []processor.Sink
-	Items []any
-}
-
-func S3(name string, prefix *string) processor.Sink {
-	if prefix != nil {
-		return processor.SinkS3(processor.S3Sink{Name: name, KeyPrefix: cm.Some(*prefix)})
+func Wire() {
+	mapper.Exports.Metadata = func() mapper.Meta {
+		return mapper.Meta{
+			Name:    "my new plugin",
+			Version: "0.1.3",
+		}
 	}
-	return processor.SinkS3(processor.S3Sink{Name: name, KeyPrefix: cm.None[string]()})
-}
 
-type Handler interface {
-	// Input: slice of objects decoded.
-	// Output: slice of objects to emit.
-	ProcessLog(log []byte) (*LogOutput, error)
-}
+	mapper.Exports.Probe = func() cm.List[mapper.Selector] {
+		return cm.ToList([]mapper.Selector{
+			{
+				Any: cm.ToList([]mapper.Pred{}),
+				All: cm.ToList([]mapper.Pred{}),
+				None: cm.ToList([]mapper.Pred{}),
+			},
+		})
+	}
 
-func Wire(h Handler) {
-	processor.Exports.ProcessLogs = func(input cm.List[uint8]) (r cm.Result[cm.List[processor.Output], cm.List[processor.Output], string]) {
-		in := input.Slice()
+	mapper.Exports.ProcessLogs = func(input cm.List[log.Logview]) (res cm.Result[cm.List[uint8], cm.List[uint8], string]) {
+		buf := bufPool.Get().(*bytes.Buffer)
+		buf.Reset()
 
-		if len(in) == 0 {
-			return
+		var items []log.Logview
+		items = append(items, input.Slice()...)
+		for idx := range items {
+			lv := log.Logview(items[idx])			
 		}
 
-		states := make(map[sinkKey]*sinkState, 4)
-
-		start := 0
-		for start < len(in) {
-			i := bytes.IndexByte(in[start:], '\n')
-			if i < 0 {
-				if err := processBatch(h, states, in[start:]); err != nil {
-					r.SetErr(err.Error())
-
-					return
-				}
-				break
-			}
-			if err := processBatch(h, states, in[start:start+i]); err != nil {
-				r.SetErr(err.Error())
-				return
-			}
-			start += i + 1
-		}
-
-		outputs := make([]processor.Output, 0, len(states))
-		for _, st := range states {
-			var sink processor.Sink
-			switch st.key.sinkType {
-			case "default":
-				sink = processor.SinkDefault(processor.DefaultSink{})
-			case "s3":
-				sink = processor.SinkS3(processor.S3Sink{
-					Name:      st.key.name,
-					KeyPrefix: st.key.prefix,
-				})
-			case "file":
-				sink = processor.SinkFile(processor.FileSink{
-					Name: st.key.name,
-				})
-			case "blackhole":
-				sink = processor.SinkBlackhole(processor.BlackholeSink{
-					Name: st.key.name,
-				})
-			}
-			outputs = append(outputs, processor.Output{
-				Data: cm.ToList(st.buf.Bytes()),
-				Sink: sink,
-			})
-		}
-
-		for _, st := range states {
-			st.buf.Reset()
-			bufPool.Put(st.buf)
-		}
-
-		r.SetOK(cm.ToList(outputs))
+		res.SetOK(cm.ToList(buf.Bytes()))
 		return
 	}
 }
 
-func sinkKeyFrom(s processor.Sink) (sinkKey, error) {
-
-	if s3 := s.S3(); s3 != nil {
-		return sinkKey{name: s3.Name, prefix: s3.KeyPrefix, sinkType: "s3"}, nil
-	} else if fileSink := s.File(); fileSink != nil {
-		return sinkKey{name: fileSink.Name, sinkType: "file"}, nil
-	} else if blackhole := s.Blackhole(); blackhole != nil {
-		return sinkKey{name: blackhole.Name, sinkType: "blackhole"}, nil
-	} else if s.Default() != nil {
-		return sinkKey{sinkType: "default"}, nil
-	}
-
-	return sinkKey{}, fmt.Errorf("unknown sink type")
-}
-
-func processBatch(h Handler, states map[sinkKey]*sinkState, in []byte) error {
-	out, err := h.ProcessLog(in)
-
-	if err != nil {
-		return err
-	}
-
-	if out == nil {
+func getBool(v log.Logview, path string) *bool {
+	opt := v.Get(path)
+	if opt.None() {
 		return nil
 	}
+	s := opt.Value()
+	return s.Boolean()
+}
 
-	sinks := out.Sinks
-	if len(sinks) == 0 {
-		sinks = []processor.Sink{processor.SinkDefault(processor.DefaultSink{})}
+func getInt64(v log.Logview, path string) *int64 {
+	opt := v.Get(path)
+	if opt.None() {
+		return nil
 	}
+	s := opt.Value()
+	return s.Int()
+}
 
-	for _, s := range sinks {
-		k, err := sinkKeyFrom(s)
-		if err != nil {
-			return err
-		}
+func getFloat(v log.Logview, path string) *float64 {
+	opt := v.Get(path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return s.Float()
+}
 
-		st, ok := states[k]
-		if !ok {
-			buf := bufPool.Get().(*bytes.Buffer)
-			buf.Reset()
-			st = &sinkState{key: k, buf: buf}
-			states[k] = st
-		}
+func getString(v log.Logview, path string) *string {
+	opt := v.Get(path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return s.Str()
+}
 
-		enc := json.NewEncoder(st.buf)
-		enc.SetEscapeHTML(false)
-
-		for _, item := range out.Items {
-			if err := enc.Encode(item); err != nil {
-				return err
-			}
+func getStringList(v log.Logview, path string) ([]string, bool) {
+	opt := v.GetList(path)
+	if opt.None() {
+		return nil, false
+	}
+	lst := opt.Value()
+	out := make([]string, 0, lst.Len())
+	data := lst.Slice()
+	for i := 0; i < int(lst.Len()); i++ {
+		if p := data[i].Str(); p != nil {
+			out = append(out, *p)
 		}
 	}
-
-	return nil
+	return out, true
 }
 
 func init() {
-	Wire(Processor{})
+	Wire()
 }
 
 func main() {}
 
+
 "#;
 
-const GO_MAIN: &str = r#"
-package main
-
-type Processor struct{}
-
-func (p Processor) ProcessLog(log []byte) (*LogOutput, error) {
-	return nil, nil
+    tpl.replace("{module}", module)
 }
-
-"#;
 
 const GO_MAKEFILE: &str = "build:\n\t\
 tangent compile-wasm --config tangent.yaml --wit ./.tangent/wit\n\
@@ -450,20 +397,58 @@ const PY_REQUIREMENTS: &str = r#"
 componentize-py>=0.13
 "#;
 
-const PY_WRAPPER: &str = r#"
-
-Implement the functions required by the processor world here
-Example:
-def process_logs(input: bytes) -> bytes:
-return input
-
-"#;
-
 const PY_APP: &str = r#"
+from typing import List
 
-Example module that will be componentized
-Import/define functions referenced by wrapper.py
+import json
+import wit_world
+from wit_world.exports import mapper
+from wit_world.imports import log
 
-def process_logs(input: bytes) -> bytes:
-return input
+
+class Mapper(wit_world.WitWorld):
+    def metadata(self) -> mapper.Meta:
+        return mapper.Meta(name="example-mapper", version="0.1.3")
+
+    def probe(self) -> List[mapper.Selector]:
+        return [mapper.Selector(any=[], all=[], none=[])]
+
+    def process_logs(
+        self,
+        logs: List[log.Logview]
+    ) -> wit_world.Result[bytes, str]:
+        buf = bytearray()
+
+        for lv in logs:
+            with lv:
+                out = {}
+                # Check presence
+                if lv.has("message"):
+                    s = lv.get("message")  # Optional[log.Scalar]
+                    message = s.value if s is not None else None
+                    out.message = message
+
+                # Get string field
+                s = lv.get("host.name")
+                out.host = s.value if s is not None else None
+
+                # Get list field
+                lst = lv.get_list("tags")  # Optional[List[log.Scalar]]
+                out.tags = [x.value for x in lst] if lst is not None else []
+
+                # Get map/object field
+                # Optional[List[Tuple[str, log.Scalar]]]
+                m = lv.get_map("labels")
+                out.labels = {k: v.value for k,
+                              v in m} if m is not None else {}
+
+                # Inspect available keys at a path
+                out.top_keys = lv.keys("")  # top-level keys
+                out.detail_keys = lv.keys("detail")
+
+                buf.extend(json.dumps(out).encode("utf-8") + b"\n")
+
+        return wit_world.Ok(bytes(buf))
+
+
 "#;

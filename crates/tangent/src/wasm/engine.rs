@@ -20,7 +20,6 @@ impl WasmEngine {
             .async_support(true)
             .wasm_simd(true)
             .cranelift_opt_level(wasmtime::OptLevel::Speed)
-            .profiler(wasmtime::ProfilingStrategy::PerfMap)
             .allocation_strategy(wasmtime::InstanceAllocationStrategy::Pooling(
                 wasmtime::PoolingAllocationConfig::default(),
             ));

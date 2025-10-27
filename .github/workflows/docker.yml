@@ -1,13 +1,13 @@
-# .github/workflows/docker.yml
 name: Build & Publish Images
 on:
-  push:
-    branches: [main]
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types:
+      - completed 
 
 jobs:
   build-push:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions: { contents: read, packages: write }
     steps:

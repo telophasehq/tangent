@@ -5,7 +5,7 @@
 <div align="center">
   <a href="https://docs.telophasehq.com">Documentation</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
-  <a href="https://discord.gg/yA8dFdHP">Discord</a>
+  <a href="https://discord.gg/ZUHB3BRa8c">Discord</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
   <a href="https://github.com/telophasehq/tangent/issues/new">Issues</a>
 </div>
@@ -20,9 +20,9 @@ It ingests data from sources, runs transformations inside WASM plugins written i
 Unlike typical ETL or log shippers, Tangent makes it easy to transform data using WASM. Each transform runs in a lightweight sandbox with near-native speed and full language flexibility — no DSLs, no vendor-locked runtimes.
 
 Tangent ships with everything you need to develop, test, and benchmark your own transforms:
-* `tangent scaffold` – generate a plugin boilerplate in Go or Python
-* `tangent compile-wasm` – compile to a .wasm component
-* `tangent test` – validate correctness of transformations
+* `tangent plugin scaffold` – generate a plugin boilerplate in Go or Python
+* `tangent plugin compile` – compile wasm plugin
+* `tangent plugin test` – run plugin tests
 * `tangent bench` – measure throughput and latency before deploying
 * `tangent run` – to start the tangent runtime
 
@@ -63,11 +63,12 @@ docker run --rm --init ghcr.io/telophasehq/tangent-toolchain <command>
 * WASM Plugins
   * [Authoring](https://docs.telophasehq.com/plugins/authoring)
   * [Examples](https://docs.telophasehq.com/plugins/examples)
+  * [Community](https://docs.telophasehq.com/plugins/community)
 * CLI
   * [`tangent run`](https://docs.telophasehq.com/cli/run)
-  * [`tangent scaffold`](https://docs.telophasehq.com/cli/scaffold)
-  * [`tangent compile-wasm`](https://docs.telophasehq.com/cli/compile-wasm)
-  * [`tangent test`](https://docs.telophasehq.com/cli/test)
+  * [`tangent plugins scaffold`](https://docs.telophasehq.com/cli/plugins/scaffold)
+  * [`tangent plugins compile`](https://docs.telophasehq.com/cli/plugins/compile)
+  * [`tangent plugins test`](https://docs.telophasehq.com/cli/plugins/test)
   * [`tangent bench`](https://docs.telophasehq.com/cli/bench)
   * [`tangent.yaml`](https://docs.telophasehq.com/cli/tangent-yaml)
 * Sources

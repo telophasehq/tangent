@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 use tangent_shared::{dag::NodeRef, Config};
-use tokio::{task::JoinHandle, time::timeout};
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
@@ -104,24 +104,28 @@ impl DagRuntime {
 
     pub async fn shutdown(
         self,
-        consumers: Vec<JoinHandle<()>>,
         cancel: CancellationToken,
-        consumer_timeout: Duration,
         worker_timeout: Duration,
         sink_timeout: Duration,
     ) -> Result<()> {
         cancel.cancel();
 
-        for h in consumers {
-            let _ = timeout(consumer_timeout, h).await;
-        }
+        let Self {
+            router,
+            pool,
+            sink_manager,
+        } = self;
 
-        let mut pool_owned = Arc::try_unwrap(self.pool)
+        tracing::info!("waiting on workers to shutdown...");
+        let mut pool_owned = Arc::try_unwrap(pool)
             .map_err(|_| anyhow!("WorkerPool still has refs; drop all clones before shutdown"))?;
         pool_owned.close();
         let _ = timeout(worker_timeout, pool_owned.join()).await;
 
-        let sink_owned = Arc::try_unwrap(self.sink_manager)
+        drop(router);
+
+        tracing::info!("waiting on sink manager to shutdown...");
+        let sink_owned = Arc::try_unwrap(sink_manager)
             .map_err(|_| anyhow!("SinkManager still has refs; drop all clones before shutdown"))?;
         let _ = timeout(sink_timeout, sink_owned.join()).await;
 

@@ -4,4 +4,5 @@ plugins/
 **/plugins/
 **/__pycache__
 .tangent.yaml
-test_out.json
+**/test_out.json
+**/.test.yaml

@@ -5,6 +5,12 @@ plugins:
   zeek:
     module_type: go
     path: ../../examples/zeek/
+    tests:
+      - input: ../../examples/zeek/tests/conn.json
+        expected:  ../../examples/zeek/tests/conn_out.json
+  python:
+    module_type: py
+    path: ../../examples/python/mapper.py
 sources:
   socket_main:
     type: socket
