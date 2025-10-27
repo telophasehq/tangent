@@ -126,22 +126,31 @@ func Wire() {
 				endTime = timeMs + *duration
 			}
 
-			origP := getInt64(lv, "id.orig_p")
-			origH := getString(lv, "id.orig_h")
-			respH := getString(lv, "id.resp_h")
-			respP := getInt64(lv, "id.resp_p")
+			var origP, respP *int
+			var origH, respH *string
 
-			src := toNetEndpoint(*origH, int(*origP))
-			dst := toNetEndpoint(*respH, int(*respP))
+			// origP := getInt64(lv, "id.orig_p")
+			// origH := getString(lv, "id.orig_h")
+			// respH := getString(lv, "id.resp_h")
+			// respP := getInt64(lv, "id.resp_p")
 
-			if srcMac := getString(lv, "orig_l2_addr"); srcMac != nil {
-				src.Mac = srcMac
+			var src, dst *v1_5_0.NetworkEndpoint
+			if origH != nil && origP != nil {
+				src = toNetEndpoint(*origH, int(*origP))
+
+				if srcMac := getString(lv, "orig_l2_addr"); srcMac != nil {
+					src.Mac = srcMac
+				}
 			}
-			if dstMac := getString(lv, "resp_l2_addr"); dstMac != nil {
-				dst.Mac = dstMac
-			}
-			if cc := getString(lv, "resp_cc"); cc != nil {
-				dst.Location = &v1_5_0.GeoLocation{Country: cc}
+
+			if respH != nil && respP != nil {
+				dst = toNetEndpoint(*respH, int(*respP))
+				if dstMac := getString(lv, "resp_l2_addr"); dstMac != nil {
+					dst.Mac = dstMac
+				}
+				if cc := getString(lv, "resp_cc"); cc != nil {
+					dst.Location = &v1_5_0.GeoLocation{Country: cc}
+				}
 			}
 
 			proto := getString(lv, "proto")
@@ -263,13 +272,13 @@ func Wire() {
 			unmapped.SuriIDs = suriIDs
 
 			var sp SPCap
-			sp.Trigger = getString(lv, "spcap.trigger")
+			// sp.Trigger = getString(lv, "spcap.trigger")
 
-			sp.URL = getString(lv, "spcap.url")
+			// sp.URL = getString(lv, "spcap.url")
 
-			if rule := getInt64(lv, "spcap.rule"); rule != nil {
-				sp.Rule = rule
-			}
+			// if rule := getInt64(lv, "spcap.rule"); rule != nil {
+			// 	sp.Rule = rule
+			// }
 
 			if localOrig != nil {
 				unmapped.LocalOrig = localOrig
