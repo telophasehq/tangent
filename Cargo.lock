@@ -902,7 +902,6 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
- "serde",
  "wasm-bindgen",
  "windows-link 0.2.0",
 ]
@@ -4097,7 +4096,6 @@ dependencies = [
  "aws-smithy-types",
  "base64 0.22.1",
  "bytes",
- "chrono",
  "clap",
  "console-subscriber",
  "flate2",

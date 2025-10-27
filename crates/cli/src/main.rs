@@ -62,7 +62,7 @@ enum Commands {
         object_prefix: Option<String>,
     },
 
-    Plugin {
+    Plugins {
         #[command(subcommand)]
         command: PluginCommands,
     },
@@ -139,7 +139,7 @@ async fn main() -> Result<()> {
             tangent_bench::run(&config, opts).await?;
         }
 
-        Commands::Plugin { command } => match command {
+        Commands::Plugins { command } => match command {
             PluginCommands::Compile { config, wit } => {
                 // resolve to absolute paths to help downstream error messages
                 let cfg = config.canonicalize().unwrap_or(config);

@@ -63,11 +63,12 @@ docker run --rm --init ghcr.io/telophasehq/tangent-toolchain <command>
 * WASM Plugins
   * [Authoring](https://docs.telophasehq.com/plugins/authoring)
   * [Examples](https://docs.telophasehq.com/plugins/examples)
+  * [Community](https://docs.telophasehq.com/plugins/community)
 * CLI
   * [`tangent run`](https://docs.telophasehq.com/cli/run)
-  * [`tangent scaffold`](https://docs.telophasehq.com/cli/scaffold)
-  * [`tangent compile-wasm`](https://docs.telophasehq.com/cli/compile-wasm)
-  * [`tangent test`](https://docs.telophasehq.com/cli/test)
+  * [`tangent plugins scaffold`](https://docs.telophasehq.com/cli/plugins/scaffold)
+  * [`tangent plugins compile`](https://docs.telophasehq.com/cli/plugins/compile)
+  * [`tangent plugins test`](https://docs.telophasehq.com/cli/plugins/test)
   * [`tangent bench`](https://docs.telophasehq.com/cli/bench)
   * [`tangent.yaml`](https://docs.telophasehq.com/cli/tangent-yaml)
 * Sources

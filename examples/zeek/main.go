@@ -45,7 +45,7 @@ func Wire() {
 	mapper.Exports.Metadata = func() mapper.Meta {
 		return mapper.Meta{
 			Name:    "zeek-conn → ocsf.network_activity",
-			Version: "0.1.0",
+			Version: "0.1.3",
 		}
 	}
 
