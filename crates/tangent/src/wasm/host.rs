@@ -70,6 +70,10 @@ impl JsonLogView {
 
     pub fn lookup<'a>(&'a self, path: &str) -> Option<&'a BorrowedValue<'a>> {
         let mut v = &self.0.doc;
+
+        if let Some(val) = v.get(path) {
+            return Some(val);
+        }
         for seg in path.split('.') {
             if let Some((key, bracket)) = seg.split_once('[') {
                 v = v.get(key)?;

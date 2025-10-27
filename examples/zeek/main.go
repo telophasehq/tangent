@@ -126,13 +126,10 @@ func Wire() {
 				endTime = timeMs + *duration
 			}
 
-			var origP, respP *int
-			var origH, respH *string
-
-			// origP := getInt64(lv, "id.orig_p")
-			// origH := getString(lv, "id.orig_h")
-			// respH := getString(lv, "id.resp_h")
-			// respP := getInt64(lv, "id.resp_p")
+			origP := getInt64(lv, "id.orig_p")
+			origH := getString(lv, "id.orig_h")
+			respH := getString(lv, "id.resp_h")
+			respP := getInt64(lv, "id.resp_p")
 
 			var src, dst *v1_5_0.NetworkEndpoint
 			if origH != nil && origP != nil {
@@ -272,13 +269,13 @@ func Wire() {
 			unmapped.SuriIDs = suriIDs
 
 			var sp SPCap
-			// sp.Trigger = getString(lv, "spcap.trigger")
+			sp.Trigger = getString(lv, "spcap.trigger")
 
-			// sp.URL = getString(lv, "spcap.url")
+			sp.URL = getString(lv, "spcap.url")
 
-			// if rule := getInt64(lv, "spcap.rule"); rule != nil {
-			// 	sp.Rule = rule
-			// }
+			if rule := getInt64(lv, "spcap.rule"); rule != nil {
+				sp.Rule = rule
+			}
 
 			if localOrig != nil {
 				unmapped.LocalOrig = localOrig
