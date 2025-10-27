@@ -5,7 +5,6 @@ go 1.24
 toolchain go1.24.7
 
 require (
-	github.com/buger/jsonparser v1.1.1
 	github.com/segmentio/encoding v0.5.3
 	github.com/telophasehq/go-ocsf v0.2.1
 	go.bytecodealliance.org/cm v0.3.0

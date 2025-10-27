@@ -20,16 +20,6 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Compile a WASM component from a config (py via componentize-py; go via TinyGo)
-    CompileWasm {
-        /// Path to YAML config (must contain entry_point, module_type)
-        #[arg(long, value_name = "FILE")]
-        config: PathBuf,
-        /// Path to WIT directory (folder with the `processor` world)
-        #[arg(long, default_value = "./wit", value_name = "DIR")]
-        wit: PathBuf,
-    },
-
     Run {
         /// Path to YAML config
         #[arg(long, value_name = "FILE")]
@@ -72,30 +62,41 @@ enum Commands {
         object_prefix: Option<String>,
     },
 
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum PluginCommands {
+    /// Scaffold a new plugin project
     Scaffold {
         /// Project name (folder will be created with this name)
         #[arg(long)]
         name: String,
-        /// Language: go|py   (more later)
+        /// Language: go|py (more later)
         #[arg(long)]
         lang: String,
     },
-
+    /// Test a plugin with input/expected fixtures
     Test {
-        /// NDJSON/JSON fixture file to feed into the runtime
-        #[arg(long, value_name = "FILE")]
-        input: PathBuf,
-
-        /// Expected NDJSON file
-        #[arg(long, value_name = "FILE")]
-        expected: PathBuf,
-
-        /// Expected plugin
-        #[arg(long, value_name = "FILE")]
-        plugin: PathBuf,
-
+        /// Test a specific plugin
+        #[arg(long)]
+        plugin: Option<String>,
+        /// Runtime config
         #[arg(long, value_name = "FILE")]
         config: PathBuf,
+    },
+
+    /// Compile a WASM component from a config (py via componentize-py; go via TinyGo)
+    Compile {
+        /// Path to YAML config (must contain entry_point, module_type)
+        #[arg(long, value_name = "FILE")]
+        config: PathBuf,
+        /// Path to WIT directory (folder with the `processor` world)
+        #[arg(long, default_value = "./wit", value_name = "DIR")]
+        wit: PathBuf,
     },
 }
 
@@ -107,13 +108,6 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::CompileWasm { config, wit } => {
-            // resolve to absolute paths to help downstream error messages
-            let cfg = config.canonicalize().unwrap_or(config);
-            let wit = wit.canonicalize().unwrap_or(wit);
-            compile_wasm::compile_from_config(&cfg, &wit)?;
-        }
-
         Commands::Run { config, once } => {
             let cfg = config.canonicalize().unwrap_or(config);
             let opts = RuntimeOptions {
@@ -144,22 +138,24 @@ async fn main() -> Result<()> {
             };
             tangent_bench::run(&config, opts).await?;
         }
-        Commands::Scaffold { name, lang } => scaffold::scaffold(&name, &lang)?,
-        Commands::Test {
-            input,
-            expected,
-            plugin,
-            config,
-        } => {
-            let config = config.canonicalize().unwrap_or(config);
-            test::run(test::TestOptions {
-                input,
-                expected,
-                plugin,
-                config_path: config,
-            })
-            .await?;
-        }
+
+        Commands::Plugin { command } => match command {
+            PluginCommands::Compile { config, wit } => {
+                // resolve to absolute paths to help downstream error messages
+                let cfg = config.canonicalize().unwrap_or(config);
+                let wit = wit.canonicalize().unwrap_or(wit);
+                compile_wasm::compile_from_config(&cfg, &wit)?;
+            }
+            PluginCommands::Scaffold { name, lang } => scaffold::scaffold(&name, &lang)?,
+            PluginCommands::Test { plugin, config } => {
+                let config = config.canonicalize().unwrap_or(config);
+                test::run(test::TestOptions {
+                    plugin,
+                    config_path: config,
+                })
+                .await?;
+            }
+        },
     }
 
     Ok(())
