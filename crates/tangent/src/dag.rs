@@ -120,14 +120,27 @@ impl DagRuntime {
         let mut pool_owned = Arc::try_unwrap(pool)
             .map_err(|_| anyhow!("WorkerPool still has refs; drop all clones before shutdown"))?;
         pool_owned.close();
-        let _ = timeout(worker_timeout, pool_owned.join()).await;
+        match timeout(worker_timeout, pool_owned.join()).await {
+            Err(e) => {
+                tracing::warn!(?e, "pool shutdown timeout exceeded. Logs may be dropped.")
+            }
+            Ok(_) => (),
+        }
 
         drop(router);
 
         tracing::info!("waiting on sink manager to shutdown...");
         let sink_owned = Arc::try_unwrap(sink_manager)
             .map_err(|_| anyhow!("SinkManager still has refs; drop all clones before shutdown"))?;
-        let _ = timeout(sink_timeout, sink_owned.join()).await;
+        match timeout(sink_timeout, sink_owned.join()).await {
+            Err(e) => {
+                tracing::warn!(
+                    ?e,
+                    "sink manager shutdown timeout exceeded. Logs may be dropped."
+                )
+            }
+            Ok(_) => (),
+        }
 
         Ok(())
     }

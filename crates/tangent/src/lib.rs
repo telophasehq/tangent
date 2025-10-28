@@ -121,14 +121,22 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
 
     info!("waiting on consumers to shutdown...");
     for h in consumer_handles {
-        let _ = tokio::time::timeout(Duration::from_secs(10), h).await;
+        match tokio::time::timeout(Duration::from_secs(30), h).await {
+            Err(e) => {
+                tracing::warn!(
+                    ?e,
+                    "consumer shutdown timeout exceeded. Logs may be dropped."
+                )
+            }
+            Ok(_) => (),
+        }
     }
 
     dag_runtime
         .shutdown(
             ingest_shutdown,
-            Duration::from_secs(10),
-            Duration::from_secs(60),
+            Duration::from_secs(120),
+            Duration::from_secs(120),
         )
         .await?;
 
