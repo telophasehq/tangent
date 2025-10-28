@@ -2,6 +2,8 @@ use anyhow::Result;
 use std::path::PathBuf;
 use tangent_shared::{sources::common::SourceConfig, Config};
 
+use crate::metrics::Stats;
+
 pub mod metrics;
 pub mod msk;
 pub mod socket;
@@ -25,6 +27,9 @@ pub struct BenchOptions {
     /// For S3 + SQS bench
     pub bucket: Option<String>,
     pub object_prefix: Option<String>,
+
+    // disable metrics. Only use if benchmarking outside of tangent run.
+    pub disable_metrics: bool,
 }
 
 impl Default for BenchOptions {
@@ -38,6 +43,7 @@ impl Default for BenchOptions {
             metrics_url: "http://127.0.0.1:9184/metrics".to_string(),
             bucket: None,
             object_prefix: None,
+            disable_metrics: false,
         }
     }
 }
@@ -57,6 +63,7 @@ pub async fn run_with_config(cfg: &Config, opts: BenchOptions) -> Result<()> {
         opts.payload,
         opts.bucket.clone(),
         opts.object_prefix.clone(),
+        opts.disable_metrics,
     )
     .await?;
 
@@ -72,10 +79,14 @@ pub async fn run_one_payload(
     payload: PathBuf,
     bucket: Option<String>,
     obj_prefix: Option<String>,
+    disable_metrics: bool,
 ) -> Result<()> {
     for src in &cfg.sources {
         let pd = payload.clone();
-        let before = metrics::scrape_stats(metrics_url).await?;
+        let mut before: Option<Stats> = None;
+        if !disable_metrics {
+            before = Some(metrics::scrape_stats(metrics_url).await?);
+        }
         let t0 = std::time::Instant::now();
 
         let name = src.0;
@@ -114,51 +125,54 @@ pub async fn run_one_payload(
             SourceConfig::File(_) => unimplemented!("not implemented"),
         }
 
-        let drained = metrics::wait_for_drain(metrics_url).await?;
-        let elapsed = t0.elapsed().as_secs_f64();
+        if !disable_metrics {
+            let elapsed = t0.elapsed().as_secs_f64();
+            let before = before.unwrap();
+            let drained = metrics::scrape_stats(metrics_url).await?;
 
-        let in_bytes = (drained.consumer_bytes - before.consumer_bytes) as f64;
-        let out_bytes = (drained.sink_bytes - before.sink_bytes) as f64;
-        let out_bytes_uncompressed =
-            (drained.sink_bytes_uncompressed - before.sink_bytes_uncompressed) as f64;
-        let amp = if in_bytes > 0.0 {
-            out_bytes / in_bytes
-        } else {
-            0.0
-        };
+            let in_bytes = (drained.consumer_bytes - before.consumer_bytes) as f64;
+            let out_bytes = (drained.sink_bytes - before.sink_bytes) as f64;
+            let out_bytes_uncompressed =
+                (drained.sink_bytes_uncompressed - before.sink_bytes_uncompressed) as f64;
+            let amp = if in_bytes > 0.0 {
+                out_bytes / in_bytes
+            } else {
+                0.0
+            };
 
-        let in_mibs = in_bytes / (1024.0 * 1024.0);
-        let out_mibs = out_bytes / (1024.0 * 1024.0);
-        let out_mibs_uncompressed = out_bytes_uncompressed / (1024.0 * 1024.0);
-        let in_mibs_s = in_mibs / elapsed;
-        let out_mibs_s = out_mibs / elapsed;
-        let out_mibs_uncompressed_s = out_mibs_uncompressed / elapsed;
+            let in_mibs = in_bytes / (1024.0 * 1024.0);
+            let out_mibs = out_bytes / (1024.0 * 1024.0);
+            let out_mibs_uncompressed = out_bytes_uncompressed / (1024.0 * 1024.0);
+            let in_mibs_s = in_mibs / elapsed;
+            let out_mibs_s = out_mibs / elapsed;
+            let out_mibs_uncompressed_s = out_mibs_uncompressed / elapsed;
 
-        println!(
+            println!(
             "end-to-end: uploaded={:.2} MiB ({:.2} MiB uncompressed) over {:.2}s → {:.2} MiB/s ({:.2} MiB/s uncompressed) (amplification x{:.5})",
             out_mibs, out_mibs_uncompressed, elapsed, out_mibs_s, out_mibs_uncompressed_s, amp
         );
-        println!(
-            "producer bytes (consumed): {:.2} MiB → {:.2} MiB/s",
-            in_mibs, in_mibs_s
-        );
+            println!(
+                "producer bytes (consumed): {:.2} MiB → {:.2} MiB/s",
+                in_mibs, in_mibs_s
+            );
 
-        let guest_bytes_delta = drained.guest_bytes - before.guest_bytes;
-        let guest_sum_delta = drained.guest_seconds_sum - before.guest_seconds_sum;
-        let guest_cnt_delta = drained.guest_seconds_count - before.guest_seconds_count;
+            let guest_bytes_delta = drained.guest_bytes - before.guest_bytes;
+            let guest_sum_delta = drained.guest_seconds_sum - before.guest_seconds_sum;
+            let guest_cnt_delta = drained.guest_seconds_count - before.guest_seconds_count;
 
-        let guest_avg_ms = if guest_cnt_delta > 0.0 {
-            (guest_sum_delta / guest_cnt_delta) * 1_000.0
-        } else {
-            0.0
-        };
+            let guest_avg_ms = if guest_cnt_delta > 0.0 {
+                (guest_sum_delta / guest_cnt_delta) * 1_000.0
+            } else {
+                0.0
+            };
 
-        println!(
-            "guest: bytes_in={:.2} MiB, avg_latency={:.3} ms (over {:.0} calls)",
-            guest_bytes_delta / (1024.0 * 1024.0),
-            guest_avg_ms,
-            guest_cnt_delta
-        );
+            println!(
+                "guest: bytes_in={:.2} MiB, avg_latency={:.3} ms (over {:.0} calls)",
+                guest_bytes_delta / (1024.0 * 1024.0),
+                guest_avg_ms,
+                guest_cnt_delta
+            );
+        }
     }
 
     Ok(())

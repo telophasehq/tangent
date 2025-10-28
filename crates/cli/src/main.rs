@@ -60,6 +60,10 @@ enum Commands {
 
         #[arg(long)]
         object_prefix: Option<String>,
+
+        /// disable metrics. Only use if benchmarking outside of tangent run.
+        #[arg(long, default_value_t = false)]
+        disable_metrics: bool,
     },
 
     Plugin {
@@ -125,6 +129,7 @@ async fn main() -> Result<()> {
             metrics_url,
             bucket,
             object_prefix,
+            disable_metrics,
         } => {
             let opts = BenchOptions {
                 config_path: Some(config.clone()),
@@ -135,6 +140,7 @@ async fn main() -> Result<()> {
                 metrics_url,
                 bucket,
                 object_prefix,
+                disable_metrics,
             };
             tangent_bench::run(&config, opts).await?;
         }

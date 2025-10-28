@@ -40,15 +40,3 @@ pub async fn scrape_stats(url: &str) -> anyhow::Result<Stats> {
         guest_seconds_count: sum_exact("tangent_guest_seconds_count"),
     })
 }
-
-pub async fn wait_for_drain(url: &str) -> anyhow::Result<Stats> {
-    tracing::info!("waiting for drain");
-
-    loop {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        let now = scrape_stats(url).await?;
-        if now.inflight == 0.0 && now.wal_pending == 0.0 {
-            return Ok(now);
-        }
-    }
-}
