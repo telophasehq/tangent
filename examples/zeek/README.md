@@ -4,7 +4,7 @@ Use the Zeek Tangent plugin.
 
 ## Compile
 ```bash
-tangent plugin compile --config tangent.yaml --wit ./.tangent/wit
+tangent plugin compile --config tangent.yaml
 ```
 
 ## Test
@@ -23,10 +23,16 @@ tangent run --config tangent.yaml
 tangent bench --config tangent.yaml --seconds 30 --payload tests/input.json
 ```
 
-## Build
+
+## Using Makefile
 ```bash
-make build
+# build and test
+make test
+
+# build and run
+make run
 ```
+
 
 
 

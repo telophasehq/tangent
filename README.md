@@ -13,11 +13,9 @@
 ### [Read the docs →](https://docs.telophasehq.com)
 
 ## What is Tangent?
-Tangent is a WebAssembly-powered log pipeline and toolkit for developers. It ships as a single executable, `tangent`.
+Tangent is a WebAssembly‑powered stream processor & toolkit that treats **User‑Defined Functions** (“plugins”) as first‑class citizens.
 
-It ingests data from sources, runs transformations inside WASM plugins written in Go or Python, and ships to any sink.
-
-Unlike typical ETL or log shippers, Tangent makes it easy to transform data using WASM. Each transform runs in a lightweight sandbox with near-native speed and full language flexibility — no DSLs, no vendor-locked runtimes.
+Plugins run in a lightweight sandbox (WASM) with near-native speed and full language flexibility — no DSLs, no vendor-locked runtimes. Plugins are designed to be shareable, so transforming data from vendors to common schemas (e.g. guardduty findings -> OCSF) can be written once and shared with the community.
 
 Tangent ships with everything you need to develop, test, and benchmark your own transforms:
 * `tangent plugin scaffold` – generate a plugin boilerplate in Go or Python
@@ -27,15 +25,11 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 * `tangent run` – to start the tangent runtime
 
 ## Why use Tangent?
-Tangent is designed for teams that need real transformations at scale, not just log forwarding.
+1. **Use real languages, not DSLs** – Real code > DSL. Reviewable, testable, LLM‑friendly.
 
-1. **Use real languages, not DSLs** – Transform complex schemas like OCSF using full programming languages with type safety, imports, and tests. It’s easier to debug, review, and co-develop with LLMs.
+2. **Catch breakage before prod** — `tangent plugin test` for correctness; `tangent bench` for throughput/latency.
 
-2. **Built-in performance and correctness checks** – With tangent test and tangent bench, you can verify both logic and throughput before your plugin hits production. No more regressions that silently slow your pipeline.
-
-3. **Composable and shareable** – We want data transformations to be easy to write and _share_. You can publish and discover open-source transforms in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins).
-
-4. **Warehouse-native output** – Tangent lands data directly in object storage like S3. We are actively working on Iceberg and Delta Lake support.
+3. **Composable and shareable** – We want data transformations to be easy to write and _share_. You can publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins).
 
 ## Install
 ```bash
@@ -43,7 +37,7 @@ Tangent is designed for teams that need real transformations at scale, not just 
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/telophasehq/tangent/releases/download/latest/tangent-cli-installer.sh | sh
 
 # Homebrew
-brew tap telophashq/telophase
+brew tap telophasehq/telophase
 brew install tangent-cli
 
 # cargo

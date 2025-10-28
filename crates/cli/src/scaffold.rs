@@ -3,6 +3,15 @@ use std::{fs, path::Path, process::Command};
 
 use crate::wit_assets;
 
+const GO_AGENTS_MD: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/go_Agents.md"
+));
+const PY_AGENTS_MD: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/py_Agents.md"
+));
+
 pub fn scaffold(name: &str, lang: &str) -> Result<()> {
     let proj_dir = Path::new(name);
     if proj_dir.exists() {
@@ -46,6 +55,9 @@ pub fn write_embedded_wit(dest: &Path) -> Result<()> {
                 fs::create_dir_all(dest.join(d.path()))?;
             }
             include_dir::DirEntry::File(f) => {
+                if f.path().extension().is_some_and(|e| e == ".md") {
+                    continue;
+                }
                 let out = dest.join(f.path());
                 if let Some(parent) = out.parent() {
                     fs::create_dir_all(parent)?;
@@ -64,6 +76,7 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     fs::create_dir(dir.join("tangenthelpers"))?;
     fs::write(dir.join("tangenthelpers/helpers.go"), go_helpers_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("go", name))?;
+    fs::write(dir.join("Agents.md"), GO_AGENTS_MD)?;
 
     run_go_download(dir)?;
 
@@ -76,6 +89,7 @@ fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("requirements.txt"), PY_REQUIREMENTS)?;
     fs::write(dir.join("mapper.py"), PY_APP)?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("py", name))?;
+    fs::write(dir.join("Agents.md"), PY_AGENTS_MD)?;
 
     run_wit_bindgen_py(dir, "processor", ".tangent/wit/")?;
     Ok(())

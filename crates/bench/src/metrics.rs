@@ -1,5 +1,4 @@
 use reqwest;
-use std::time::Duration;
 
 pub struct Stats {
     pub sink_bytes: f64,
