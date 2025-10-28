@@ -1,4 +1,7 @@
 build:
-	tangent compile-wasm --config tangent.yaml --wit ../../assets/wit/
+	tangent plugin compile --config tangent.yaml --wit ./.tangent/wit
 
-.PHONY: build
+test: build
+	tangent plugin test --config tangent.yaml
+
+.PHONY: build test

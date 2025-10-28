@@ -13,11 +13,17 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
     let cfg = Config::from_file(cfg_path)?;
 
     let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
-    let out = config_dir.join(&cfg.runtime.plugins_path).canonicalize()?;
+    let out = config_dir
+        .join(&cfg.runtime.plugins_path)
+        .canonicalize()
+        .with_context(|| "configured plugins path")?;
     fs::create_dir_all(&out)?;
 
     for (name, plugin) in cfg.plugins {
-        let entry_point_path = config_dir.join(&plugin.path).canonicalize()?;
+        let entry_point_path = config_dir
+            .join(&plugin.path)
+            .canonicalize()
+            .with_context(|| "configured plugin path")?;
         println!("⚙️ Compiling {}", entry_point_path.display());
 
         let full_out = &out.join(format!("{}.component.wasm", name));
@@ -62,8 +68,7 @@ fn run_componentize_py(
     ensure_componentize_available()?;
 
     let py_dir = entry_point_path.parent().unwrap_or(Path::new("."));
-    let stem = file_stem(&entry_point_path)?;
-    let app_module = stem.clone();
+    let app_module = file_stem(&entry_point_path)?;
 
     let status = Command::new("componentize-py")
         .current_dir(&py_dir)

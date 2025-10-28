@@ -9,6 +9,7 @@ import (
 	"time"
 	"zeek/internal/tangent/logs/log"
 	"zeek/internal/tangent/logs/mapper"
+	"zeek/tangenthelpers"
 
 	"github.com/segmentio/encoding/json"
 
@@ -74,8 +75,8 @@ func Wire() {
 		items = append(items, input.Slice()...)
 		for idx := range items {
 			lv := log.Logview(items[idx])
-			rawTS := getString(lv, "ts")
-			rawWTS := getString(lv, "_write_ts")
+			rawTS := tangenthelpers.GetString(lv, "ts")
+			rawWTS := tangenthelpers.GetString(lv, "_write_ts")
 
 			ts, err := time.Parse(time.RFC3339Nano, *rawTS)
 			if err != nil {
@@ -97,12 +98,12 @@ func Wire() {
 			var severityID int32 = 1
 			typeUID := int64(classUID)*100 + int64(activityID)
 
-			uid := getString(lv, "uid")
-			path := getString(lv, "_path")
-			systemName := getString(lv, "_system_name")
+			uid := tangenthelpers.GetString(lv, "uid")
+			path := tangenthelpers.GetString(lv, "_path")
+			systemName := tangenthelpers.GetString(lv, "_system_name")
 
-			localOrig := getBool(lv, "local_orig")
-			localResp := getBool(lv, "local_resp")
+			localOrig := tangenthelpers.GetBool(lv, "local_orig")
+			localResp := tangenthelpers.GetBool(lv, "local_resp")
 
 			var directionID *int32
 			switch {
@@ -115,7 +116,7 @@ func Wire() {
 			}
 
 			var duration *int64
-			if d := getFloat(lv, "duration"); d != nil {
+			if d := tangenthelpers.GetFloat(lv, "duration"); d != nil {
 				ms := int64(math.Round(*d))
 				duration = &ms
 			}
@@ -126,31 +127,31 @@ func Wire() {
 				endTime = timeMs + *duration
 			}
 
-			origP := getInt64(lv, "id.orig_p")
-			origH := getString(lv, "id.orig_h")
-			respH := getString(lv, "id.resp_h")
-			respP := getInt64(lv, "id.resp_p")
+			origP := tangenthelpers.GetInt64(lv, "id.orig_p")
+			origH := tangenthelpers.GetString(lv, "id.orig_h")
+			respH := tangenthelpers.GetString(lv, "id.resp_h")
+			respP := tangenthelpers.GetInt64(lv, "id.resp_p")
 
 			var src, dst *v1_5_0.NetworkEndpoint
 			if origH != nil && origP != nil {
 				src = toNetEndpoint(*origH, int(*origP))
 
-				if srcMac := getString(lv, "orig_l2_addr"); srcMac != nil {
+				if srcMac := tangenthelpers.GetString(lv, "orig_l2_addr"); srcMac != nil {
 					src.Mac = srcMac
 				}
 			}
 
 			if respH != nil && respP != nil {
 				dst = toNetEndpoint(*respH, int(*respP))
-				if dstMac := getString(lv, "resp_l2_addr"); dstMac != nil {
+				if dstMac := tangenthelpers.GetString(lv, "resp_l2_addr"); dstMac != nil {
 					dst.Mac = dstMac
 				}
-				if cc := getString(lv, "resp_cc"); cc != nil {
+				if cc := tangenthelpers.GetString(lv, "resp_cc"); cc != nil {
 					dst.Location = &v1_5_0.GeoLocation{Country: cc}
 				}
 			}
 
-			proto := getString(lv, "proto")
+			proto := tangenthelpers.GetString(lv, "proto")
 			var pn int
 			var pName string
 			if proto != nil {
@@ -161,7 +162,7 @@ func Wire() {
 				p := pName
 				connInfo.ProtocolName = &p
 			}
-			if communityUid := getString(lv, "community_id"); communityUid != nil {
+			if communityUid := tangenthelpers.GetString(lv, "community_id"); communityUid != nil {
 				connInfo.CommunityUid = communityUid
 			}
 			if pn != 0 {
@@ -171,7 +172,7 @@ func Wire() {
 			if directionID != nil {
 				connInfo.DirectionId = *directionID
 			}
-			if h := getString(lv, "history"); h != nil {
+			if h := tangenthelpers.GetString(lv, "history"); h != nil {
 				connInfo.FlagHistory = h
 			}
 			if connInfo.ProtocolName == nil && connInfo.ProtocolNum == nil && connInfo.FlagHistory == nil {
@@ -179,11 +180,11 @@ func Wire() {
 			}
 
 			// Traffic counters
-			ob := getInt64(lv, "orig_bytes")
-			rb := getInt64(lv, "resp_bytes")
-			mb := getInt64(lv, "missed_bytes")
-			op := getInt64(lv, "orig_pkts")
-			rp := getInt64(lv, "resp_pkts")
+			ob := tangenthelpers.GetInt64(lv, "orig_bytes")
+			rb := tangenthelpers.GetInt64(lv, "resp_bytes")
+			mb := tangenthelpers.GetInt64(lv, "missed_bytes")
+			op := tangenthelpers.GetInt64(lv, "orig_pkts")
+			rp := tangenthelpers.GetInt64(lv, "resp_pkts")
 
 			var totalBytes, totalPkts *int64
 			if ob != nil || rb != nil || op != nil || rp != nil {
@@ -238,11 +239,11 @@ func Wire() {
 
 			// Optional strings
 			var appName *string
-			if s := getString(lv, "service"); s != nil {
+			if s := tangenthelpers.GetString(lv, "service"); s != nil {
 				appName = s
 			}
 			var statusCode *string
-			if cs := getString(lv, "conn_state"); cs != nil {
+			if cs := tangenthelpers.GetString(lv, "conn_state"); cs != nil {
 				statusCode = cs
 			}
 
@@ -251,29 +252,29 @@ func Wire() {
 
 			var unmapped OCSFUnMapped
 
-			if missedBytes := getInt64(lv, "missed_bytes"); missedBytes != nil {
+			if missedBytes := tangenthelpers.GetInt64(lv, "missed_bytes"); missedBytes != nil {
 				unmapped.MissedBytes = missedBytes
 			}
 
-			if vlan := getInt64(lv, "vlan"); vlan != nil {
+			if vlan := tangenthelpers.GetInt64(lv, "vlan"); vlan != nil {
 				unmapped.VLAN = vlan
 			}
 
-			app, _ := getStringList(lv, "app")
+			app, _ := tangenthelpers.GetStringList(lv, "app")
 			unmapped.App = app
 
-			tunnelParents, _ := getStringList(lv, "tunnel_parents")
+			tunnelParents, _ := tangenthelpers.GetStringList(lv, "tunnel_parents")
 			unmapped.TunnelParent = tunnelParents
 
-			suriIDs, _ := getStringList(lv, "suri_ids")
+			suriIDs, _ := tangenthelpers.GetStringList(lv, "suri_ids")
 			unmapped.SuriIDs = suriIDs
 
 			var sp SPCap
-			sp.Trigger = getString(lv, "spcap.trigger")
+			sp.Trigger = tangenthelpers.GetString(lv, "spcap.trigger")
 
-			sp.URL = getString(lv, "spcap.url")
+			sp.URL = tangenthelpers.GetString(lv, "spcap.url")
 
-			if rule := getInt64(lv, "spcap.rule"); rule != nil {
+			if rule := tangenthelpers.GetInt64(lv, "spcap.rule"); rule != nil {
 				sp.Rule = rule
 			}
 
@@ -285,19 +286,19 @@ func Wire() {
 				unmapped.LocalResp = localResp
 			}
 
-			if origIPBytes := getInt64(lv, "orig_ip_bytes"); origIPBytes != nil {
+			if origIPBytes := tangenthelpers.GetInt64(lv, "orig_ip_bytes"); origIPBytes != nil {
 				unmapped.OrigIPBytes = origIPBytes
 			}
 
-			if respIPBytes := getInt64(lv, "resp_ip_bytes"); respIPBytes != nil {
+			if respIPBytes := tangenthelpers.GetInt64(lv, "resp_ip_bytes"); respIPBytes != nil {
 				unmapped.RespIPBytes = respIPBytes
 			}
 
-			if pcr := getFloat(lv, "pcr"); pcr != nil {
+			if pcr := tangenthelpers.GetFloat(lv, "pcr"); pcr != nil {
 				unmapped.Pcr = pcr
 			}
 
-			if corelightShunted := getBool(lv, "corelight_shunted"); corelightShunted != nil {
+			if corelightShunted := tangenthelpers.GetBool(lv, "corelight_shunted"); corelightShunted != nil {
 				unmapped.CorelightShunted = corelightShunted
 			}
 			unmapped.SPCap = &sp
@@ -346,58 +347,6 @@ func Wire() {
 	}
 }
 
-func getBool(v log.Logview, path string) *bool {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	return s.Boolean()
-}
-
-func getInt64(v log.Logview, path string) *int64 {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	return s.Int()
-}
-
-func getFloat(v log.Logview, path string) *float64 {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	return s.Float()
-}
-
-func getString(v log.Logview, path string) *string {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	return s.Str()
-}
-
-func getStringList(v log.Logview, path string) ([]string, bool) {
-	opt := v.GetList(path)
-	if opt.None() {
-		return nil, false
-	}
-	lst := opt.Value()
-	out := make([]string, 0, lst.Len())
-	data := lst.Slice()
-	for i := 0; i < int(lst.Len()); i++ {
-		if p := data[i].Str(); p != nil {
-			out = append(out, *p)
-		}
-	}
-	return out, true
-}
-
 /* ---------------- helpers: domain-specific ---------------- */
 
 func toNetEndpoint(ip string, port int) *v1_5_0.NetworkEndpoint {
@@ -427,8 +376,8 @@ func protoToOCSF(p string) (int, string) {
 func buildObservablesFromLogview(v log.Logview) []v1_5_0.Observable {
 	var out []v1_5_0.Observable
 
-	srcProvider := getString(v, "id.orig_h_name.src")
-	if vals, ok := getStringList(v, "id.orig_h_name.vals"); ok {
+	srcProvider := tangenthelpers.GetString(v, "id.orig_h_name.src")
+	if vals, ok := tangenthelpers.GetStringList(v, "id.orig_h_name.vals"); ok {
 		for _, s := range vals {
 			name := "src_endpoint.hostname"
 			typ := int32(1)
@@ -449,8 +398,8 @@ func buildObservablesFromLogview(v log.Logview) []v1_5_0.Observable {
 		}
 	}
 
-	dstProvider := getString(v, "id.resp_h_name.src")
-	if vals, ok := getStringList(v, "id.resp_h_name.vals"); ok {
+	dstProvider := tangenthelpers.GetString(v, "id.resp_h_name.src")
+	if vals, ok := tangenthelpers.GetStringList(v, "id.resp_h_name.vals"); ok {
 		for _, s := range vals {
 			name := "dst_endpoint.hostname"
 			typ := int32(1)

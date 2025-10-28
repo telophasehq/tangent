@@ -1,3 +1,4 @@
+
 from typing import List
 
 import json
@@ -8,44 +9,72 @@ from wit_world.imports import log
 
 class Mapper(wit_world.WitWorld):
     def metadata(self) -> mapper.Meta:
-        return mapper.Meta(name="example-mapper", version="0.1.3")
+        return mapper.Meta(name="python-example", version="0.1.0")
 
     def probe(self) -> List[mapper.Selector]:
-        return [mapper.Selector(any=[], all=[], none=[])]
+        # Match logs where source.name == "myservice"
+        return [
+            mapper.Selector(
+                any=[],
+                all=[
+                    mapper.Pred_Eq(
+                        ("source.name", log.Scalar_Str("myservice"))
+                    )
+                ],
+                none=[],
+            )
+        ]
 
     def process_logs(
         self,
         logs: List[log.Logview]
-    ) -> wit_world.Result[bytes, str]:
+    ) -> bytes:
         buf = bytearray()
 
         for lv in logs:
             with lv:
-                out = {}
-                # Check presence
-                if lv.has("message"):
-                    s = lv.get("message")  # Optional[log.Scalar]
-                    message = s.value if s is not None else None
-                    out.message = message
+                out = {
+                    "message": "",
+                    "level": "",
+                    "seen": 0,
+                    "duration": 0.0,
+                    "service": "",
+                    "tags": None,
+                }
 
-                # Get string field
-                s = lv.get("host.name")
-                out.host = s.value if s is not None else None
+                # get string
+                s = lv.get("msg")
+                if s is not None and hasattr(s, "value"):
+                    out["message"] = s.value
 
-                # Get list field
-                lst = lv.get_list("tags")  # Optional[List[log.Scalar]]
-                out.tags = [x.value for x in lst] if lst is not None else []
+                # get dot path
+                s = lv.get("msg.level")
+                if s is not None and hasattr(s, "value"):
+                    out["level"] = s.value
 
-                # Get map/object field
-                # Optional[List[Tuple[str, log.Scalar]]]
-                m = lv.get_map("labels")
-                out.labels = {k: v.value for k,
-                              v in m} if m is not None else {}
+                # get int
+                s = lv.get("seen")
+                if s is not None and hasattr(s, "value"):
+                    out["seen"] = s.value
 
-                # Inspect available keys at a path
-                out.top_keys = lv.keys("")  # top-level keys
-                out.detail_keys = lv.keys("detail")
+                # get float
+                s = lv.get("duration")
+                if s is not None and hasattr(s, "value"):
+                    out["duration"] = s.value
 
-                buf.extend(json.dumps(out).encode("utf-8") + b"\n")
+                # get value from nested json
+                s = lv.get("source.name")
+                if s is not None and hasattr(s, "value"):
+                    out["service"] = s.value
 
-        return wit_world.Ok(bytes(buf))
+                # get string list
+                lst = lv.get_list("tags")
+                if lst is not None:
+                    tags: List[str] = []
+                    for item in lst:
+                        tags.append(item.value)
+                    out["tags"] = tags
+
+                buf.extend(json.dumps(out).encode('utf-8') + b"\n")
+
+        return bytes(buf)

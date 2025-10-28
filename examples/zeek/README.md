@@ -2,11 +2,31 @@
 
 Use the Zeek Tangent plugin.
 
+## Compile
+```bash
+tangent plugin compile --config tangent.yaml --wit ./.tangent/wit
+```
+
+## Test
+```bash
+tangent plugin test --config tangent.yaml
+```
+
+## Run server
+```bash
+tangent run --config tangent.yaml
+```
+
+## Benchmark performance
+```bash
+tangent run --config tangent.yaml
+tangent bench --config tangent.yaml --seconds 30 --payload tests/input.json
+```
+
 ## Build
 ```bash
 make build
-
-Run compile-wasm (from Tangent CLI)
-tangent compile-wasm --config ./tangent.yaml --wit ./.tangent/wit
 ```
+
+
 

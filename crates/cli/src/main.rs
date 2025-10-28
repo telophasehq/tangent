@@ -42,9 +42,9 @@ enum Commands {
         #[arg(long, default_value_t = 2)]
         connections: u16,
 
-        /// Payload filepath. If omitted, runs all files in `test_data/`
+        /// Payload filepath.
         #[arg(long)]
-        payload: Option<PathBuf>,
+        payload: PathBuf,
 
         /// Batch-bytes cap per write (0 = disabled)
         #[arg(long, default_value_t = 65_536)]
@@ -62,7 +62,7 @@ enum Commands {
         object_prefix: Option<String>,
     },
 
-    Plugins {
+    Plugin {
         #[command(subcommand)]
         command: PluginCommands,
     },
@@ -95,7 +95,7 @@ enum PluginCommands {
         #[arg(long, value_name = "FILE")]
         config: PathBuf,
         /// Path to WIT directory (folder with the `processor` world)
-        #[arg(long, default_value = "./wit", value_name = "DIR")]
+        #[arg(long, default_value = ".tangent/wit", value_name = "DIR")]
         wit: PathBuf,
     },
 }
@@ -139,7 +139,7 @@ async fn main() -> Result<()> {
             tangent_bench::run(&config, opts).await?;
         }
 
-        Commands::Plugins { command } => match command {
+        Commands::Plugin { command } => match command {
             PluginCommands::Compile { config, wit } => {
                 // resolve to absolute paths to help downstream error messages
                 let cfg = config.canonicalize().unwrap_or(config);

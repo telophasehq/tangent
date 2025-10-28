@@ -9,7 +9,7 @@ struct Args {
     #[arg(long)]
     config: PathBuf,
     /// Path to WIT directory
-    #[arg(long, default_value = "./wit")]
+    #[arg(long, default_value = ".tangent/wit")]
     wit: PathBuf,
 }
 

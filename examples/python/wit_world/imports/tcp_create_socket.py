@@ -6,8 +6,8 @@ from abc import abstractmethod
 import weakref
 
 from ..types import Result, Ok, Err, Some
-from ..imports import tcp
 from ..imports import network
+from ..imports import tcp
 
 
 def create_tcp_socket(address_family: network.IpAddressFamily) -> tcp.TcpSocket:
