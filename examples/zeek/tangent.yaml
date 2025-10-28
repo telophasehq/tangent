@@ -1,0 +1,32 @@
+runtime:
+    batch_size: 1024
+    plugins_path: plugins/
+plugins:
+  zeek:
+    module_type: go
+    path: .
+    tests:
+      - input: tests/conn.json
+        expected:  tests/conn_out.json
+sources:
+  socket_main:
+    type: socket
+    path: "/tmp/sidecar.sock"
+sinks:
+  blackhole:
+    type: blackhole
+
+dag:
+  - from:
+      kind: source
+      name: socket_main
+    to:
+      - kind: plugin
+        name: zeek
+
+  - from:
+      kind: plugin
+      name: zeek
+    to:
+      - kind: sink
+        name: blackhole

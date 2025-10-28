@@ -1,0 +1,10 @@
+{
+  "message": "my log",
+  "level": "info",
+  "seen": 5,
+  "duration": 6.3,
+  "tags": [
+    "tag1"
+  ],
+  "service":  "myservice"
+}
