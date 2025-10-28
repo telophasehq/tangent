@@ -1,36 +1,87 @@
 package tangenthelpers
 
-// func getString(i int) (string, bool) {
-// 	s := vals.Get(i)
-// 	if s.None() {
-// 		return "", false
-// 	}
-// 	if p := s.Value().Str(); p != nil {
-// 		return *p, true
-// 	}
-// 	return "", false
-// }
-// func getInt(i int) (int64, bool) {
-// 	s := vals.Get(i)
-// 	if s.None() {
-// 		return 0, false
-// 	}
-// 	if p := s.Value().Int(); p != nil {
-// 		return *p, true
-// 	}
-// 	return 0, false
-// }
-// func getFloatPtr(i int) *float64 {
-// 	s := vals.Get(i)
-// 	if s.None() {
-// 		return nil
-// 	}
-// 	return s.Value().Float()
-// }
-// func getBoolPtr(i int) *bool {
-// 	s := vals.Get(i)
-// 	if s.None() {
-// 		return nil
-// 	}
-// 	return s.Value().Boolean()
-// }
+import "zeek/internal/tangent/logs/log"
+
+func GetBool(v log.Logview, path string) *bool {
+	opt := v.Get(path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return s.Boolean()
+}
+
+func GetInt64(v log.Logview, path string) *int64 {
+	opt := v.Get(path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return s.Int()
+}
+
+func GetFloat(v log.Logview, path string) *float64 {
+	opt := v.Get(path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return s.Float()
+}
+
+func GetString(v log.Logview, path string) *string {
+	opt := v.Get(path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return s.Str()
+}
+
+func GetStringList(v log.Logview, path string) ([]string, bool) {
+	opt := v.GetList(path)
+	if opt.None() {
+		return nil, false
+	}
+	lst := opt.Value()
+	out := make([]string, 0, lst.Len())
+	data := lst.Slice()
+	for i := 0; i < int(lst.Len()); i++ {
+		if p := data[i].Str(); p != nil {
+			out = append(out, *p)
+		}
+	}
+	return out, true
+}
+
+func GetFloat64List(v log.Logview, path string) ([]float64, bool) {
+	opt := v.GetList(path)
+	if opt.None() {
+		return nil, false
+	}
+	lst := opt.Value()
+	out := make([]float64, 0, lst.Len())
+	data := lst.Slice()
+	for i := 0; i < int(lst.Len()); i++ {
+		if p := data[i].Float(); p != nil {
+			out = append(out, *p)
+		}
+	}
+	return out, true
+}
+
+func GetInt64List(v log.Logview, path string) ([]int64, bool) {
+	opt := v.GetList(path)
+	if opt.None() {
+		return nil, false
+	}
+	lst := opt.Value()
+	out := make([]int64, 0, lst.Len())
+	data := lst.Slice()
+	for i := 0; i < int(lst.Len()); i++ {
+		if p := data[i].Int(); p != nil {
+			out = append(out, *p)
+		}
+	}
+	return out, true
+}

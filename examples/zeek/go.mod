@@ -1,4 +1,4 @@
-module zeek
+module zeek_conn
 
 go 1.24
 

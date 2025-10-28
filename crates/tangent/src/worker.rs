@@ -114,11 +114,19 @@ impl Worker {
         let mut sizes: HashMap<usize, usize> = HashMap::default();
         for b in batch.iter() {
             let lv = JsonLogView::from_bytes(b.clone())?;
+            let mut matched = false;
             for (idx, m) in self.mappers.mappers.iter_mut().enumerate() {
                 if m.selectors.iter().any(|s| eval_selector(s, &lv)) {
                     groups.entry(idx).or_default().push(lv.clone());
                     *sizes.entry(idx).or_default() += b.len();
+                    matched = true;
                 }
+            }
+
+            if !matched {
+                let preview_len = b.len().min(100);
+                let preview = String::from_utf8_lossy(&b[..preview_len]);
+                tracing::warn!(size = b.len(), preview = %preview, "log did not match any mappers");
             }
         }
 
@@ -146,10 +154,6 @@ impl Worker {
                 .observe(secs);
             GUEST_BYTES_TOTAL.inc_by(*sizes.get(&idx).unwrap() as u64);
 
-            for h in owned {
-                m.store.data_mut().table.delete(h)?;
-            }
-
             let out = match res {
                 Err(host_err) => {
                     tracing::error!(error = ?host_err, mapper=%m.name, "host error in process_log");
@@ -166,6 +170,8 @@ impl Worker {
                 tracing::warn!(mapper=%m.name, "mapper produced empty output");
                 continue;
             }
+
+            tracing::debug!(mapper=%m.name, duration=secs, "processed batch");
 
             plugin_outputs
                 .entry(m.cfg_name.clone())

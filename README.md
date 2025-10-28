@@ -66,9 +66,9 @@ docker run --rm --init ghcr.io/telophasehq/tangent-toolchain <command>
   * [Community](https://docs.telophasehq.com/plugins/community)
 * CLI
   * [`tangent run`](https://docs.telophasehq.com/cli/run)
-  * [`tangent plugins scaffold`](https://docs.telophasehq.com/cli/plugins/scaffold)
-  * [`tangent plugins compile`](https://docs.telophasehq.com/cli/plugins/compile)
-  * [`tangent plugins test`](https://docs.telophasehq.com/cli/plugins/test)
+  * [`tangent plugin scaffold`](https://docs.telophasehq.com/cli/plugin/scaffold)
+  * [`tangent plugin compile`](https://docs.telophasehq.com/cli/plugin/compile)
+  * [`tangent plugin test`](https://docs.telophasehq.com/cli/plugin/test)
   * [`tangent bench`](https://docs.telophasehq.com/cli/bench)
   * [`tangent.yaml`](https://docs.telophasehq.com/cli/tangent-yaml)
 * Sources

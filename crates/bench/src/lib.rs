@@ -1,8 +1,5 @@
-use anyhow::{Context, Result};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use anyhow::Result;
+use std::path::PathBuf;
 use tangent_shared::{sources::common::SourceConfig, Config};
 
 pub mod metrics;
@@ -19,8 +16,8 @@ pub struct BenchOptions {
     pub seconds: u64,
     /// Concurrent connections
     pub connections: u16,
-    /// Payload filepath. If None, runs all files in `test_data/`.
-    pub payload: Option<PathBuf>,
+    /// Payload filepath.
+    pub payload: PathBuf,
     /// Batch-bytes cap per write (0 = disabled)
     pub max_bytes: usize,
     /// Prometheus metrics endpoint
@@ -36,7 +33,7 @@ impl Default for BenchOptions {
             config_path: None,
             seconds: 15,
             connections: 2,
-            payload: None,
+            payload: "tests/input.json".into(),
             max_bytes: 65_536,
             metrics_url: "http://127.0.0.1:9184/metrics".to_string(),
             bucket: None,
@@ -51,41 +48,19 @@ pub async fn run(config_path: &PathBuf, opts: BenchOptions) -> Result<()> {
 }
 
 pub async fn run_with_config(cfg: &Config, opts: BenchOptions) -> Result<()> {
-    let mut payloads: Vec<PathBuf> = Vec::new();
-    if let Some(payload) = &opts.payload {
-        payloads.push(payload.clone());
-    } else {
-        for entry in fs::read_dir(test_data_dir()).context(format!(
-            "reading test data dir: {}",
-            test_data_dir().display()
-        ))? {
-            payloads.push(entry?.path());
-        }
-    }
-
-    for payload in payloads {
-        run_one_payload(
-            cfg,
-            &opts.metrics_url,
-            opts.connections,
-            opts.max_bytes,
-            opts.seconds,
-            payload,
-            opts.bucket.clone(),
-            opts.object_prefix.clone(),
-        )
-        .await?;
-    }
+    run_one_payload(
+        cfg,
+        &opts.metrics_url,
+        opts.connections,
+        opts.max_bytes,
+        opts.seconds,
+        opts.payload,
+        opts.bucket.clone(),
+        opts.object_prefix.clone(),
+    )
+    .await?;
 
     Ok(())
-}
-
-fn crate_root() -> &'static str {
-    env!("CARGO_MANIFEST_DIR")
-}
-
-fn test_data_dir() -> PathBuf {
-    Path::new(crate_root()).join("test_data")
 }
 
 pub async fn run_one_payload(
