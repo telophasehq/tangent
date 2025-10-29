@@ -87,7 +87,7 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
 fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("pyproject.toml"), PY_PROJECT)?;
     fs::write(dir.join("requirements.txt"), PY_REQUIREMENTS)?;
-    fs::write(dir.join("mapper.py"), PY_APP)?;
+    fs::write(dir.join("mapper.py"), py_mapper_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("py", name))?;
     fs::write(dir.join("Agents.md"), PY_AGENTS_MD)?;
 
@@ -475,7 +475,7 @@ func Wire() {
     // Metadata is for naming and versioning your plugin.
 	mapper.Exports.Metadata = func() mapper.Meta {
 		return mapper.Meta{
-			Name:    "go-example",
+			Name:    "{module}",
 			Version: "0.1.0",
 		}
 	}
@@ -647,7 +647,8 @@ const PY_REQUIREMENTS: &str = r#"
 componentize-py>=0.13
 "#;
 
-const PY_APP: &str = r#"
+fn py_mapper_for(module: &str) -> String {
+    let tpl = r#"
 from typing import List
 
 import json
@@ -658,7 +659,7 @@ from wit_world.imports import log
 
 class Mapper(wit_world.WitWorld):
     def metadata(self) -> mapper.Meta:
-        return mapper.Meta(name="python-example", version="0.1.0")
+        return mapper.Meta(name="{module}", version="0.1.0")
 
     def probe(self) -> List[mapper.Selector]:
         # Match logs where source.name == "myservice"
@@ -728,3 +729,6 @@ class Mapper(wit_world.WitWorld):
 
         return bytes(buf)
 "#;
+
+    tpl.replace("{module}", module)
+}

@@ -1,7 +1,5 @@
 use anyhow::{Context, Result};
-use serde_json::Value;
 use std::{
-    fs,
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -12,26 +10,14 @@ pub async fn run_bench(
     name: &String,
     socket: PathBuf,
     connections: u16,
-    payload_path: PathBuf,
+    payload: Vec<u8>,
     max_bytes: usize,
     seconds: u64,
 ) -> Result<()> {
-    let payload = fs::read_to_string(&payload_path)
-        .with_context(|| format!("failed to read payload file {}", payload_path.display()))?;
-
-    let one_line = serde_json::to_string(&serde_json::from_str::<Value>(&payload)?)?;
-
-    let mut line = Vec::with_capacity(one_line.len() + 1);
-    line.extend_from_slice(one_line.as_bytes());
-    line.push(b'\n');
-
-    info!("===Starting {name} benchmark===");
+    info!("===Starting benchmark===");
     info!(
-        "uds={:?} payload={:?} bytes/line={} connections={}",
-        socket,
-        payload_path,
-        line.len(),
-        connections,
+        "source={} uds={:?} connections={}",
+        name, socket, connections,
     );
 
     let max_bytes = max_bytes;
@@ -39,7 +25,7 @@ pub async fn run_bench(
     let mut handles = Vec::with_capacity(connections as usize);
 
     for _ in 0..connections {
-        let line_cl = line.clone();
+        let line_cl = payload.clone();
         let uds = socket.clone();
 
         handles.push(tokio::spawn(async move {
