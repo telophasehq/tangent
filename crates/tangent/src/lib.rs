@@ -187,14 +187,8 @@ fn spawn_consumers(
             (name, SourceConfig::Socket(sc)) => {
                 let dc = dag.clone();
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::socket::run_consumer(
-                        name,
-                        sc,
-                        cfg.runtime.batch_size,
-                        dc,
-                        shutdown.clone(),
-                    )
-                    .await
+                    if let Err(e) =
+                        sources::socket::run_consumer(name, sc, dc, shutdown.clone()).await
                     {
                         tracing::error!("socket listener error: {e}");
                     }
