@@ -22,7 +22,6 @@ pub struct MSKConfig {
 
     pub auth: MSKAuth,
 
-    #[serde(default)]
     pub decoding: Decoding,
 }
 

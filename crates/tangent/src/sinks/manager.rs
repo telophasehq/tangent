@@ -1,7 +1,7 @@
 use ahash::AHasher;
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::BytesMut;
 use rand::{rng, Rng};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::Hasher;
@@ -22,7 +22,7 @@ use crate::{
 
 pub struct SinkWrite {
     pub sink_name: String,
-    pub payload: Bytes,
+    pub payload: BytesMut,
     pub s3: Option<S3SinkItem>,
 }
 
@@ -83,7 +83,7 @@ impl SinkManager {
                     );
                 }
                 SinkKind::File(filecfg) => {
-                    let file_sink = file::FileSink::new(filecfg.path.clone()).await?;
+                    let file_sink = file::FileSink::new(filecfg, &cfg.common).await?;
                     sinks.insert(name.to_owned(), SinkEntry::Other { sink: file_sink });
                 }
                 SinkKind::Blackhole(_) => {
@@ -188,7 +188,7 @@ impl SinkManager {
         &self,
         sink_name: String,
         key_prefix: Option<String>,
-        payload: Bytes,
+        payload: BytesMut,
         acks: Vec<Arc<dyn Ack>>,
     ) -> Result<()> {
         let route_key = key_prefix.as_ref().map_or_else(

@@ -7,6 +7,5 @@ use crate::sources::common::Decoding;
 pub struct FileConfig {
     pub path: PathBuf,
 
-    #[serde(default)]
     pub decoding: Decoding,
 }

@@ -111,7 +111,7 @@ impl Router {
                             .enqueue(
                                 name.clone(),
                                 prefix.clone(),
-                                frame.clone().freeze(),
+                                frame.clone(),
                                 vec![Arc::new(shared.clone()) as Arc<dyn Ack>],
                             )
                             .await?;

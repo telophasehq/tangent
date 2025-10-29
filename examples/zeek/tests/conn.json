@@ -1,4 +1,4 @@
-{
+[{
   "_path": "conn",
   "_system_name": "sensor",
   "_write_ts": "2024-10-16T04:08:11.828325Z",
@@ -51,4 +51,4 @@
   ],
   "uid": "CmRFd61N7G7YA909D1",
   "vlan": 12
-}
+}]

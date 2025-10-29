@@ -1,8 +1,7 @@
-use ahash::HashMap;
+use ahash::{HashMap, HashMapExt};
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::BytesMut;
-use rdkafka::message::ToBytes;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -107,6 +106,7 @@ impl Worker {
         total_size: &mut usize,
     ) -> Result<()> {
         if batch.is_empty() {
+            tracing::warn!("flushed empty batch");
             return Ok(());
         }
 
@@ -130,7 +130,8 @@ impl Worker {
             }
         }
 
-        let mut plugin_outputs: HashMap<String, Vec<BytesMut>> = HashMap::default();
+        let mut plugin_outputs: HashMap<String, Vec<BytesMut>> =
+            HashMap::with_capacity(batch.len());
 
         for (idx, lvs) in groups {
             let m = &mut self.mappers.mappers[idx];
@@ -176,7 +177,7 @@ impl Worker {
             plugin_outputs
                 .entry(m.cfg_name.clone())
                 .or_default()
-                .push(BytesMut::from(out.to_bytes()))
+                .push(BytesMut::from(out.as_slice()))
         }
 
         let upstream_acks = std::mem::take(acks);

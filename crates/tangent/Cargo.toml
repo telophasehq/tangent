@@ -61,3 +61,8 @@ regex = "1.12.2"
 console-subscriber = "0.4.1"
 simd-json = "0.17.0"
 parking_lot = "0.12.5"
+apache-avro = { version = "0.17.0", features = ["zstandard", "snappy"] }
+parquet = "57.0.0"
+arrow-json = "57.0.0"
+arrow-schema = { version = "57.0.0", features = ["serde"] }
+arrow-ipc = "57.0.0"

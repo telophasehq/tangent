@@ -155,7 +155,14 @@ fn spawn_consumers(
             (name, SourceConfig::MSK(kc)) => {
                 let dc = dag.clone();
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::msk::run_consumer(name, kc, dc, shutdown.clone()).await
+                    if let Err(e) = sources::msk::run_consumer(
+                        name,
+                        kc,
+                        cfg.runtime.batch_size,
+                        dc,
+                        shutdown.clone(),
+                    )
+                    .await
                     {
                         tracing::error!("msk consumer error: {e}");
                     }
@@ -164,8 +171,14 @@ fn spawn_consumers(
             (name, SourceConfig::File(fc)) => {
                 let dc = dag.clone();
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) =
-                        sources::file::run_consumer(name, fc, dc, shutdown.clone()).await
+                    if let Err(e) = sources::file::run_consumer(
+                        name,
+                        fc,
+                        cfg.runtime.batch_size,
+                        dc,
+                        shutdown.clone(),
+                    )
+                    .await
                     {
                         tracing::error!("file consumer error: {e}");
                     }
@@ -174,8 +187,14 @@ fn spawn_consumers(
             (name, SourceConfig::Socket(sc)) => {
                 let dc = dag.clone();
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) =
-                        sources::socket::run_consumer(name, sc, dc, shutdown.clone()).await
+                    if let Err(e) = sources::socket::run_consumer(
+                        name,
+                        sc,
+                        cfg.runtime.batch_size,
+                        dc,
+                        shutdown.clone(),
+                    )
+                    .await
                     {
                         tracing::error!("socket listener error: {e}");
                     }

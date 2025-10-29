@@ -2,10 +2,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tangent_shared::sinks::common::{CommonSinkOptions, Compression, Encoding};
+use tangent_shared::sinks::file::FileConfig;
 use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
+use crate::sinks::encoding;
 use crate::sinks::manager::{Sink, SinkWrite};
 use crate::{SINK_BYTES_TOTAL, SINK_BYTES_UNCOMPRESSED_TOTAL, SINK_OBJECTS_TOTAL};
 
@@ -15,12 +18,14 @@ pub struct FileSinkItem {
 
 pub struct FileSink {
     path: PathBuf,
+    encoding: Encoding,
+    compression: Compression,
     file: Mutex<tokio::fs::File>,
 }
 
 impl FileSink {
-    pub async fn new(path: impl AsRef<Path>) -> Result<Arc<Self>> {
-        let path: PathBuf = path.as_ref().to_path_buf();
+    pub async fn new(cfg: &FileConfig, common: &CommonSinkOptions) -> Result<Arc<Self>> {
+        let path: PathBuf = cfg.path.to_path_buf();
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir).await?;
         }
@@ -34,15 +39,10 @@ impl FileSink {
 
         Ok(Arc::new(Self {
             path,
+            encoding: common.encoding.clone(),
+            compression: common.compression.clone(),
             file: Mutex::new(file),
         }))
-    }
-
-    pub async fn from_uri(uri: &str) -> Result<Arc<Self>> {
-        let path = uri
-            .strip_prefix("file://")
-            .ok_or_else(|| anyhow::anyhow!("invalid file URI: {uri}"))?;
-        Self::new(PathBuf::from(path)).await
     }
 
     pub fn path(&self) -> &Path {
@@ -53,11 +53,19 @@ impl FileSink {
 #[async_trait]
 impl Sink for FileSink {
     async fn write(&self, req: SinkWrite) -> Result<()> {
-        self.file.lock().await.write_all(&req.payload).await?;
+        let uncompressed_bytes = req.payload.len();
+        let normalized_payload =
+            encoding::normalize_from_ndjson(&self.encoding, &self.compression, req.payload)?;
+
+        self.file
+            .lock()
+            .await
+            .write_all(&normalized_payload)
+            .await?;
 
         SINK_OBJECTS_TOTAL.inc();
-        SINK_BYTES_TOTAL.inc_by(req.payload.len() as u64);
-        SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(req.payload.len() as u64);
+        SINK_BYTES_TOTAL.inc_by(normalized_payload.len() as u64);
+        SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(uncompressed_bytes as u64);
         Ok(())
     }
 

@@ -10,7 +10,6 @@ pub struct SQSConfig {
     #[serde(default = "default_visibility_timeout")]
     pub visibility_timeout: i64,
 
-    #[serde(default)]
     pub decoding: Decoding,
 }
 

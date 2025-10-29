@@ -1,12 +1,26 @@
-{
-"msg": "my log",
-"msg.level": "info",
-"seen": 5,
-"duration": 6.3,
-"tags": [
-    "tag1"
-],
-"source": {
-    "name": "myservice"
-}
-}
+[
+  {
+    "msg": "my log",
+    "msg.level": "info",
+    "seen": 5,
+    "duration": 6.3,
+    "tags": [
+      "tag1"
+    ],
+    "source": {
+      "name": "myservice"
+    }
+  },
+  {
+    "msg": "my log",
+    "msg.level": "info",
+    "seen": 5,
+    "duration": 6.3,
+    "tags": [
+      "tag1"
+    ],
+    "source": {
+      "name": "myservice"
+    }
+  }
+]

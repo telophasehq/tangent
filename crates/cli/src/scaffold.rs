@@ -572,29 +572,55 @@ func main() {}
     tpl.replace("{module}", module)
 }
 
-const TEST_INPUT: &str = r#"{
-"msg": "my log",
-"msg.level": "info",
-"seen": 5,
-"duration": 6.3,
-"tags": [
-    "tag1"
-],
-"source": {
-    "name": "myservice"
-}
-}"#;
+const TEST_INPUT: &str = r#"[
+  {
+    "msg": "my log",
+    "msg.level": "info",
+    "seen": 5,
+    "duration": 6.3,
+    "tags": [
+      "tag1"
+    ],
+    "source": {
+      "name": "myservice"
+    }
+  },
+  {
+    "msg": "my log",
+    "msg.level": "info",
+    "seen": 5,
+    "duration": 6.3,
+    "tags": [
+      "tag1"
+    ],
+    "source": {
+      "name": "myservice"
+    }
+  }
+]"#;
 
-const TEST_EXPECTED: &str = r#"{
-  "message": "my log",
-  "level": "info",
-  "seen": 5,
-  "duration": 6.3,
-  "tags": [
-    "tag1"
-  ],
-  "service":  "myservice"
-}"#;
+const TEST_EXPECTED: &str = r#"[
+  {
+    "message": "my log",
+    "level": "info",
+    "seen": 5,
+    "duration": 6.3,
+    "tags": [
+      "tag1"
+    ],
+    "service": "myservice"
+  },
+  {
+    "message": "my log",
+    "level": "info",
+    "seen": 5,
+    "duration": 6.3,
+    "tags": [
+      "tag1"
+    ],
+    "service": "myservice"
+  }
+]"#;
 
 const MAKEFILE: &str = "build:\n\t\
 tangent plugin compile --config tangent.yaml\n\

@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -19,7 +18,7 @@ use tangent_shared::sinks::{
     common::{SinkConfig, SinkKind},
     file as fileSink,
 };
-use tangent_shared::sources::common::{Decoding, SourceConfig};
+use tangent_shared::sources::common::{DecodeCompression, DecodeFormat, Decoding, SourceConfig};
 use tangent_shared::sources::file;
 
 #[derive(Debug)]
@@ -81,7 +80,10 @@ pub async fn run(opts: TestOptions) -> Result<()> {
 
             let input_source = SourceConfig::File(file::FileConfig {
                 path: input,
-                decoding: Decoding::default(),
+                decoding: Decoding {
+                    compression: DecodeCompression::None,
+                    format: DecodeFormat::JsonArray,
+                },
             });
 
             let out_file = PathBuf::from_str("test_out.json")?;
@@ -95,7 +97,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 }),
                 common: CommonSinkOptions {
                     compression: Compression::None,
-                    encoding: Encoding::NDJSON,
+                    encoding: Encoding::JSON,
                     object_max_bytes: tangent_shared::sinks::common::object_max_bytes(),
                     in_flight_limit: tangent_shared::sinks::common::in_flight_limit(),
                     default: true,
@@ -155,8 +157,17 @@ pub async fn run(opts: TestOptions) -> Result<()> {
 
             tangent_runtime::run(&test_config_file, rt.clone()).await?;
 
-            let produced = read_json(&out_file).context("reading produced JSON")?;
+            let produced = read_json(&out_file).context("reading produced NDJSON")?;
             let expected = read_json(&expected)?;
+
+            if produced.is_array() != expected.is_array() {
+                warn!("❌ test failed: output differs from expected\n");
+                bail!(
+                    "output is array: {}, expected is array: {}",
+                    produced.is_array(),
+                    expected.is_array()
+                );
+            }
             let diffs = diff_lines(&expected, &produced);
 
             if diffs.is_empty() {
@@ -171,11 +182,10 @@ pub async fn run(opts: TestOptions) -> Result<()> {
 }
 
 fn read_json(path: &Path) -> Result<Value> {
-    let f = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
-    let reader = BufReader::new(f);
+    let data = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let v: Value = serde_json::from_str(&data)
+        .with_context(|| format!("parse JSON array from {}", path.display()))?;
 
-    let v: Value = serde_json::from_reader(reader)
-        .with_context(|| format!("read json from {}", path.display()))?;
     Ok(stabilize(v))
 }
 
