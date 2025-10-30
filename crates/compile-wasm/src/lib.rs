@@ -107,7 +107,6 @@ fn run_go_compile(
     let status = Command::new("tinygo")
         .current_dir(&entry_point_path)
         .arg("build")
-        .arg("-x")
         .arg("-target=wasip2")
         .arg("-opt=2")
         .arg("-scheduler=none")

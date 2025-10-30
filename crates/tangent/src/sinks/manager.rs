@@ -1,7 +1,7 @@
 use ahash::AHasher;
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::BytesMut;
 use rand::{rng, Rng};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::Hasher;
@@ -22,7 +22,7 @@ use crate::{
 
 pub struct SinkWrite {
     pub sink_name: String,
-    pub payload: Bytes,
+    pub payload: BytesMut,
     pub s3: Option<S3SinkItem>,
 }
 
@@ -83,7 +83,7 @@ impl SinkManager {
                     );
                 }
                 SinkKind::File(filecfg) => {
-                    let file_sink = file::FileSink::new(filecfg.path.clone()).await?;
+                    let file_sink = file::FileSink::new(filecfg, &cfg.common).await?;
                     sinks.insert(name.to_owned(), SinkEntry::Other { sink: file_sink });
                 }
                 SinkKind::Blackhole(_) => {
@@ -143,10 +143,20 @@ impl SinkManager {
                                 let _permit: OwnedSemaphorePermit = permit;
                                 let start = Instant::now();
                                 let mut delay = Duration::from_millis(50);
+                                // Move on first attempt; reconstruct from a frozen snapshot on retries
+                                let frozen = item.req.payload.clone().freeze();
+                                let mut first_attempt = true;
                                 loop {
+                                    let payload_to_send = if first_attempt {
+                                        first_attempt = false;
+                                        std::mem::take(&mut item.req.payload)
+                                    } else {
+                                        BytesMut::from(frozen.as_ref())
+                                    };
+
                                     match sink.write(SinkWrite {
                                         sink_name: sink_name.clone(),
-                                        payload: item.req.payload.clone(),
+                                        payload: payload_to_send,
                                         s3: item.req.s3.clone(),
                                     }).await {
                                         Ok(()) => {
@@ -156,7 +166,6 @@ impl SinkManager {
                                                 }
                                             }
                                             tracing::debug!(
-                                                bytes = item.req.payload.len(),
                                                 took_us = start.elapsed().as_micros(),
                                                 "wrote sink item"
                                             );
@@ -188,7 +197,7 @@ impl SinkManager {
         &self,
         sink_name: String,
         key_prefix: Option<String>,
-        payload: Bytes,
+        payload: BytesMut,
         acks: Vec<Arc<dyn Ack>>,
     ) -> Result<()> {
         let route_key = key_prefix.as_ref().map_or_else(
@@ -206,7 +215,7 @@ impl SinkManager {
             acks,
             req: SinkWrite {
                 sink_name: sink_name.clone(),
-                payload: payload.clone(),
+                payload: payload,
                 s3: key_prefix.map(|kp| s3::S3SinkItem {
                     bucket_name: String::new(), // placeholder; filled in shard
                     key_prefix: Some(kp),

@@ -29,7 +29,7 @@ func Wire() {
     // Metadata is for naming and versioning your plugin.
 	mapper.Exports.Metadata = func() mapper.Meta {
 		return mapper.Meta{
-			Name:    "go-example",
+			Name:    "golang",
 			Version: "0.1.0",
 		}
 	}

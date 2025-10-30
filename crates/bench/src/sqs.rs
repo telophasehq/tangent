@@ -1,11 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client as S3Client;
-use bytes::{BufMut, BytesMut};
-use serde_json::Value;
 use std::{
-    fs,
-    path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -18,34 +14,14 @@ pub async fn run_bench(
     cfg: &SQSConfig,
     bucket: String,
     object_prefix: Option<String>,
-    max_bytes: usize,
     connections: u16,
-    payload_path: PathBuf,
+    payload: Vec<u8>,
     seconds: u64,
 ) -> Result<()> {
-    let payload = fs::read_to_string(&payload_path)
-        .with_context(|| format!("failed to read payload file {}", payload_path.display()))?;
-    let one_line = serde_json::to_string(&serde_json::from_str::<Value>(&payload)?)
-        .context("payload is not valid JSON")?;
-
-    let mut line = BytesMut::from(one_line.as_bytes());
-    line.put_u8(b'\n');
-
-    while line.len() <= max_bytes {
-        line.extend_from_slice(one_line.as_bytes());
-        line.put_u8(b'\n');
-    }
-    let line_len = line.len();
-
-    info!("===Starting {name} benchmark===");
+    info!("===Starting benchmark===");
     info!(
-        "bucket={} queue={} payload={} object_bytes={} connections={} duration={}s",
-        bucket,
-        cfg.queue_url,
-        payload_path.display(),
-        line_len,
-        connections,
-        seconds
+        "source={} bucket={} queue={} connections={} duration={}s",
+        name, bucket, cfg.queue_url, connections, seconds
     );
 
     let aws_cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
@@ -60,7 +36,7 @@ pub async fn run_bench(
         let s3c = s3.clone();
         let bucket_cl = bucket.clone();
         let prefix_cl = prefix.clone();
-        let bytes = line.clone().to_vec();
+        let bytes = payload.clone().to_vec();
 
         handles.push(tokio::spawn(async move {
             let mut counter: u64 = 0;

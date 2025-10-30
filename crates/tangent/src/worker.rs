@@ -1,8 +1,7 @@
-use ahash::HashMap;
+use ahash::{HashMap, HashMapExt};
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::BytesMut;
-use rdkafka::message::ToBytes;
+use bytes::{Bytes, BytesMut};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -56,7 +55,9 @@ impl Worker {
                 maybe_job = self.rx.recv() => {
                     match maybe_job {
                         None => {
-                            let _ = self.flush_batch(&mut batch, &mut acks, &mut total_size).await;
+                            if !batch.is_empty() {
+                                let _ = self.flush_batch(&mut batch, &mut acks, &mut total_size).await;
+                            }
                             break;
                         }
                         Some(rec) => {
@@ -107,30 +108,31 @@ impl Worker {
         total_size: &mut usize,
     ) -> Result<()> {
         if batch.is_empty() {
+            tracing::warn!("flushed empty batch");
             return Ok(());
         }
 
         let mut groups: HashMap<usize, Vec<JsonLogView>> = HashMap::default();
         let mut sizes: HashMap<usize, usize> = HashMap::default();
-        for b in batch.iter() {
-            let lv = JsonLogView::from_bytes(b.clone())?;
+        for b in batch.drain(..) {
+            let sz = b.len();
+            let lv = JsonLogView::from_bytes(b)?;
             let mut matched = false;
             for (idx, m) in self.mappers.mappers.iter_mut().enumerate() {
                 if m.selectors.iter().any(|s| eval_selector(s, &lv)) {
                     groups.entry(idx).or_default().push(lv.clone());
-                    *sizes.entry(idx).or_default() += b.len();
+                    *sizes.entry(idx).or_default() += sz;
                     matched = true;
                 }
             }
 
             if !matched {
-                let preview_len = b.len().min(100);
-                let preview = String::from_utf8_lossy(&b[..preview_len]);
-                tracing::warn!(size = b.len(), preview = %preview, "log did not match any mappers");
+                tracing::warn!("log did not match any mappers");
             }
         }
 
-        let mut plugin_outputs: HashMap<String, Vec<BytesMut>> = HashMap::default();
+        let mut plugin_outputs: HashMap<String, Vec<BytesMut>> =
+            HashMap::with_capacity(batch.len());
 
         for (idx, lvs) in groups {
             let m = &mut self.mappers.mappers[idx];
@@ -176,7 +178,7 @@ impl Worker {
             plugin_outputs
                 .entry(m.cfg_name.clone())
                 .or_default()
-                .push(BytesMut::from(out.to_bytes()))
+                .push(Bytes::from(out).try_into_mut().unwrap())
         }
 
         let upstream_acks = std::mem::take(acks);

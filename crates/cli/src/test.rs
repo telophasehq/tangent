@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::fs;
-use std::io::BufReader;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -19,7 +19,7 @@ use tangent_shared::sinks::{
     common::{SinkConfig, SinkKind},
     file as fileSink,
 };
-use tangent_shared::sources::common::{Decoding, SourceConfig};
+use tangent_shared::sources::common::{DecodeCompression, DecodeFormat, Decoding, SourceConfig};
 use tangent_shared::sources::file;
 
 #[derive(Debug)]
@@ -81,10 +81,13 @@ pub async fn run(opts: TestOptions) -> Result<()> {
 
             let input_source = SourceConfig::File(file::FileConfig {
                 path: input,
-                decoding: Decoding::default(),
+                decoding: Decoding {
+                    compression: DecodeCompression::None,
+                    format: DecodeFormat::JsonArray,
+                },
             });
 
-            let out_file = PathBuf::from_str("test_out.json")?;
+            let out_file = PathBuf::from_str("test_out.ndjson")?;
             if out_file.exists() {
                 fs::remove_file(out_file.clone())?;
             }
@@ -155,8 +158,17 @@ pub async fn run(opts: TestOptions) -> Result<()> {
 
             tangent_runtime::run(&test_config_file, rt.clone()).await?;
 
-            let produced = read_json(&out_file).context("reading produced JSON")?;
+            let produced = read_ndjson(&out_file).context("reading produced NDJSON")?;
             let expected = read_json(&expected)?;
+
+            if produced.is_array() != expected.is_array() {
+                warn!("❌ test failed: output differs from expected\n");
+                bail!(
+                    "output is array: {}, expected is array: {}",
+                    produced.is_array(),
+                    expected.is_array()
+                );
+            }
             let diffs = diff_lines(&expected, &produced);
 
             if diffs.is_empty() {
@@ -171,12 +183,26 @@ pub async fn run(opts: TestOptions) -> Result<()> {
 }
 
 fn read_json(path: &Path) -> Result<Value> {
-    let f = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
-    let reader = BufReader::new(f);
-
-    let v: Value = serde_json::from_reader(reader)
-        .with_context(|| format!("read json from {}", path.display()))?;
+    let data = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let v: Value = serde_json::from_str(&data)
+        .with_context(|| format!("parse JSON array from {}", path.display()))?;
     Ok(stabilize(v))
+}
+
+fn read_ndjson(path: &Path) -> Result<Value> {
+    let file = File::open(path).with_context(|| format!("read {}", path.display()))?;
+
+    let mut out: Vec<Value> = vec![];
+    for line in BufReader::new(file).lines() {
+        let line = line?;
+        let v: Value =
+            serde_json::from_str(&line).with_context(|| format!("parse JSON line: {}", line))?;
+        out.push(v);
+    }
+
+    let combined_out = Value::Array(out);
+
+    Ok(stabilize(combined_out))
 }
 
 fn stabilize(v: Value) -> Value {

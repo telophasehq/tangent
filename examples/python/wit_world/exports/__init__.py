@@ -6,8 +6,8 @@ from abc import abstractmethod
 import weakref
 
 from ..types import Result, Ok, Err, Some
-from ..imports import log
 from ..exports import mapper
+from ..imports import log
 
 class Mapper(Protocol):
 

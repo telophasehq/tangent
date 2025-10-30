@@ -15,7 +15,7 @@ use crate::{dag::DagRuntime, sources::decoding, worker::Ack};
 pub async fn run_consumer(
     name: String,
     cfg: SQSConfig,
-    max_chunk: usize,
+    chunks: usize,
     dag_runtime: DagRuntime,
     shutdown: CancellationToken,
 ) -> Result<()> {
@@ -70,12 +70,10 @@ pub async fn run_consumer(
                                                     match body_stream.collect().await {
                                                         Ok(collected) => {
                                                             let bytes = collected.into_bytes();
-                                                            let fmt = dc.resolve_format(&bytes);
-                                                            let mut ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, BytesMut::from(bytes.as_ref()));
-                                                            if !ndjson.ends_with(b"\n") {
-                                                                ndjson.extend_from_slice(b"\n");
-                                                            }
-                                                            frames_all.extend(decoding::chunk_ndjson(&mut ndjson, max_chunk));
+                                                            let raw = BytesMut::from(bytes.as_ref());
+
+                                                            let mut ndjson = decoding::normalize_to_ndjson(&cfg.decoding.format, raw)?;
+                                                            frames_all.extend(decoding::chunk_ndjson(&mut ndjson, chunks));
                                                         }
                                                         Err(e) => {
                                                             tracing::error!("S3 collect {bucket}/{key}: {e}");
@@ -105,9 +103,8 @@ pub async fn run_consumer(
                                     }
                                 };
 
-                                let fmt = dc.resolve_format(&raw);
-                                let mut ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, raw);
-                                frames_all.extend(decoding::chunk_ndjson(&mut ndjson, max_chunk));
+                                let mut ndjson = decoding::normalize_to_ndjson(&cfg.decoding.format, raw)?;
+                                frames_all.extend(decoding::chunk_ndjson(&mut ndjson, chunks));
                             }
 
                             if !frames_all.is_empty() {

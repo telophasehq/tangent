@@ -1,5 +1,6 @@
-use anyhow::Result;
-use std::path::PathBuf;
+use anyhow::{Context, Result};
+use serde_json::Value;
+use std::{fs, path::PathBuf};
 use tangent_shared::{sources::common::SourceConfig, Config};
 
 use crate::metrics::Stats;
@@ -54,13 +55,34 @@ pub async fn run(config_path: &PathBuf, opts: BenchOptions) -> Result<()> {
 }
 
 pub async fn run_with_config(cfg: &Config, opts: BenchOptions) -> Result<()> {
+    let payload = fs::read_to_string(&opts.payload)
+        .with_context(|| format!("failed to read payload file {}", &opts.payload.display()))?;
+
+    let json_payload = serde_json::from_str::<Value>(&payload)?;
+
+    let mut payload_buf: Vec<u8> = Vec::new();
+    match json_payload {
+        Value::Array(arr) => {
+            for v in arr {
+                let line = serde_json::to_string(&v)?;
+                payload_buf.extend_from_slice(line.as_bytes());
+                payload_buf.push(b'\n');
+            }
+        }
+        _ => {
+            let line = serde_json::to_string(&json_payload)?;
+            payload_buf.extend_from_slice(line.as_bytes());
+            payload_buf.push(b'\n');
+        }
+    }
+
     run_one_payload(
         cfg,
         &opts.metrics_url,
         opts.connections,
         opts.max_bytes,
         opts.seconds,
-        opts.payload,
+        payload_buf,
         opts.bucket.clone(),
         opts.object_prefix.clone(),
         opts.disable_metrics,
@@ -76,7 +98,7 @@ pub async fn run_one_payload(
     connections: u16,
     max_bytes: usize,
     seconds: u64,
-    payload: PathBuf,
+    payload: Vec<u8>,
     bucket: Option<String>,
     obj_prefix: Option<String>,
     disable_metrics: bool,
@@ -112,7 +134,6 @@ pub async fn run_one_payload(
                         &sq,
                         b.clone(),
                         obj_prefix.clone(),
-                        max_bytes,
                         connections,
                         pd,
                         seconds,

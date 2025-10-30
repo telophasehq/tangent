@@ -1,2 +1,0 @@
-
-componentize-py>=0.13

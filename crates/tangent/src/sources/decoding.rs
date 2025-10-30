@@ -87,48 +87,48 @@ pub fn msgpack_to_ndjson(data: &[u8]) -> Result<BytesMut> {
     Ok(json_to_ndjson(&val))
 }
 
-pub fn normalize_to_ndjson(fmt: &DecodeFormat, mut raw: BytesMut) -> BytesMut {
+pub fn normalize_to_ndjson(fmt: &DecodeFormat, mut raw: BytesMut) -> Result<BytesMut> {
     match fmt {
         DecodeFormat::Ndjson | DecodeFormat::Text => {
+            if !raw.starts_with(b"{") {
+                anyhow::bail!("input is not valid ndjson")
+            }
             if !raw.ends_with(b"\n") {
                 raw.put_u8(b'\n');
             }
-            raw
+            Ok(raw)
         }
         DecodeFormat::Json | DecodeFormat::JsonArray => {
             match serde_json::from_slice::<serde_json::Value>(&raw) {
-                Ok(v) => json_to_ndjson(&v),
+                Ok(v) => Ok(json_to_ndjson(&v)),
                 Err(e) => {
                     tracing::warn!(error=?e, "failed JSON parse; fallback to text");
                     if !raw.ends_with(b"\n") {
                         raw.put_u8(b'\n');
                     }
-                    raw
+                    Ok(raw)
                 }
             }
         }
         DecodeFormat::Msgpack => match msgpack_to_ndjson(&raw) {
-            Ok(v) => v,
+            Ok(v) => Ok(v),
             Err(e) => {
                 tracing::warn!(error=?e, "failed MsgPack decode; fallback to text");
                 if !raw.ends_with(b"\n") {
                     raw.put_u8(b'\n');
                 }
-                raw
+                Ok(raw)
             }
         },
-        DecodeFormat::Auto => unreachable!(),
     }
 }
 
-pub fn chunk_ndjson(buf: &mut BytesMut, max_lines: usize) -> Vec<BytesMut> {
-    let mut out = Vec::with_capacity(max_lines.max(1));
-    let mut produced = 0usize;
-    while produced < max_lines {
+pub fn chunk_ndjson(buf: &mut BytesMut, chunks: usize) -> Vec<BytesMut> {
+    let mut out = Vec::with_capacity(chunks);
+    loop {
         match memchr(b'\n', &buf[..]) {
             Some(nl) => {
                 out.push(buf.split_to(nl + 1));
-                produced += 1;
             }
             None => break,
         }

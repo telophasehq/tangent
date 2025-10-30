@@ -243,12 +243,20 @@ impl DurableFileSink {
 
             let (upload_path, upload_size) = match compression {
                 Compression::None => (sealed_path_clone.clone(), orig_size),
-                Compression::Gzip { level } => {
-                    compress_gzip_to_file(&sealed_path_clone, level).await?
-                }
-                Compression::Zstd { level } => {
-                    compress_zstd_to_file(&sealed_path_clone, level).await?
-                }
+                Compression::Gzip { level } => match encoding {
+                    Encoding::NDJSON | Encoding::JSON => {
+                        compress_gzip_to_file(&sealed_path_clone, level).await?
+                    }
+                    _ => (sealed_path_clone.clone(), orig_size),
+                },
+                Compression::Zstd { level } => match encoding {
+                    Encoding::NDJSON | Encoding::JSON => {
+                        compress_zstd_to_file(&sealed_path_clone, level).await?
+                    }
+                    _ => (sealed_path_clone.clone(), orig_size),
+                },
+                Compression::Snappy { .. } => (sealed_path_clone.clone(), orig_size),
+                Compression::Deflate { .. } => (sealed_path_clone.clone(), orig_size),
             };
 
             inner

@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use std::os::unix::fs::PermissionsExt;
 use std::{fs, path::Path, process::Command};
 
 use crate::wit_assets;
@@ -10,6 +11,19 @@ const GO_AGENTS_MD: &str = include_str!(concat!(
 const PY_AGENTS_MD: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../assets/py_Agents.md"
+));
+
+const GO_SETUP: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/go_setup.sh"
+));
+const PY_SETUP: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/py_setup.sh"
+));
+const DOCKERFILE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/Dockerfile"
 ));
 
 pub fn scaffold(name: &str, lang: &str) -> Result<()> {
@@ -26,6 +40,7 @@ pub fn scaffold(name: &str, lang: &str) -> Result<()> {
 
     fs::write(proj_dir.join(".gitignore"), GITIGNORE)?;
     fs::write(proj_dir.join("Makefile"), MAKEFILE)?;
+    fs::write(proj_dir.join("Dockerfile"), DOCKERFILE)?;
     fs::write(proj_dir.join("README.md"), readme_for(lang, name))?;
     fs::create_dir(proj_dir.join("tests"))?;
     fs::create_dir(proj_dir.join("plugins"))?;
@@ -78,6 +93,13 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("tangent.yaml"), tangent_config_for("go", name))?;
     fs::write(dir.join("Agents.md"), GO_AGENTS_MD)?;
 
+    let setup_path = dir.join("setup.sh");
+    fs::write(&setup_path, GO_SETUP)?;
+    let mut permissions = fs::metadata(&setup_path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o111);
+    fs::set_permissions(&setup_path, permissions)?;
+
+    run_setup(dir)?;
     run_go_download(dir)?;
 
     run_wit_bindgen_go(dir, "processor", ".tangent/wit/")?;
@@ -85,13 +107,35 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
 }
 
 fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
-    fs::write(dir.join("pyproject.toml"), PY_PROJECT)?;
-    fs::write(dir.join("requirements.txt"), PY_REQUIREMENTS)?;
-    fs::write(dir.join("mapper.py"), PY_APP)?;
+    fs::write(dir.join("pyproject.toml"), py_project_for(name))?;
+    fs::write(dir.join("mapper.py"), py_mapper_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("py", name))?;
     fs::write(dir.join("Agents.md"), PY_AGENTS_MD)?;
 
+    let setup_path = dir.join("setup.sh");
+    fs::write(&setup_path, PY_SETUP)?;
+    let mut permissions = fs::metadata(&setup_path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o111);
+    fs::set_permissions(&setup_path, permissions)?;
+
+    run_setup(dir)?;
     run_wit_bindgen_py(dir, "processor", ".tangent/wit/")?;
+    Ok(())
+}
+
+fn run_setup(cwd: &Path) -> Result<()> {
+    let out = Command::new("./setup.sh")
+        .current_dir(cwd)
+        .output()
+        .with_context(|| format!("failed to spawn setup {}", cwd.display()))?;
+
+    if !out.status.success() {
+        let mut msg = String::from_utf8_lossy(&out.stderr).to_string();
+        if msg.trim().is_empty() {
+            msg = String::from_utf8_lossy(&out.stdout).to_string();
+        }
+        bail!("setup failed:\n{}", msg);
+    }
     Ok(())
 }
 
@@ -187,6 +231,11 @@ fn readme_for(lang: &str, name: &str) -> String {
 
 Go component for Tangent.
 
+## Setup
+```bash
+./setup.sh
+```
+
 ## Compile
 ```bash
 tangent plugin compile --config tangent.yaml
@@ -227,8 +276,7 @@ Python component for Tangent.
 
 ## Setup
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+./setup.sh
 ```
 
 ## Compile
@@ -475,7 +523,7 @@ func Wire() {
     // Metadata is for naming and versioning your plugin.
 	mapper.Exports.Metadata = func() mapper.Meta {
 		return mapper.Meta{
-			Name:    "go-example",
+			Name:    "{module}",
 			Version: "0.1.0",
 		}
 	}
@@ -572,31 +620,58 @@ func main() {}
     tpl.replace("{module}", module)
 }
 
-const TEST_INPUT: &str = r#"{
-"msg": "my log",
-"msg.level": "info",
-"seen": 5,
-"duration": 6.3,
-"tags": [
-    "tag1"
-],
-"source": {
-    "name": "myservice"
-}
-}"#;
+const TEST_INPUT: &str = r#"[
+  {
+    "msg": "my log",
+    "msg.level": "info",
+    "seen": 5,
+    "duration": 6.3,
+    "tags": [
+      "tag1"
+    ],
+    "source": {
+      "name": "myservice"
+    }
+  },
+  {
+    "msg": "my log",
+    "msg.level": "info",
+    "seen": 5,
+    "duration": 6.3,
+    "tags": [
+      "tag1"
+    ],
+    "source": {
+      "name": "myservice"
+    }
+  }
+]"#;
 
-const TEST_EXPECTED: &str = r#"{
-  "message": "my log",
-  "level": "info",
-  "seen": 5,
-  "duration": 6.3,
-  "tags": [
-    "tag1"
-  ],
-  "service":  "myservice"
-}"#;
+const TEST_EXPECTED: &str = r#"[
+  {
+    "message": "my log",
+    "level": "info",
+    "seen": 5,
+    "duration": 6.3,
+    "tags": [
+      "tag1"
+    ],
+    "service": "myservice"
+  },
+  {
+    "message": "my log",
+    "level": "info",
+    "seen": 5,
+    "duration": 6.3,
+    "tags": [
+      "tag1"
+    ],
+    "service": "myservice"
+  }
+]"#;
 
 const MAKEFILE: &str = "build:\n\t\
+./setup.sh\n\t\
 tangent plugin compile --config tangent.yaml\n\
 \n\
 test: build\n\t\
@@ -607,21 +682,20 @@ tangent run --config tangent.yaml\n\
 \n\
 .PHONY: build test\n";
 
-const PY_PROJECT: &str = r#"
+fn py_project_for(module: &str) -> String {
+    let tpl = r#"
 [project]
-name = "tangent-app"
+name = "{module}"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = [
-"componentize-py>=0.13"
-]
+dependencies = []
 "#;
 
-const PY_REQUIREMENTS: &str = r#"
-componentize-py>=0.13
-"#;
+    tpl.replace("{module}", module)
+}
 
-const PY_APP: &str = r#"
+fn py_mapper_for(module: &str) -> String {
+    let tpl = r#"
 from typing import List
 
 import json
@@ -632,7 +706,7 @@ from wit_world.imports import log
 
 class Mapper(wit_world.WitWorld):
     def metadata(self) -> mapper.Meta:
-        return mapper.Meta(name="python-example", version="0.1.0")
+        return mapper.Meta(name="{module}", version="0.1.0")
 
     def probe(self) -> List[mapper.Selector]:
         # Match logs where source.name == "myservice"
@@ -702,3 +776,6 @@ class Mapper(wit_world.WitWorld):
 
         return bytes(buf)
 "#;
+
+    tpl.replace("{module}", module)
+}

@@ -46,8 +46,12 @@ pub enum Encoding {
     #[default]
     NDJSON,
     JSON,
-    Avro,
-    Parquet,
+    Avro {
+        schema: String,
+    },
+    Parquet {
+        schema: String,
+    },
 }
 
 impl Encoding {
@@ -55,8 +59,8 @@ impl Encoding {
         match self {
             Self::NDJSON => "application/x-ndjson",
             Self::JSON => "application/json",
-            Self::Avro => "application/avro",
-            Self::Parquet => "application/vnd.apache.parquet",
+            Self::Avro { .. } => "application/avro",
+            Self::Parquet { .. } => "application/vnd.apache.parquet",
         }
     }
 
@@ -64,8 +68,8 @@ impl Encoding {
         match self {
             Self::NDJSON => "ndjson",
             Self::JSON => "json",
-            Self::Avro => "avro",
-            Self::Parquet => "parquet",
+            Self::Avro { .. } => "avro",
+            Self::Parquet { .. } => "parquet",
         }
     }
 }
@@ -82,6 +86,26 @@ pub enum Compression {
         #[serde(default = "default_zstd_level")]
         level: i32,
     },
+    Snappy {
+        #[serde(default = "default_zstd_level")]
+        level: i32,
+    },
+    Deflate {
+        #[serde(default = "default_zstd_level")]
+        level: i32,
+    },
+}
+
+impl Compression {
+    pub const fn extension(&self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Gzip { .. } => ".gz",
+            Self::Zstd { .. } => ".zst",
+            Self::Snappy { .. } => "",
+            Self::Deflate { .. } => "",
+        }
+    }
 }
 
 impl Default for Compression {

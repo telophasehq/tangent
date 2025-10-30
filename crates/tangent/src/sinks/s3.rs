@@ -42,6 +42,8 @@ impl WALSink for S3Sink {
             Compression::None => None,
             Compression::Gzip { .. } => Some("gzip"),
             Compression::Zstd { .. } => Some("zstd"),
+            Compression::Snappy { .. } => None,
+            Compression::Deflate { .. } => None,
         };
 
         let size = tokio::fs::metadata(path).await?.len();
@@ -225,17 +227,8 @@ fn object_key_from(
     let stem = base.file_name().unwrap().to_string_lossy();
 
     let mut name = String::from(stem.as_ref());
-    match enc {
-        Encoding::NDJSON => name.push_str(".ndjson"),
-        Encoding::JSON => name.push_str(".json"),
-        Encoding::Avro => name.push_str(".avro"),
-        Encoding::Parquet => name.push_str(".parquet"),
-    }
-    match comp {
-        Compression::None => {}
-        Compression::Gzip { .. } => name.push_str(".gz"),
-        Compression::Zstd { .. } => name.push_str(".zst"),
-    }
+    name.push_str(enc.extension());
+    name.push_str(comp.extension());
 
     if let Some(p) = prefix {
         if p.is_empty() {

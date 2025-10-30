@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use bytes::BytesMut;
 use rdkafka::{
     config::ClientConfig,
     consumer::{Consumer, ConsumerContext, StreamConsumer},
@@ -10,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-use crate::dag::DagRuntime;
+use crate::{dag::DagRuntime, sources::decoding::normalize_to_ndjson};
 use rdkafka::message::Headers;
 use tangent_shared::sources::msk::{MSKAuth, MSKConfig};
 
@@ -94,6 +93,7 @@ fn header_str<'a>(m: &'a rdkafka::message::BorrowedMessage<'a>, key: &str) -> Op
 pub async fn run_consumer(
     name: String,
     kc: MSKConfig,
+    chunks: usize,
     dag_runtime: DagRuntime,
     shutdown: CancellationToken,
 ) -> Result<()> {
@@ -117,12 +117,8 @@ pub async fn run_consumer(
 
                             let raw = decoding::decompress_vec(&comp, p)?;
 
-                            let fmt = dc.resolve_format(&raw);
-                            let mut ndjson: BytesMut = decoding::normalize_to_ndjson(&fmt, raw);
-
-                        if !ndjson.ends_with(b"\n") { ndjson.extend_from_slice(b"\n"); }
-
-                        let frames_mut = decoding::chunk_ndjson(&mut ndjson, usize::MAX);
+                            let mut ndjson = normalize_to_ndjson(&kc.decoding.format, raw)?;
+                            let frames_mut = decoding::chunk_ndjson(&mut ndjson, chunks);
 
                             dag_runtime.push_from_source(name.as_str(), frames_mut, vec![]).await?;
                         }

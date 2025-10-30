@@ -1,14 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bytes::BytesMut;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::ClientConfig;
 use secrecy::ExposeSecret;
-use serde_json::Value;
-use std::{
-    fs,
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 use tangent_shared::sources::msk::{MSKAuth, MSKConfig};
 use tokio::task;
 use tracing::info;
@@ -34,26 +29,14 @@ pub async fn run_bench(
     name: &String,
     kcfg: &MSKConfig,
     connections: u16,
-    payload_path: PathBuf,
+    payload: Vec<u8>,
     max_bytes: usize,
     seconds: u64,
 ) -> Result<()> {
-    let payload = fs::read_to_string(&payload_path)
-        .with_context(|| format!("failed to read payload file {}", payload_path.display()))?;
-    let one_line = serde_json::to_string(&serde_json::from_str::<Value>(&payload)?)?;
-
-    let mut line = Vec::with_capacity(one_line.len() + 1);
-    line.extend_from_slice(one_line.as_bytes());
-    line.push(b'\n');
-
     info!("===Starting {name} benchmark===");
     info!(
-        "bootstrap={} topic={} payload={:?} bytes/line={} connections={}",
-        kcfg.bootstrap_servers,
-        kcfg.topic,
-        payload_path,
-        line.len(),
-        connections,
+        "bootstrap={} topic={} connections={}",
+        kcfg.bootstrap_servers, kcfg.topic, connections,
     );
 
     let producer = match &kcfg.auth {
@@ -72,7 +55,7 @@ pub async fn run_bench(
     for _ in 0..connections {
         let p = producer.clone();
         let topic = topic.clone();
-        let line_cl = line.clone();
+        let line_cl = payload.clone();
 
         tasks.push(task::spawn(async move {
             let deadline = Instant::now() + Duration::from_secs(seconds);
