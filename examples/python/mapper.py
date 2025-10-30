@@ -9,7 +9,7 @@ from wit_world.imports import log
 
 class Mapper(wit_world.WitWorld):
     def metadata(self) -> mapper.Meta:
-        return mapper.Meta(name="python-example", version="0.1.0")
+        return mapper.Meta(name="python", version="0.1.0")
 
     def probe(self) -> List[mapper.Selector]:
         # Match logs where source.name == "myservice"
