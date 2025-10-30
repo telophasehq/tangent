@@ -108,7 +108,7 @@ fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
 }
 
 fn run_setup(cwd: &Path) -> Result<()> {
-    let out = Command::new("./setup")
+    let out = Command::new("./setup.sh")
         .current_dir(cwd)
         .output()
         .with_context(|| format!("failed to spawn setup {}", cwd.display()))?;
