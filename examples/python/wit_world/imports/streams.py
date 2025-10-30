@@ -13,8 +13,8 @@ from abc import abstractmethod
 import weakref
 
 from ..types import Result, Ok, Err, Some
-from ..imports import error
 from ..imports import poll
+from ..imports import error
 
 
 @dataclass

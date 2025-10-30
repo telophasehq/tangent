@@ -287,3 +287,4 @@ tests/expected.json  # NDJSON expected output (one line per emitted record)
 * ❌ Returning `str` instead of `bytes`.
 
 > Ensure `tests/input.json` and `tests/expected.json` reflect your exact textual encoding (whitespace, newline). If you switch to minified JSON (`separators=(',', ':')`), update the expected file accordingly.
+
