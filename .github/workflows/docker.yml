@@ -2,6 +2,8 @@ name: Build & Publish Images
 on:
   workflow_run:
     workflows: ["Release"]
+    branches:
+      - main
     types:
       - completed 
 

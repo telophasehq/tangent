@@ -1,44 +1,57 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/7da02584-0a4e-4e41-af6d-61cb081029c4" alt="Logo" height=170>
+  <img src="https://github.com/user-attachments/assets/7da02584-0a4e-4e41-af6d-61cb081029c4" alt="Tangent logo" height=170>
 </p>
 <h1 align="center">Tangent</h1>
-<div align="center">
+<p align="center"><em>Stream processing without DSLs. Shareable, sandboxed, fast.</em></p>
+
+
+<p align="center">
+  <a href="https://github.com/telophasehq/tangent/actions">
+  <img height="20" src="https://img.shields.io/github/actions/workflow/status/telophasehq/tangent/scaffold_test.yml?label=build&logo=github" alt="Build status"></a>
+  <a href="https://twitter.com/telophasehq">
+  <img src="https://img.shields.io/twitter/follow/telophasehq?style=social" alt="X">
+  </a>
+
+</p>
+
+<p align="center">
   <a href="https://docs.telophasehq.com">Documentation</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
   <a href="https://discord.gg/ZUHB3BRa8c">Discord</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
   <a href="https://github.com/telophasehq/tangent/issues/new">Issues</a>
-</div>
-
-### [Read the docs →](https://docs.telophasehq.com)
+</p>
 
 ## What is Tangent?
-Tangent is a WebAssembly‑powered stream processor & toolkit that treats **User‑Defined Functions** (“plugins”) as first‑class citizens.
+Tangent is a stream‑processing toolkit that treats **plugins** (user‑defined functions) as first‑class citizens – exceptionally easy to write and share. Perfect for vibe-coding those pesky log transformations.
 
-Plugins run in a lightweight sandbox (WASM) with near-native speed and full language flexibility — no DSLs, no vendor-locked runtimes. Plugins are designed to be shareable, so transforming data from vendors to common schemas (e.g. guardduty findings -> OCSF) can be written once and shared with the community.
+
+Plugins run in a lightweight WASM sandbox with near-native speed and full language flexibility — no DSLs, no vendor-locked runtimes. Plugins are designed to be shareable, so common transformations (e.g. GuardDuty findings → OCSF) can be written once and shared with the [community](https://github.com/telophasehq/tangent-plugins).
 
 Tangent ships with everything you need to develop, test, and benchmark your own transforms:
-* `tangent plugin scaffold` – generate a plugin boilerplate in Go or Python
-* `tangent plugin compile` – compile wasm plugin
+* `tangent plugin scaffold` – generate plugin boilerplate in Go or Python
+* `tangent plugin compile` – compile plugins to WASM
 * `tangent plugin test` – run plugin tests
 * `tangent bench` – measure throughput and latency before deploying
-* `tangent run` – to start the tangent runtime
+* `tangent run` – start the Tangent runtime
 
 ## Why use Tangent?
 1. **Use real languages, not DSLs** – Real code > DSL. Reviewable, testable, LLM‑friendly.
 
 2. **Catch breakage before prod** — `tangent plugin test` for correctness; `tangent bench` for throughput/latency.
 
-3. **Composable and shareable** – We want data transformations to be easy to write and _share_. You can publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins).
+3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins). Each plugin runs in its own lightweight sandbox.
 
 ## Install
 ```bash
-# with install script
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/telophasehq/tangent/releases/download/latest/tangent-cli-installer.sh | sh
-
 # Homebrew
 brew tap telophasehq/telophase
 brew install tangent-cli
+tangent --version
+
+# with install script
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/telophasehq/tangent/releases/download/latest/tangent-cli-installer.sh | sh
+tangent --version
 
 # cargo
 cargo install --git https://github.com/telophasehq/tangent tangent-cli
