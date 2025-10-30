@@ -1,0 +1,57 @@
+name: Scaffold services and run tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  scaffold-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Set up TinyGo
+        uses: tinygo-org/setup-tinygo@v2
+        with:
+          tinygo-version: "0.34.0"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install componentize-py
+        run: |
+          python -m pip install --upgrade pip
+          pip install componentize-py
+
+      - name: Install tangent CLI
+        run: cargo install --path crates/cli
+
+      - name: Scaffold Go plugin
+        run: tangent plugin scaffold --name go-plugin --lang go
+
+      - name: Scaffold Python plugin
+        run: tangent plugin scaffold --name py-plugin --lang py
+
+      - name: Run make test (Go)
+        run: make test
+        working-directory: go-plugin
+
+      - name: Run make test (Python)
+        run: make test
+        working-directory: py-plugin
+
+
