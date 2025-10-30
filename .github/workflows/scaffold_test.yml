@@ -42,5 +42,3 @@ jobs:
       - name: Run make test (Python)
         run: make test
         working-directory: py-plugin
-
-
