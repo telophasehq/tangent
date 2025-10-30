@@ -24,10 +24,9 @@ jobs:
 
       - name: Install TinyGo
         run: |
-          wget -q https://github.com/tinygo-org/tinygo/releases/download/v0.34.0/tinygo_0.34.0_linux_amd64.tar.gz
-          tar -xzf tinygo_0.34.0_linux_amd64.tar.gz
-          sudo mv tinygo_0.34.0 /opt/tinygo
-          echo "/opt/tinygo/bin" >> $GITHUB_PATH
+          wget https://github.com/tinygo-org/tinygo/releases/download/v0.39.0/tinygo_0.39.0_amd64.deb
+          sudo dpkg -i tinygo_0.39.0_amd64.deb
+          echo "/usr/local/bin" >> $GITHUB_PATH
           tinygo version
 
       - name: Set up Python
