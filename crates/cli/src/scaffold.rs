@@ -12,6 +12,15 @@ const PY_AGENTS_MD: &str = include_str!(concat!(
     "/../../assets/py_Agents.md"
 ));
 
+const GO_SETUP: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/go_setup.sh"
+));
+const PY_SETUP: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/py_setup.sh"
+));
+
 pub fn scaffold(name: &str, lang: &str) -> Result<()> {
     let proj_dir = Path::new(name);
     if proj_dir.exists() {
@@ -77,6 +86,7 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("tangenthelpers/helpers.go"), go_helpers_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("go", name))?;
     fs::write(dir.join("Agents.md"), GO_AGENTS_MD)?;
+    fs::write(dir.join("setup.sh"), GO_SETUP)?;
 
     run_go_download(dir)?;
 
@@ -85,11 +95,11 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
 }
 
 fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
-    fs::write(dir.join("pyproject.toml"), PY_PROJECT)?;
-    fs::write(dir.join("requirements.txt"), PY_REQUIREMENTS)?;
+    fs::write(dir.join("pyproject.toml"), py_project_for(name))?;
     fs::write(dir.join("mapper.py"), py_mapper_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("py", name))?;
     fs::write(dir.join("Agents.md"), PY_AGENTS_MD)?;
+    fs::write(dir.join("setup.sh"), PY_SETUP)?;
 
     run_wit_bindgen_py(dir, "processor", ".tangent/wit/")?;
     Ok(())
@@ -187,6 +197,11 @@ fn readme_for(lang: &str, name: &str) -> String {
 
 Go component for Tangent.
 
+## Setup
+```bash
+./setup.sh
+```
+
 ## Compile
 ```bash
 tangent plugin compile --config tangent.yaml
@@ -227,6 +242,7 @@ Python component for Tangent.
 
 ## Setup
 ```bash
+./setup.sh
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -623,6 +639,7 @@ const TEST_EXPECTED: &str = r#"[
 ]"#;
 
 const MAKEFILE: &str = "build:\n\t\
+./setup.sh\n\
 tangent plugin compile --config tangent.yaml\n\
 \n\
 test: build\n\t\
@@ -633,19 +650,17 @@ tangent run --config tangent.yaml\n\
 \n\
 .PHONY: build test\n";
 
-const PY_PROJECT: &str = r#"
+fn py_project_for(module: &str) -> String {
+    let tpl = r#"
 [project]
-name = "tangent-app"
+name = "{module}"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = [
-"componentize-py>=0.13"
-]
+dependencies = []
 "#;
 
-const PY_REQUIREMENTS: &str = r#"
-componentize-py>=0.13
-"#;
+    tpl.replace("{module}", module)
+}
 
 fn py_mapper_for(module: &str) -> String {
     let tpl = r#"
