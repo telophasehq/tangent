@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use std::os::unix::fs::PermissionsExt;
 use std::{fs, path::Path, process::Command};
 
 use crate::wit_assets;
@@ -20,6 +21,10 @@ const PY_SETUP: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../assets/py_setup.sh"
 ));
+const DOCKERFILE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/Dockerfile"
+));
 
 pub fn scaffold(name: &str, lang: &str) -> Result<()> {
     let proj_dir = Path::new(name);
@@ -35,6 +40,7 @@ pub fn scaffold(name: &str, lang: &str) -> Result<()> {
 
     fs::write(proj_dir.join(".gitignore"), GITIGNORE)?;
     fs::write(proj_dir.join("Makefile"), MAKEFILE)?;
+    fs::write(proj_dir.join("Dockerfile"), DOCKERFILE)?;
     fs::write(proj_dir.join("README.md"), readme_for(lang, name))?;
     fs::create_dir(proj_dir.join("tests"))?;
     fs::create_dir(proj_dir.join("plugins"))?;
@@ -86,7 +92,12 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("tangenthelpers/helpers.go"), go_helpers_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("go", name))?;
     fs::write(dir.join("Agents.md"), GO_AGENTS_MD)?;
-    fs::write(dir.join("setup.sh"), GO_SETUP)?;
+
+    let setup_path = dir.join("setup.sh");
+    fs::write(&setup_path, GO_SETUP)?;
+    let mut permissions = fs::metadata(&setup_path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o111);
+    fs::set_permissions(&setup_path, permissions)?;
 
     run_setup(dir)?;
     run_go_download(dir)?;
@@ -100,7 +111,12 @@ fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("mapper.py"), py_mapper_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("py", name))?;
     fs::write(dir.join("Agents.md"), PY_AGENTS_MD)?;
-    fs::write(dir.join("setup.sh"), PY_SETUP)?;
+
+    let setup_path = dir.join("setup.sh");
+    fs::write(&setup_path, PY_SETUP)?;
+    let mut permissions = fs::metadata(&setup_path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o111);
+    fs::set_permissions(&setup_path, permissions)?;
 
     run_setup(dir)?;
     run_wit_bindgen_py(dir, "processor", ".tangent/wit/")?;
