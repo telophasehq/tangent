@@ -88,6 +88,7 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("Agents.md"), GO_AGENTS_MD)?;
     fs::write(dir.join("setup.sh"), GO_SETUP)?;
 
+    run_setup(dir)?;
     run_go_download(dir)?;
 
     run_wit_bindgen_go(dir, "processor", ".tangent/wit/")?;
@@ -101,7 +102,24 @@ fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("Agents.md"), PY_AGENTS_MD)?;
     fs::write(dir.join("setup.sh"), PY_SETUP)?;
 
+    run_setup(dir)?;
     run_wit_bindgen_py(dir, "processor", ".tangent/wit/")?;
+    Ok(())
+}
+
+fn run_setup(cwd: &Path) -> Result<()> {
+    let out = Command::new("./setup")
+        .current_dir(cwd)
+        .output()
+        .with_context(|| format!("failed to spawn setup {}", cwd.display()))?;
+
+    if !out.status.success() {
+        let mut msg = String::from_utf8_lossy(&out.stderr).to_string();
+        if msg.trim().is_empty() {
+            msg = String::from_utf8_lossy(&out.stdout).to_string();
+        }
+        bail!("setup failed:\n{}", msg);
+    }
     Ok(())
 }
 
@@ -243,8 +261,6 @@ Python component for Tangent.
 ## Setup
 ```bash
 ./setup.sh
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
 ```
 
 ## Compile
