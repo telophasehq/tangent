@@ -67,7 +67,7 @@ impl Router {
     pub async fn forward(
         &self,
         from: &NodeRef,
-        frames: Vec<BytesMut>,
+        mut frames: Vec<BytesMut>,
         acks: Vec<Arc<dyn Ack>>,
     ) -> Result<()> {
         let Some(tos) = self.outs.get(from) else {
@@ -88,36 +88,66 @@ impl Router {
 
         let pool = self.pool();
 
-        let shared = RefCountAck::new(acks, deliveries);
-        for frame in frames {
-            for to in tos {
+        let shared = Arc::new(RefCountAck::new(acks, deliveries));
+        if tos.len() == 1 {
+            let to = &tos[0];
+            for frame in frames.drain(..) {
                 match to {
-                    NodeRef::Plugin { name: _ } => {
+                    NodeRef::Plugin { .. } => {
                         if let Some(ref pool) = pool {
                             let rec = Record {
-                                payload: frame.clone(),
-                                ack: Some(Arc::new(shared.clone())),
+                                payload: frame,
+                                ack: Some(shared.clone()),
                             };
                             pool.dispatch(rec).await?;
                         } else {
-                            let _ = Arc::new(shared.clone()).ack().await;
+                            let _ = shared.ack().await;
                         }
                     }
-                    NodeRef::Sink {
-                        name,
-                        key_prefix: prefix,
-                    } => {
+                    NodeRef::Sink { name, key_prefix } => {
                         self.sink_manager
                             .enqueue(
                                 name.clone(),
-                                prefix.clone(),
-                                frame.clone(),
-                                vec![Arc::new(shared.clone()) as Arc<dyn Ack>],
+                                key_prefix.clone(),
+                                frame,
+                                vec![shared.clone()],
                             )
                             .await?;
                     }
-                    NodeRef::Source { name: _ } => {
-                        let _ = Arc::new(shared.clone()).ack().await;
+                    NodeRef::Source { .. } => {
+                        let _ = shared.ack().await;
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        for frame in frames.drain(..) {
+            for to in tos {
+                match to {
+                    NodeRef::Plugin { .. } => {
+                        if let Some(ref pool) = pool {
+                            let rec = Record {
+                                payload: frame.clone(),
+                                ack: Some(shared.clone()),
+                            };
+                            pool.dispatch(rec).await?;
+                        } else {
+                            let _ = shared.ack().await;
+                        }
+                    }
+                    NodeRef::Sink { name, key_prefix } => {
+                        self.sink_manager
+                            .enqueue(
+                                name.clone(),
+                                key_prefix.clone(),
+                                frame.clone(),
+                                vec![shared.clone()],
+                            )
+                            .await?;
+                    }
+                    NodeRef::Source { .. } => {
+                        let _ = shared.ack().await;
                     }
                 }
             }

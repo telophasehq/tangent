@@ -1,7 +1,7 @@
 use ahash::{HashMap, HashMapExt};
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -114,21 +114,20 @@ impl Worker {
 
         let mut groups: HashMap<usize, Vec<JsonLogView>> = HashMap::default();
         let mut sizes: HashMap<usize, usize> = HashMap::default();
-        for b in batch.iter() {
-            let lv = JsonLogView::from_bytes(b.clone())?;
+        for b in batch.drain(..) {
+            let sz = b.len();
+            let lv = JsonLogView::from_bytes(b)?;
             let mut matched = false;
             for (idx, m) in self.mappers.mappers.iter_mut().enumerate() {
                 if m.selectors.iter().any(|s| eval_selector(s, &lv)) {
                     groups.entry(idx).or_default().push(lv.clone());
-                    *sizes.entry(idx).or_default() += b.len();
+                    *sizes.entry(idx).or_default() += sz;
                     matched = true;
                 }
             }
 
             if !matched {
-                let preview_len = b.len().min(100);
-                let preview = String::from_utf8_lossy(&b[..preview_len]);
-                tracing::warn!(size = b.len(), preview = %preview, "log did not match any mappers");
+                tracing::warn!("log did not match any mappers");
             }
         }
 
@@ -179,7 +178,7 @@ impl Worker {
             plugin_outputs
                 .entry(m.cfg_name.clone())
                 .or_default()
-                .push(BytesMut::from(out.as_slice()))
+                .push(Bytes::from(out).try_into_mut().unwrap())
         }
 
         let upstream_acks = std::mem::take(acks);

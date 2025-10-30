@@ -143,10 +143,20 @@ impl SinkManager {
                                 let _permit: OwnedSemaphorePermit = permit;
                                 let start = Instant::now();
                                 let mut delay = Duration::from_millis(50);
+                                // Move on first attempt; reconstruct from a frozen snapshot on retries
+                                let frozen = item.req.payload.clone().freeze();
+                                let mut first_attempt = true;
                                 loop {
+                                    let payload_to_send = if first_attempt {
+                                        first_attempt = false;
+                                        std::mem::take(&mut item.req.payload)
+                                    } else {
+                                        BytesMut::from(frozen.as_ref())
+                                    };
+
                                     match sink.write(SinkWrite {
                                         sink_name: sink_name.clone(),
-                                        payload: item.req.payload.clone(),
+                                        payload: payload_to_send,
                                         s3: item.req.s3.clone(),
                                     }).await {
                                         Ok(()) => {
@@ -156,7 +166,6 @@ impl SinkManager {
                                                 }
                                             }
                                             tracing::debug!(
-                                                bytes = item.req.payload.len(),
                                                 took_us = start.elapsed().as_micros(),
                                                 "wrote sink item"
                                             );
@@ -206,7 +215,7 @@ impl SinkManager {
             acks,
             req: SinkWrite {
                 sink_name: sink_name.clone(),
-                payload: payload.clone(),
+                payload: payload,
                 s3: key_prefix.map(|kp| s3::S3SinkItem {
                     bucket_name: String::new(), // placeholder; filled in shard
                     key_prefix: Some(kp),
