@@ -55,7 +55,9 @@ impl Worker {
                 maybe_job = self.rx.recv() => {
                     match maybe_job {
                         None => {
-                            let _ = self.flush_batch(&mut batch, &mut acks, &mut total_size).await;
+                            if !batch.is_empty() {
+                                let _ = self.flush_batch(&mut batch, &mut acks, &mut total_size).await;
+                            }
                             break;
                         }
                         Some(rec) => {
