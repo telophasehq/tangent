@@ -1,7 +1,6 @@
 name: Scaffold services and run tests
 
 on:
-  push:
   pull_request:
 
 jobs:
@@ -41,6 +40,9 @@ jobs:
 
       - name: Install tangent CLI
         run: cargo install --path crates/cli
+
+      - name: Install wasm-tools
+        run: cargo install wasm-tools --locked
 
       - name: Scaffold Go plugin
         run: tangent plugin scaffold --name go-plugin --lang go
