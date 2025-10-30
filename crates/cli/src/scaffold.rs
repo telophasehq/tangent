@@ -671,7 +671,7 @@ const TEST_EXPECTED: &str = r#"[
 ]"#;
 
 const MAKEFILE: &str = "build:\n\t\
-./setup.sh\n\
+./setup.sh\n\t\
 tangent plugin compile --config tangent.yaml\n\
 \n\
 test: build\n\t\
