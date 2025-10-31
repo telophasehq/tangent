@@ -109,7 +109,7 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
 fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("pyproject.toml"), py_project_for(name))?;
     fs::write(dir.join("mapper.py"), py_mapper_for(name))?;
-    fs::write(dir.join("tangent.yaml"), tangent_config_for("py", name))?;
+    fs::write(dir.join("tangent.yaml"), tangent_config_for("python", name))?;
     fs::write(dir.join("Agents.md"), PY_AGENTS_MD)?;
 
     let setup_path = dir.join("setup.sh");
