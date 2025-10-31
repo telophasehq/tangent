@@ -200,9 +200,16 @@ fn read_ndjson(path: &Path) -> Result<Value> {
         out.push(v);
     }
 
-    let combined_out = Value::Array(out);
+    if out.len() == 0 {
+        anyhow::bail!("expected output file empty: {}", path.display())
+    }
 
-    Ok(stabilize(combined_out))
+    if out.len() > 1 {
+        let combined_out = Value::Array(out);
+        return Ok(stabilize(combined_out));
+    }
+
+    Ok(stabilize(out[0].clone()))
 }
 
 fn stabilize(v: Value) -> Value {
