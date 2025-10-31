@@ -35,7 +35,7 @@ jobs:
         run: tangent plugin scaffold --name go-plugin --lang go
 
       - name: Scaffold Python plugin
-        run: tangent plugin scaffold --name py-plugin --lang py
+        run: tangent plugin scaffold --name py-plugin --lang python
 
       - name: Run make test (Go)
         run: make test
