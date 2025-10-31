@@ -70,7 +70,6 @@ docker run --rm --init ghcr.io/telophasehq/tangent-toolchain <command>
   * [Runtime Deepdive](https://docs.telophasehq.com/runtime)
 * WASM Plugins
   * [Authoring](https://docs.telophasehq.com/plugins/authoring)
-  * [Examples](https://docs.telophasehq.com/plugins/examples)
   * [Community](https://docs.telophasehq.com/plugins/community)
 * CLI
   * [Overview](https://docs.telophasehq.com/cli/overview)
@@ -85,11 +84,13 @@ docker run --rm --init ghcr.io/telophasehq/tangent-toolchain <command>
   * [Plugins](https://docs.telophasehq.com/configuration/plugins)
   * [DAG](https://docs.telophasehq.com/configuration/dag)
   * Sources
+    * [Overview](https://docs.telophasehq.com/configuration/sources/overview)
     * [SQS](https://docs.telophasehq.com/configuration/sources/sqs)
     * [MSK](https://docs.telophasehq.com/configuration/sources/msk)
     * [Socket](https://docs.telophasehq.com/configuration/sources/socket)
     * [File](https://docs.telophasehq.com/configuration/sources/file)
   * Sinks
+    * [Overview](https://docs.telophasehq.com/configuration/sinks/overview)
     * [S3](https://docs.telophasehq.com/configuration/sinks/s3)
     * [File](https://docs.telophasehq.com/configuration/sinks/file)
     * [Blackhole](https://docs.telophasehq.com/configuration/sinks/blackhole)
