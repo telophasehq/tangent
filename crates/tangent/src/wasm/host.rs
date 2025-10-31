@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
+use simd_json::base::ValueAsScalar;
+use simd_json::derived::{TypedArrayValue, TypedScalarValue};
 use simd_json::prelude::{ValueAsArray, ValueAsObject, ValueObjectAccess};
 use simd_json::{BorrowedValue, StaticNode};
 use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
@@ -124,6 +126,21 @@ impl log::HostLogview for HostEngine {
     async fn get(&mut self, h: Resource<JsonLogView>, path: String) -> Option<log::Scalar> {
         let v: &JsonLogView = self.table.get(&h).ok()?;
         v.lookup(&path).and_then(JsonLogView::to_scalar)
+    }
+
+    async fn len(&mut self, h: Resource<JsonLogView>, path: String) -> Option<u32> {
+        let v: &JsonLogView = self.table.get(&h).ok()?;
+        let item = v.lookup(&path)?;
+
+        if item.is_array() {
+            return Some(item.as_array().unwrap().len() as u32);
+        }
+
+        if item.is_str() {
+            return Some(item.as_str().unwrap().len() as u32);
+        }
+
+        return None;
     }
 
     async fn get_list(

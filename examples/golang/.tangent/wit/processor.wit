@@ -13,6 +13,7 @@ interface log {
     // JSONPath/dot-path style, e.g. "detail.findings[0].CompanyName"
     has:      func(path: string) -> bool;
     get:      func(path: string) -> option<scalar>;
+    len:      func(path: string) -> option<u32>;
     get-list: func(path: string) -> option<list<scalar>>;
     get-map:  func(path: string) -> option<list<tuple<string, scalar>>>;
     keys:     func(path: string) -> list<string>;

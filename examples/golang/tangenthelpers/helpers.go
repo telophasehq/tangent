@@ -38,6 +38,15 @@ func GetString(v log.Logview, path string) *string {
 	return s.Str()
 }
 
+func Len(v log.Logview, path string) *uint32 {
+	opt := v.Len(path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return &s
+}
+
 func GetStringList(v log.Logview, path string) ([]string, bool) {
 	opt := v.GetList(path)
 	if opt.None() {
@@ -85,4 +94,3 @@ func GetInt64List(v log.Logview, path string) ([]int64, bool) {
 	}
 	return out, true
 }
-

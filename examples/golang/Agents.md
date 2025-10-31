@@ -144,10 +144,14 @@ var bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 
 Use **only** these helpers (available in this repo):
 
+* `tangenthelpers.GetBool(v log.Logview, path string) *bool`
 * `tangenthelpers.GetString(lv, "path") *string`
 * `tangenthelpers.GetInt64(lv, "path") *int64`
 * `tangenthelpers.GetFloat64(lv, "path") *float64`
+* `tangenthelpers.Len(v log.Logview, path string) *uint32` to get the length of a list or string
 * `tangenthelpers.GetStringList(lv, "path") ([]string, bool)`
+* `tangenthelpers.GetInt64List(v log.Logview, path string) ([]int64, bool)`
+* `tangenthelpers.GetFloat64List(v log.Logview, path string) ([]float64, bool)`
 
 **Pattern:**
 

@@ -160,10 +160,11 @@ def process_logs(self, logs: List[log.Logview]) -> bytes:
 
 ## Reading fields safely
 
-Use the `Logview` helpers:
-
+* `lv.len("path")` → returns the size of the list or string or `None`.
 * `lv.get("path")` → returns a scalar wrapper or `None`. Access the Python value via `.value`.
 * `lv.get_list("path")` → returns `List[scalar]` or `None`. Each item exposes `.value`.
+* `lv.get_map("path")` → returns `List[Tuple[str, Scalar]]` or `None`. Each item exposes `.value`.
+* `lv.keys("path")` → returns `List[str]` or `None`.
 
 **Patterns:**
 
