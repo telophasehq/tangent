@@ -48,9 +48,9 @@ pub fn scaffold(name: &str, lang: &str) -> Result<()> {
     fs::write(proj_dir.join("tests/expected.json"), TEST_EXPECTED)?;
 
     match lang {
-        "go" | "golang" => scaffold_go(name, &proj_dir)?,
-        "py" | "python" => scaffold_py(name, &proj_dir)?,
-        other => bail!("unsupported --lang {other} (try: go, py)"),
+        "go" => scaffold_go(name, &proj_dir)?,
+        "python" => scaffold_py(name, &proj_dir)?,
+        other => bail!("unsupported --lang {other} (options: go, python)"),
     }
 
     println!(
@@ -109,7 +109,7 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
 fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("pyproject.toml"), py_project_for(name))?;
     fs::write(dir.join("mapper.py"), py_mapper_for(name))?;
-    fs::write(dir.join("tangent.yaml"), tangent_config_for("py", name))?;
+    fs::write(dir.join("tangent.yaml"), tangent_config_for("python", name))?;
     fs::write(dir.join("Agents.md"), PY_AGENTS_MD)?;
 
     let setup_path = dir.join("setup.sh");
@@ -219,7 +219,7 @@ target/
 .DS_Store
 __pycache__/
 *.pyc
-**/test_out.json
+**/test_out.ndjson
 **/.test.yaml
 **/plugins/
 "#;
@@ -362,7 +362,11 @@ tool go.bytecodealliance.org/cmd/wit-bindgen-go
 }
 
 fn tangent_config_for(language: &str, name: &str) -> String {
-    let path = if language == "py" { "mapper.py" } else { "." };
+    let path = if language == "python" {
+        "mapper.py"
+    } else {
+        "."
+    };
 
     format!(
         r#"runtime:
@@ -437,6 +441,15 @@ func GetString(v log.Logview, path string) *string {
 	}
 	s := opt.Value()
 	return s.Str()
+}
+
+func Len(v log.Logview, path string) *uint32 {
+	opt := v.Len(path)
+	if opt.None() {
+		return nil
+	}
+	s := opt.Value()
+	return &s
 }
 
 func GetStringList(v log.Logview, path string) ([]string, bool) {

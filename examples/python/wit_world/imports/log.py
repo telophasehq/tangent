@@ -46,6 +46,8 @@ class Logview:
         raise NotImplementedError
     def get(self, path: str) -> Optional[Scalar]:
         raise NotImplementedError
+    def len(self, path: str) -> Optional[int]:
+        raise NotImplementedError
     def get_list(self, path: str) -> Optional[List[Scalar]]:
         raise NotImplementedError
     def get_map(self, path: str) -> Optional[List[Tuple[str, Scalar]]]:

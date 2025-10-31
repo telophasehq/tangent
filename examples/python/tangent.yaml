@@ -2,7 +2,7 @@ runtime:
   plugins_path: "plugins/"
 plugins:
   python:
-    module_type: py
+    module_type: python
     path: mapper.py
     tests:
       - input: tests/input.json

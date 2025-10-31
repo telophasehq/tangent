@@ -29,7 +29,7 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
         let full_out = &out.join(format!("{}.component.wasm", name));
 
         match plugin.module_type.as_str() {
-            "py" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &full_out)?,
+            "python" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &full_out)?,
             "go" => run_go_compile(&wit_path, WORLD, &entry_point_path, &full_out)?,
             ext => anyhow::bail!(
                 "unsupported filetype: {} for wasm entrypoint: {}",

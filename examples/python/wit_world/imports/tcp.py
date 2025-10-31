@@ -6,9 +6,9 @@ from abc import abstractmethod
 import weakref
 
 from ..types import Result, Ok, Err, Some
+from ..imports import poll
 from ..imports import streams
 from ..imports import network
-from ..imports import poll
 
 class ShutdownType(Enum):
     RECEIVE = 0
