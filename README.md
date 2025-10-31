@@ -67,26 +67,32 @@ docker run --rm --init ghcr.io/telophasehq/tangent-toolchain <command>
   * [What is Telophase?](https://docs.telophasehq.com/index)
   * [Installation](https://docs.telophasehq.com/installation)
   * [Quickstart](https://docs.telophasehq.com/quickstart)
+  * [Runtime Deepdive](https://docs.telophasehq.com/runtime)
 * WASM Plugins
   * [Authoring](https://docs.telophasehq.com/plugins/authoring)
   * [Examples](https://docs.telophasehq.com/plugins/examples)
   * [Community](https://docs.telophasehq.com/plugins/community)
 * CLI
+  * [Overview](https://docs.telophasehq.com/cli/overview)
   * [`tangent run`](https://docs.telophasehq.com/cli/run)
   * [`tangent plugin scaffold`](https://docs.telophasehq.com/cli/plugin/scaffold)
   * [`tangent plugin compile`](https://docs.telophasehq.com/cli/plugin/compile)
   * [`tangent plugin test`](https://docs.telophasehq.com/cli/plugin/test)
   * [`tangent bench`](https://docs.telophasehq.com/cli/bench)
-  * [`tangent.yaml`](https://docs.telophasehq.com/cli/tangent-yaml)
-* Sources
-  * [SQS](https://docs.telophasehq.com/sources/sqs)
-  * [MSK](https://docs.telophasehq.com/sources/msk)
-  * [Socket](https://docs.telophasehq.com/sources/socket)
-  * [File](https://docs.telophasehq.com/sources/file)
-* Sinks
-  * [S3](https://docs.telophasehq.com/sinks/s3)
-  * [File](https://docs.telophasehq.com/sinks/file)
-  * [Blackhole](https://docs.telophasehq.com/sinks/blackhole)
+* Configuration
+  * [`tangent.yaml`](https://docs.telophasehq.com/configuration/tangent-yaml)
+  * [Runtime](https://docs.telophasehq.com/configuration/runtime)
+  * [Plugins](https://docs.telophasehq.com/configuration/plugins)
+  * [DAG](https://docs.telophasehq.com/configuration/dag)
+  * Sources
+    * [SQS](https://docs.telophasehq.com/configuration/sources/sqs)
+    * [MSK](https://docs.telophasehq.com/configuration/sources/msk)
+    * [Socket](https://docs.telophasehq.com/configuration/sources/socket)
+    * [File](https://docs.telophasehq.com/configuration/sources/file)
+  * Sinks
+    * [S3](https://docs.telophasehq.com/configuration/sinks/s3)
+    * [File](https://docs.telophasehq.com/configuration/sinks/file)
+    * [Blackhole](https://docs.telophasehq.com/configuration/sinks/blackhole)
 
 
 ## License
