@@ -131,23 +131,23 @@ impl Worker {
             }
         }
 
-        let mut plugin_outputs: HashMap<String, Vec<BytesMut>> =
+        let mut plugin_outputs: HashMap<Arc<str>, Vec<BytesMut>> =
             HashMap::with_capacity(batch.len());
 
         for (idx, lvs) in groups {
             let m = &mut self.mappers.mappers[idx];
 
-            let mut owned: Vec<Resource<JsonLogView>> = Vec::new();
+            let mut borrowed: Vec<Resource<JsonLogView>> = Vec::new();
             for lv in lvs {
                 let h = m.store.data_mut().table.push(lv)?;
-                owned.push(h);
+                borrowed.push(h);
             }
 
             let start = Instant::now();
             let res = m
                 .proc
                 .tangent_logs_mapper()
-                .call_process_logs(&mut m.store, &owned)
+                .call_process_logs(&mut m.store, &borrowed)
                 .await;
 
             let secs = start.elapsed().as_secs_f64();
@@ -155,6 +155,10 @@ impl Worker {
                 .with_label_values(&[&self.id.to_string()])
                 .observe(secs);
             GUEST_BYTES_TOTAL.inc_by(*sizes.get(&idx).unwrap() as u64);
+
+            for lv in borrowed {
+                m.store.data_mut().table.delete(lv)?;
+            }
 
             let out = match res {
                 Err(host_err) => {
@@ -210,7 +214,7 @@ impl WorkerPool {
     pub async fn new(
         size: usize,
         engine: wasm::engine::WasmEngine,
-        components: Vec<(&String, Component)>,
+        components: Vec<(Arc<str>, Component)>,
         batch_max_size: usize,
         batch_max_age: Duration,
         router: Arc<Router>,

@@ -5,25 +5,25 @@ use aws_sdk_s3::Client;
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::byte_stream::ByteStream;
 use std::path::Path;
+use std::sync::Arc;
 use tangent_shared::sinks::common::{Compression, Encoding};
-use tangent_shared::sinks::s3::S3Config;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
 use crate::sinks::wal::{base_for, WALSink};
 
 pub struct S3Sink {
-    name: String,
+    name: Arc<str>,
     client: Client,
-    bucket_name: String,
+    bucket_name: Arc<str>,
     part_size: usize,
 }
 
 #[derive(Clone)]
 
 pub struct S3SinkItem {
-    pub bucket_name: String,
-    pub key_prefix: Option<String>,
+    pub bucket_name: Arc<str>,
+    pub key_prefix: Option<Arc<str>>,
 }
 
 #[async_trait]
@@ -52,7 +52,7 @@ impl WALSink for S3Sink {
             let mut put = self
                 .client
                 .put_object()
-                .bucket(&self.bucket_name)
+                .bucket(self.bucket_name.as_ref())
                 .key(&key)
                 .content_type(content_type)
                 .body(ByteStream::from_path(path).await?);
@@ -81,7 +81,7 @@ impl WALSink for S3Sink {
         let mut create = self
             .client
             .create_multipart_upload()
-            .bucket(&self.bucket_name)
+            .bucket(self.bucket_name.as_ref())
             .key(&key)
             .content_type(content_type);
 
@@ -133,7 +133,7 @@ impl WALSink for S3Sink {
             let up = self
                 .client
                 .upload_part()
-                .bucket(&self.bucket_name)
+                .bucket(self.bucket_name.as_ref())
                 .key(&key)
                 .upload_id(&upload_id)
                 .part_number(part_number)
@@ -147,7 +147,7 @@ impl WALSink for S3Sink {
                     let _ = self
                         .client
                         .abort_multipart_upload()
-                        .bucket(&self.bucket_name)
+                        .bucket(self.bucket_name.as_ref())
                         .key(&key)
                         .upload_id(&upload_id)
                         .send()
@@ -176,7 +176,7 @@ impl WALSink for S3Sink {
             let _ = self
                 .client
                 .abort_multipart_upload()
-                .bucket(&self.bucket_name)
+                .bucket(self.bucket_name.as_ref())
                 .key(&key)
                 .upload_id(&upload_id)
                 .send()
@@ -186,7 +186,7 @@ impl WALSink for S3Sink {
 
         self.client
             .complete_multipart_upload()
-            .bucket(&self.bucket_name)
+            .bucket(self.bucket_name.as_ref())
             .key(&key)
             .upload_id(&upload_id)
             .multipart_upload(
@@ -204,14 +204,14 @@ impl WALSink for S3Sink {
 }
 
 impl S3Sink {
-    pub async fn new(name: &str, cfg: &S3Config) -> Result<Self> {
+    pub async fn new(name: Arc<str>, bucket_name: Arc<str>) -> Result<Self> {
         let aws_cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = Client::new(&aws_cfg);
 
         Ok(Self {
-            name: name.to_owned(),
+            name: name,
             client,
-            bucket_name: cfg.bucket_name.clone(),
+            bucket_name: bucket_name,
             part_size: 8 * 1024 * 1024,
         })
     }

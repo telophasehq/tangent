@@ -1,0 +1,5 @@
+[alias]
+prof = "build --profile profiling --features alloc-prof"
+prof-run = "run --profile profiling --features alloc-prof"
+prof-test = "test --profile profiling --features alloc-prof"
+

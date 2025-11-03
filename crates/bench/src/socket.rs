@@ -1,13 +1,14 @@
 use anyhow::{Context, Result};
 use std::{
     path::PathBuf,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{self, io::AsyncWriteExt, net::UnixStream};
 use tracing::info;
 
 pub async fn run_bench(
-    name: &String,
+    name: Arc<str>,
     socket: PathBuf,
     connections: u16,
     payload: Vec<u8>,

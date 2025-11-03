@@ -2,6 +2,7 @@ use anyhow::Result;
 use bytes::BytesMut;
 use memchr::memchr;
 use std::io;
+use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixListener;
 use tokio::sync::mpsc;
@@ -22,7 +23,7 @@ fn drain_ndjson_lines(buf: &mut BytesMut) -> Vec<BytesMut> {
 }
 
 pub async fn run_consumer(
-    name: String,
+    name: Arc<str>,
     cfg: SocketConfig,
     dag_runtime: DagRuntime,
     shutdown: CancellationToken,
@@ -41,7 +42,7 @@ pub async fn run_consumer(
             Ok((mut us, _addr)) = listener.accept() => {
                 let err_tx = err_tx.clone();
                 let dag = dag_runtime.clone();
-                let source_name = name.clone();
+                let source_name = Arc::clone(&name);
 
                 tokio::spawn(async move {
                     let mut buf = BytesMut::with_capacity(read_buf_cap);
@@ -52,14 +53,14 @@ pub async fn run_consumer(
                                 if !buf.is_empty() {
                                     if !buf.ends_with(b"\n") { buf.extend_from_slice(b"\n"); }
                                     let frames = drain_ndjson_lines(&mut buf);
-                                    let _ = dag.push_from_source(&source_name, frames, Vec::new()).await;
+                                    let _ = dag.push_from_source(source_name.clone(), frames, Vec::new()).await;
                                 }
                                 break;
                             }
                             Ok(_n) => {
                                 let frames = drain_ndjson_lines(&mut buf);
                                 if !frames.is_empty() {
-                                    if let Err(e) = dag.push_from_source(&source_name, frames, Vec::new()).await {
+                                    if let Err(e) = dag.push_from_source(source_name.clone(), frames, Vec::new()).await {
                                         let _ = err_tx.send(e).await;
                                         break;
                                     }

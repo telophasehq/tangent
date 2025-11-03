@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use tracing::info;
 
 pub async fn run_bench(
-    name: &String,
+    name: Arc<str>,
     cfg: &SQSConfig,
     bucket: String,
     object_prefix: Option<String>,

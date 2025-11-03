@@ -26,11 +26,10 @@
 1. **Deterministic & pure:** No network, filesystem, timers, randomness, or goroutines. Treat the mapper as a pure transform.
 2. **Typed > dynamic:** Use typed structs for output; avoid `map[string]any` in hot paths.
 3. **Segment JSON only:** Use `github.com/segmentio/encoding/json` for all encoding.
-4. **Own your data:** `cm.List` is a view; copy to an owned slice before iterating.
-5. **Narrow probes:** Subscribe only to records you can transform; this saves CPU and reduces branching.
-6. **NDJSON out:** Emit exactly one JSON line per input record you accept.
-7. **WASM‑safe performance:** Reuse buffers, minimize allocations, no reflection in hot loops.
-8. **Tests drive correctness:** Provide `tests/input.json` and `tests/expected.json` (NDJSON). Tests must pass locally and in CI.
+4. **Narrow probes:** Subscribe only to records you can transform; this saves CPU and reduces branching.
+5. **NDJSON out:** Emit exactly one JSON line per input record you accept.
+6. **WASM‑safe performance:** Reuse buffers, minimize allocations, no reflection in hot loops.
+7. **Tests drive correctness:** Provide `tests/input.json` and `tests/expected.json` (NDJSON). Tests must pass locally and in CI.
 
 ---
 
@@ -42,7 +41,7 @@ Implement these exports in Go:
 
   * Version with SemVer (`MAJOR.MINOR.PATCH`).
 * **Probe** → `mapper.Exports.Probe`: returns a list of `mapper.Selector` with `All/Any/None` predicates (use `mapper.PredEq`).
-* **ProcessLogs** → `mapper.Exports.ProcessLogs`: input `cm.List[log.Logview]` → output `cm.Result[cm.List[uint8], cm.List[uint8], string]`.
+* **ProcessLogs** → `mapper.Exports.ProcessLogs`: input `cm.List[cm.Rep]` → output `cm.Result[cm.List[uint8], cm.List[uint8], string]`.
 
 Also include:
 
@@ -126,6 +125,7 @@ mapper.Exports.Probe = func() cm.List[mapper.Selector] {
 * Reuse a pooled buffer for NDJSON.
 * For each record:
 
+  * You MUST call `lv.ResourceDrop()` after you are done using the logView.
   * Read fields via `tangenthelpers`.
   * Populate your typed output.
   * `json.NewEncoder(buf).Encode(out)` (one line).
@@ -224,7 +224,7 @@ tests/expected.json  # NDJSON expected output (one line per output record)
 ## Performance requirements
 
 * Use a **`sync.Pool`** for buffers; call `buf.Reset()` before reuse.
-* Copy `cm.List` to a fresh slice: `items := append([]log.Logview(nil), input.Slice()...)`.
+* Copy `cm.List` to a fresh slice: `items := append([]cm.Rep(nil), input.Slice()...)`.
 * Avoid reflection and dynamic structures in the hot path.
 * Keep per‑record work O(number of fields you read).
 * Prefer early returns or `continue` when a record is to be dropped.

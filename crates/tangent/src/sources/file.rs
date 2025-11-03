@@ -1,6 +1,7 @@
 use anyhow::Result;
 use bytes::BytesMut;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tangent_shared::sources::file::FileConfig;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
@@ -11,7 +12,7 @@ use crate::sources::decoding;
 use crate::sources::decoding::normalize_to_ndjson;
 
 pub async fn run_consumer(
-    name: String,
+    name: Arc<str>,
     cfg: FileConfig,
     chunks: usize,
     dag_runtime: DagRuntime,
@@ -33,7 +34,7 @@ pub async fn run_consumer(
     let frames = decoding::chunk_ndjson(&mut ndjson, chunks);
 
     dag_runtime
-        .push_from_source(&name, frames, Vec::new())
+        .push_from_source(name, frames, Vec::new())
         .await?;
 
     let () = shutdown.cancelled().await;

@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{dag::DagRuntime, sources::decoding, worker::Ack};
 
 pub async fn run_consumer(
-    name: String,
+    name: Arc<str>,
     cfg: SQSConfig,
     chunks: usize,
     dag_runtime: DagRuntime,
@@ -108,7 +108,7 @@ pub async fn run_consumer(
                             }
 
                             if !frames_all.is_empty() {
-                                if let Err(e) = dag_runtime.push_from_source(&name, frames_all, vec![ack]).await {
+                                if let Err(e) = dag_runtime.push_from_source(Arc::clone(&name), frames_all, vec![ack]).await {
                                     tracing::error!("push_from_source error: {e:#}");
                                 }
                             } else {

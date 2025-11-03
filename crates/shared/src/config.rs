@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::dag::{Edge, NodeRef};
@@ -13,19 +14,20 @@ pub mod plugins;
 pub mod runtime;
 pub mod sinks;
 pub mod sources;
+pub mod wasm_engine;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     pub runtime: runtime::RuntimeConfig,
 
     #[serde(default)]
-    pub sources: std::collections::BTreeMap<String, SourceConfig>,
+    pub sources: std::collections::BTreeMap<Arc<str>, SourceConfig>,
 
     #[serde(default)]
-    pub sinks: std::collections::BTreeMap<String, SinkConfig>,
+    pub sinks: std::collections::BTreeMap<Arc<str>, SinkConfig>,
 
     #[serde(default)]
-    pub plugins: std::collections::BTreeMap<String, plugins::PluginConfig>,
+    pub plugins: std::collections::BTreeMap<Arc<str>, plugins::PluginConfig>,
 
     #[serde(default)]
     pub dag: Vec<Edge>,

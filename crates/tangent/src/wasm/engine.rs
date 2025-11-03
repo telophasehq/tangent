@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 
 use wasmtime::component::{Component, Linker};
-use wasmtime::{Config, Engine, Store};
+use wasmtime::{Engine, Store};
 use wasmtime_wasi::p2::WasiCtxBuilder;
 
 use crate::wasm::host::tangent::logs::log;
@@ -15,16 +15,7 @@ pub struct WasmEngine {
 
 impl WasmEngine {
     pub fn new() -> Result<Self> {
-        let mut cfg = Config::new();
-        cfg.wasm_component_model(true)
-            .async_support(true)
-            .wasm_simd(true)
-            .cranelift_opt_level(wasmtime::OptLevel::Speed)
-            .allocation_strategy(wasmtime::InstanceAllocationStrategy::Pooling(
-                wasmtime::PoolingAllocationConfig::default(),
-            ));
-
-        let engine = Engine::new(&cfg)?;
+        let engine = tangent_shared::wasm_engine::build()?;
         let mut linker = Linker::<HostEngine>::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;
         log::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
@@ -34,6 +25,12 @@ impl WasmEngine {
 
     pub fn load_component(&self, loc: &Path) -> Result<Component> {
         Component::from_file(&self.engine, loc)
+    }
+
+    pub fn load_precompiled(&self, loc: &Path) -> Result<Component> {
+        let comp = unsafe { Component::deserialize_file(&self.engine, &loc)? };
+
+        Ok(comp)
     }
 
     pub fn make_store(&self) -> Store<HostEngine> {

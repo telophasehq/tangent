@@ -67,14 +67,14 @@ func Wire() {
 		})
 	}
 
-	mapper.Exports.ProcessLogs = func(input cm.List[log.Logview]) (res cm.Result[cm.List[uint8], cm.List[uint8], string]) {
+	mapper.Exports.ProcessLogs = func(input cm.List[cm.Rep]) (res cm.Result[cm.List[uint8], cm.List[uint8], string]) {
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
 
-		var items []log.Logview
-		items = append(items, input.Slice()...)
+		items := append([]cm.Rep(nil), input.Slice()...)
 		for idx := range items {
 			lv := log.Logview(items[idx])
+
 			rawTS := tangenthelpers.GetString(lv, "ts")
 			rawWTS := tangenthelpers.GetString(lv, "_write_ts")
 
@@ -331,6 +331,8 @@ func Wire() {
 				na.StartTime = startTime
 				na.EndTime = endTime
 			}
+
+			lv.ResourceDrop()
 
 			line, err := json.Marshal(na)
 			if err != nil {

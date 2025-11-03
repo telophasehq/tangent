@@ -11,6 +11,9 @@ mod scaffold;
 mod test;
 mod wit_assets;
 
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 #[derive(Parser, Debug)]
 #[command(name = "tangent", version, about = "Tangent CLI")]
 struct Cli {
@@ -118,7 +121,8 @@ async fn main() -> Result<()> {
                 once,
                 ..Default::default()
             };
-            tangent_runtime::run(&cfg, opts).await?;
+
+            tangent_runtime::run(&cfg, opts).await?
         }
         Commands::Bench {
             config,

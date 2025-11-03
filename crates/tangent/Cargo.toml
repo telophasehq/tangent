@@ -15,14 +15,17 @@ path = "src/lib.rs"
 name = "tangentd"
 path = "src/main.rs"
 
+[features]
+alloc-prof = ["dep:libc", "dep:tikv-jemalloc-ctl"]
+
 [dependencies]
 tokio = { version = "1.0", features = ["full", "tracing"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
 log = "0.4"
-wasmtime      =  "34.0.2"
-wasmtime-wasi =  "34.0.2"
+wasmtime      =  { workspace = true }
+wasmtime-wasi =  { workspace = true }
 futures = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] } 
@@ -66,3 +69,6 @@ parquet = "57.0.0"
 arrow-json = "57.0.0"
 arrow-schema = { version = "57.0.0", features = ["serde"] }
 arrow-ipc = "57.0.0"
+tikv-jemallocator = { version = "0.6.1", features = ["profiling"] }
+tikv-jemalloc-ctl = {version = "0.6.1", features = ["stats", "profiling"], optional=true}
+libc = {version = "0.2.177", optional=true}

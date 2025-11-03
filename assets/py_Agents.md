@@ -25,12 +25,11 @@
 
 1. **Deterministic & pure:** No network, filesystem, timers, randomness, threads, or background work. Treat the mapper as a pure transform.
 2. **Stable, explicit shape:** Emit a consistent JSON shape (fixed keys/types). Prefer a small, explicit dict to dynamic structures.
-3. **Own your lifetimes:** Treat `logs` and each `Logview` as **ephemeral**; do not retain them after `process_logs` returns. Always use `with lv:` when iterating a `Logview`.
-4. **Narrow probes:** Subscribe only to records you can transform; avoid doing selection inside `process_logs` if the probe can express it.
-5. **NDJSON out:** Encode **one line per emitted record**; return a single `bytes` buffer containing all lines.
-6. **WASM‑safe performance:** Use a local `bytearray` buffer, minimize allocations, avoid reflection/`__dict__` walks and large intermediates.
-7. **Tests drive correctness:** Provide `tests/input.json` and `tests/expected.json` (NDJSON). Keep them small and representative.
-8. **No surprises:** No global mutable state (beyond module constants). No prints/logging from the mapper.
+3. **Narrow probes:** Subscribe only to records you can transform; avoid doing selection inside `process_logs` if the probe can express it.
+4. **NDJSON out:** Encode **one line per emitted record**; return a single `bytes` buffer containing all lines.
+5. **WASM‑safe performance:** Use a local `bytearray` buffer, minimize allocations, avoid reflection/`__dict__` walks and large intermediates.
+6. **Tests drive correctness:** Provide `tests/input.json` and `tests/expected.json` (NDJSON). Keep them small and representative.
+7. **No surprises:** No global mutable state (beyond module constants). No prints/logging from the mapper.
 
 ---
 
@@ -266,7 +265,6 @@ tests/expected.json  # NDJSON expected output (one line per emitted record)
 * [ ] `probe()` is as **narrow** as possible and correctly targets intended logs.
 * [ ] `process_logs()`:
 
-  * [ ] Uses `with lv:` and does not retain `lv` after the block.
   * [ ] Builds a single `bytearray` and returns `bytes`.
   * [ ] Emits exactly one line per output record and newline‑terminates each line.
 * [ ] Output dict shape is stable; keys/types match tests.
@@ -280,7 +278,6 @@ tests/expected.json  # NDJSON expected output (one line per emitted record)
 
 ## Anti‑patterns
 
-* ❌ Retaining `logs`/`lv` outside `process_logs` or outside the `with lv:` block.
 * ❌ Printing/logging, file or network I/O from inside the mapper.
 * ❌ Building JSON by hand or emitting partial lines.
 * ❌ Huge dynamic dicts or reflection‑like patterns (`__dict__` walks) in the hot path.

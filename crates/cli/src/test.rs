@@ -4,6 +4,7 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use tangent_shared::dag::{Edge, NodeRef};
@@ -39,12 +40,13 @@ pub async fn run(opts: TestOptions) -> Result<()> {
     let mut rt = RuntimeOptions::default();
     rt.once = true;
 
-    let mut plugins_to_test = Vec::<(String, PluginConfig)>::new();
+    let mut plugins_to_test = Vec::<(Arc<str>, PluginConfig)>::new();
 
     if opts.plugin.is_some() {
+        let plugin_name = opts.plugin.unwrap();
         let mut found = false;
         for (name, plugin_cfg) in cfg.plugins {
-            if Some(&name) == opts.plugin.as_ref() {
+            if name.as_ref() == plugin_name.as_str() {
                 found = true;
                 plugins_to_test.push((name, plugin_cfg));
                 break;
@@ -52,10 +54,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
         }
 
         if !found {
-            bail!(
-                "plugin {} not found in tangent config",
-                opts.plugin.unwrap()
-            );
+            bail!("plugin {} not found in tangent config", plugin_name);
         }
     } else {
         for (name, plugin_cfg) in cfg.plugins {
@@ -128,10 +127,10 @@ pub async fn run(opts: TestOptions) -> Result<()> {
             };
 
             let mut sinks = BTreeMap::new();
-            sinks.insert(String::from("out"), file_sink);
+            sinks.insert(Arc::<str>::from("out"), file_sink);
 
             let mut sources = BTreeMap::new();
-            sources.insert(String::from("input"), input_source);
+            sources.insert(Arc::<str>::from("input"), input_source);
 
             let plugin_config = PluginConfig {
                 module_type: "".to_string(), // not used

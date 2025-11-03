@@ -559,15 +559,14 @@ func Wire() {
 	}
 
     // ProcessLogs takes a batch of logs, transforms, and outputs bytes.
-	mapper.Exports.ProcessLogs = func(input cm.List[log.Logview]) (res cm.Result[cm.List[uint8], cm.List[uint8], string]) {
+	mapper.Exports.ProcessLogs = func(input cm.List[cm.Rep]) (res cm.Result[cm.List[uint8], cm.List[uint8], string]) {
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
 
         // Copy out the slice so we own the backing array.
         // The cm.List view may be backed by a transient buffer that
         // can be reused or mutated after this call, so we take an owned copy.
-		var items []log.Logview
-		items = append(items, input.Slice()...)
+        items := append([]cm.Rep(nil), input.Slice()...)
 		for idx := range items {
 			var out ExampleOutput
 
@@ -608,6 +607,8 @@ func Wire() {
 			if ok {
 				out.Tags = tags
 			}
+
+            lv.ResourceDrop()
 
 			// Serialize with Segment's encoding/json
 			err := json.NewEncoder(buf).Encode(out)
@@ -742,50 +743,49 @@ class Mapper(wit_world.WitWorld):
         buf = bytearray()
 
         for lv in logs:
-            with lv:
-                out = {
-                    "message": "",
-                    "level": "",
-                    "seen": 0,
-                    "duration": 0.0,
-                    "service": "",
-                    "tags": None,
-                }
+            out = {
+                "message": "",
+                "level": "",
+                "seen": 0,
+                "duration": 0.0,
+                "service": "",
+                "tags": None,
+            }
 
-                # get string
-                s = lv.get("msg")
-                if s is not None and hasattr(s, "value"):
-                    out["message"] = s.value
+            # get string
+            s = lv.get("msg")
+            if s is not None and hasattr(s, "value"):
+                out["message"] = s.value
 
-                # get dot path
-                s = lv.get("msg.level")
-                if s is not None and hasattr(s, "value"):
-                    out["level"] = s.value
+            # get dot path
+            s = lv.get("msg.level")
+            if s is not None and hasattr(s, "value"):
+                out["level"] = s.value
 
-                # get int
-                s = lv.get("seen")
-                if s is not None and hasattr(s, "value"):
-                    out["seen"] = s.value
+            # get int
+            s = lv.get("seen")
+            if s is not None and hasattr(s, "value"):
+                out["seen"] = s.value
 
-                # get float
-                s = lv.get("duration")
-                if s is not None and hasattr(s, "value"):
-                    out["duration"] = s.value
+            # get float
+            s = lv.get("duration")
+            if s is not None and hasattr(s, "value"):
+                out["duration"] = s.value
 
-                # get value from nested json
-                s = lv.get("source.name")
-                if s is not None and hasattr(s, "value"):
-                    out["service"] = s.value
+            # get value from nested json
+            s = lv.get("source.name")
+            if s is not None and hasattr(s, "value"):
+                out["service"] = s.value
 
-                # get string list
-                lst = lv.get_list("tags")
-                if lst is not None:
-                    tags: List[str] = []
-                    for item in lst:
-                        tags.append(item.value)
-                    out["tags"] = tags
+            # get string list
+            lst = lv.get_list("tags")
+            if lst is not None:
+                tags: List[str] = []
+                for item in lst:
+                    tags.append(item.value)
+                out["tags"] = tags
 
-                buf.extend(json.dumps(out).encode('utf-8') + b"\n")
+            buf.extend(json.dumps(out).encode('utf-8') + b"\n")
 
         return bytes(buf)
 "#;

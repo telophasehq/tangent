@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub struct SinkWrite {
-    pub sink_name: String,
+    pub sink_name: Arc<str>,
     pub payload: BytesMut,
     pub s3: Option<S3SinkItem>,
 }
@@ -47,23 +47,31 @@ struct Shard {
 
 #[derive(Clone)]
 enum SinkEntry {
-    S3 { sink: Arc<dyn Sink>, bucket: String },
-    Other { sink: Arc<dyn Sink> },
+    S3 {
+        sink: Arc<dyn Sink>,
+        bucket: Arc<str>,
+    },
+    Other {
+        sink: Arc<dyn Sink>,
+    },
 }
 
 pub struct SinkManager {
     shards: Vec<Shard>,
-    sinks: HashMap<String, SinkEntry>,
+    sinks: Arc<HashMap<Arc<str>, SinkEntry>>,
 }
 
 impl SinkManager {
-    pub async fn new(cfgs: &BTreeMap<String, SinkConfig>, queue_capacity: usize) -> Result<Self> {
-        let mut sinks: HashMap<String, SinkEntry> = HashMap::with_capacity(cfgs.len());
+    pub async fn new(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<Self> {
+        let mut sinks: HashMap<Arc<str>, SinkEntry> = HashMap::with_capacity(cfgs.len());
+
+        let total_inflight: usize = cfgs.values().map(|c| c.common.in_flight_limit).sum();
 
         for (name, cfg) in cfgs {
             match &cfg.kind {
                 SinkKind::S3(s3cfg) => {
-                    let remote = Arc::new(s3::S3Sink::new(name, &s3cfg).await?);
+                    let bucket: Arc<str> = Arc::<str>::from(s3cfg.bucket_name.clone());
+                    let remote = Arc::new(s3::S3Sink::new(Arc::clone(&name), bucket).await?);
                     let s3_sink = wal::DurableFileSink::new(
                         remote,
                         s3cfg.wal_path.clone(),
@@ -75,20 +83,20 @@ impl SinkManager {
                     )
                     .await?;
                     sinks.insert(
-                        name.to_owned(),
+                        Arc::clone(&name),
                         SinkEntry::S3 {
                             sink: s3_sink as Arc<dyn Sink>,
-                            bucket: s3cfg.bucket_name.clone(),
+                            bucket: Arc::<str>::from(s3cfg.bucket_name.clone()),
                         },
                     );
                 }
                 SinkKind::File(filecfg) => {
                     let file_sink = file::FileSink::new(filecfg, &cfg.common).await?;
-                    sinks.insert(name.to_owned(), SinkEntry::Other { sink: file_sink });
+                    sinks.insert(Arc::clone(&name), SinkEntry::Other { sink: file_sink });
                 }
                 SinkKind::Blackhole(_) => {
                     let bh = blackhole::BlackholeSink::new();
-                    sinks.insert(name.to_owned(), SinkEntry::Other { sink: bh });
+                    sinks.insert(Arc::clone(&name), SinkEntry::Other { sink: bh });
                 }
             }
         }
@@ -96,12 +104,12 @@ impl SinkManager {
         let num_shards = 4usize;
         let mut shards = Vec::with_capacity(num_shards);
 
-        let total_inflight: usize = cfgs.values().map(|c| c.common.in_flight_limit).sum();
         let sem = Arc::new(Semaphore::new(total_inflight.max(1)));
+        let sinks = Arc::new(sinks);
 
         for _ in 0..num_shards {
-            let (tx, mut rx) = mpsc::channel::<SinkItem>(queue_capacity);
-            let sinks_map = sinks.clone();
+            let (tx, mut rx) = mpsc::channel::<SinkItem>(4096);
+            let sinks_map = Arc::clone(&sinks);
             let sem = sem.clone();
 
             let handle = tokio::spawn(async move {
@@ -195,16 +203,20 @@ impl SinkManager {
 
     pub async fn enqueue(
         &self,
-        sink_name: String,
-        key_prefix: Option<String>,
+        sink_name: Arc<str>,
+        key_prefix: Option<Arc<str>>,
         payload: BytesMut,
         acks: Vec<Arc<dyn Ack>>,
     ) -> Result<()> {
-        let route_key = key_prefix.as_ref().map_or_else(
-            || sink_name.clone(),
-            |prefix| format!("{sink_name}|{prefix}"),
-        );
-        let shard_ix = (hash_route(&route_key) as usize) % self.shards.len();
+        let shard_ix = {
+            let mut h = AHasher::default();
+            h.write(sink_name.as_bytes());
+            if let Some(prefix) = key_prefix.clone() {
+                h.write_u8(b'|');
+                h.write(prefix.as_bytes());
+            }
+            (h.finish() as usize) % self.shards.len()
+        };
 
         if !self.sinks.contains_key(&sink_name) {
             tracing::warn!("unknown sink '{}'; dropping item", sink_name);
@@ -214,10 +226,10 @@ impl SinkManager {
         let sink_item = SinkItem {
             acks,
             req: SinkWrite {
-                sink_name: sink_name.clone(),
+                sink_name: Arc::<str>::from(sink_name),
                 payload: payload,
-                s3: key_prefix.map(|kp| s3::S3SinkItem {
-                    bucket_name: String::new(), // placeholder; filled in shard
+                s3: key_prefix.clone().map(|kp| s3::S3SinkItem {
+                    bucket_name: Arc::<str>::from(""), // placeholder; filled in shard
                     key_prefix: Some(kp),
                 }),
             },
@@ -244,7 +256,7 @@ impl SinkManager {
             }
         }
 
-        for (nm, entry) in &sinks {
+        for (nm, entry) in sinks.iter() {
             let sink: &Arc<dyn Sink> = match entry {
                 SinkEntry::S3 { sink, .. } => sink,
                 SinkEntry::Other { sink } => sink,
@@ -256,10 +268,4 @@ impl SinkManager {
         }
         Ok(())
     }
-}
-
-fn hash_route(route_key: &str) -> u64 {
-    let mut h = AHasher::default();
-    h.write(route_key.as_bytes());
-    h.finish()
 }
