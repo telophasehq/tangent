@@ -2,10 +2,10 @@ package main
 
 import (
 	"bytes"
-	"sync"
 	"golang/internal/tangent/logs/log"
 	"golang/internal/tangent/logs/mapper"
-    "golang/tangenthelpers"
+	"golang/tangenthelpers"
+	"sync"
 
 	"github.com/segmentio/encoding/json"
 
@@ -26,7 +26,7 @@ type ExampleOutput struct {
 }
 
 func Wire() {
-    // Metadata is for naming and versioning your plugin.
+	// Metadata is for naming and versioning your plugin.
 	mapper.Exports.Metadata = func() mapper.Meta {
 		return mapper.Meta{
 			Name:    "golang",
@@ -34,7 +34,7 @@ func Wire() {
 		}
 	}
 
-    // Probe allows the mapper to subscribe to logs with specific fields.
+	// Probe allows the mapper to subscribe to logs with specific fields.
 	mapper.Exports.Probe = func() cm.List[mapper.Selector] {
 		return cm.ToList([]mapper.Selector{
 			{
@@ -51,15 +51,15 @@ func Wire() {
 		})
 	}
 
-    // ProcessLogs takes a batch of logs, transforms, and outputs bytes.
-	mapper.Exports.ProcessLogs = func(input cm.List[log.Logview]) (res cm.Result[cm.List[uint8], cm.List[uint8], string]) {
+	// ProcessLogs takes a batch of logs, transforms, and outputs bytes.
+	mapper.Exports.ProcessLogs = func(input cm.List[cm.Rep]) (res cm.Result[cm.List[uint8], cm.List[uint8], string]) {
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
 
-        // Copy out the slice so we own the backing array.
-        // The cm.List view may be backed by a transient buffer that
-        // can be reused or mutated after this call, so we take an owned copy.
-		var items []log.Logview
+		// Copy out the slice so we own the backing array.
+		// The cm.List view may be backed by a transient buffer that
+		// can be reused or mutated after this call, so we take an owned copy.
+		var items []cm.Rep
 		items = append(items, input.Slice()...)
 		for idx := range items {
 			var out ExampleOutput

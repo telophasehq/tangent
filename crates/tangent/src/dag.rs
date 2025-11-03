@@ -36,7 +36,7 @@ impl DagRuntime {
 
         let mut components: Vec<(Arc<str>, Component)> = Vec::with_capacity(cfg.plugins.len());
         for (name, _) in &cfg.plugins {
-            let component_file = format!("{name}.component.wasm");
+            let component_file = format!("{name}.cwasm");
             let plugin_path = plugin_root
                 .join(&component_file)
                 .canonicalize()
@@ -51,7 +51,7 @@ impl DagRuntime {
             components.push((
                 Arc::clone(name),
                 engine
-                    .load_component(&plugin_path)
+                    .load_precompiled(&plugin_path)
                     .with_context(|| format!("loading {}", &component_file))?,
             ));
         }

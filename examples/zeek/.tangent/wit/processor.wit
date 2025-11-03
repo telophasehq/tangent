@@ -13,6 +13,7 @@ interface log {
     // JSONPath/dot-path style, e.g. "detail.findings[0].CompanyName"
     has:      func(path: string) -> bool;
     get:      func(path: string) -> option<scalar>;
+    len:      func(path: string) -> option<u32>;
     get-list: func(path: string) -> option<list<scalar>>;
     get-map:  func(path: string) -> option<list<tuple<string, scalar>>>;
     keys:     func(path: string) -> list<string>;
@@ -47,7 +48,7 @@ interface mapper {
 
   probe: func() -> list<selector>;
 
-  process-logs: func(input: list<own<logview>>) -> result<list<u8>, string>;
+  process-logs: func(input: list<borrow<logview>>) -> result<list<u8>, string>;
 }
 
 world processor {

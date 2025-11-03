@@ -184,6 +184,7 @@ impl log::HostLogview for HostEngine {
     }
 
     async fn drop(&mut self, h: Resource<JsonLogView>) -> wasmtime::Result<()> {
+        tracing::warn!("dropped");
         let _ = self.table.delete(h)?;
         Ok(())
     }

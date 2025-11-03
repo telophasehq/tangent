@@ -42,7 +42,7 @@ Implement these exports in Go:
 
   * Version with SemVer (`MAJOR.MINOR.PATCH`).
 * **Probe** → `mapper.Exports.Probe`: returns a list of `mapper.Selector` with `All/Any/None` predicates (use `mapper.PredEq`).
-* **ProcessLogs** → `mapper.Exports.ProcessLogs`: input `cm.List[log.Logview]` → output `cm.Result[cm.List[uint8], cm.List[uint8], string]`.
+* **ProcessLogs** → `mapper.Exports.ProcessLogs`: input `cm.List[cm.Rep]` → output `cm.Result[cm.List[uint8], cm.List[uint8], string]`.
 
 Also include:
 
@@ -224,7 +224,7 @@ tests/expected.json  # NDJSON expected output (one line per output record)
 ## Performance requirements
 
 * Use a **`sync.Pool`** for buffers; call `buf.Reset()` before reuse.
-* Copy `cm.List` to a fresh slice: `items := append([]log.Logview(nil), input.Slice()...)`.
+* Copy `cm.List` to a fresh slice: `items := append([]cm.Rep(nil), input.Slice()...)`.
 * Avoid reflection and dynamic structures in the hot path.
 * Keep per‑record work O(number of fields you read).
 * Prefer early returns or `continue` when a record is to be dropped.

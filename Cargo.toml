@@ -29,7 +29,7 @@ split-debuginfo = "unpacked"
 lto = "off"                  
 codegen-units = 1             
 opt-level = 3              
-panic = "unwind"              
+panic = "unwind"
 
 [profile.profiling.package."*"]
 debug = 2

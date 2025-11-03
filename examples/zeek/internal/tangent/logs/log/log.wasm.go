@@ -31,3 +31,7 @@ func wasmimport_LogviewHas(self0 uint32, path0 *uint8, path1 uint32) (result0 ui
 //go:wasmimport tangent:logs/log@0.1.0 [method]logview.keys
 //go:noescape
 func wasmimport_LogviewKeys(self0 uint32, path0 *uint8, path1 uint32, result *cm.List[string])
+
+//go:wasmimport tangent:logs/log@0.1.0 [method]logview.len
+//go:noescape
+func wasmimport_LogviewLen(self0 uint32, path0 *uint8, path1 uint32, result *cm.Option[uint32])

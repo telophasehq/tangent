@@ -122,8 +122,6 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     #[cfg(feature = "alloc-prof")]
     jemalloc_dump("pre_teardown");
 
-    std::thread::sleep(std::time::Duration::from_secs(300));
-
     ingest_shutdown.cancel();
 
     info!("received shutdown signal...");
