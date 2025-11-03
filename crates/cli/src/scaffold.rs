@@ -566,8 +566,7 @@ func Wire() {
         // Copy out the slice so we own the backing array.
         // The cm.List view may be backed by a transient buffer that
         // can be reused or mutated after this call, so we take an owned copy.
-		var items []cm.Rep
-		items = append(items, input.Slice()...)
+        items := append([]cm.Rep(nil), input.Slice()...)
 		for idx := range items {
 			var out ExampleOutput
 
@@ -608,6 +607,8 @@ func Wire() {
 			if ok {
 				out.Tags = tags
 			}
+
+            lv.ResourceDrop()
 
 			// Serialize with Segment's encoding/json
 			err := json.NewEncoder(buf).Encode(out)

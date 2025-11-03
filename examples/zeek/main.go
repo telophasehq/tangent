@@ -71,10 +71,10 @@ func Wire() {
 		buf := bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
 
-		var items []cm.Rep
-		items = append(items, input.Slice()...)
+		items := append([]cm.Rep(nil), input.Slice()...)
 		for idx := range items {
 			lv := log.Logview(items[idx])
+
 			rawTS := tangenthelpers.GetString(lv, "ts")
 			rawWTS := tangenthelpers.GetString(lv, "_write_ts")
 
@@ -331,6 +331,8 @@ func Wire() {
 				na.StartTime = startTime
 				na.EndTime = endTime
 			}
+
+			lv.ResourceDrop()
 
 			line, err := json.Marshal(na)
 			if err != nil {
