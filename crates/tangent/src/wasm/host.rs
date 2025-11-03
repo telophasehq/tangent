@@ -6,7 +6,7 @@ use simd_json::derived::{TypedArrayValue, TypedScalarValue};
 use simd_json::prelude::{ValueAsArray, ValueAsObject, ValueObjectAccess};
 use simd_json::{BorrowedValue, StaticNode};
 use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
-use wasmtime_wasi::p2::{IoView, WasiCtx, WasiView};
+use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
 use crate::wasm::host::tangent::logs::log;
 use log::Scalar;
@@ -14,7 +14,7 @@ use log::Scalar;
 bindgen!({
     world: "processor",
     path: "../../assets/wit",
-    async: true,
+    exports: {default: async},
     with: {
         "tangent:logs/log/logview": JsonLogView,
     }
@@ -38,14 +38,12 @@ impl HostEngine {
     }
 }
 
-impl IoView for HostEngine {
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
-    }
-}
 impl WasiView for HostEngine {
-    fn ctx(&mut self) -> &mut WasiCtx {
-        &mut self.ctx
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.ctx,
+            table: &mut self.table,
+        }
     }
 }
 
@@ -112,7 +110,7 @@ impl JsonLogView {
 }
 
 impl log::HostLogview for HostEngine {
-    async fn has(&mut self, h: Resource<JsonLogView>, path: String) -> bool {
+    fn has(&mut self, h: Resource<JsonLogView>, path: String) -> bool {
         let present = {
             let v: &JsonLogView = match self.table.get(&h) {
                 Ok(v) => v,
@@ -123,12 +121,12 @@ impl log::HostLogview for HostEngine {
         present
     }
 
-    async fn get(&mut self, h: Resource<JsonLogView>, path: String) -> Option<log::Scalar> {
+    fn get(&mut self, h: Resource<JsonLogView>, path: String) -> Option<log::Scalar> {
         let v: &JsonLogView = self.table.get(&h).ok()?;
         v.lookup(&path).and_then(JsonLogView::to_scalar)
     }
 
-    async fn len(&mut self, h: Resource<JsonLogView>, path: String) -> Option<u32> {
+    fn len(&mut self, h: Resource<JsonLogView>, path: String) -> Option<u32> {
         let v: &JsonLogView = self.table.get(&h).ok()?;
         let item = v.lookup(&path)?;
 
@@ -143,18 +141,14 @@ impl log::HostLogview for HostEngine {
         return None;
     }
 
-    async fn get_list(
-        &mut self,
-        h: Resource<JsonLogView>,
-        path: String,
-    ) -> Option<Vec<log::Scalar>> {
+    fn get_list(&mut self, h: Resource<JsonLogView>, path: String) -> Option<Vec<log::Scalar>> {
         let v: &JsonLogView = self.table.get(&h).ok()?;
         v.lookup(&path)?
             .as_array()
             .map(|arr| arr.iter().filter_map(JsonLogView::to_scalar).collect())
     }
 
-    async fn get_map(
+    fn get_map(
         &mut self,
         h: Resource<JsonLogView>,
         path: String,
@@ -167,7 +161,7 @@ impl log::HostLogview for HostEngine {
         })
     }
 
-    async fn keys(&mut self, h: Resource<JsonLogView>, path: String) -> Vec<String> {
+    fn keys(&mut self, h: Resource<JsonLogView>, path: String) -> Vec<String> {
         let out = {
             let v: &JsonLogView = match self.table.get(&h) {
                 Ok(v) => v,
@@ -183,8 +177,7 @@ impl log::HostLogview for HostEngine {
         out
     }
 
-    async fn drop(&mut self, h: Resource<JsonLogView>) -> wasmtime::Result<()> {
-        tracing::warn!("dropped");
+    fn drop(&mut self, h: Resource<JsonLogView>) -> wasmtime::Result<()> {
         let _ = self.table.delete(h)?;
         Ok(())
     }
