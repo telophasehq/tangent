@@ -110,11 +110,20 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
 
     let dag_runtime = DagRuntime::build(&cfg, &config_path).await?;
 
+    #[cfg(feature = "alloc-prof")]
+    jemalloc_dump("warm");
+
     let consumer_handles = spawn_consumers(cfg, dag_runtime.clone(), ingest_shutdown.clone());
 
     if !opts.once {
         wait_for_shutdown_signal().await?;
     }
+
+    #[cfg(feature = "alloc-prof")]
+    jemalloc_dump("pre_teardown");
+
+    std::thread::sleep(std::time::Duration::from_secs(300));
+
     ingest_shutdown.cancel();
 
     info!("received shutdown signal...");
@@ -234,4 +243,14 @@ pub async fn wait_for_shutdown_signal() -> Result<()> {
         tokio::signal::ctrl_c().await?;
         Ok(())
     }
+}
+
+#[cfg(feature = "alloc-prof")]
+fn jemalloc_dump(tag: &str) {
+    use tikv_jemalloc_ctl;
+    unsafe {
+        let _: tikv_jemalloc_ctl::Result<()> =
+            tikv_jemalloc_ctl::raw::write::<*const libc::c_char>(b"prof.dump\0", std::ptr::null());
+    }
+    tracing::warn!("jemalloc: forced heap dump ({tag})");
 }

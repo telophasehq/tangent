@@ -7,6 +7,9 @@ homepage.workspace = true
 documentation.workspace = true
 readme.workspace = true
 
+[features]
+alloc-prof = ["dep:libc", "dep:tikv-jemalloc-ctl"]
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 compile-wasm = { path = "../compile-wasm" }
@@ -22,6 +25,9 @@ serde_json = "1.0.145"
 tempfile = "3.23.0"
 tracing = "0.1.41"
 serde_yaml = "0.9.34"
+tikv-jemallocator = { version = "0.6.1", features = ["profiling"] }
+tikv-jemalloc-ctl = {version = "0.6.1", features = ["stats", "profiling"], optional=true}
+libc = {version = "0.2.177", optional=true}
 
 [[bin]]
 name = "tangent"

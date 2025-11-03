@@ -91,7 +91,7 @@ fn header_str<'a>(m: &'a rdkafka::message::BorrowedMessage<'a>, key: &str) -> Op
 }
 
 pub async fn run_consumer(
-    name: String,
+    name: Arc<str>,
     kc: MSKConfig,
     chunks: usize,
     dag_runtime: DagRuntime,
@@ -120,7 +120,7 @@ pub async fn run_consumer(
                             let mut ndjson = normalize_to_ndjson(&kc.decoding.format, raw)?;
                             let frames_mut = decoding::chunk_ndjson(&mut ndjson, chunks);
 
-                            dag_runtime.push_from_source(name.as_str(), frames_mut, vec![]).await?;
+                            dag_runtime.push_from_source(name.clone(), frames_mut, vec![]).await?;
                         }
                     }
                     Err(e) => {

@@ -30,11 +30,11 @@ impl DagRuntime {
     pub async fn build(cfg: &Config, cfg_path: &PathBuf) -> anyhow::Result<Self> {
         let engine = WasmEngine::new()?;
 
-        let sink_manager = Arc::new(SinkManager::new(&cfg.sinks, cfg.batch_size_kb() * 10).await?);
+        let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
         let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
         let plugin_root = config_dir.join(&cfg.runtime.plugins_path).canonicalize()?;
 
-        let mut components: Vec<(&String, Component)> = Vec::with_capacity(cfg.plugins.len());
+        let mut components: Vec<(Arc<str>, Component)> = Vec::with_capacity(cfg.plugins.len());
         for (name, _) in &cfg.plugins {
             let component_file = format!("{name}.component.wasm");
             let plugin_path = plugin_root
@@ -49,7 +49,7 @@ impl DagRuntime {
                 })?;
 
             components.push((
-                name,
+                Arc::clone(name),
                 engine
                     .load_component(&plugin_path)
                     .with_context(|| format!("loading {}", &component_file))?,
@@ -86,13 +86,11 @@ impl DagRuntime {
 
     pub async fn push_from_source(
         &self,
-        source_name: &str,
+        source_name: Arc<str>,
         frames: Vec<BytesMut>,
         acks: Vec<Arc<dyn Ack>>,
     ) -> anyhow::Result<()> {
-        let from = NodeRef::Source {
-            name: source_name.to_string(),
-        };
+        let from = NodeRef::Source { name: source_name };
         self.router.forward(&from, frames, acks).await
     }
 

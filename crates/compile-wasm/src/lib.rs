@@ -5,6 +5,7 @@ use std::{
     process::{Command, Stdio},
 };
 use tangent_shared::Config;
+use wasmtime::component::Component;
 use which::which;
 
 const WORLD: &str = "processor";
@@ -38,10 +39,17 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
             ),
         }
 
+        let engine = tangent_shared::wasm_engine::build()?;
+        let c = Component::from_file(&engine, full_out)?;
+        let bytes = c.serialize()?;
+
+        let cwasm_out = &out.join(format!("{name}.cwasm"));
+        std::fs::write(cwasm_out, bytes)?;
+
         println!(
             "✅ Compiled {} → {}",
             entry_point_path.display(),
-            full_out.display()
+            cwasm_out.display()
         );
     }
     Ok(())

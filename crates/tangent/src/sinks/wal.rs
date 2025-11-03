@@ -42,8 +42,8 @@ pub struct DurableFileSink {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 struct WalMeta {
-    bucket_name: String,
-    key_prefix: Option<String>,
+    bucket_name: Arc<str>,
+    key_prefix: Option<Arc<str>>,
 
     encoding: Encoding,
     compression: Compression,
@@ -51,8 +51,8 @@ struct WalMeta {
 
 #[derive(Hash, Eq, PartialEq, Clone)]
 pub struct RouteKey {
-    pub sink_name: String,
-    pub prefix: Option<String>,
+    pub sink_name: Arc<str>,
+    pub prefix: Option<Arc<str>>,
 }
 
 struct RouteState {

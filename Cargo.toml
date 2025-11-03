@@ -6,6 +6,8 @@ resolver = "2"
 prometheus = "0.13.4"
 prometheus_exporter = "0.8.5"
 lazy_static = "1"
+wasmtime      =  "34.0.2"
+wasmtime-wasi =  "34.0.2"
 
 [workspace.package]
 version = "0.1.7"
@@ -15,10 +17,19 @@ homepage = "https://github.com/telophasehq/tangent"
 documentation = "https://github.com/telophasehq/tangent"
 readme = "README.md"
 
-# The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"
 
-[profile.release]
-debug = true
+[profile.profiling]
+inherits = "release"
+debug = 2                    
+strip = "none"               
+split-debuginfo = "unpacked"
+lto = "off"                  
+codegen-units = 1             
+opt-level = 3              
+panic = "unwind"              
+
+[profile.profiling.package."*"]
+debug = 2

@@ -131,7 +131,7 @@ impl Worker {
             }
         }
 
-        let mut plugin_outputs: HashMap<String, Vec<BytesMut>> =
+        let mut plugin_outputs: HashMap<Arc<str>, Vec<BytesMut>> =
             HashMap::with_capacity(batch.len());
 
         for (idx, lvs) in groups {
@@ -210,7 +210,7 @@ impl WorkerPool {
     pub async fn new(
         size: usize,
         engine: wasm::engine::WasmEngine,
-        components: Vec<(&String, Component)>,
+        components: Vec<(Arc<str>, Component)>,
         batch_max_size: usize,
         batch_max_age: Duration,
         router: Arc<Router>,

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use wasmtime::component::Component;
 use wasmtime::Store;
 
@@ -8,7 +10,7 @@ use crate::wasm::host::{HostEngine, Processor};
 use crate::wasm::probe::{compile_selector, CompiledSelector};
 
 pub struct MapperCtx {
-    pub cfg_name: String,
+    pub cfg_name: Arc<str>,
     pub name: String,
     pub version: String,
     pub store: Store<HostEngine>,
@@ -23,7 +25,7 @@ pub struct Mappers {
 impl Mappers {
     pub async fn load_all(
         engine: &WasmEngine,
-        components: &Vec<(&String, Component)>,
+        components: &Vec<(Arc<str>, Component)>,
     ) -> anyhow::Result<Self> {
         let mut mappers = Vec::with_capacity(components.len());
 
@@ -42,7 +44,7 @@ impl Mappers {
                 .collect::<anyhow::Result<_>>()?;
 
             mappers.push(MapperCtx {
-                cfg_name: name.to_string(),
+                cfg_name: Arc::clone(name),
                 name: meta.name,
                 version: meta.version,
                 store,

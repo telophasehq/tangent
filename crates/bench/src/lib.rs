@@ -51,10 +51,10 @@ impl Default for BenchOptions {
 
 pub async fn run(config_path: &PathBuf, opts: BenchOptions) -> Result<()> {
     let cfg = Config::from_file(config_path)?;
-    run_with_config(&cfg, opts).await
+    run_with_config(cfg, opts).await
 }
 
-pub async fn run_with_config(cfg: &Config, opts: BenchOptions) -> Result<()> {
+pub async fn run_with_config(cfg: Config, opts: BenchOptions) -> Result<()> {
     let payload = fs::read_to_string(&opts.payload)
         .with_context(|| format!("failed to read payload file {}", &opts.payload.display()))?;
 
@@ -93,7 +93,7 @@ pub async fn run_with_config(cfg: &Config, opts: BenchOptions) -> Result<()> {
 }
 
 pub async fn run_one_payload(
-    cfg: &Config,
+    cfg: Config,
     metrics_url: &str,
     connections: u16,
     max_bytes: usize,
@@ -103,7 +103,7 @@ pub async fn run_one_payload(
     obj_prefix: Option<String>,
     disable_metrics: bool,
 ) -> Result<()> {
-    for src in &cfg.sources {
+    for src in cfg.sources {
         let pd = payload.clone();
         let mut before: Option<Stats> = None;
         if !disable_metrics {
@@ -112,7 +112,7 @@ pub async fn run_one_payload(
         let t0 = std::time::Instant::now();
 
         let name = src.0;
-        match &src.1 {
+        match src.1 {
             SourceConfig::Socket(sc) => {
                 socket::run_bench(
                     name,

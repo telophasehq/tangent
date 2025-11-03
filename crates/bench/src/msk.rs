@@ -3,6 +3,7 @@ use bytes::BytesMut;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::ClientConfig;
 use secrecy::ExposeSecret;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tangent_shared::sources::msk::{MSKAuth, MSKConfig};
 use tokio::task;
@@ -26,7 +27,7 @@ fn build_scram_producer(bootstrap: &str, username: &str, password: &str) -> Futu
 }
 
 pub async fn run_bench(
-    name: &String,
+    name: Arc<str>,
     kcfg: &MSKConfig,
     connections: u16,
     payload: Vec<u8>,
