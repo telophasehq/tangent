@@ -10,7 +10,7 @@ wasmtime      =  "34.0.2"
 wasmtime-wasi =  "34.0.2"
 
 [workspace.package]
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 repository = "https://github.com/telophasehq/tangent"
 homepage = "https://github.com/telophasehq/tangent"
