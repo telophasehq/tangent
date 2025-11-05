@@ -55,16 +55,34 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
     Ok(())
 }
 
-fn ensure_componentize_available() -> Result<()> {
-    which("componentize-py").map(|_| ()).map_err(|_| {
-        anyhow!("`componentize-py` not found in PATH. Install with: python -m pip install componentize-py")
-    })
-}
-
 fn ensure_tinygo() -> Result<()> {
     which("tinygo")
         .map(|_| ())
         .map_err(|_| anyhow!("`tinygo` not found in PATH. Install directions: https://tinygo.org/getting-started/install/"))
+}
+
+fn prepare_python_env(py_dir: &Path) -> Result<PathBuf> {
+    let venv_dir = py_dir.join(".venv");
+    let py_bin = venv_dir.join("bin/python");
+
+    if !py_bin.exists() {
+        Command::new("python")
+            .arg("-m")
+            .arg("venv")
+            .arg(&venv_dir)
+            .status()
+            .context("creating venv")?;
+    }
+
+    let reqs = py_dir.join("requirements.txt");
+    if reqs.exists() {
+        Command::new(&py_bin)
+            .args(["-m", "pip", "install", "-r"])
+            .arg(&reqs)
+            .status()
+            .context("installing Python requirements")?;
+    }
+    Ok(py_bin)
 }
 
 fn run_componentize_py(
@@ -73,13 +91,14 @@ fn run_componentize_py(
     entry_point_path: &Path,
     out_component: &Path,
 ) -> anyhow::Result<()> {
-    ensure_componentize_available()?;
-
     let py_dir = entry_point_path.parent().unwrap_or(Path::new("."));
+    let py = prepare_python_env(py_dir)?;
     let app_module = file_stem(&entry_point_path)?;
 
-    let status = Command::new("componentize-py")
+    let status = Command::new(&py)
         .current_dir(&py_dir)
+        .arg("-m")
+        .arg("componentize_py")
         .arg("--wit-path")
         .arg(wit_path)
         .arg("--world")
