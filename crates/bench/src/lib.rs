@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::Instant};
 use tangent_shared::{sources::common::SourceConfig, Config};
 
 use crate::metrics::Stats;
@@ -10,6 +10,8 @@ pub mod msk;
 pub mod socket;
 pub mod sqs;
 pub mod tcp;
+
+const WARMUP_SECS: u64 = 5;
 
 /// Options for running the benchmark.
 #[derive(Debug, Clone)]
@@ -104,56 +106,94 @@ pub async fn run_one_payload(
     obj_prefix: Option<String>,
     disable_metrics: bool,
 ) -> Result<()> {
-    for src in cfg.sources {
+    for (name, src) in &cfg.sources {
         let pd = payload.clone();
-        let mut before: Option<Stats> = None;
-        if !disable_metrics {
-            before = Some(metrics::scrape_stats(metrics_url).await?);
-        }
-        let t0 = std::time::Instant::now();
 
-        let name = src.0;
-        match src.1 {
-            SourceConfig::Socket(sc) => {
-                socket::run_bench(
-                    name,
-                    sc.socket_path.clone(),
-                    connections,
-                    pd,
-                    max_bytes,
-                    seconds,
-                )
-                .await?;
-            }
-            SourceConfig::MSK(mc) => {
-                msk::run_bench(name, &mc, connections, pd, max_bytes, seconds).await?;
-            }
-            SourceConfig::SQS(sq) => {
-                if let Some(ref b) = bucket {
-                    sqs::run_bench(
-                        name,
-                        &sq,
-                        b.clone(),
-                        obj_prefix.clone(),
-                        connections,
-                        pd,
-                        seconds,
-                    )
-                    .await?;
-                } else {
-                    anyhow::bail!("--bucket is required for SQS bench");
+        // Single-run with warmup: run bench for warmup_seconds + seconds.
+        // Capture baseline metrics exactly at warmup boundary (or immediately if warmup is 0).
+        let total_seconds = seconds.saturating_add(WARMUP_SECS);
+
+        let (before_pair_res, bench_res) = {
+            tracing::info!(
+                "warmup: {}s, then measuring {}s for source {}",
+                WARMUP_SECS,
+                seconds,
+                name
+            );
+
+            tokio::join!(
+                async {
+                    if disable_metrics {
+                        return Ok::<Option<(Stats, Instant)>, anyhow::Error>(None);
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(WARMUP_SECS)).await;
+                    let stats = metrics::scrape_stats(metrics_url).await?;
+                    Ok::<Option<(Stats, Instant)>, anyhow::Error>(Some((stats, Instant::now())))
+                },
+                async {
+                    match src {
+                        SourceConfig::Socket(sc) => {
+                            socket::run_bench(
+                                name.clone(),
+                                sc.socket_path.clone(),
+                                connections,
+                                pd,
+                                max_bytes,
+                                total_seconds,
+                            )
+                            .await
+                        }
+                        SourceConfig::MSK(mc) => {
+                            msk::run_bench(
+                                name.clone(),
+                                mc,
+                                connections,
+                                pd,
+                                max_bytes,
+                                total_seconds,
+                            )
+                            .await
+                        }
+                        SourceConfig::SQS(sq) => {
+                            if let Some(ref b) = bucket {
+                                sqs::run_bench(
+                                    name.clone(),
+                                    sq,
+                                    b.clone(),
+                                    obj_prefix.clone(),
+                                    connections,
+                                    pd,
+                                    total_seconds,
+                                )
+                                .await
+                            } else {
+                                anyhow::bail!("--bucket is required for SQS bench");
+                            }
+                        }
+                        SourceConfig::Tcp(tc) => {
+                            tcp::run_bench(
+                                name.clone(),
+                                tc.bind_address,
+                                connections,
+                                pd,
+                                max_bytes,
+                                seconds,
+                            )
+                            .await
+                        }
+                        SourceConfig::File(_) => unimplemented!("not implemented"),
+                    }
                 }
-            }
-            SourceConfig::File(_) => unimplemented!("not implemented"),
-            SourceConfig::Tcp(tc) => {
-                tcp::run_bench(name, tc.bind_address, connections, pd, max_bytes, seconds).await?;
-            }
-        }
+            )
+        };
+
+        bench_res?;
+        let t1 = Instant::now();
 
         if !disable_metrics {
-            let elapsed = t0.elapsed().as_secs_f64();
-            let before = before.unwrap();
+            let (before, t0) = before_pair_res?.expect("metrics baseline missing");
             let drained = metrics::scrape_stats(metrics_url).await?;
+            let elapsed = t1.duration_since(t0).as_secs_f64();
 
             let in_bytes = (drained.consumer_bytes - before.consumer_bytes) as f64;
             let out_bytes = (drained.sink_bytes - before.sink_bytes) as f64;
@@ -165,20 +205,20 @@ pub async fn run_one_payload(
                 0.0
             };
 
-            let in_mibs = in_bytes / (1024.0 * 1024.0);
-            let out_mibs = out_bytes / (1024.0 * 1024.0);
-            let out_mibs_uncompressed = out_bytes_uncompressed / (1024.0 * 1024.0);
-            let in_mibs_s = in_mibs / elapsed;
-            let out_mibs_s = out_mibs / elapsed;
-            let out_mibs_uncompressed_s = out_mibs_uncompressed / elapsed;
+            let in_mbs = in_bytes / 1_000_000.0;
+            let out_mbs = out_bytes / 1_000_000.0;
+            let out_mbs_uncompressed = out_bytes_uncompressed / 1_000_000.0;
+            let in_mbs_s = in_mbs / elapsed;
+            let out_mbs_s = out_mbs / elapsed;
+            let out_mbs_uncompressed_s = out_mbs_uncompressed / elapsed;
 
             println!(
-            "end-to-end: uploaded={:.2} MiB ({:.2} MiB uncompressed) over {:.2}s → {:.2} MiB/s ({:.2} MiB/s uncompressed) (amplification x{:.5})",
-            out_mibs, out_mibs_uncompressed, elapsed, out_mibs_s, out_mibs_uncompressed_s, amp
-        );
+                "end-to-end: uploaded={:.2} MB ({:.2} MB uncompressed) over {:.2}s → {:.2} MB/s ({:.2} MB/s uncompressed) (amplification x{:.5})",
+                out_mbs, out_mbs_uncompressed, elapsed, out_mbs_s, out_mbs_uncompressed_s, amp
+            );
             println!(
-                "producer bytes (consumed): {:.2} MiB → {:.2} MiB/s",
-                in_mibs, in_mibs_s
+                "producer bytes (consumed): {:.2} MB → {:.2} MB/s",
+                in_mbs, in_mbs_s
             );
 
             let guest_bytes_delta = drained.guest_bytes - before.guest_bytes;
@@ -192,8 +232,8 @@ pub async fn run_one_payload(
             };
 
             println!(
-                "guest: bytes_in={:.2} MiB, avg_latency={:.3} ms (over {:.0} calls)",
-                guest_bytes_delta / (1024.0 * 1024.0),
+                "guest: bytes_in={:.2} MB, avg_latency={:.3} ms (over {:.0} calls)",
+                guest_bytes_delta / 1_000_000.0,
                 guest_avg_ms,
                 guest_cnt_delta
             );

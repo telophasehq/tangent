@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store};
-use wasmtime_wasi::p2::WasiCtxBuilder;
+use wasmtime_wasi::WasiCtxBuilder;
 
 use crate::wasm::host::tangent::logs::log;
 use crate::wasm::host::{HostEngine, Processor};
