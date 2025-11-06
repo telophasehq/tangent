@@ -9,6 +9,7 @@ pub mod metrics;
 pub mod msk;
 pub mod socket;
 pub mod sqs;
+pub mod tcp;
 
 /// Options for running the benchmark.
 #[derive(Debug, Clone)]
@@ -144,6 +145,9 @@ pub async fn run_one_payload(
                 }
             }
             SourceConfig::File(_) => unimplemented!("not implemented"),
+            SourceConfig::Tcp(tc) => {
+                tcp::run_bench(name, tc.bind_address, connections, pd, max_bytes, seconds).await?;
+            }
         }
 
         if !disable_metrics {

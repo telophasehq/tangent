@@ -201,6 +201,15 @@ fn spawn_consumers(
                     }
                 }));
             }
+            (name, SourceConfig::Tcp(tc)) => {
+                let dc = dag.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) = sources::tcp::run_consumer(name, tc, dc, shutdown.clone()).await
+                    {
+                        tracing::error!("tcp listener error: {e}");
+                    }
+                }));
+            }
             (name, SourceConfig::SQS(sq)) => {
                 let dc = dag.clone();
                 handles.push(tokio::spawn(async move {

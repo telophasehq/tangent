@@ -4,6 +4,7 @@ use crate::sources::file::FileConfig;
 use crate::sources::msk::MSKConfig;
 use crate::sources::socket::SocketConfig;
 use crate::sources::sqs::SQSConfig;
+use crate::sources::tcp::TcpConfig;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
@@ -14,6 +15,8 @@ pub enum SourceConfig {
     File(FileConfig),
     #[serde(rename = "socket")]
     Socket(SocketConfig),
+    #[serde(rename = "tcp")]
+    Tcp(TcpConfig),
     #[serde(rename = "sqs")]
     SQS(SQSConfig),
 }
