@@ -213,8 +213,8 @@ pub struct WorkerPool {
 impl WorkerPool {
     pub async fn new(
         size: usize,
-        engine: wasm::engine::WasmEngine,
-        components: Vec<(Arc<str>, Component)>,
+        engines: Vec<wasm::engine::WasmEngine>,
+        components: Vec<Vec<(Arc<str>, Component)>>,
         batch_max_size: usize,
         batch_max_age: Duration,
         router: Arc<Router>,
@@ -227,7 +227,7 @@ impl WorkerPool {
             let (tx, rx) = mpsc::channel::<Record>(ch_capacity);
             senders.push(tx);
 
-            let mut mappers = Mappers::load_all(&engine, &components).await?;
+            let mut mappers = Mappers::load_all(&engines[i], &components[i]).await?;
             if let Some(first) = mappers.mappers.first_mut() {
                 let start = Instant::now();
                 match first

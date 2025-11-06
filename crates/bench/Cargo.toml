@@ -32,4 +32,7 @@ aws-config = "1.8.6"
 chrono = "0.4.42"
 prometheus-parse = "0.2.5"
 secrecy = { version = "0.10.3", features = ["serde"] }
+rand = "0.9.0"
+uuid = { version = "1.10.0", features = ["v4"] }
+rand_chacha = { version = "0.9.0", features = ["os_rng"] }
 

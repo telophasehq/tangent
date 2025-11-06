@@ -9,6 +9,7 @@ pub mod metrics;
 pub mod msk;
 pub mod socket;
 pub mod sqs;
+pub mod synthesize;
 pub mod tcp;
 
 const WARMUP_SECS: u64 = 5;
@@ -34,6 +35,8 @@ pub struct BenchOptions {
 
     // disable metrics. Only use if benchmarking outside of tangent run.
     pub disable_metrics: bool,
+    // Whether to use the payload as-is or synthesize new logs from the payload.
+    pub synthesize: bool,
 }
 
 impl Default for BenchOptions {
@@ -43,11 +46,12 @@ impl Default for BenchOptions {
             seconds: 15,
             connections: 2,
             payload: "tests/input.json".into(),
-            max_bytes: 65_536,
+            max_bytes: 1 << 20,
             metrics_url: "http://127.0.0.1:9184/metrics".to_string(),
             bucket: None,
             object_prefix: None,
             disable_metrics: false,
+            synthesize: false,
         }
     }
 }
@@ -89,6 +93,7 @@ pub async fn run_with_config(cfg: Config, opts: BenchOptions) -> Result<()> {
         opts.bucket.clone(),
         opts.object_prefix.clone(),
         opts.disable_metrics,
+        opts.synthesize,
     )
     .await?;
 
@@ -105,6 +110,7 @@ pub async fn run_one_payload(
     bucket: Option<String>,
     obj_prefix: Option<String>,
     disable_metrics: bool,
+    synthesize_payload: bool,
 ) -> Result<()> {
     for (name, src) in &cfg.sources {
         let pd = payload.clone();
@@ -140,6 +146,7 @@ pub async fn run_one_payload(
                                 pd,
                                 max_bytes,
                                 total_seconds,
+                                synthesize_payload,
                             )
                             .await
                         }
@@ -178,6 +185,7 @@ pub async fn run_one_payload(
                                 pd,
                                 max_bytes,
                                 seconds,
+                                synthesize_payload,
                             )
                             .await
                         }
