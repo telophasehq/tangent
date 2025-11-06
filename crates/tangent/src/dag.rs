@@ -32,7 +32,7 @@ impl DagRuntime {
         let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
         let plugin_root = config_dir.join(&cfg.runtime.plugins_path).canonicalize()?;
 
-        let engines: Vec<WasmEngine> = (0..10)
+        let engines: Vec<WasmEngine> = (0..cfg.runtime.workers)
             .map(|_| WasmEngine::new())
             .collect::<Result<_, _>>()?;
         let mut components: Vec<Vec<(Arc<str>, Component)>> =
