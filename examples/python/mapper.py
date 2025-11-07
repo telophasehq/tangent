@@ -1,7 +1,7 @@
 
 from typing import List
 
-import orjson
+import json
 import wit_world
 from wit_world.exports import mapper
 from wit_world.imports import log
@@ -74,6 +74,6 @@ class Mapper(wit_world.WitWorld):
                     tags.append(item.value)
                 out["tags"] = tags
 
-            buf.extend(orjson.dumps(out, option=orjson.OPT_APPEND_NEWLINE))
+            buf.extend(json.dumps(out).encode('utf-8') + b'\n')
 
         return bytes(buf)

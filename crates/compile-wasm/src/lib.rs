@@ -92,13 +92,12 @@ fn run_componentize_py(
     out_component: &Path,
 ) -> anyhow::Result<()> {
     let py_dir = entry_point_path.parent().unwrap_or(Path::new("."));
-    let py = prepare_python_env(py_dir)?;
+    let _ = prepare_python_env(py_dir)?;
     let app_module = file_stem(&entry_point_path)?;
 
-    let status = Command::new(&py)
+    let comp = py_dir.join(".venv/bin/componentize-py");
+    let status = Command::new(comp)
         .current_dir(&py_dir)
-        .arg("-m")
-        .arg("componentize_py")
         .arg("--wit-path")
         .arg(wit_path)
         .arg("--world")
