@@ -46,6 +46,7 @@ pub fn scaffold(name: &str, lang: &str) -> Result<()> {
     fs::create_dir(proj_dir.join("plugins"))?;
     fs::write(proj_dir.join("tests/input.json"), TEST_INPUT)?;
     fs::write(proj_dir.join("tests/expected.json"), TEST_EXPECTED)?;
+    fs::write(proj_dir.join("tests/bench.json"), TEST_BENCH)?;
 
     match lang {
         "go" => scaffold_go(name, &proj_dir)?,
@@ -111,6 +112,7 @@ fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("mapper.py"), py_mapper_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("python", name))?;
     fs::write(dir.join("Agents.md"), PY_AGENTS_MD)?;
+    fs::write(dir.join("requirements.txt"), PYTHON_REQUIREMENTS)?;
 
     let setup_path = dir.join("setup.sh");
     fs::write(&setup_path, PY_SETUP)?;
@@ -223,6 +225,8 @@ __pycache__/
 **/.test.yaml
 **/plugins/
 "#;
+
+const PYTHON_REQUIREMENTS: &str = r#"componentize-py==0.12.0"#;
 
 fn readme_for(lang: &str, name: &str) -> String {
     match lang {
@@ -683,6 +687,53 @@ const TEST_EXPECTED: &str = r#"[
     "service": "myservice"
   }
 ]"#;
+
+const TEST_BENCH: &str = r#"{
+  "source": {
+    "name": {
+      "$const": "myservice"
+    }
+  },
+  "seen": {
+    "$gte1": {
+      "$int": {
+        "min": 0,
+        "max": 500
+      }
+    }
+  },
+  "msg": {
+    "$string": {
+      "len": 8
+    }
+  },
+  "level": {
+    "$oneOf": [
+      "info",
+      "warn",
+      "error"
+    ]
+  },
+  "duration": {
+    "$normal": {
+      "mean": 6,
+      "stdev": 0.8,
+      "min": 0
+    }
+  },
+  "tags": {
+    "$array": {
+      "of": {
+        "$oneOf": [
+          "alpha",
+          "beta",
+          "prod"
+        ]
+      },
+      "len": 2
+    }
+  }
+}"#;
 
 const MAKEFILE: &str = "build:\n\t\
 ./setup.sh\n\t\
