@@ -130,6 +130,24 @@ fn run_go_compile(
 ) -> Result<()> {
     ensure_tinygo()?;
 
+    let status = Command::new("go")
+        .current_dir(&entry_point_path)
+        .arg("run")
+        .arg("github.com/telophasehq/tangent-sdk-go/gen")
+        .arg("-o")
+        .arg("my_output.go")
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| "running tinygo gen")?;
+
+    if !status.success() {
+        bail!(
+            "`tinygo run github.com/telophasehq/tangent-sdk-go/gen -o outval_gen.go` failed (exit: {:?})",
+            status.code()
+        );
+    }
+
     let status = Command::new("tinygo")
         .current_dir(&entry_point_path)
         .arg("build")
