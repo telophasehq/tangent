@@ -1,19 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"golang/internal/tangent/logs/log"
-	"golang/internal/tangent/logs/mapper"
-	"golang/tangenthelpers"
-	"sync"
-
-	"github.com/segmentio/encoding/json"
-
-	"go.bytecodealliance.org/cm"
-)
-
-var (
-	bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
+	"github.com/telophasehq/tangent-sdk-go/helpers"
 )
 
 type ExampleOutput struct {
@@ -25,97 +14,65 @@ type ExampleOutput struct {
 	Tags     []string `json:"tags"`
 }
 
-func Wire() {
-	// Metadata is for naming and versioning your plugin.
-	mapper.Exports.Metadata = func() mapper.Meta {
-		return mapper.Meta{
-			Name:    "golang",
-			Version: "0.1.0",
-		}
+var Metadata = tangent_sdk.Metadata{
+	Name:    "golang",
+	Version: "0.2.0",
+}
+
+var selectors = []tangent_sdk.Selector{
+	{
+		All: []tangent_sdk.Predicate{
+			tangent_sdk.EqString("source.name", "myservice"),
+		},
+	},
+}
+
+func ExampleMapper(lv tangent_sdk.Log) (ExampleOutput, error) {
+	var out ExampleOutput
+	// Get String
+	msg := helpers.GetString(lv, "msg")
+	if msg != nil {
+		out.Msg = *msg
 	}
 
-	// Probe allows the mapper to subscribe to logs with specific fields.
-	mapper.Exports.Probe = func() cm.List[mapper.Selector] {
-		return cm.ToList([]mapper.Selector{
-			{
-				Any: cm.ToList([]mapper.Pred{}),
-				All: cm.ToList([]mapper.Pred{
-					mapper.PredEq(
-						cm.Tuple[string, mapper.Scalar]{
-							F0: "source.name",
-							F1: log.ScalarStr("myservice"),
-						},
-					)}),
-				None: cm.ToList([]mapper.Pred{}),
-			},
-		})
+	// get dot path
+	lvl := helpers.GetString(lv, "msg.level")
+	if lvl != nil {
+		out.Level = *lvl
 	}
 
-	// ProcessLogs takes a batch of logs, transforms, and outputs bytes.
-	mapper.Exports.ProcessLogs = func(input cm.List[cm.Rep]) (res cm.Result[cm.List[uint8], cm.List[uint8], string]) {
-		buf := bufPool.Get().(*bytes.Buffer)
-		buf.Reset()
-		defer bufPool.Put(buf)
-
-		items := append([]cm.Rep(nil), input.Slice()...)
-		for idx := range items {
-			var out ExampleOutput
-
-			lv := log.Logview(items[idx])
-
-			// Get String
-			msg := tangenthelpers.GetString(lv, "msg")
-			if msg != nil {
-				out.Msg = *msg
-			}
-
-			// get dot path
-			lvl := tangenthelpers.GetString(lv, "msg.level")
-			if lvl != nil {
-				out.Level = *lvl
-			}
-
-			// get int
-			seen := tangenthelpers.GetInt64(lv, "seen")
-			if seen != nil {
-				out.Seen = *seen
-			}
-
-			// get float
-			duration := tangenthelpers.GetFloat64(lv, "duration")
-			if duration != nil {
-				out.Duration = *duration
-			}
-
-			// get value from nested json
-			service := tangenthelpers.GetString(lv, "source.name")
-			if service != nil {
-				out.Service = *service
-			}
-
-			// get string list
-			tags, ok := tangenthelpers.GetStringList(lv, "tags")
-			if ok {
-				out.Tags = tags
-			}
-
-			lv.ResourceDrop()
-
-			// Serialize with Segment's encoding/json
-			err := json.NewEncoder(buf).Encode(out)
-			if err != nil {
-				res.SetErr(err.Error()) // error out the entire batch
-				return
-			}
-		}
-
-		res.SetOK(cm.ToList(buf.Bytes()))
-		return
+	// get int
+	seen := helpers.GetInt64(lv, "seen")
+	if seen != nil {
+		out.Seen = *seen
 	}
+
+	// get float
+	duration := helpers.GetFloat64(lv, "duration")
+	if duration != nil {
+		out.Duration = *duration
+	}
+
+	// get value from nested json
+	service := helpers.GetString(lv, "source.name")
+	if service != nil {
+		out.Service = *service
+	}
+
+	// get string list
+	tags, ok := helpers.GetStringList(lv, "tags")
+	if ok {
+		out.Tags = tags
+	}
+	return out, nil
 }
 
 func init() {
-	Wire()
+	tangent_sdk.Wire[ExampleOutput](
+		Metadata,
+		selectors,
+		ExampleMapper,
+	)
 }
 
 func main() {}
