@@ -6,8 +6,8 @@ resolver = "2"
 prometheus = "0.13.4"
 prometheus_exporter = "0.8.5"
 lazy_static = "1"
-wasmtime      =  { git = "https://github.com/telophasehq/wasmtime.git", branch = "component-types-contention"}
-wasmtime-wasi =  { git = "https://github.com/telophasehq/wasmtime.git", branch = "component-types-contention" }
+wasmtime      =  { git = "https://github.com/bytecodealliance/wasmtime.git", rev = "b676f1e7779410648cd77b2e43b5be58603797f8"}
+wasmtime-wasi =  { git = "https://github.com/bytecodealliance/wasmtime.git", rev = "b676f1e7779410648cd77b2e43b5be58603797f8" }
 
 [workspace.package]
 version = "0.1.8"

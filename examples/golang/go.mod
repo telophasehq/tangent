@@ -5,9 +5,11 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/telophasehq/tangent-sdk-go v0.0.0-20251110174442-e35e6e10d522
+	github.com/telophasehq/tangent-sdk-go v0.0.0-20251110184716-dca78e4f7525
 	go.bytecodealliance.org/cm v0.3.0 // indirect
 )
+
+require github.com/mailru/easyjson v0.9.1
 
 require (
 	github.com/coreos/go-semver v0.3.1 // indirect
@@ -15,7 +17,6 @@ require (
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
-	github.com/mailru/easyjson v0.9.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/regclient/regclient v0.8.3 // indirect

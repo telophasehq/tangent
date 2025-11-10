@@ -90,7 +90,6 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("go.mod"), go_mod_for(name))?;
     fs::write(dir.join("main.go"), go_main_for(name))?;
     fs::create_dir(dir.join("tangenthelpers"))?;
-    fs::write(dir.join("tangenthelpers/helpers.go"), go_helpers_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("go", name))?;
     fs::write(dir.join("Agents.md"), GO_AGENTS_MD)?;
 
@@ -226,7 +225,7 @@ __pycache__/
 **/plugins/
 "#;
 
-const PYTHON_REQUIREMENTS: &str = r#"componentize-py==0.12.0"#;
+const PYTHON_REQUIREMENTS: &str = r#""#;
 
 fn readme_for(lang: &str, name: &str) -> String {
     match lang {
@@ -325,39 +324,33 @@ fn go_mod_for(name: &str) -> String {
     format!(
         r#"module {name}
     
-go 1.24
+go 1.24.0
 
 toolchain go1.24.7
 
 require (
-	github.com/buger/jsonparser v1.1.1
-	github.com/segmentio/encoding v0.5.3
-	github.com/telophasehq/go-ocsf v0.2.1
-	go.bytecodealliance.org/cm v0.3.0
+	github.com/telophasehq/tangent-sdk-go v0.0.0-20251110184716-dca78e4f7525
+	go.bytecodealliance.org/cm v0.3.0 // indirect
 )
 
+require github.com/mailru/easyjson v0.9.1
+
 require (
-	github.com/apache/arrow-go/v18 v18.2.1-0.20250425153947-5ae8b27ab357 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
-	github.com/goccy/go-json v0.10.5 // indirect
-	github.com/google/flatbuffers v25.2.10+incompatible // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/regclient/regclient v0.8.3 // indirect
-	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/tetratelabs/wazero v1.9.0 // indirect
 	github.com/ulikunitz/xz v0.5.12 // indirect
 	github.com/urfave/cli/v3 v3.3.3 // indirect
 	go.bytecodealliance.org v0.7.0 // indirect
-	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
-	golang.org/x/mod v0.26.0 // indirect
-	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/sys v0.34.0 // indirect
-	golang.org/x/tools v0.35.0 // indirect
-	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
+	golang.org/x/mod v0.29.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
 )
 
 tool go.bytecodealliance.org/cmd/wit-bindgen-go
@@ -383,16 +376,16 @@ plugins:
       - input: tests/input.json
         expected: tests/expected.json
 sources:
-  socket_main:
-    type: socket
-    path: "/tmp/sidecar.sock"
+  network_input:
+    type: tcp
+    bind_address: 0.0.0.0:9000
 sinks:
   blackhole:
     type: blackhole
 dag:
   - from:
       kind: source
-      name: socket_main
+      name: network_input
     to:
       - kind: plugin
         name: {name}
@@ -406,233 +399,86 @@ dag:
     )
 }
 
-fn go_helpers_for(module: &str) -> String {
-    let tpl = r#"package tangenthelpers
-
-import "{module}/internal/tangent/logs/log"
-
-func GetBool(v log.Logview, path string) *bool {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	return s.Boolean()
-}
-
-func GetInt64(v log.Logview, path string) *int64 {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	return s.Int()
-}
-
-func GetFloat64(v log.Logview, path string) *float64 {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	return s.Float()
-}
-
-func GetString(v log.Logview, path string) *string {
-	opt := v.Get(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	return s.Str()
-}
-
-func Len(v log.Logview, path string) *uint32 {
-	opt := v.Len(path)
-	if opt.None() {
-		return nil
-	}
-	s := opt.Value()
-	return &s
-}
-
-func GetStringList(v log.Logview, path string) ([]string, bool) {
-	opt := v.GetList(path)
-	if opt.None() {
-		return nil, false
-	}
-	lst := opt.Value()
-	out := make([]string, 0, lst.Len())
-	data := lst.Slice()
-	for i := 0; i < int(lst.Len()); i++ {
-		if p := data[i].Str(); p != nil {
-			out = append(out, *p)
-		}
-	}
-	return out, true
-}
-
-func GetFloat64List(v log.Logview, path string) ([]float64, bool) {
-	opt := v.GetList(path)
-	if opt.None() {
-		return nil, false
-	}
-	lst := opt.Value()
-	out := make([]float64, 0, lst.Len())
-	data := lst.Slice()
-	for i := 0; i < int(lst.Len()); i++ {
-		if p := data[i].Float(); p != nil {
-			out = append(out, *p)
-		}
-	}
-	return out, true
-}
-
-func GetInt64List(v log.Logview, path string) ([]int64, bool) {
-	opt := v.GetList(path)
-	if opt.None() {
-		return nil, false
-	}
-	lst := opt.Value()
-	out := make([]int64, 0, lst.Len())
-	data := lst.Slice()
-	for i := 0; i < int(lst.Len()); i++ {
-		if p := data[i].Int(); p != nil {
-			out = append(out, *p)
-		}
-	}
-	return out, true
-}
-
-"#;
-    tpl.replace("{module}", module)
-}
-
 fn go_main_for(module: &str) -> String {
     let tpl = r#"package main
 
 import (
-	"bytes"
-	"sync"
-	"{module}/internal/tangent/logs/log"
-	"{module}/internal/tangent/logs/mapper"
-    "{module}/tangenthelpers"
-
-	"github.com/segmentio/encoding/json"
-
-	"go.bytecodealliance.org/cm"
+	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
+	"github.com/telophasehq/tangent-sdk-go/helpers"
 )
 
-var (
-	bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
-)
-
+//easyjson:json
 type ExampleOutput struct {
-	Msg      string   `json:"message"`
-	Level    string   `json:"level"`
-	Seen     int64    `json:"seen"`
-	Duration float64  `json:"duration"`
-	Service  string   `json:"service"`
-	Tags     []string `json:"tags"`
+	Msg		string		`json:"message"`
+	Level		string		`json:"level"`
+	Seen		int64		`json:"seen"`
+	Duration	float64		`json:"duration"`
+	Service		string		`json:"service"`
+	Tags		[]string	`json:"tags"`
 }
 
-func Wire() {
-    // Metadata is for naming and versioning your plugin.
-	mapper.Exports.Metadata = func() mapper.Meta {
-		return mapper.Meta{
-			Name:    "{module}",
-			Version: "0.1.0",
-		}
+var Metadata = tangent_sdk.Metadata{
+	Name:		"{{module}}",
+	Version:	"0.2.0",
+}
+
+var selectors = []tangent_sdk.Selector{
+	{
+		All: []tangent_sdk.Predicate{
+			tangent_sdk.EqString("source.name", "myservice"),
+		},
+	},
+}
+
+func ExampleMapper(lv tangent_sdk.Log) (ExampleOutput, error) {
+	var out ExampleOutput
+	// Get String
+	msg := helpers.GetString(lv, "msg")
+	if msg != nil {
+		out.Msg = *msg
 	}
 
-    // Probe allows the mapper to subscribe to logs with specific fields.
-	mapper.Exports.Probe = func() cm.List[mapper.Selector] {
-		return cm.ToList([]mapper.Selector{
-			{
-				Any: cm.ToList([]mapper.Pred{}),
-				All: cm.ToList([]mapper.Pred{
-					mapper.PredEq(
-						cm.Tuple[string, mapper.Scalar]{
-							F0: "source.name",
-							F1: log.ScalarStr("myservice"),
-						},
-					)}),
-				None: cm.ToList([]mapper.Pred{}),
-			},
-		})
+	// get dot path
+	lvl := helpers.GetString(lv, "msg.level")
+	if lvl != nil {
+		out.Level = *lvl
 	}
 
-    // ProcessLogs takes a batch of logs, transforms, and outputs bytes.
-	mapper.Exports.ProcessLogs = func(input cm.List[cm.Rep]) (res cm.Result[cm.List[uint8], cm.List[uint8], string]) {
-		buf := bufPool.Get().(*bytes.Buffer)
-		buf.Reset()
-
-        // Copy out the slice so we own the backing array.
-        // The cm.List view may be backed by a transient buffer that
-        // can be reused or mutated after this call, so we take an owned copy.
-        items := append([]cm.Rep(nil), input.Slice()...)
-		for idx := range items {
-			var out ExampleOutput
-
-			lv := log.Logview(items[idx])
-
-			// Get String
-			msg := tangenthelpers.GetString(lv, "msg")
-			if msg != nil {
-				out.Msg = *msg
-			}
-
-			// get dot path
-			lvl := tangenthelpers.GetString(lv, "msg.level")
-			if lvl != nil {
-				out.Level = *lvl
-			}
-
-			// get int
-			seen := tangenthelpers.GetInt64(lv, "seen")
-			if seen != nil {
-				out.Seen = *seen
-			}
-
-			// get float
-			duration := tangenthelpers.GetFloat64(lv, "duration")
-			if duration != nil {
-				out.Duration = *duration
-			}
-
-			// get value from nested json
-			service := tangenthelpers.GetString(lv, "source.name")
-			if service != nil {
-				out.Service = *service
-			}
-
-			// get string list
-			tags, ok := tangenthelpers.GetStringList(lv, "tags")
-			if ok {
-				out.Tags = tags
-			}
-
-            lv.ResourceDrop()
-
-			// Serialize with Segment's encoding/json
-			err := json.NewEncoder(buf).Encode(out)
-			if err != nil {
-				res.SetErr(err.Error()) // error out the entire batch
-				return
-			}
-		}
-
-		res.SetOK(cm.ToList(buf.Bytes()))
-		bufPool.Put(buf)
-		return
+	// get int
+	seen := helpers.GetInt64(lv, "seen")
+	if seen != nil {
+		out.Seen = *seen
 	}
+
+	// get float
+	duration := helpers.GetFloat64(lv, "duration")
+	if duration != nil {
+		out.Duration = *duration
+	}
+
+	// get value from nested json
+	service := helpers.GetString(lv, "source.name")
+	if service != nil {
+		out.Service = *service
+	}
+
+	// get string list
+	tags, ok := helpers.GetStringList(lv, "tags")
+	if ok {
+		out.Tags = tags
+	}
+	return out, nil
 }
 
 func init() {
-	Wire()
+	tangent_sdk.Wire[ExampleOutput](
+		Metadata,
+		selectors,
+		ExampleMapper,
+	)
 }
 
-func main() {}
+func main()	{}
 "#;
 
     tpl.replace("{module}", module)

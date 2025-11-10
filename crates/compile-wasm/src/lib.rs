@@ -61,12 +61,29 @@ fn ensure_tinygo() -> Result<()> {
         .map_err(|_| anyhow!("`tinygo` not found in PATH. Install directions: https://tinygo.org/getting-started/install/"))
 }
 
+fn find_host_python() -> Result<PathBuf> {
+    if let Ok(python_env) = std::env::var("PYTHON") {
+        let candidate = PathBuf::from(python_env);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    which("python3")
+        .or_else(|_| which("python"))
+        .map_err(|_| {
+            anyhow!(
+                "No suitable Python interpreter found. Install `python3` and ensure it's on PATH, or set the PYTHON env var."
+            )
+        })
+}
+
 fn prepare_python_env(py_dir: &Path) -> Result<PathBuf> {
     let venv_dir = py_dir.join(".venv");
     let py_bin = venv_dir.join("bin/python");
 
     if !py_bin.exists() {
-        Command::new("python")
+        let host_python = find_host_python()?;
+        Command::new(host_python)
             .arg("-m")
             .arg("venv")
             .arg(&venv_dir)
@@ -95,8 +112,7 @@ fn run_componentize_py(
     let _ = prepare_python_env(py_dir)?;
     let app_module = file_stem(&entry_point_path)?;
 
-    let comp = py_dir.join(".venv/bin/componentize-py");
-    let status = Command::new(comp)
+    let status = Command::new("componentize-py")
         .current_dir(&py_dir)
         .arg("--wit-path")
         .arg(wit_path)

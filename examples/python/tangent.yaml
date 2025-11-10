@@ -8,16 +8,16 @@ plugins:
       - input: tests/input.json
         expected: tests/expected.json
 sources:
-  socket_main:
-    type: socket
-    path: "/tmp/sidecar.sock"
+  network_input:
+    type: tcp
+    bind_address: 0.0.0.0:9000
 sinks:
   blackhole:
     type: blackhole
 dag:
   - from:
       kind: source
-      name: socket_main
+      name: network_input
     to:
       - kind: plugin
         name: python

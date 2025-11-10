@@ -9,9 +9,9 @@ plugins:
       - input: tests/conn.json
         expected:  tests/conn_out.json
 sources:
-  socket_main:
-    type: socket
-    path: "/tmp/sidecar.sock"
+  network_input:
+    type: tcp
+    bind_address: 0.0.0.0:9000
 sinks:
   blackhole:
     type: blackhole
@@ -19,7 +19,7 @@ sinks:
 dag:
   - from:
       kind: source
-      name: socket_main
+      name: network_input
     to:
       - kind: plugin
         name: zeek
