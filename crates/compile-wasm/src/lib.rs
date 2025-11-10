@@ -55,16 +55,51 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
     Ok(())
 }
 
-fn ensure_componentize_available() -> Result<()> {
-    which("componentize-py").map(|_| ()).map_err(|_| {
-        anyhow!("`componentize-py` not found in PATH. Install with: python -m pip install componentize-py")
-    })
-}
-
 fn ensure_tinygo() -> Result<()> {
     which("tinygo")
         .map(|_| ())
         .map_err(|_| anyhow!("`tinygo` not found in PATH. Install directions: https://tinygo.org/getting-started/install/"))
+}
+
+fn find_host_python() -> Result<PathBuf> {
+    if let Ok(python_env) = std::env::var("PYTHON") {
+        let candidate = PathBuf::from(python_env);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    which("python3")
+        .or_else(|_| which("python"))
+        .map_err(|_| {
+            anyhow!(
+                "No suitable Python interpreter found. Install `python3` and ensure it's on PATH, or set the PYTHON env var."
+            )
+        })
+}
+
+fn prepare_python_env(py_dir: &Path) -> Result<PathBuf> {
+    let venv_dir = py_dir.join(".venv");
+    let py_bin = venv_dir.join("bin/python");
+
+    if !py_bin.exists() {
+        let host_python = find_host_python()?;
+        Command::new(host_python)
+            .arg("-m")
+            .arg("venv")
+            .arg(&venv_dir)
+            .status()
+            .context("creating venv")?;
+    }
+
+    let reqs = py_dir.join("requirements.txt");
+    if reqs.exists() {
+        Command::new(&py_bin)
+            .args(["-m", "pip", "install", "-r"])
+            .arg(&reqs)
+            .status()
+            .context("installing Python requirements")?;
+    }
+    Ok(py_bin)
 }
 
 fn run_componentize_py(
@@ -73,9 +108,8 @@ fn run_componentize_py(
     entry_point_path: &Path,
     out_component: &Path,
 ) -> anyhow::Result<()> {
-    ensure_componentize_available()?;
-
     let py_dir = entry_point_path.parent().unwrap_or(Path::new("."));
+    let _ = prepare_python_env(py_dir)?;
     let app_module = file_stem(&entry_point_path)?;
 
     let status = Command::new("componentize-py")
@@ -111,6 +145,22 @@ fn run_go_compile(
     out_component: &Path,
 ) -> Result<()> {
     ensure_tinygo()?;
+
+    let status = Command::new("go")
+        .current_dir(&entry_point_path)
+        .arg("run")
+        .arg("github.com/telophasehq/tangent-sdk-go/gen")
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| "running go gen")?;
+
+    if !status.success() {
+        bail!(
+            "`go run github.com/telophasehq/tangent-sdk-go/gen` failed (exit: {:?})",
+            status.code()
+        );
+    }
 
     let status = Command::new("tinygo")
         .current_dir(&entry_point_path)

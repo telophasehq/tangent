@@ -13,7 +13,7 @@ pub fn build() -> Result<Engine> {
         .profiler(wasmtime::ProfilingStrategy::None)
         .parallel_compilation(false)
         .async_support(true)
-        .allocation_strategy(wasmtime::InstanceAllocationStrategy::OnDemand);
+        .allocation_strategy(wasmtime::InstanceAllocationStrategy::pooling());
 
     Engine::new(&cfg)
 }

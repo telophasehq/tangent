@@ -28,32 +28,37 @@ pub struct DagRuntime {
 
 impl DagRuntime {
     pub async fn build(cfg: &Config, cfg_path: &PathBuf) -> anyhow::Result<Self> {
-        let engine = WasmEngine::new()?;
-
         let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
         let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
         let plugin_root = config_dir.join(&cfg.runtime.plugins_path).canonicalize()?;
 
-        let mut components: Vec<(Arc<str>, Component)> = Vec::with_capacity(cfg.plugins.len());
-        for (name, _) in &cfg.plugins {
-            let component_file = format!("{name}.cwasm");
-            let plugin_path = plugin_root
-                .join(&component_file)
-                .canonicalize()
-                .with_context(|| {
-                    format!(
-                        "canonicalizing path: {}/{}",
-                        plugin_root.display(),
-                        &component_file
-                    )
-                })?;
+        let engines: Vec<WasmEngine> = (0..cfg.runtime.workers)
+            .map(|_| WasmEngine::new())
+            .collect::<Result<_, _>>()?;
+        let mut components: Vec<Vec<(Arc<str>, Component)>> =
+            Vec::with_capacity(cfg.runtime.workers);
+        for i in 0..cfg.runtime.workers {
+            components.push(Vec::<(Arc<str>, Component)>::new());
+            for (name, _) in &cfg.plugins {
+                let component_file = format!("{name}.cwasm");
+                let plugin_path = plugin_root
+                    .join(&component_file)
+                    .canonicalize()
+                    .with_context(|| {
+                        format!(
+                            "canonicalizing path: {}/{}",
+                            plugin_root.display(),
+                            &component_file
+                        )
+                    })?;
 
-            components.push((
-                Arc::clone(name),
-                engine
-                    .load_precompiled(&plugin_path)
-                    .with_context(|| format!("loading {}", &component_file))?,
-            ));
+                components[i].push((
+                    Arc::clone(name),
+                    engines[i]
+                        .load_precompiled(&plugin_path)
+                        .with_context(|| format!("loading {}", &component_file))?,
+                ));
+            }
         }
 
         let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
@@ -66,7 +71,7 @@ impl DagRuntime {
         let pool = Arc::new(
             WorkerPool::new(
                 cfg.runtime.workers,
-                engine,
+                engines,
                 components,
                 cfg.batch_size_kb(),
                 cfg.batch_age_ms(),

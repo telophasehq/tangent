@@ -74,6 +74,6 @@ class Mapper(wit_world.WitWorld):
                     tags.append(item.value)
                 out["tags"] = tags
 
-            buf.extend(json.dumps(out).encode('utf-8') + b"\n")
+            buf.extend(json.dumps(out).encode('utf-8') + b'\n')
 
         return bytes(buf)

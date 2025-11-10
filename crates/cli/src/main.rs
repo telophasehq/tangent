@@ -67,6 +67,10 @@ enum Commands {
         /// disable metrics. Only use if benchmarking outside of tangent run.
         #[arg(long, default_value_t = false)]
         disable_metrics: bool,
+
+        /// Synthesize logs. Used to generate payloads from the input payload.
+        #[arg(long, default_value_t = false)]
+        synthesize: bool,
     },
 
     Plugin {
@@ -134,6 +138,7 @@ async fn main() -> Result<()> {
             bucket,
             object_prefix,
             disable_metrics,
+            synthesize,
         } => {
             let opts = BenchOptions {
                 config_path: Some(config.clone()),
@@ -145,6 +150,7 @@ async fn main() -> Result<()> {
                 bucket,
                 object_prefix,
                 disable_metrics,
+                synthesize,
             };
             tangent_bench::run(&config, opts).await?;
         }
