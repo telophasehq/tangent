@@ -27,6 +27,9 @@ const DOCKERFILE: &str = include_str!(concat!(
 ));
 
 pub fn scaffold(name: &str, lang: &str) -> Result<()> {
+    let renamed = name.replace("-", "");
+    let name = renamed.as_str();
+
     let proj_dir = Path::new(name);
     if proj_dir.exists() {
         bail!("destination already exists: {}", proj_dir.display());

@@ -16,7 +16,7 @@ var (
 	_ easyjson.Marshaler
 )
 
-func easyjsonE9e01bf6DecodeGolangEasyjsonTypes(in *jlexer.Lexer, out *ExampleOutput) {
+func easyjsonA84b1c3cDecodeGolangEasyjsonLocal(in *jlexer.Lexer, out *ExampleOutput) {
 	isTopLevel := in.IsStart()
 	if in.IsNull() {
 		if isTopLevel {
@@ -97,7 +97,7 @@ func easyjsonE9e01bf6DecodeGolangEasyjsonTypes(in *jlexer.Lexer, out *ExampleOut
 		in.Consumed()
 	}
 }
-func easyjsonE9e01bf6EncodeGolangEasyjsonTypes(out *jwriter.Writer, in ExampleOutput) {
+func easyjsonA84b1c3cEncodeGolangEasyjsonLocal(out *jwriter.Writer, in ExampleOutput) {
 	out.RawByte('{')
 	first := true
 	_ = first
@@ -148,23 +148,23 @@ func easyjsonE9e01bf6EncodeGolangEasyjsonTypes(out *jwriter.Writer, in ExampleOu
 // MarshalJSON supports json.Marshaler interface
 func (v ExampleOutput) MarshalJSON() ([]byte, error) {
 	w := jwriter.Writer{}
-	easyjsonE9e01bf6EncodeGolangEasyjsonTypes(&w, v)
+	easyjsonA84b1c3cEncodeGolangEasyjsonLocal(&w, v)
 	return w.Buffer.BuildBytes(), w.Error
 }
 
 // MarshalEasyJSON supports easyjson.Marshaler interface
 func (v ExampleOutput) MarshalEasyJSON(w *jwriter.Writer) {
-	easyjsonE9e01bf6EncodeGolangEasyjsonTypes(w, v)
+	easyjsonA84b1c3cEncodeGolangEasyjsonLocal(w, v)
 }
 
 // UnmarshalJSON supports json.Unmarshaler interface
 func (v *ExampleOutput) UnmarshalJSON(data []byte) error {
 	r := jlexer.Lexer{Data: data}
-	easyjsonE9e01bf6DecodeGolangEasyjsonTypes(&r, v)
+	easyjsonA84b1c3cDecodeGolangEasyjsonLocal(&r, v)
 	return r.Error()
 }
 
 // UnmarshalEasyJSON supports easyjson.Unmarshaler interface
 func (v *ExampleOutput) UnmarshalEasyJSON(l *jlexer.Lexer) {
-	easyjsonE9e01bf6DecodeGolangEasyjsonTypes(l, v)
+	easyjsonA84b1c3cDecodeGolangEasyjsonLocal(l, v)
 }

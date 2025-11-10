@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/telophasehq/tangent-sdk-go v0.0.0-20251110184716-dca78e4f7525
+	github.com/telophasehq/tangent-sdk-go v0.0.0-20251110220017-7cef295948af
 	go.bytecodealliance.org/cm v0.3.0 // indirect
 )
 
