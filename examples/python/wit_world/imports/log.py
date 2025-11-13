@@ -37,6 +37,66 @@ class Scalar_Bytes:
 Scalar = Union[Scalar_Str, Scalar_Int, Scalar_Float, Scalar_Boolean, Scalar_Bytes]
 
 
+@dataclass
+class Value_NullValue:
+    pass
+
+
+@dataclass
+class Value_BoolValue:
+    value: bool
+
+
+@dataclass
+class Value_StringValue:
+    value: str
+
+
+@dataclass
+class Value_BlobValue:
+    value: bytes
+
+
+@dataclass
+class Value_S64Value:
+    value: int
+
+
+@dataclass
+class Value_F64Value:
+    value: float
+
+
+@dataclass
+class Value_ListValue:
+    value: List[int]
+
+
+@dataclass
+class Value_MapValue:
+    value: List[Tuple[str, int]]
+
+
+Value = Union[
+    Value_NullValue,
+    Value_BoolValue,
+    Value_StringValue,
+    Value_BlobValue,
+    Value_S64Value,
+    Value_F64Value,
+    Value_ListValue,
+    Value_MapValue,
+]
+
+Field = Tuple[str, int]
+
+
+@dataclass
+class Frame:
+    values: List[Value]
+    fields: List[Field]
+
+
 class Logview:
     
     def has(self, path: str) -> bool:

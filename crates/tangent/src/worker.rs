@@ -1,7 +1,7 @@
 use ahash::{HashMap, HashMapExt};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
+use bytes::{BufMut, BytesMut};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{self, Instant as TokioInstant};
 use wasmtime::component::{Component, Resource};
 
-use crate::wasm::host::JsonLogView;
+use crate::wasm::host::{mapper_frame_to_json, JsonLogView};
 use crate::{
     router::Router,
     wasm::{self, mapper::Mappers, probe::eval_selector},
@@ -160,29 +160,41 @@ impl Worker {
                 m.store.data_mut().table.delete(lv)?;
             }
 
-            let out = match res {
+            let frames = match res {
                 Err(host_err) => {
                     tracing::error!(error = ?host_err, mapper=%m.name, "host error in process_log");
                     return Err(host_err);
                 }
-                Ok(Ok(frames)) => frames,
+                Ok(Ok(values)) => values,
                 Ok(Err(guest_err)) => {
                     tracing::warn!(mapper=%m.name, error = ?guest_err, "guest error; skipping");
                     continue;
                 }
             };
 
-            if out.is_empty() {
+            if frames.is_empty() {
                 tracing::warn!(mapper=%m.name, "mapper produced empty output");
                 continue;
             }
 
             tracing::debug!(mapper=%m.name, duration=secs, "processed batch");
 
+            let serialized = frames
+                .into_iter()
+                .map(|frame| {
+                    let json = mapper_frame_to_json(frame);
+                    let mut buf = BytesMut::new();
+                    serde_json::to_writer((&mut buf).writer(), &json)
+                        .context("serializing mapper output to JSON")?;
+                    buf.put_u8(b'\n');
+                    Ok::<BytesMut, anyhow::Error>(buf)
+                })
+                .collect::<Result<Vec<_>>>()?;
+
             plugin_outputs
                 .entry(m.cfg_name.clone())
                 .or_default()
-                .push(Bytes::from(out).try_into_mut().unwrap())
+                .extend(serialized)
         }
 
         let upstream_acks = std::mem::take(acks);

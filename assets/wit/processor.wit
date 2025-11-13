@@ -9,6 +9,26 @@ interface log {
     bytes(list<u8>),
   }
 
+  type value-index = u32;
+
+  variant value {
+    null-value,
+    bool-value(bool),
+    string-value(string),
+    blob-value(list<u8>),
+    s64-value(s64),
+    f64-value(f64),
+    list-value(list<value-index>),
+    map-value(list<tuple<string, value-index>>),
+  }
+
+  type field = tuple<string, value-index>;
+
+  record frame {
+    values: list<value>,
+    fields: list<field>,
+  }
+
   resource logview {
     // JSONPath/dot-path style, e.g. "detail.findings[0].CompanyName"
     has:      func(path: string) -> bool;
@@ -22,7 +42,7 @@ interface log {
 
 
 interface mapper {
-  use log.{logview, scalar};
+  use log.{frame, logview, scalar, value};
 
   record meta {
     name: string,
@@ -48,7 +68,9 @@ interface mapper {
 
   probe: func() -> list<selector>;
 
-  process-logs: func(input: list<borrow<logview>>) -> result<list<u8>, string>;
+  process-logs: func(
+    input: list<borrow<logview>>
+  ) -> result<list<frame>, string>;
 }
 
 world processor {

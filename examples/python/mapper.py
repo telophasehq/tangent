@@ -1,10 +1,27 @@
-
 from typing import List
 
-import json
 import wit_world
 from wit_world.exports import mapper
 from wit_world.imports import log
+
+
+def push_value(values: List[log.Value], value: log.Value) -> int:
+    values.append(value)
+    return len(values) - 1
+
+
+def scalar_to_index(values: List[log.Value], scalar: log.Scalar) -> int:
+    if isinstance(scalar, log.Scalar_Str):
+        return push_value(values, log.Value_StringValue(scalar.value))
+    if isinstance(scalar, log.Scalar_Int):
+        return push_value(values, log.Value_S64Value(scalar.value))
+    if isinstance(scalar, log.Scalar_Float):
+        return push_value(values, log.Value_F64Value(scalar.value))
+    if isinstance(scalar, log.Scalar_Boolean):
+        return push_value(values, log.Value_BoolValue(scalar.value))
+    if isinstance(scalar, log.Scalar_Bytes):
+        return push_value(values, log.Value_BlobValue(scalar.value))
+    return push_value(values, log.Value_NullValue())
 
 
 class Mapper(wit_world.WitWorld):
@@ -28,52 +45,74 @@ class Mapper(wit_world.WitWorld):
     def process_logs(
         self,
         logs: List[log.Logview]
-    ) -> bytes:
-        buf = bytearray()
+    ) -> List[log.Frame]:
+        frames: List[log.Frame] = []
 
         for lv in logs:
-            out = {
-                "message": "",
-                "level": "",
-                "seen": 0,
-                "duration": 0.0,
-                "service": "",
-                "tags": None,
-            }
+            values: List[log.Value] = []
+            fields: List[log.Field] = []
 
-            # get string
             s = lv.get("msg")
-            if s is not None and hasattr(s, "value"):
-                out["message"] = s.value
+            message = s.value if s is not None and hasattr(s, "value") else ""
+            message_idx = push_value(values, log.Value_StringValue(message))
+            fields.append(("message", message_idx))
 
-            # get dot path
             s = lv.get("msg.level")
-            if s is not None and hasattr(s, "value"):
-                out["level"] = s.value
+            level = s.value if s is not None and hasattr(s, "value") else ""
+            level_idx = push_value(values, log.Value_StringValue(level))
+            fields.append(("level", level_idx))
 
-            # get int
             s = lv.get("seen")
-            if s is not None and hasattr(s, "value"):
-                out["seen"] = s.value
+            seen = int(s.value) if s is not None and hasattr(s, "value") else 0
+            seen_idx = push_value(values, log.Value_S64Value(seen))
+            fields.append(("seen", seen_idx))
 
-            # get float
             s = lv.get("duration")
-            if s is not None and hasattr(s, "value"):
-                out["duration"] = s.value
+            duration = float(s.value) if s is not None and hasattr(s, "value") else 0.0
+            duration_idx = push_value(values, log.Value_F64Value(duration))
+            fields.append(("duration", duration_idx))
 
-            # get value from nested json
             s = lv.get("source.name")
-            if s is not None and hasattr(s, "value"):
-                out["service"] = s.value
+            service = s.value if s is not None and hasattr(s, "value") else ""
+            service_idx = push_value(values, log.Value_StringValue(service))
+            fields.append(("service", service_idx))
 
-            # get string list
             lst = lv.get_list("tags")
             if lst is not None:
-                tags: List[str] = []
-                for item in lst:
-                    tags.append(item.value)
-                out["tags"] = tags
+                tag_indices = [
+                    scalar_to_index(values, item)
+                    for item in lst
+                    if hasattr(item, "value")
+                ]
+                tag_index = push_value(values, log.Value_ListValue(tag_indices))
+            else:
+                tag_index = push_value(values, log.Value_NullValue())
 
-            buf.extend(json.dumps(out).encode('utf-8') + b'\n')
+            fields.append(("tags", tag_index))
 
-        return bytes(buf)
+            metrics_idx = push_value(
+                values,
+                log.Value_MapValue(
+                    [
+                        ("duration", duration_idx),
+                        ("seen", seen_idx),
+                    ]
+                ),
+            )
+
+            context_idx = push_value(
+                values,
+                log.Value_MapValue(
+                    [
+                        ("service", service_idx),
+                        ("metrics", metrics_idx),
+                        ("tags", tag_index),
+                    ]
+                ),
+            )
+
+            fields.append(("context", context_idx))
+
+            frames.append(log.Frame(values=values, fields=fields))
+
+        return frames
