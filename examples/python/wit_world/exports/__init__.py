@@ -20,7 +20,7 @@ class Mapper(Protocol):
         raise NotImplementedError
 
     @abstractmethod
-    def process_logs(self, input: List[log.Logview]) -> bytes:
+    def process_logs(self, input: List[log.Logview]) -> List[log.Frame]:
         """
         Raises: `wit_world.types.Err(wit_world.imports.str)`
         """

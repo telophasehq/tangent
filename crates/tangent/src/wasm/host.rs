@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine;
 use bytes::{Bytes, BytesMut};
+use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use simd_json::base::ValueAsScalar;
 use simd_json::derived::{TypedArrayValue, TypedScalarValue};
 use simd_json::prelude::{ValueAsArray, ValueAsObject, ValueObjectAccess};
@@ -185,3 +188,68 @@ impl HasData for HostEngine {
 }
 
 impl log::Host for HostEngine {}
+
+const MAX_MAPPER_VALUE_DEPTH: usize = 256;
+
+fn mapper_value_from_index(index: u32, arena: &[log::Value], depth: usize) -> JsonValue {
+    if depth >= MAX_MAPPER_VALUE_DEPTH {
+        tracing::warn!(index, "mapper value exceeded maximum nesting depth");
+        return JsonValue::Null;
+    }
+
+    let value = match arena.get(index as usize) {
+        Some(value) => value,
+        None => {
+            tracing::warn!(
+                index,
+                total = arena.len(),
+                "mapper value referenced invalid index"
+            );
+            return JsonValue::Null;
+        }
+    };
+
+    match value {
+        log::Value::NullValue => JsonValue::Null,
+        log::Value::BoolValue(b) => JsonValue::Bool(*b),
+        log::Value::StringValue(s) => JsonValue::String(s.clone()),
+        log::Value::BlobValue(bytes) => {
+            let encoded = BASE64_STANDARD.encode(bytes);
+            JsonValue::String(encoded)
+        }
+        log::Value::S64Value(i) => JsonValue::Number(JsonNumber::from(*i)),
+        log::Value::F64Value(f) => match JsonNumber::from_f64(*f) {
+            Some(num) => JsonValue::Number(num),
+            None => {
+                tracing::warn!(value=%f, "guest produced non-finite float; encoding as null");
+                JsonValue::Null
+            }
+        },
+        log::Value::ListValue(children) => {
+            let items = children
+                .iter()
+                .map(|child| mapper_value_from_index(*child, arena, depth + 1))
+                .collect::<Vec<_>>();
+            JsonValue::Array(items)
+        }
+        log::Value::MapValue(entries) => {
+            let mut map = JsonMap::with_capacity(entries.len());
+            for (key, child) in entries {
+                map.insert(
+                    key.clone(),
+                    mapper_value_from_index(*child, arena, depth + 1),
+                );
+            }
+            JsonValue::Object(map)
+        }
+    }
+}
+
+pub fn mapper_frame_to_json(frame: log::Frame) -> JsonValue {
+    let log::Frame { values, fields } = frame;
+    let mut obj = JsonMap::with_capacity(fields.len());
+    for (key, index) in fields {
+        obj.insert(key, mapper_value_from_index(index, &values, 0));
+    }
+    JsonValue::Object(obj)
+}
