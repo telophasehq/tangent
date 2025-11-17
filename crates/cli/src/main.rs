@@ -86,7 +86,7 @@ enum PluginCommands {
         /// Project name (folder will be created with this name)
         #[arg(long)]
         name: String,
-        /// Language: go|py (more later)
+        /// Language: go|py|rust
         #[arg(long)]
         lang: String,
     },

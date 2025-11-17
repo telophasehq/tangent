@@ -12,6 +12,10 @@ const PY_AGENTS_MD: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../assets/py_Agents.md"
 ));
+const RUST_AGENTS_MD: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/rust_Agents.md"
+));
 
 const GO_SETUP: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -20,6 +24,10 @@ const GO_SETUP: &str = include_str!(concat!(
 const PY_SETUP: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../assets/py_setup.sh"
+));
+const RUST_SETUP: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../assets/rust_setup.sh"
 ));
 const DOCKERFILE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -54,7 +62,8 @@ pub fn scaffold(name: &str, lang: &str) -> Result<()> {
     match lang {
         "go" => scaffold_go(name, &proj_dir)?,
         "python" => scaffold_py(name, &proj_dir)?,
-        other => bail!("unsupported --lang {other} (options: go, python)"),
+        "rust" => scaffold_rust(name, &proj_dir)?,
+        other => bail!("unsupported --lang {other} (options: go, python, rust)"),
     }
 
     println!(
@@ -124,6 +133,24 @@ fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
 
     run_setup(dir)?;
     run_wit_bindgen_py(dir, "processor", ".tangent/wit/")?;
+    Ok(())
+}
+
+fn scaffold_rust(name: &str, dir: &Path) -> Result<()> {
+    fs::create_dir(dir.join("src"))?;
+    fs::write(dir.join("Cargo.toml"), rust_cargo_toml_for(name))?;
+    fs::write(dir.join("src/lib.rs"), rust_lib_for(name))?;
+    fs::write(dir.join("tangent.yaml"), tangent_config_for("rust", name))?;
+    fs::write(dir.join("Agents.md"), RUST_AGENTS_MD)?;
+
+    let setup_path = dir.join("setup.sh");
+    fs::write(&setup_path, RUST_SETUP)?;
+    let mut permissions = fs::metadata(&setup_path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o111);
+    fs::set_permissions(&setup_path, permissions)?;
+
+    run_setup(dir)?;
+
     Ok(())
 }
 
@@ -279,6 +306,50 @@ make run
             r#"# {name}
 
 Python component for Tangent.
+
+## Setup
+```bash
+./setup.sh
+```
+
+## Compile
+```bash
+tangent plugin compile --config tangent.yaml
+```
+
+## Test
+```bash
+tangent plugin test --config tangent.yaml
+```
+
+## Run server
+```bash
+tangent run --config tangent.yaml
+```
+
+## Benchmark performance
+```bash
+tangent run --config tangent.yaml
+tangent bench --config tangent.yaml --seconds 30 --payload tests/input.json
+```
+
+
+## Using Makefile
+```bash
+# build and test
+make test
+
+# build and run
+make run
+```
+
+
+"#
+        ),
+        "rust" => format!(
+            r#"# {name}
+
+Rust component for Tangent.
 
 ## Setup
 ```bash
@@ -482,6 +553,154 @@ func init() {
 }
 
 func main()	{}
+"#;
+
+    tpl.replace("{module}", module)
+}
+
+fn rust_cargo_toml_for(module: &str) -> String {
+    let tpl = r#"[package]
+name = "{module}"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wit-bindgen = "0.36"
+
+[package.metadata.component]
+package = "tangent:logs"
+
+[package.metadata.component.dependencies]
+"wasi:cli" = { path = ".tangent/wit/deps/wasi-cli" }
+"wasi:filesystem" = { path = ".tangent/wit/deps/wasi-filesystem" }
+"wasi:io" = { path = ".tangent/wit/deps/wasi-io" }
+"wasi:clocks" = { path = ".tangent/wit/deps/wasi-clocks" }
+"wasi:sockets" = { path = ".tangent/wit/deps/wasi-sockets" }
+"wasi:random" = { path = ".tangent/wit/deps/wasi-random" }
+"tangent:logs" = { path = ".tangent/wit" }
+
+"#;
+
+    tpl.replace("{module}", module)
+}
+
+fn rust_lib_for(module: &str) -> String {
+    let tpl = r#"use serde::Serialize;
+
+wit_bindgen::generate!({
+    path: ".tangent/wit",
+    world: "processor",
+});
+
+struct Component;
+
+export!(Component);
+
+#[derive(Default, Serialize)]
+struct ExampleOutput {
+    message: String,
+    level: String,
+    seen: i64,
+    duration: f64,
+    service: String,
+    tags: Option<Vec<String>>,
+}
+
+fn string_from_scalar(s: log::Scalar) -> Option<String> {
+    match s {
+        log::Scalar::Str(v) => Some(v),
+        _ => None,
+    }
+}
+
+fn int_from_scalar(s: log::Scalar) -> Option<i64> {
+    match s {
+        log::Scalar::Int(v) => Some(v),
+        _ => None,
+    }
+}
+
+fn float_from_scalar(s: log::Scalar) -> Option<f64> {
+    match s {
+        log::Scalar::Float(v) => Some(v),
+        _ => None,
+    }
+}
+
+impl exports::tangent::logs::mapper::Guest for Component {
+    fn metadata() -> exports::tangent::logs::mapper::Meta {
+        exports::tangent::logs::mapper::Meta {
+            name: "{module}".to_string(),
+            version: "0.1.0".to_string(),
+        }
+    }
+
+    fn probe() -> Vec<exports::tangent::logs::mapper::Selector> {
+        use exports::tangent::logs::mapper as mapper;
+
+        vec![mapper::Selector {
+            any: Vec::new(),
+            all: vec![mapper::Pred::Eq((
+                "source.name".to_string(),
+                log::Scalar::Str("myservice".to_string()),
+            ))],
+            none: Vec::new(),
+        }]
+    }
+
+    fn process_logs(
+        input: Vec<exports::tangent::logs::log::Logview>,
+    ) -> Result<Vec<u8>, String> {
+        let mut buf = Vec::new();
+
+        for lv in input {
+            let mut out = ExampleOutput::default();
+
+            if let Some(val) = lv.get("msg").and_then(string_from_scalar) {
+                out.message = val;
+            }
+
+            if let Some(val) = lv.get("msg.level").and_then(string_from_scalar) {
+                out.level = val;
+            }
+
+            if let Some(val) = lv.get("seen").and_then(int_from_scalar) {
+                out.seen = val;
+            }
+
+            if let Some(val) = lv.get("duration").and_then(float_from_scalar) {
+                out.duration = val;
+            }
+
+            if let Some(val) = lv.get("source.name").and_then(string_from_scalar) {
+                out.service = val;
+            }
+
+            if let Some(items) = lv.get_list("tags") {
+                let mut tags = Vec::with_capacity(items.len());
+                for item in items {
+                    if let log::Scalar::Str(val) = item {
+                        tags.push(val);
+                    }
+                }
+                if !tags.is_empty() {
+                    out.tags = Some(tags);
+                }
+            }
+
+            let json_line = serde_json::to_vec(&out).map_err(|e| e.to_string())?;
+            buf.extend(json_line);
+            buf.push(b'\n');
+        }
+
+        Ok(buf)
+    }
+}
 "#;
 
     tpl.replace("{module}", module)

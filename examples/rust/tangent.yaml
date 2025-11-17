@@ -1,0 +1,34 @@
+runtime:
+  plugins_path: "plugins/"
+plugins:
+  rust:
+    module_type: rust
+    path: .
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json
+sources:
+  network_input:
+    kind: network
+    format: json
+    host: 0.0.0.0
+    port: 8081
+    open_telemetry: true
+sinks:
+  blackhole:
+    kind: blackhole
+    output_only: true
+    flush_interval_ms: 1000
+dag:
+  - from:
+      kind: source
+      name: network_input
+    to:
+      - kind: plugin
+        name: rust
+  - from:
+      kind: plugin
+      name: rust
+    to:
+      - kind: sink
+        name: blackhole
