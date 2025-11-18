@@ -6,8 +6,8 @@ from abc import abstractmethod
 import weakref
 
 from ..types import Result, Ok, Err, Some
-from ..imports import streams
 from ..imports import wall_clock
+from ..imports import streams
 from ..imports import error
 
 class DescriptorType(Enum):

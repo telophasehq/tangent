@@ -5,6 +5,7 @@ use std::{
     process::{Command, Stdio},
 };
 use tangent_shared::Config;
+use toml::Value;
 use wasmtime::component::Component;
 use which::which;
 
@@ -32,6 +33,7 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
         match plugin.module_type.as_str() {
             "python" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &full_out)?,
             "go" => run_go_compile(&wit_path, WORLD, &entry_point_path, &full_out)?,
+            "rust" => run_rust_compile(&entry_point_path, &full_out)?,
             ext => anyhow::bail!(
                 "unsupported filetype: {} for wasm entrypoint: {}",
                 ext,
@@ -53,6 +55,37 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
         );
     }
     Ok(())
+}
+
+fn ensure_cargo_component() -> Result<()> {
+    let status = Command::new("cargo")
+        .arg("component")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        _ => bail!(
+            "`cargo component` not found. Install via `cargo install cargo-component` and ensure wasm32-wasi target is installed with `rustup target add wasm32-wasi`."
+        ),
+    }
+}
+
+fn package_name(manifest_path: &Path) -> Result<String> {
+    let contents = fs::read_to_string(manifest_path)
+        .with_context(|| format!("reading {}", manifest_path.display()))?;
+    let parsed: Value = contents
+        .parse::<Value>()
+        .context("parsing Cargo.toml for package name")?;
+
+    parsed
+        .get("package")
+        .and_then(|pkg| pkg.get("name"))
+        .and_then(|n| n.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow!("package.name not found in {}", manifest_path.display()))
 }
 
 fn ensure_tinygo() -> Result<()> {
@@ -184,6 +217,75 @@ fn run_go_compile(
     if !status.success() {
         bail!("tinygo build failed");
     }
+
+    Ok(())
+}
+
+fn run_rust_compile(entry_point_path: &Path, out_component: &Path) -> Result<()> {
+    ensure_cargo_component()?;
+
+    let manifest_path = if entry_point_path.is_dir() {
+        entry_point_path.join("Cargo.toml")
+    } else {
+        entry_point_path.to_path_buf()
+    };
+
+    if !manifest_path.exists() {
+        bail!(
+            "`{}` does not exist; specify a Cargo.toml or a directory containing one",
+            manifest_path.display()
+        );
+    }
+
+    let manifest_dir = manifest_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    let rustup_status = Command::new("rustup")
+        .current_dir(&manifest_dir)
+        .arg("target")
+        .arg("add")
+        .arg("wasm32-wasip2")
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| "adding wasm32-wasip2 target")?;
+
+    if !rustup_status.success() {
+        bail!("rustup target add wasm32-wasip2 failed");
+    }
+
+    let pkg_name = package_name(&manifest_path)?;
+
+    let status = Command::new("cargo")
+        .current_dir(&manifest_dir)
+        .arg("component")
+        .arg("build")
+        .arg("--release")
+        .arg("--target")
+        .arg("wasm32-wasip2")
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| "running cargo component build")?;
+
+    if !status.success() {
+        bail!("cargo component build failed");
+    }
+
+    let artifact = manifest_dir
+        .join("target")
+        .join("wasm32-wasip2")
+        .join("release")
+        .join(format!("{pkg_name}.wasm"));
+
+    if !artifact.exists() {
+        bail!("expected build artifact at {}", artifact.display());
+    }
+
+    fs::copy(&artifact, out_component)
+        .with_context(|| format!("copying {}", artifact.display()))?;
 
     Ok(())
 }

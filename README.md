@@ -29,7 +29,7 @@ Tangent is a stream‑processing toolkit that treats **plugins** (user‑defined
 Plugins run in a lightweight WASM sandbox with near-native speed and full language flexibility — no DSLs, no vendor-locked runtimes. Plugins are designed to be shareable, so common transformations (e.g. GuardDuty findings → OCSF) can be written once and shared with the [community](https://github.com/telophasehq/tangent-plugins).
 
 Tangent ships with everything you need to develop, test, and benchmark your own transforms:
-* `tangent plugin scaffold` – generate plugin boilerplate in Go or Python
+* `tangent plugin scaffold` – generate plugin boilerplate
 * `tangent plugin compile` – compile plugins to WASM
 * `tangent plugin test` – run plugin tests
 * `tangent bench` – measure throughput and latency before deploying

@@ -1,0 +1,29 @@
+[package]
+name = "rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[workspace]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wit-bindgen = "0.48.0"
+
+[package.metadata.component]
+package = "tangent:logs"
+
+[package.metadata.component.target]
+path = ".tangent/wit"
+world = "processor"
+
+[package.metadata.component.target.dependencies]
+"wasi:cli" = { path = ".tangent/wit/deps/wasi-cli-0.2.0" }
+"wasi:filesystem" = { path = ".tangent/wit/deps/wasi-filesystem-0.2.0" }
+"wasi:io" = { path = ".tangent/wit/deps/wasi-io-0.2.0" }
+"wasi:clocks" = { path = ".tangent/wit/deps/wasi-clocks-0.2.0" }
+"wasi:sockets" = { path = ".tangent/wit/deps/wasi-sockets-0.2.0" }
+"wasi:random" = { path = ".tangent/wit/deps/wasi-random-0.2.0" }
