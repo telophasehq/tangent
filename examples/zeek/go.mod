@@ -6,7 +6,7 @@ toolchain go1.24.7
 
 require (
 	github.com/telophasehq/go-ocsf v0.2.1
-	github.com/telophasehq/tangent-sdk-go v0.0.0-20251110220017-7cef295948af
+	github.com/telophasehq/tangent-sdk-go v0.0.0-20251118220303-15ccc0f29e4a
 )
 
 require (

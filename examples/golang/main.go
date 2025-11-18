@@ -7,17 +7,17 @@ import (
 
 //easyjson:json
 type ExampleOutput struct {
-	Msg		string		`json:"message"`
-	Level		string		`json:"level"`
-	Seen		int64		`json:"seen"`
-	Duration	float64		`json:"duration"`
-	Service		string		`json:"service"`
-	Tags		[]string	`json:"tags"`
+	Msg      string   `json:"message"`
+	Level    string   `json:"level"`
+	Seen     int64    `json:"seen"`
+	Duration float64  `json:"duration"`
+	Service  string   `json:"service"`
+	Tags     []string `json:"tags"`
 }
 
 var Metadata = tangent_sdk.Metadata{
-	Name:		"golang",
-	Version:	"0.2.0",
+	Name:    "golang",
+	Version: "0.2.0",
 }
 
 var selectors = []tangent_sdk.Selector{
@@ -65,6 +65,7 @@ func ExampleMapper(lv tangent_sdk.Log) (ExampleOutput, error) {
 	if ok {
 		out.Tags = tags
 	}
+
 	return out, nil
 }
 
@@ -76,4 +77,4 @@ func init() {
 	)
 }
 
-func main()	{}
+func main() {}

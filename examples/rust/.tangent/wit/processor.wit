@@ -48,7 +48,7 @@ interface mapper {
 
   probe: func() -> list<selector>;
 
-  process-logs: func(input: list<borrow<logview>>) -> result<list<u8>, string>;
+  process-logs: func(input: list<logview>) -> result<list<u8>, string>;
 }
 
 world processor {
