@@ -36,6 +36,9 @@ jobs:
 
       - name: Scaffold Python plugin
         run: tangent plugin scaffold --name pyplugin --lang python
+      
+      - name: Scaffold Rust plugin
+        run: tangent plugin scaffold --name rustplugin --lang rust
 
       - name: Run make test (Go)
         run: make test
@@ -44,3 +47,7 @@ jobs:
       - name: Run make test (Python)
         run: make test
         working-directory: pyplugin
+      
+      - name: Run make test (Rust)
+        run: make test
+        working-directory: rustplugin

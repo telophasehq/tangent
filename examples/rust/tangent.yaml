@@ -9,16 +9,11 @@ plugins:
         expected: tests/expected.json
 sources:
   network_input:
-    kind: network
-    format: json
-    host: 0.0.0.0
-    port: 8081
-    open_telemetry: true
+    type: tcp
+    bind_address: 0.0.0.0:9000
 sinks:
   blackhole:
-    kind: blackhole
-    output_only: true
-    flush_interval_ms: 1000
+    type: blackhole
 dag:
   - from:
       kind: source
@@ -26,6 +21,7 @@ dag:
     to:
       - kind: plugin
         name: rust
+
   - from:
       kind: plugin
       name: rust

@@ -33,7 +33,7 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
         match plugin.module_type.as_str() {
             "python" => run_componentize_py(&wit_path, WORLD, &entry_point_path, &full_out)?,
             "go" => run_go_compile(&wit_path, WORLD, &entry_point_path, &full_out)?,
-            "rust" => run_rust_compile(&wit_path, WORLD, &entry_point_path, &full_out)?,
+            "rust" => run_rust_compile(&entry_point_path, &full_out)?,
             ext => anyhow::bail!(
                 "unsupported filetype: {} for wasm entrypoint: {}",
                 ext,
@@ -221,12 +221,7 @@ fn run_go_compile(
     Ok(())
 }
 
-fn run_rust_compile(
-    wit_path: &Path,
-    world: &str,
-    entry_point_path: &Path,
-    out_component: &Path,
-) -> Result<()> {
+fn run_rust_compile(entry_point_path: &Path, out_component: &Path) -> Result<()> {
     ensure_cargo_component()?;
 
     let manifest_path = if entry_point_path.is_dir() {
@@ -255,13 +250,7 @@ fn run_rust_compile(
         .arg("build")
         .arg("--release")
         .arg("--target")
-        .arg("wasm32-wasi")
-        .arg("--manifest-path")
-        .arg(&manifest_path)
-        .arg("--wit-path")
-        .arg(wit_path)
-        .arg("--world")
-        .arg(world)
+        .arg("wasm32-wasip2")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
@@ -273,7 +262,7 @@ fn run_rust_compile(
 
     let artifact = manifest_dir
         .join("target")
-        .join("wasm32-wasi")
+        .join("wasm32-wasip2")
         .join("release")
         .join(format!("{pkg_name}.wasm"));
 

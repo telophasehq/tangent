@@ -3,7 +3,11 @@ use serde::Serialize;
 wit_bindgen::generate!({
     path: ".tangent/wit",
     world: "processor",
+    generate_all,
 });
+
+use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
+use tangent::logs::log::{Logview, Scalar};
 
 struct Component;
 
@@ -19,51 +23,47 @@ struct ExampleOutput {
     tags: Option<Vec<String>>,
 }
 
-fn string_from_scalar(s: log::Scalar) -> Option<String> {
+fn string_from_scalar(s: Scalar) -> Option<String> {
     match s {
-        log::Scalar::Str(v) => Some(v),
+        Scalar::Str(v) => Some(v),
         _ => None,
     }
 }
 
-fn int_from_scalar(s: log::Scalar) -> Option<i64> {
+fn int_from_scalar(s: Scalar) -> Option<i64> {
     match s {
-        log::Scalar::Int(v) => Some(v),
+        Scalar::Int(v) => Some(v),
         _ => None,
     }
 }
 
-fn float_from_scalar(s: log::Scalar) -> Option<f64> {
+fn float_from_scalar(s: Scalar) -> Option<f64> {
     match s {
-        log::Scalar::Float(v) => Some(v),
+        Scalar::Float(v) => Some(v),
         _ => None,
     }
 }
 
-impl exports::tangent::logs::mapper::Guest for Component {
-    fn metadata() -> exports::tangent::logs::mapper::Meta {
-        exports::tangent::logs::mapper::Meta {
+impl Guest for Component {
+    fn metadata() -> Meta {
+        Meta {
             name: "rust".to_string(),
             version: "0.1.0".to_string(),
         }
     }
 
-    fn probe() -> Vec<exports::tangent::logs::mapper::Selector> {
-        use exports::tangent::logs::mapper as mapper;
-
-        vec![mapper::Selector {
+    fn probe() -> Vec<Selector> {
+        vec![Selector {
             any: Vec::new(),
-            all: vec![mapper::Pred::Eq((
+            all: vec![Pred::Eq((
                 "source.name".to_string(),
-                log::Scalar::Str("myservice".to_string()),
+                Scalar::Str("myservice".to_string()),
             ))],
             none: Vec::new(),
         }]
     }
 
-    fn process_logs(
-        input: Vec<exports::tangent::logs::log::Logview>,
-    ) -> Result<Vec<u8>, String> {
+    fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
         let mut buf = Vec::new();
 
         for lv in input {
@@ -92,7 +92,7 @@ impl exports::tangent::logs::mapper::Guest for Component {
             if let Some(items) = lv.get_list("tags") {
                 let mut tags = Vec::with_capacity(items.len());
                 for item in items {
-                    if let log::Scalar::Str(val) = item {
+                    if let Scalar::Str(val) = item {
                         tags.push(val);
                     }
                 }

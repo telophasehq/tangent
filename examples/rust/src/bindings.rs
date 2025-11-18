@@ -10675,57 +10675,53 @@ pub mod exports {
                     arg1: usize,
                 ) -> *mut u8 {
                     #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
-                    let handle1;
-                    let base2 = arg0;
-                    let len2 = arg1;
-                    let mut result2 = _rt::Vec::with_capacity(len2);
-                    for i in 0..len2 {
-                        let base = base2.add(i * 4);
-                        let e2 = {
+                    let base1 = arg0;
+                    let len1 = arg1;
+                    let mut result1 = _rt::Vec::with_capacity(len1);
+                    for i in 0..len1 {
+                        let base = base1.add(i * 4);
+                        let e1 = {
                             let l0 = *base.add(0).cast::<i32>();
-                            {
-                                handle1 = unsafe {
-                                    super::super::super::super::tangent::logs::log::Logview::from_handle(
-                                        l0 as u32,
-                                    )
-                                };
-                                &handle1
+                            unsafe {
+                                super::super::super::super::tangent::logs::log::Logview::from_handle(
+                                    l0 as u32,
+                                )
                             }
                         };
-                        result2.push(e2);
+                        result1.push(e1);
                     }
-                    _rt::cabi_dealloc(base2, len2 * 4, 4);
-                    let result3 = T::process_logs(result2);
-                    let ptr4 = (&raw mut _RET_AREA.0).cast::<u8>();
-                    match result3 {
+                    _rt::cabi_dealloc(base1, len1 * 4, 4);
+                    let result2 = T::process_logs(result1);
+                    let ptr3 = (&raw mut _RET_AREA.0).cast::<u8>();
+                    match result2 {
                         Ok(e) => {
-                            *ptr4.add(0).cast::<u8>() = (0i32) as u8;
-                            let vec5 = (e).into_boxed_slice();
+                            *ptr3.add(0).cast::<u8>() = (0i32) as u8;
+                            let vec4 = (e).into_boxed_slice();
+                            let ptr4 = vec4.as_ptr().cast::<u8>();
+                            let len4 = vec4.len();
+                            ::core::mem::forget(vec4);
+                            *ptr3
+                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len4;
+                            *ptr3
+                                .add(::core::mem::size_of::<*const u8>())
+                                .cast::<*mut u8>() = ptr4.cast_mut();
+                        }
+                        Err(e) => {
+                            *ptr3.add(0).cast::<u8>() = (1i32) as u8;
+                            let vec5 = (e.into_bytes()).into_boxed_slice();
                             let ptr5 = vec5.as_ptr().cast::<u8>();
                             let len5 = vec5.len();
                             ::core::mem::forget(vec5);
-                            *ptr4
+                            *ptr3
                                 .add(2 * ::core::mem::size_of::<*const u8>())
                                 .cast::<usize>() = len5;
-                            *ptr4
+                            *ptr3
                                 .add(::core::mem::size_of::<*const u8>())
                                 .cast::<*mut u8>() = ptr5.cast_mut();
                         }
-                        Err(e) => {
-                            *ptr4.add(0).cast::<u8>() = (1i32) as u8;
-                            let vec6 = (e.into_bytes()).into_boxed_slice();
-                            let ptr6 = vec6.as_ptr().cast::<u8>();
-                            let len6 = vec6.len();
-                            ::core::mem::forget(vec6);
-                            *ptr4
-                                .add(2 * ::core::mem::size_of::<*const u8>())
-                                .cast::<usize>() = len6;
-                            *ptr4
-                                .add(::core::mem::size_of::<*const u8>())
-                                .cast::<*mut u8>() = ptr6.cast_mut();
-                        }
                     };
-                    ptr4
+                    ptr3
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
@@ -10758,7 +10754,7 @@ pub mod exports {
                     fn metadata() -> Meta;
                     fn probe() -> _rt::Vec<Selector>;
                     fn process_logs(
-                        input: _rt::Vec<&Logview>,
+                        input: _rt::Vec<Logview>,
                     ) -> Result<_rt::Vec<u8>, _rt::String>;
                 }
                 #[doc(hidden)]
@@ -11289,7 +11285,7 @@ r\x02\x04names\x07versions\x04\0\x04meta\x03\0\x04\x01o\x02s\x03\x01o\x02ss\x01p
 \x07\0\x02in\x01\x09\0\x02gt\x01\x0a\0\x05regex\x01\x07\0\x04\0\x04pred\x03\0\x0b\
 \x01p\x0c\x01r\x03\x03any\x0d\x03all\x0d\x04none\x0d\x04\0\x08selector\x03\0\x0e\
 \x01@\0\0\x05\x04\0\x08metadata\x01\x10\x01p\x0f\x01@\0\0\x11\x04\0\x05probe\x01\
-\x12\x01h\x01\x01p\x13\x01p}\x01j\x01\x15\x01s\x01@\x01\x05input\x14\0\x16\x04\0\
+\x12\x01i\x01\x01p\x13\x01p}\x01j\x01\x15\x01s\x01@\x01\x05input\x14\0\x16\x04\0\
 \x0cprocess-logs\x01\x17\x04\0\x19tangent:logs/mapper@0.1.0\x05/\x04\0\x1ctangen\
 t:logs/processor@0.1.0\x04\0\x0b\x0f\x01\0\x09processor\x03\0\0\0G\x09producers\x01\
 \x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";

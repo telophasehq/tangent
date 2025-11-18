@@ -12,7 +12,7 @@ install_rustup_target() {
     echo "rustup not found. Install Rust from https://rustup.rs first." >&2
     exit 1
   fi
-  rustup target add wasm32-wasi --toolchain stable || true
+  rustup target add wasm32-wasip2 --toolchain stable || true
 }
 
 install_cargo_component() {
