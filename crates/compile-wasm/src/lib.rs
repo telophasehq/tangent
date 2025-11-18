@@ -242,6 +242,20 @@ fn run_rust_compile(entry_point_path: &Path, out_component: &Path) -> Result<()>
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
 
+    let rustup_status = Command::new("rustup")
+        .current_dir(&manifest_dir)
+        .arg("target")
+        .arg("add")
+        .arg("wasm32-wasip2")
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| "adding wasm32-wasip2 target")?;
+
+    if !rustup_status.success() {
+        bail!("rustup target add wasm32-wasip2 failed");
+    }
+
     let pkg_name = package_name(&manifest_path)?;
 
     let status = Command::new("cargo")
