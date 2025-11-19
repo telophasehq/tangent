@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -22,6 +22,11 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
     fs::create_dir_all(&out)?;
 
     for (name, plugin) in cfg.plugins {
+        match fs::create_dir_all(&plugin.path) {
+            Ok(_) => (),
+            Err(ref e) if e.kind() == io::ErrorKind::AlreadyExists => (),
+            Err(e) => bail!(e),
+        }
         let entry_point_path = config_dir
             .join(&plugin.path)
             .canonicalize()
