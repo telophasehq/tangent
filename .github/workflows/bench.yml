@@ -42,9 +42,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install script dependencies
-        run: pip install pyyaml
-
       - name: Install tangent CLI
         run: cargo install --path crates/cli
     
@@ -104,6 +101,15 @@ jobs:
             taskset -c 0-15 tangent bench --config examples/rust/tangent.yaml --seconds 20 --connections 16 --payload examples/rust/tests/bench.json --synthesize | tee rust_bench.txt
             kill $RUNTIME_PID
             wait $RUNTIME_PID || true
+
+      - name: Upload benchmark logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: |
+            python_bench.txt
+            go_bench.txt
+            rust_bench.txt
     
   update-readme:
     needs: bench
@@ -111,6 +117,23 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install script dependencies
+        run: pip install pyyaml
+
+      - name: Download benchmark logs
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-results
+          path: .
+
       - name: Update README with results
         run: |
             {
