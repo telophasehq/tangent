@@ -9,9 +9,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-use crate::{dag::DagRuntime, sources::decoding::normalize_to_ndjson};
+use crate::{router::Router, sources::decoding::normalize_to_ndjson};
 use rdkafka::message::Headers;
-use tangent_shared::sources::msk::{MSKAuth, MSKConfig};
+use tangent_shared::{
+    dag::NodeRef,
+    sources::msk::{MSKAuth, MSKConfig},
+};
 
 use crate::sources::decoding;
 
@@ -94,7 +97,7 @@ pub async fn run_consumer(
     name: Arc<str>,
     kc: MSKConfig,
     chunks: usize,
-    dag_runtime: DagRuntime,
+    router: Arc<Router>,
     shutdown: CancellationToken,
 ) -> Result<()> {
     let consumer: StreamConsumer<Ctx> = build_consumer(&kc)?;
@@ -102,6 +105,7 @@ pub async fn run_consumer(
 
     let fwd_shutdown = shutdown.clone();
     let dc = kc.decoding.clone();
+    let from = NodeRef::Source { name: name };
 
     loop {
         tokio::select! {
@@ -120,7 +124,7 @@ pub async fn run_consumer(
                             let mut ndjson = normalize_to_ndjson(&kc.decoding.format, raw)?;
                             let frames_mut = decoding::chunk_ndjson(&mut ndjson, chunks);
 
-                            dag_runtime.push_from_source(name.clone(), frames_mut, vec![]).await?;
+                            router.forward(&from, frames_mut, vec![]).await?;
                         }
                     }
                     Err(e) => {

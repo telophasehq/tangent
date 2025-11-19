@@ -8,10 +8,11 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 use tangent_shared::dag::NodeRef;
+use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use tokio::time::{self, Instant as TokioInstant};
+use tokio_util::sync::CancellationToken;
 use wasmtime::component::{Component, Resource};
 
 use crate::wasm::host::JsonLogView;
@@ -38,6 +39,7 @@ pub struct Worker {
     batch_max_size: usize,
     batch_max_age: Duration,
     router: Arc<Router>,
+    shutdown: CancellationToken,
 }
 
 impl Worker {
@@ -91,6 +93,9 @@ impl Worker {
                 () = &mut sleeper => {
                     if !batch.is_empty() {
                         self.flush_batch(&mut batch, &mut acks, &mut total_size).await?;
+                    }
+                    if self.shutdown.is_cancelled() {
+                        break;
                     }
                     deadline = TokioInstant::now() + self.batch_max_age;
                     sleeper.as_mut().reset(deadline);
@@ -201,7 +206,7 @@ impl Worker {
 pub struct WorkerPool {
     senders: Vec<mpsc::Sender<Record>>,
     rr: AtomicUsize,
-    handles: Mutex<Vec<JoinHandle<()>>>,
+    handles: Vec<JoinHandle<()>>,
 }
 
 impl WorkerPool {
@@ -212,6 +217,7 @@ impl WorkerPool {
         batch_max_size: usize,
         batch_max_age: Duration,
         router: Arc<Router>,
+        shutdown: CancellationToken,
     ) -> anyhow::Result<Self> {
         let mut senders = Vec::with_capacity(size);
         let mut handles = Vec::with_capacity(size);
@@ -250,6 +256,7 @@ impl WorkerPool {
                 batch_max_size,
                 batch_max_age,
                 router: Arc::clone(&router),
+                shutdown: shutdown.clone(),
             };
             let h = tokio::spawn(async move {
                 if let Err(e) = worker.run().await {
@@ -262,7 +269,7 @@ impl WorkerPool {
         Ok(Self {
             senders,
             rr: AtomicUsize::new(0),
-            handles: Mutex::new(handles),
+            handles: handles,
         })
     }
 
@@ -295,13 +302,15 @@ impl WorkerPool {
         Ok(())
     }
 
-    pub async fn join(&self) {
-        let handles: Vec<JoinHandle<()>> = {
-            let mut guard = self.handles.lock().await;
-            guard.drain(..).collect()
-        };
+    pub async fn join(self) {
+        let WorkerPool {
+            senders,
+            rr: _,
+            mut handles,
+        } = self;
+        drop(senders);
 
-        for h in handles {
+        for h in handles.drain(..) {
             let _ = h.await;
         }
     }
@@ -313,7 +322,7 @@ impl WorkerPool {
         Self {
             senders: Vec::new(),
             rr: AtomicUsize::new(0),
-            handles: Mutex::new(handles),
+            handles: handles,
         }
     }
 }

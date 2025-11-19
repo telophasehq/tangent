@@ -1,43 +1,47 @@
 use ahash::AHashMap as HashMap;
 
 use anyhow::{anyhow, Context, Result};
-use bytes::BytesMut;
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
-use tangent_shared::{dag::NodeRef, Config};
+use tangent_shared::{dag::NodeRef, sources::common::SourceConfig, Config};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    router::Router,
-    sinks::manager::SinkManager,
-    wasm::engine::WasmEngine,
-    worker::{Ack, WorkerPool},
+    router::Router, sinks::manager::SinkManager, sources, wasm::engine::WasmEngine,
+    worker::WorkerPool,
 };
 
-#[derive(Clone)]
 pub struct DagRuntime {
     pub router: Arc<Router>,
     pool: Arc<WorkerPool>,
     sink_manager: Arc<SinkManager>,
+    consumer_handles: Vec<tokio::task::JoinHandle<()>>,
+    shutdown: CancellationToken,
 }
 
 impl DagRuntime {
-    pub async fn build(cfg: &Config, cfg_path: &PathBuf) -> anyhow::Result<Self> {
+    pub async fn build(
+        cfg: Config,
+        cfg_path: &PathBuf,
+        shutdown: CancellationToken,
+    ) -> anyhow::Result<Self> {
         let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
         let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
         let plugin_root = config_dir.join(&cfg.runtime.plugins_path).canonicalize()?;
 
-        let engines: Vec<WasmEngine> = (0..cfg.runtime.workers)
+        let workers = cfg.runtime.workers;
+
+        let engines: Vec<WasmEngine> = (0..workers)
             .map(|_| WasmEngine::new())
             .collect::<Result<_, _>>()?;
-        let mut components: Vec<Vec<(Arc<str>, Component)>> =
-            Vec::with_capacity(cfg.runtime.workers);
-        for i in 0..cfg.runtime.workers {
+        let mut components: Vec<Vec<(Arc<str>, Component)>> = Vec::with_capacity(workers);
+        for i in 0..workers {
             components.push(Vec::<(Arc<str>, Component)>::new());
             for (name, _) in &cfg.plugins {
                 let component_file = format!("{name}.cwasm");
@@ -68,14 +72,21 @@ impl DagRuntime {
 
         let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
 
+        let batch_size = cfg.batch_size_kb();
+        let batch_age = cfg.batch_age_ms();
+        let sources = cfg.sources;
+        let consumer_handles =
+            spawn_consumers(sources, batch_size, router.clone(), shutdown.clone());
+
         let pool = Arc::new(
             WorkerPool::new(
-                cfg.runtime.workers,
+                workers,
                 engines,
                 components,
-                cfg.batch_size_kb(),
-                cfg.batch_age_ms(),
+                batch_size,
+                batch_age,
                 Arc::clone(&router),
+                shutdown.clone(),
             )
             .await?,
         );
@@ -86,40 +97,52 @@ impl DagRuntime {
             router,
             pool,
             sink_manager,
+            consumer_handles,
+            shutdown,
         })
     }
 
-    pub async fn push_from_source(
-        &self,
-        source_name: Arc<str>,
-        frames: Vec<BytesMut>,
-        acks: Vec<Arc<dyn Ack>>,
-    ) -> anyhow::Result<()> {
-        let from = NodeRef::Source { name: source_name };
-        self.router.forward(&from, frames, acks).await
-    }
-
-    pub async fn shutdown(
-        self,
-        cancel: CancellationToken,
-        worker_timeout: Duration,
-        sink_timeout: Duration,
-    ) -> Result<()> {
-        cancel.cancel();
-
+    pub async fn shutdown(self, worker_timeout: Duration, sink_timeout: Duration) -> Result<()> {
         let Self {
             router,
             pool,
             sink_manager,
+            consumer_handles,
+            shutdown,
         } = self;
+
+        shutdown.cancel();
+
+        tracing::info!("waiting on consumers to shutdown...");
+        for mut h in consumer_handles {
+            let sleep = tokio::time::sleep(Duration::from_secs(30));
+            tokio::pin!(sleep);
+
+            tokio::select! {
+                _ = &mut sleep => {
+                    tracing::warn!("consumer shutdown timeout exceeded; aborting task");
+                    h.abort();
+                    let _ = h.await;
+                }
+                res = &mut h => {
+                    if let Err(e) = res {
+                        tracing::warn!("consumer task panicked or was cancelled: {e}");
+                    }
+                }
+            }
+        }
 
         tracing::info!("waiting on workers to shutdown...");
 
-        if let Err(e) = timeout(worker_timeout, pool.join()).await {
-            tracing::warn!(?e, "pool shutdown timeout exceeded. Logs may be dropped.");
-        }
-
         drop(router);
+
+        if let Ok(pool_owned) = Arc::try_unwrap(pool) {
+            if let Err(e) = timeout(worker_timeout, pool_owned.join()).await {
+                tracing::warn!(?e, "pool shutdown timeout exceeded. Logs may be dropped.");
+            }
+        } else {
+            tracing::warn!("WorkerPool still has refs; cannot consume for join()");
+        }
 
         tracing::info!("waiting on sink manager to shutdown...");
         let sink_owned = Arc::try_unwrap(sink_manager)
@@ -136,6 +159,75 @@ impl DagRuntime {
 
         Ok(())
     }
+}
+
+fn spawn_consumers(
+    sources: BTreeMap<Arc<str>, SourceConfig>,
+    batch_size: usize,
+    router: Arc<Router>,
+    shutdown: CancellationToken,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    let mut handles = Vec::new();
+    for src in sources {
+        let shutdown = shutdown.clone();
+        match src {
+            (name, SourceConfig::MSK(kc)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) =
+                        sources::msk::run_consumer(name, kc, batch_size, router, shutdown.clone())
+                            .await
+                    {
+                        tracing::error!("msk consumer error: {e}");
+                    }
+                }));
+            }
+            (name, SourceConfig::File(fc)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) =
+                        sources::file::run_consumer(name, fc, batch_size, router, shutdown.clone())
+                            .await
+                    {
+                        tracing::error!("file consumer error: {e}");
+                    }
+                }));
+            }
+            (name, SourceConfig::Socket(sc)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) =
+                        sources::socket::run_consumer(name, sc, router, shutdown.clone()).await
+                    {
+                        tracing::error!("socket listener error: {e}");
+                    }
+                }));
+            }
+            (name, SourceConfig::Tcp(tc)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) =
+                        sources::tcp::run_consumer(name, tc, router, shutdown.clone()).await
+                    {
+                        tracing::error!("tcp listener error: {e}");
+                    }
+                }));
+            }
+            (name, SourceConfig::SQS(sq)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) =
+                        sources::sqs::run_consumer(name, sq, batch_size, router, shutdown.clone())
+                            .await
+                    {
+                        tracing::error!("SQS consumer error: {e}");
+                    }
+                }));
+            }
+        }
+    }
+
+    handles
 }
 
 #[cfg(test)]
@@ -227,6 +319,8 @@ mod tests {
             router,
             pool: worker_pool,
             sink_manager: Arc::clone(&sink_manager),
+            consumer_handles: vec![],
+            shutdown: CancellationToken::new(),
         };
 
         let ack = Arc::new(CountingAck::default());
@@ -243,12 +337,7 @@ mod tests {
 
         drop(sink_manager);
 
-        let shutdown_token = CancellationToken::new();
-        let shutdown = runtime.shutdown(
-            shutdown_token,
-            Duration::from_millis(200),
-            Duration::from_millis(200),
-        );
+        let shutdown = runtime.shutdown(Duration::from_millis(200), Duration::from_millis(200));
         tokio::pin!(shutdown);
 
         assert!(

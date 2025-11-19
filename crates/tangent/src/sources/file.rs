@@ -2,12 +2,13 @@ use anyhow::Result;
 use bytes::BytesMut;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tangent_shared::dag::NodeRef;
 use tangent_shared::sources::file::FileConfig;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 
-use crate::dag::DagRuntime;
+use crate::router::Router;
 use crate::sources::decoding;
 use crate::sources::decoding::normalize_to_ndjson;
 
@@ -15,7 +16,7 @@ pub async fn run_consumer(
     name: Arc<str>,
     cfg: FileConfig,
     chunks: usize,
-    dag_runtime: DagRuntime,
+    router: Arc<Router>,
     shutdown: CancellationToken,
 ) -> Result<()> {
     let path: PathBuf = cfg.path;
@@ -33,9 +34,8 @@ pub async fn run_consumer(
     let mut ndjson = normalize_to_ndjson(&cfg.decoding.format, raw)?;
     let frames = decoding::chunk_ndjson(&mut ndjson, chunks);
 
-    dag_runtime
-        .push_from_source(name, frames, Vec::new())
-        .await?;
+    let from = NodeRef::Source { name: name };
+    router.forward(&from, frames, Vec::new()).await?;
 
     let () = shutdown.cancelled().await;
     Ok(())

@@ -9,7 +9,7 @@ use prometheus::{
     IntGauge,
 };
 
-use tangent_shared::{sources::common::SourceConfig, Config};
+use tangent_shared::Config;
 
 use crate::dag::DagRuntime;
 
@@ -108,12 +108,10 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
         cfg.batch_age_ms()
     );
 
-    let dag_runtime = DagRuntime::build(&cfg, &config_path).await?;
+    let dag_runtime = DagRuntime::build(cfg, &config_path, ingest_shutdown).await?;
 
     #[cfg(feature = "alloc-prof")]
     jemalloc_dump("warm");
-
-    let consumer_handles = spawn_consumers(cfg, dag_runtime.clone(), ingest_shutdown.clone());
 
     if !opts.once {
         wait_for_shutdown_signal().await?;
@@ -122,114 +120,13 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     #[cfg(feature = "alloc-prof")]
     jemalloc_dump("pre_teardown");
 
-    ingest_shutdown.cancel();
-
     info!("received shutdown signal...");
 
-    info!("waiting on consumers to shutdown...");
-    for h in consumer_handles {
-        match tokio::time::timeout(Duration::from_secs(30), h).await {
-            Err(e) => {
-                tracing::warn!(
-                    ?e,
-                    "consumer shutdown timeout exceeded. Logs may be dropped."
-                )
-            }
-            Ok(_) => (),
-        }
-    }
-
     dag_runtime
-        .shutdown(
-            ingest_shutdown,
-            Duration::from_secs(120),
-            Duration::from_secs(120),
-        )
+        .shutdown(Duration::from_secs(120), Duration::from_secs(120))
         .await?;
 
     Ok(())
-}
-
-fn spawn_consumers(
-    cfg: Config,
-    dag: DagRuntime,
-    shutdown: CancellationToken,
-) -> Vec<tokio::task::JoinHandle<()>> {
-    let mut handles = Vec::new();
-    for src in cfg.sources {
-        let shutdown = shutdown.clone();
-        match src {
-            (name, SourceConfig::MSK(kc)) => {
-                let dc = dag.clone();
-                handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::msk::run_consumer(
-                        name,
-                        kc,
-                        cfg.runtime.batch_size,
-                        dc,
-                        shutdown.clone(),
-                    )
-                    .await
-                    {
-                        tracing::error!("msk consumer error: {e}");
-                    }
-                }));
-            }
-            (name, SourceConfig::File(fc)) => {
-                let dc = dag.clone();
-                handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::file::run_consumer(
-                        name,
-                        fc,
-                        cfg.runtime.batch_size,
-                        dc,
-                        shutdown.clone(),
-                    )
-                    .await
-                    {
-                        tracing::error!("file consumer error: {e}");
-                    }
-                }));
-            }
-            (name, SourceConfig::Socket(sc)) => {
-                let dc = dag.clone();
-                handles.push(tokio::spawn(async move {
-                    if let Err(e) =
-                        sources::socket::run_consumer(name, sc, dc, shutdown.clone()).await
-                    {
-                        tracing::error!("socket listener error: {e}");
-                    }
-                }));
-            }
-            (name, SourceConfig::Tcp(tc)) => {
-                let dc = dag.clone();
-                handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::tcp::run_consumer(name, tc, dc, shutdown.clone()).await
-                    {
-                        tracing::error!("tcp listener error: {e}");
-                    }
-                }));
-            }
-            (name, SourceConfig::SQS(sq)) => {
-                let dc = dag.clone();
-                handles.push(tokio::spawn(async move {
-                    if let Err(e) = sources::sqs::run_consumer(
-                        name,
-                        sq,
-                        cfg.runtime.batch_size,
-                        dc,
-                        shutdown.clone(),
-                    )
-                    .await
-                    {
-                        tracing::error!("SQS consumer error: {e}");
-                    }
-                }));
-            }
-        }
-    }
-
-    handles
 }
 
 pub async fn wait_for_shutdown_signal() -> Result<()> {
