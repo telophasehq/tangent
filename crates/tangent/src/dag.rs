@@ -83,7 +83,6 @@ impl DagRuntime {
                 batch_size,
                 batch_age,
                 Arc::clone(&router),
-                shutdown.clone(),
             )
             .await?,
         );
