@@ -81,6 +81,10 @@ install_componentize_py() {
       echo "python3 not found. Please install Python 3.10+ and re-run." && exit 1
     fi
   fi
+
+  if [ -n "${GITHUB_PATH:-}" ]; then
+    echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+  fi
 }
 
 print_versions() {
