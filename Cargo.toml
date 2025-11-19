@@ -10,7 +10,7 @@ wasmtime      =  { git = "https://github.com/bytecodealliance/wasmtime.git", rev
 wasmtime-wasi =  { git = "https://github.com/bytecodealliance/wasmtime.git", rev = "b676f1e7779410648cd77b2e43b5be58603797f8" }
 
 [workspace.package]
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 repository = "https://github.com/telophasehq/tangent"
 homepage = "https://github.com/telophasehq/tangent"
