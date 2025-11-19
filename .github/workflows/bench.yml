@@ -42,11 +42,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Python tooling
-        run: bash assets/py_setup.sh
-
       - name: Install tangent CLI
         run: cargo install --path crates/cli
+    
+      - name: Compile ${{ matrix.scenario.name }}
+        run: |
+          tangent plugin compile --config ${{ matrix.scenario.config }}
 
       - name: Run ${{ matrix.scenario.name }} benchmark
         env:
