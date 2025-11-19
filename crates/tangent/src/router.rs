@@ -87,22 +87,28 @@ impl Router {
         }
 
         let pool = self.pool();
+        if tos.iter().any(|to| matches!(to, NodeRef::Plugin { .. })) && pool.is_none() {
+            anyhow::bail!(
+                "router called before pool set (from={:?}, tos={:?}, frames={})",
+                from,
+                tos,
+                frames.len(),
+            );
+        }
 
         let shared = Arc::new(RefCountAck::new(acks, deliveries));
+
         if tos.len() == 1 {
             let to = &tos[0];
             for frame in frames.drain(..) {
                 match to {
                     NodeRef::Plugin { .. } => {
-                        if let Some(ref pool) = pool {
-                            let rec = Record {
-                                payload: frame,
-                                ack: Some(shared.clone()),
-                            };
-                            pool.dispatch(rec).await?;
-                        } else {
-                            let _ = shared.ack().await;
-                        }
+                        let pool = pool.as_ref().expect("pool must be set for plugin edges");
+                        let rec = Record {
+                            payload: frame,
+                            ack: Some(shared.clone()),
+                        };
+                        pool.dispatch(rec).await?;
                     }
                     NodeRef::Sink { name, key_prefix } => {
                         self.sink_manager

@@ -22,7 +22,6 @@ pub struct DagRuntime {
     pool: Arc<WorkerPool>,
     sink_manager: Arc<SinkManager>,
     consumer_handles: Vec<tokio::task::JoinHandle<()>>,
-    shutdown: CancellationToken,
 }
 
 impl DagRuntime {
@@ -75,8 +74,6 @@ impl DagRuntime {
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
         let sources = cfg.sources;
-        let consumer_handles =
-            spawn_consumers(sources, batch_size, router.clone(), shutdown.clone());
 
         let pool = Arc::new(
             WorkerPool::new(
@@ -93,12 +90,14 @@ impl DagRuntime {
 
         router.set_pool(&pool);
 
+        let consumer_handles =
+            spawn_consumers(sources, batch_size, router.clone(), shutdown.clone());
+
         Ok(Self {
             router,
             pool,
             sink_manager,
             consumer_handles,
-            shutdown,
         })
     }
 
@@ -108,10 +107,7 @@ impl DagRuntime {
             pool,
             sink_manager,
             consumer_handles,
-            shutdown,
         } = self;
-
-        shutdown.cancel();
 
         tracing::info!("waiting on consumers to shutdown...");
         for mut h in consumer_handles {
@@ -320,7 +316,6 @@ mod tests {
             pool: worker_pool,
             sink_manager: Arc::clone(&sink_manager),
             consumer_handles: vec![],
-            shutdown: CancellationToken::new(),
         };
 
         let ack = Arc::new(CountingAck::default());

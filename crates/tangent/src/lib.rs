@@ -108,7 +108,7 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
         cfg.batch_age_ms()
     );
 
-    let dag_runtime = DagRuntime::build(cfg, &config_path, ingest_shutdown).await?;
+    let dag_runtime = DagRuntime::build(cfg, &config_path, ingest_shutdown.clone()).await?;
 
     #[cfg(feature = "alloc-prof")]
     jemalloc_dump("warm");
@@ -121,6 +121,7 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     jemalloc_dump("pre_teardown");
 
     info!("received shutdown signal...");
+    ingest_shutdown.cancel();
 
     dag_runtime
         .shutdown(Duration::from_secs(120), Duration::from_secs(120))
