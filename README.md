@@ -42,6 +42,20 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 
 3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins). Each plugin runs in its own lightweight sandbox.
 
+## Benchmarks
+
+## Nightly Benchmarks
+
+<!-- BENCH_START -->
+### Throughput (MB/s)
+
+| Source → Sink | Rust | Go | Python |
+|---|---|---|---|
+| tcp → blackhole | `483.35` | `399.54` | `76.91` |
+<!-- BENCH_END -->
+
+_Benchmarks are updated nightly. See: [nightly benchmark](https://github.com/telophasehq/tangent/actions/workflows/bench.yml)._
+
 ## Install
 ```bash
 # Homebrew

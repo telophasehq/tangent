@@ -118,7 +118,7 @@ pub async fn run_bench(
     let bytes = BYTES_SENT.load(Ordering::Relaxed);
     let records = RECS_SENT.load(Ordering::Relaxed);
     let secs = start.elapsed().as_secs_f64();
-    eprintln!(
+    println!(
         "sent_bytes={} sent_records={} MB/s={:.2} MiB/s={:.2} recs/s={:.0}",
         bytes,
         records,

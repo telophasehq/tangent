@@ -15,11 +15,12 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
     let cfg = Config::from_file(cfg_path)?;
 
     let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
-    let out = config_dir
-        .join(&cfg.runtime.plugins_path)
+
+    let plugins_path = config_dir.join(&cfg.runtime.plugins_path);
+    fs::create_dir_all(&plugins_path)?;
+    let out = plugins_path
         .canonicalize()
         .with_context(|| "configured plugins path")?;
-    fs::create_dir_all(&out)?;
 
     for (name, plugin) in cfg.plugins {
         let entry_point_path = config_dir

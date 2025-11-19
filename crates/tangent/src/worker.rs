@@ -262,7 +262,7 @@ impl WorkerPool {
         Ok(Self {
             senders,
             rr: AtomicUsize::new(0),
-            handles,
+            handles: handles,
         })
     }
 
@@ -295,13 +295,27 @@ impl WorkerPool {
         Ok(())
     }
 
-    pub fn close(&mut self) {
-        self.senders.clear();
-    }
-
     pub async fn join(self) {
-        for h in self.handles {
+        let WorkerPool {
+            senders,
+            rr: _,
+            mut handles,
+        } = self;
+        drop(senders);
+
+        for h in handles.drain(..) {
             let _ = h.await;
+        }
+    }
+}
+
+#[cfg(test)]
+impl WorkerPool {
+    pub fn new_for_test(handles: Vec<JoinHandle<()>>) -> Self {
+        Self {
+            senders: Vec::new(),
+            rr: AtomicUsize::new(0),
+            handles: handles,
         }
     }
 }

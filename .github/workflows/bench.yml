@@ -1,0 +1,159 @@
+name: Nightly performance benchmarks
+
+on:
+    workflow_dispatch:
+    schedule:
+        - cron: "0 7 * * *"
+
+jobs:
+  bench:
+    runs-on: nightly-bench
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+    
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libssl-dev \
+            zlib1g-dev \
+            libsasl2-dev
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tangent CLI
+        run: cargo install --path crates/cli
+    
+      - name: Setup Python
+        run: |
+            assets/py_setup.sh
+    
+      - name: Setup Go
+        run: |
+            assets/go_setup.sh
+
+      - name: Setup Rust
+        run: |
+            assets/rust_setup.sh
+    
+      - name: Compile Python
+        run: |
+          tangent plugin compile --config examples/python/tangent.yaml
+    
+      - name: Compile Go
+        run: |
+          tangent plugin compile --config examples/golang/tangent.yaml
+    
+      - name: Compile Rust
+        run: |
+          tangent plugin compile --config examples/rust/tangent.yaml
+
+      - name: Run Python benchmark
+        env:
+          RUST_LOG: info
+        run: |
+          taskset -c 16-32 tangent run --config examples/python/tangent.yaml &
+          RUNTIME_PID=$!
+          sleep 5
+          taskset -c 0-15 tangent bench --config examples/python/tangent.yaml --seconds 20 --connections 16 --payload examples/python/tests/bench.json --synthesize | tee python_bench.txt
+          kill $RUNTIME_PID
+          wait $RUNTIME_PID || true
+    
+      - name: Run Go benchmark
+        env:
+          RUST_LOG: info
+        run: |
+          taskset -c 16-32 tangent run --config examples/golang/tangent.yaml &
+          RUNTIME_PID=$!
+          sleep 5
+          taskset -c 0-15 tangent bench --config examples/golang/tangent.yaml --seconds 20 --connections 16 --payload examples/golang/tests/bench.json --synthesize | tee go_bench.txt
+          kill $RUNTIME_PID
+          wait $RUNTIME_PID || true
+    
+      - name: Run Rust benchmark
+        env:
+            RUST_LOG: info
+        run: |
+            taskset -c 16-32 tangent run --config examples/rust/tangent.yaml &
+            RUNTIME_PID=$!
+            sleep 5
+            taskset -c 0-15 tangent bench --config examples/rust/tangent.yaml --seconds 20 --connections 16 --payload examples/rust/tests/bench.json --synthesize | tee rust_bench.txt
+            kill $RUNTIME_PID
+            wait $RUNTIME_PID || true
+
+      - name: Upload benchmark logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: |
+            python_bench.txt
+            go_bench.txt
+            rust_bench.txt
+    
+  update-readme:
+    needs: bench
+    runs-on: nightly-bench
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install script dependencies
+        run: pip install pyyaml
+
+      - name: Download benchmark logs
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-results
+          path: .
+
+      - name: Update README with results
+        run: |
+            {
+            echo "## Nightly Benchmarks"
+            echo ""
+            echo "<!-- BENCH_START -->"
+            scripts/extract_bench.py \
+              "Rust"   examples/rust/tangent.yaml   rust_bench.txt \
+              "Go"     examples/golang/tangent.yaml go_bench.txt \
+              "Python" examples/python/tangent.yaml python_bench.txt 
+            echo "<!-- BENCH_END -->"
+            } > BENCH.md
+
+            # Replace inside README
+            perl -0777 -i -pe 's/<!-- BENCH_START -->.*?<!-- BENCH_END -->/`cat BENCH.md`/se' README.md
+    
+      - name: Commit benchmark update
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+            commit_message: "Update nightly benchmarks"
+            file_pattern: README.md
+    
