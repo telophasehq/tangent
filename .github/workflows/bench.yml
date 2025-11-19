@@ -1,0 +1,60 @@
+name: Nightly performance benchmarks
+
+on:
+    push:
+      branches:
+        - nightly-bench
+    workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest-16-cores
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - name: python
+            config: examples/python/tangent.yaml
+            payload: examples/python/tests/bench.json
+          - name: go
+            config: examples/golang/tangent.yaml
+            payload: examples/golang/tests/bench.json
+          - name: rust
+            config: examples/rust/tangent.yaml
+            payload: examples/rust/tests/bench.json
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python tooling
+        run: bash assets/py_setup.sh
+
+      - name: Install tangent CLI
+        run: cargo install --path crates/cli
+
+      - name: Run ${{ matrix.scenario.name }} benchmark
+        env:
+          RUST_LOG: info
+        run: |
+          taskset -c 16-32 tangent run --config ${{ matrix.scenario.config }} &
+          RUNTIME_PID=$!
+          sleep 5
+          taskset -c 0-15 tangent bench --config ${{ matrix.scenario.config }} --seconds 20 --connections 16 --payload ${{ matrix.scenario.payload }} --synthesize
+          kill $RUNTIME_PID
+          wait $RUNTIME_PID || true
