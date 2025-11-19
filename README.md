@@ -43,7 +43,7 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins). Each plugin runs in its own lightweight sandbox.
 
 ## Benchmarks
-Benchmarks show end-to-end throughput using plugins implemented in Rust, Go, and Python. Each plugin is compiled to WASM and run inside Tangent.
+Benchmarks show end-to-end throughput with simple log transformation plugins implemented in Rust, Go, and Python. Each plugin is compiled to WASM and run inside Tangent.
 
 <!-- BENCH_START -->
 | Source → Sink | Rust | Go | Python |
