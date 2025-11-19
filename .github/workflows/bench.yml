@@ -8,8 +8,7 @@ on:
 
 jobs:
   bench:
-    runs-on:
-        group: bench
+    runs-on: nightly-bench
     strategy:
       fail-fast: false
       matrix:
