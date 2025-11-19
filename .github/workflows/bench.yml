@@ -2,29 +2,15 @@ name: Nightly performance benchmarks
 
 on:
     push:
-      branches:
+        branches:
         - nightly-bench
     workflow_dispatch:
 
 jobs:
   bench:
     runs-on: nightly-bench
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario:
-          - name: python
-            config: examples/python/tangent.yaml
-            payload: examples/python/tests/bench.json
-            setup: assets/rust_setup.sh
-          - name: go
-            config: examples/golang/tangent.yaml
-            payload: examples/golang/tests/bench.json
-            setup: assets/rust_setup.sh
-          - name: rust
-            config: examples/rust/tangent.yaml
-            payload: examples/rust/tests/bench.json
-            setup: assets/rust_setup.sh
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,21 +39,59 @@ jobs:
       - name: Install tangent CLI
         run: cargo install --path crates/cli
     
-      - name: Setup ${{ matrix.scenario.name }}
+      - name: Setup Python
         run: |
-          ${{ matrix.scenario.setup }}
+            assets/py_setup.sh
     
-      - name: Compile ${{ matrix.scenario.name }}
+      - name: Setup Go
         run: |
-          tangent plugin compile --config ${{ matrix.scenario.config }}
+            assets/go_setup.sh
 
-      - name: Run ${{ matrix.scenario.name }} benchmark
+      - name: Setup Rust
+        run: |
+            assets/rust_setup.sh
+    
+      - name: Compile Python
+        run: |
+          tangent plugin compile --config examples/python/tangent.yaml
+    
+      - name: Compile Go
+        run: |
+          tangent plugin compile --config examples/golang/tangent.yaml
+    
+      - name: Compile Rust
+        run: |
+          tangent plugin compile --config examples/rust/tangent.yaml
+
+      - name: Run Python benchmark
         env:
           RUST_LOG: info
         run: |
-          taskset -c 16-32 tangent run --config ${{ matrix.scenario.config }} &
+          taskset -c 16-32 tangent run --config examples/python/tangent.yaml &
           RUNTIME_PID=$!
           sleep 5
-          taskset -c 0-15 tangent bench --config ${{ matrix.scenario.config }} --seconds 20 --connections 16 --payload ${{ matrix.scenario.payload }} --synthesize
+          taskset -c 0-15 tangent bench --config examples/python/tangent.yaml --seconds 20 --connections 16 --payload examples/python/tests/bench.json --synthesize
           kill $RUNTIME_PID
           wait $RUNTIME_PID || true
+    
+      - name: Run Go benchmark
+        env:
+          RUST_LOG: info
+        run: |
+          taskset -c 16-32 tangent run --config examples/golang/tangent.yaml &
+          RUNTIME_PID=$!
+          sleep 5
+          taskset -c 0-15 tangent bench --config examples/golang/tangent.yaml --seconds 20 --connections 16 --payload examples/golang/tests/bench.json --synthesize
+          kill $RUNTIME_PID
+          wait $RUNTIME_PID || true
+    
+      - name: Run Go benchmark
+        env:
+            RUST_LOG: info
+        run: |
+            taskset -c 16-32 tangent run --config examples/rust/tangent.yaml &
+            RUNTIME_PID=$!
+            sleep 5
+            taskset -c 0-15 tangent bench --config examples/rust/tangent.yaml --seconds 20 --connections 16 --payload examples/rust/tests/bench.json --synthesize
+            kill $RUNTIME_PID
+            wait $RUNTIME_PID || true
