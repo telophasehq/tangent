@@ -7,7 +7,7 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 
 import yaml
 
-THROUGHPUT_RE = re.compile(r"MiB/s=(?P<mibs>[0-9.]+)")
+THROUGHPUT_RE = re.compile(r"MB/s=(?P<mbs>[0-9.]+)")
 
 
 def parse_args(argv: Sequence[str]) -> List[Tuple[str, Path, Path]]:
@@ -19,7 +19,7 @@ def parse_args(argv: Sequence[str]) -> List[Tuple[str, Path, Path]]:
 
     triples: List[Tuple[str, Path, Path]] = []
     for idx in range(0, len(argv), 3):
-        lang, cfg, bench = argv[idx : idx + 3]
+        lang, cfg, bench = argv[idx: idx + 3]
         triples.append((lang, Path(cfg), Path(bench)))
     return triples
 
@@ -39,13 +39,32 @@ def load_config_routes(cfg_path: Path) -> Tuple[List[str], Dict[str, List[str]]]
     source_names = sorted(sources.keys())
 
     source_routes: Dict[str, List[str]] = {}
+    sources_cfg = data.get("sources", {}) or {}
+    sinks_cfg = data.get("sinks", {}) or {}
+
+    source_kinds: Dict[str, str] = {}
+    for name, cfg in sources_cfg.items():
+        kind = cfg.get("type") or cfg.get("kind") or "source"
+        source_kinds[name] = str(kind)
+
+    sink_kinds: Dict[str, str] = {}
+    for name, cfg in sinks_cfg.items():
+        kind = cfg.get("type")
+        if kind is None:
+            kind = cfg.get("kind")
+            if isinstance(kind, dict):
+                if len(kind) == 1:
+                    kind = next(iter(kind.keys()))
+                else:
+                    kind = "sink"
+        sink_kinds[name] = str(kind or "sink")
 
     for src in source_names:
         sinks = sorted(find_sinks(("source", src), adjacency))
         if sinks:
             source_routes[src] = sinks
 
-    return source_names, source_routes
+    return source_names, source_routes, source_kinds, sink_kinds
 
 
 def find_sinks(
@@ -79,13 +98,15 @@ def extract_throughputs(path: Path) -> List[float]:
 
 def format_table(triples: List[Tuple[str, Path, Path]]) -> str:
     lang_order: List[str] = []
-    results: Dict[str, Dict[str, str]] = defaultdict(dict)  # route -> {lang: value}
+    results: Dict[str, Dict[str, str]] = defaultdict(
+        dict)  # route -> {lang: value}
 
     for lang, cfg_path, bench_path in triples:
         if lang not in lang_order:
             lang_order.append(lang)
 
-        sources, routes = load_config_routes(cfg_path)
+        sources, routes, source_kinds, sink_kinds = load_config_routes(
+            cfg_path)
         throughputs = extract_throughputs(bench_path)
 
         if len(throughputs) != len(sources):
@@ -94,13 +115,15 @@ def format_table(triples: List[Tuple[str, Path, Path]]) -> str:
                 f"but config {cfg_path} has {len(sources)} sources."
             )
 
-        for src, mib in zip(sources, throughputs):
+        for src, mb in zip(sources, throughputs):
             route_targets = routes.get(src)
             if not route_targets:
                 continue
-            for sink in route_targets:
-                route_label = f"{src} -> {sink}"
-                results[route_label][lang] = f"{mib:.2f}"
+            src_kind = source_kinds.get(src, "source")
+            for sink_name in route_targets:
+                sink_kind = sink_kinds.get(sink_name, "sink")
+                route_label = f"{src_kind} -> {sink_kind}"
+                results[route_label][lang] = f"{mb:.2f}"
 
     all_routes = sorted(results.keys())
     if not all_routes:
@@ -108,7 +131,7 @@ def format_table(triples: List[Tuple[str, Path, Path]]) -> str:
 
     header = "| Source -> Sink | " + " | ".join(lang_order) + " |"
     divider = "|---|" + "|".join("---" for _ in lang_order) + "|"
-    lines = ["### Throughput (MiB/s)", "", header, divider]
+    lines = ["### Throughput (MB/s)", "", header, divider]
 
     for route in all_routes:
         row = [route]

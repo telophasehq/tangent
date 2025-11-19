@@ -141,9 +141,9 @@ jobs:
             echo ""
             echo "<!-- BENCH_START -->"
             scripts/extract_bench.py \
-              "Python" examples/python/tangent.yaml python_bench.txt \
+              "Rust"   examples/rust/tangent.yaml   rust_bench.txt \
               "Go"     examples/golang/tangent.yaml go_bench.txt \
-              "Rust"   examples/rust/tangent.yaml   rust_bench.txt
+              "Python" examples/python/tangent.yaml python_bench.txt 
             echo "<!-- BENCH_END -->"
             } > BENCH.md
 
@@ -155,5 +155,4 @@ jobs:
         with:
             commit_message: "Update nightly benchmarks"
             file_pattern: README.md
-            token: ${{ secrets.GITHUB_TOKEN }}
     
