@@ -131,13 +131,13 @@ def format_table(triples: List[Tuple[str, Path, Path]]) -> str:
 
     header = "| Source → Sink | " + " | ".join(lang_order) + " |"
     divider = "|---|" + "|".join("---" for _ in lang_order) + "|"
-    lines = ["### Throughput (MB/s)", "", header, divider]
+    lines = [header, divider]
 
     for route in all_routes:
         row = [route]
         for lang in lang_order:
             val = results[route].get(lang, "-")
-            row.append(f"`{val}`" if val != "-" else "-")
+            row.append(f"`{val} MB/s`" if val != "-" else "-")
         lines.append("| " + " | ".join(row) + " |")
 
     return "\n".join(lines) + "\n"

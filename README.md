@@ -44,14 +44,10 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 
 ## Benchmarks
 
-## Nightly Benchmarks
-
 <!-- BENCH_START -->
-### Throughput (MB/s)
-
 | Source → Sink | Rust | Go | Python |
 |---|---|---|---|
-| tcp → blackhole | `483.35` | `399.54` | `76.91` |
+| tcp → blackhole | `483.35 MB/s` | `399.54 MB/s` | `76.91 MB/s` |
 <!-- BENCH_END -->
 
 _Benchmarks are updated nightly. See: [nightly benchmark](https://github.com/telophasehq/tangent/actions/workflows/bench.yml)._
