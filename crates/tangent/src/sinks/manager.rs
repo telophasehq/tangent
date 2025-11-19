@@ -101,6 +101,10 @@ impl SinkManager {
             }
         }
 
+        Ok(Self::from_entries(sinks, total_inflight))
+    }
+
+    fn from_entries(sinks: HashMap<Arc<str>, SinkEntry>, total_inflight: usize) -> Self {
         let num_shards = 4usize;
         let mut shards = Vec::with_capacity(num_shards);
 
@@ -198,7 +202,16 @@ impl SinkManager {
             shards.push(Shard { tx, handle });
         }
 
-        Ok(Self { shards, sinks })
+        Self { shards, sinks }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(sinks: Vec<(Arc<str>, Arc<dyn Sink>)>, total_inflight: usize) -> Self {
+        let entries = sinks
+            .into_iter()
+            .map(|(name, sink)| (name, SinkEntry::Other { sink }))
+            .collect();
+        Self::from_entries(entries, total_inflight)
     }
 
     pub async fn enqueue(
@@ -267,5 +280,95 @@ impl SinkManager {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::worker::Ack;
+    use anyhow::Result;
+    use async_trait::async_trait;
+    use bytes::BytesMut;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::Mutex;
+
+    #[derive(Default)]
+    struct RecordingSink {
+        writes: Mutex<Vec<Vec<u8>>>,
+    }
+
+    impl RecordingSink {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                writes: Mutex::new(Vec::new()),
+            })
+        }
+
+        async fn take(&self) -> Vec<Vec<u8>> {
+            self.writes.lock().await.drain(..).collect()
+        }
+    }
+
+    #[async_trait]
+    impl Sink for RecordingSink {
+        async fn write(&self, req: SinkWrite) -> Result<()> {
+            self.writes.lock().await.push(req.payload.freeze().to_vec());
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct TestAck {
+        count: AtomicUsize,
+    }
+
+    impl TestAck {
+        fn count(&self) -> usize {
+            self.count.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl Ack for TestAck {
+        async fn ack(&self) -> Result<()> {
+            self.count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn join_drains_inflight_items() {
+        let sink_name: Arc<str> = Arc::from("recorder");
+        let recorder = RecordingSink::new();
+        let manager = SinkManager::for_test(vec![(sink_name.clone(), recorder.clone())], 2);
+
+        let ack = Arc::new(TestAck::default());
+        let ack_dyn: Arc<dyn Ack> = ack.clone();
+        manager
+            .enqueue(
+                sink_name.clone(),
+                None,
+                BytesMut::from("{\"msg\":1}\n"),
+                vec![ack_dyn],
+            )
+            .await
+            .unwrap();
+
+        manager
+            .enqueue(
+                sink_name.clone(),
+                None,
+                BytesMut::from("{\"msg\":2}\n"),
+                Vec::new(),
+            )
+            .await
+            .unwrap();
+
+        manager.join().await.unwrap();
+
+        let writes = recorder.take().await;
+        assert_eq!(writes.len(), 2);
+        assert_eq!(ack.count(), 1);
     }
 }

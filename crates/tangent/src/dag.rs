@@ -99,12 +99,6 @@ impl DagRuntime {
         self.router.forward(&from, frames, acks).await
     }
 
-    pub fn close(&mut self) {
-        if let Some(pool) = Arc::get_mut(&mut self.pool) {
-            pool.close();
-        }
-    }
-
     pub async fn shutdown(
         self,
         cancel: CancellationToken,
@@ -120,14 +114,9 @@ impl DagRuntime {
         } = self;
 
         tracing::info!("waiting on workers to shutdown...");
-        let mut pool_owned = Arc::try_unwrap(pool)
-            .map_err(|_| anyhow!("WorkerPool still has refs; drop all clones before shutdown"))?;
-        pool_owned.close();
-        match timeout(worker_timeout, pool_owned.join()).await {
-            Err(e) => {
-                tracing::warn!(?e, "pool shutdown timeout exceeded. Logs may be dropped.")
-            }
-            Ok(_) => (),
+
+        if let Err(e) = timeout(worker_timeout, pool.join()).await {
+            tracing::warn!(?e, "pool shutdown timeout exceeded. Logs may be dropped.");
         }
 
         drop(router);
@@ -146,5 +135,133 @@ impl DagRuntime {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sinks::manager::{Sink, SinkManager, SinkWrite};
+    use crate::worker::Ack;
+    use anyhow::Result;
+    use async_trait::async_trait;
+    use bytes::BytesMut;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use tokio::sync::{Mutex, Notify};
+
+    #[derive(Default)]
+    struct BlockingSink {
+        writes: Mutex<Vec<Vec<u8>>>,
+        flush_ready: Notify,
+        flush_called: AtomicBool,
+    }
+
+    impl BlockingSink {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                writes: Mutex::new(Vec::new()),
+                flush_ready: Notify::new(),
+                flush_called: AtomicBool::new(false),
+            })
+        }
+
+        fn allow_flush(&self) {
+            self.flush_ready.notify_waiters();
+        }
+
+        async fn write_count(&self) -> usize {
+            self.writes.lock().await.len()
+        }
+
+        fn flush_completed(&self) -> bool {
+            self.flush_called.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl Sink for BlockingSink {
+        async fn write(&self, req: SinkWrite) -> Result<()> {
+            self.writes.lock().await.push(req.payload.freeze().to_vec());
+            Ok(())
+        }
+
+        async fn flush(&self) -> Result<()> {
+            self.flush_called.store(true, Ordering::SeqCst);
+            self.flush_ready.notified().await;
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct CountingAck {
+        count: AtomicUsize,
+    }
+
+    impl CountingAck {
+        fn count(&self) -> usize {
+            self.count.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl Ack for CountingAck {
+        async fn ack(&self) -> Result<()> {
+            self.count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_waits_for_sink_flush() {
+        let sink_name: Arc<str> = Arc::from("blocking");
+        let blocking_sink = BlockingSink::new();
+        let sink_manager = Arc::new(SinkManager::for_test(
+            vec![(sink_name.clone(), blocking_sink.clone())],
+            1,
+        ));
+
+        let router = Arc::new(Router::new(HashMap::default(), Arc::clone(&sink_manager)));
+        let worker_pool = Arc::new(WorkerPool::new_for_test(vec![tokio::spawn(async move {})]));
+
+        let runtime = DagRuntime {
+            router,
+            pool: worker_pool,
+            sink_manager: Arc::clone(&sink_manager),
+        };
+
+        let ack = Arc::new(CountingAck::default());
+        let ack_dyn: Arc<dyn Ack> = ack.clone();
+        sink_manager
+            .enqueue(
+                sink_name.clone(),
+                None,
+                BytesMut::from("{\"msg\":\"block\"}\n"),
+                vec![ack_dyn],
+            )
+            .await
+            .unwrap();
+
+        drop(sink_manager);
+
+        let shutdown_token = CancellationToken::new();
+        let shutdown = runtime.shutdown(
+            shutdown_token,
+            Duration::from_millis(200),
+            Duration::from_millis(200),
+        );
+        tokio::pin!(shutdown);
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), shutdown.as_mut())
+                .await
+                .is_err()
+        );
+
+        blocking_sink.allow_flush();
+        shutdown.await.unwrap();
+
+        assert_eq!(blocking_sink.write_count().await, 1);
+        assert!(blocking_sink.flush_completed());
+        assert_eq!(ack.count(), 1);
     }
 }

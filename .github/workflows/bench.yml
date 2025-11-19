@@ -42,6 +42,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install script dependencies
+        run: pip install pyyaml
+
       - name: Install tangent CLI
         run: cargo install --path crates/cli
     
@@ -76,7 +79,7 @@ jobs:
           taskset -c 16-32 tangent run --config examples/python/tangent.yaml &
           RUNTIME_PID=$!
           sleep 5
-          taskset -c 0-15 tangent bench --config examples/python/tangent.yaml --seconds 20 --connections 16 --payload examples/python/tests/bench.json --synthesize
+          taskset -c 0-15 tangent bench --config examples/python/tangent.yaml --seconds 20 --connections 16 --payload examples/python/tests/bench.json --synthesize | tee python_bench.txt
           kill $RUNTIME_PID
           wait $RUNTIME_PID || true
     
@@ -87,7 +90,7 @@ jobs:
           taskset -c 16-32 tangent run --config examples/golang/tangent.yaml &
           RUNTIME_PID=$!
           sleep 5
-          taskset -c 0-15 tangent bench --config examples/golang/tangent.yaml --seconds 20 --connections 16 --payload examples/golang/tests/bench.json --synthesize
+          taskset -c 0-15 tangent bench --config examples/golang/tangent.yaml --seconds 20 --connections 16 --payload examples/golang/tests/bench.json --synthesize | tee go_bench.txt
           kill $RUNTIME_PID
           wait $RUNTIME_PID || true
     
@@ -98,6 +101,36 @@ jobs:
             taskset -c 16-32 tangent run --config examples/rust/tangent.yaml &
             RUNTIME_PID=$!
             sleep 5
-            taskset -c 0-15 tangent bench --config examples/rust/tangent.yaml --seconds 20 --connections 16 --payload examples/rust/tests/bench.json --synthesize
+            taskset -c 0-15 tangent bench --config examples/rust/tangent.yaml --seconds 20 --connections 16 --payload examples/rust/tests/bench.json --synthesize | tee rust_bench.txt
             kill $RUNTIME_PID
             wait $RUNTIME_PID || true
+    
+  update-readme:
+    needs: bench
+    runs-on: nightly-bench
+    permissions:
+      contents: write
+    steps:
+      - name: Update README with results
+        run: |
+            {
+            echo "## Nightly Benchmarks"
+            echo ""
+            echo "<!-- BENCH_START -->"
+            scripts/extract_bench.py \
+              "Python" examples/python/tangent.yaml python_bench.txt \
+              "Go"     examples/golang/tangent.yaml go_bench.txt \
+              "Rust"   examples/rust/tangent.yaml   rust_bench.txt
+            echo "<!-- BENCH_END -->"
+            } > BENCH.md
+
+            # Replace inside README
+            perl -0777 -i -pe 's/<!-- BENCH_START -->.*?<!-- BENCH_END -->/`cat BENCH.md`/se' README.md
+    
+      - name: Commit benchmark update
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+            commit_message: "Update nightly benchmarks"
+            file_pattern: README.md
+            token: ${{ secrets.GITHUB_TOKEN }}
+    

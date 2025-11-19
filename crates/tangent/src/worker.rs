@@ -8,8 +8,8 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 use tangent_shared::dag::NodeRef;
-use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use tokio::time::{self, Instant as TokioInstant};
 use wasmtime::component::{Component, Resource};
@@ -201,7 +201,7 @@ impl Worker {
 pub struct WorkerPool {
     senders: Vec<mpsc::Sender<Record>>,
     rr: AtomicUsize,
-    handles: Vec<JoinHandle<()>>,
+    handles: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl WorkerPool {
@@ -262,7 +262,7 @@ impl WorkerPool {
         Ok(Self {
             senders,
             rr: AtomicUsize::new(0),
-            handles,
+            handles: Mutex::new(handles),
         })
     }
 
@@ -295,13 +295,25 @@ impl WorkerPool {
         Ok(())
     }
 
-    pub fn close(&mut self) {
-        self.senders.clear();
-    }
+    pub async fn join(&self) {
+        let handles: Vec<JoinHandle<()>> = {
+            let mut guard = self.handles.lock().await;
+            guard.drain(..).collect()
+        };
 
-    pub async fn join(self) {
-        for h in self.handles {
+        for h in handles {
             let _ = h.await;
+        }
+    }
+}
+
+#[cfg(test)]
+impl WorkerPool {
+    pub fn new_for_test(handles: Vec<JoinHandle<()>>) -> Self {
+        Self {
+            senders: Vec::new(),
+            rr: AtomicUsize::new(0),
+            handles: Mutex::new(handles),
         }
     }
 }
