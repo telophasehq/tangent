@@ -1,14 +1,14 @@
 name: Nightly performance benchmarks
 
 on:
-    push:
-        branches:
-        - nightly-bench
     workflow_dispatch:
+    schedule:
+        - cron: "0 7 * * *"
 
 jobs:
   bench:
     runs-on: nightly-bench
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
     steps:
@@ -114,6 +114,7 @@ jobs:
   update-readme:
     needs: bench
     runs-on: nightly-bench
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
     steps:

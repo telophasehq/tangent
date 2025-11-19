@@ -122,14 +122,14 @@ def format_table(triples: List[Tuple[str, Path, Path]]) -> str:
             src_kind = source_kinds.get(src, "source")
             for sink_name in route_targets:
                 sink_kind = sink_kinds.get(sink_name, "sink")
-                route_label = f"{src_kind} -> {sink_kind}"
+                route_label = f"{src_kind} → {sink_kind}"
                 results[route_label][lang] = f"{mb:.2f}"
 
     all_routes = sorted(results.keys())
     if not all_routes:
         return "No routes with sinks found."
 
-    header = "| Source -> Sink | " + " | ".join(lang_order) + " |"
+    header = "| Source → Sink | " + " | ".join(lang_order) + " |"
     divider = "|---|" + "|".join("---" for _ in lang_order) + "|"
     lines = ["### Throughput (MB/s)", "", header, divider]
 
