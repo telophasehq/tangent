@@ -74,6 +74,7 @@ func init() {
 		Metadata,
 		selectors,
 		ExampleMapper,
+		nil,
 	)
 }
 

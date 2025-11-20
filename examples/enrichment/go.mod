@@ -29,6 +29,4 @@ require (
 	golang.org/x/sys v0.37.0 // indirect
 )
 
-replace github.com/telophasehq/tangent-sdk-go => ../../../tangent-sdk-go
-
 tool go.bytecodealliance.org/cmd/wit-bindgen-go
