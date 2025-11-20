@@ -394,6 +394,7 @@ func init() {
 		metadata,
 		selectors,
 		ZeekMapper,
+		nil,
 	)
 }
 func main() {}
