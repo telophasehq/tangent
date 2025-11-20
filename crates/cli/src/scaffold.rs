@@ -492,7 +492,7 @@ type ExampleOutput struct {
 }
 
 var Metadata = tangent_sdk.Metadata{
-	Name:		"{{module}}",
+	Name:		"{module}",
 	Version:	"0.2.0",
 }
 

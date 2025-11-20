@@ -72,3 +72,4 @@ arrow-ipc = "57.0.0"
 tikv-jemallocator = { version = "0.6.1", features = ["profiling"] }
 tikv-jemalloc-ctl = {version = "0.6.1", features = ["stats", "profiling"], optional=true}
 libc = {version = "0.2.177", optional=true}
+reqwest = "0.12.24"

@@ -1,0 +1,10 @@
+[
+  {
+    "ip_address": "185.220.101.4",
+    "service": "myservice"
+  },
+  {
+    "ip_address": "46.17.46.213",
+    "service": "myservice"
+  }
+]

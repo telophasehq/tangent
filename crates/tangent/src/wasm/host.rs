@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
+use reqwest::Client;
 use simd_json::base::ValueAsScalar;
 use simd_json::derived::{TypedArrayValue, TypedScalarValue};
 use simd_json::prelude::{ValueAsArray, ValueAsObject, ValueObjectAccess};
@@ -9,12 +10,16 @@ use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
 use crate::wasm::host::tangent::logs::log;
+use crate::wasm::host::tangent::logs::remote;
 use log::Scalar;
 
 bindgen!({
     world: "processor",
     path: "../../assets/wit",
     exports: {default: async},
+    imports: {
+        "tangent:logs/remote.call-batch": async,
+    },
     with: {
         "tangent:logs/log.logview": JsonLogView,
     }
@@ -23,6 +28,7 @@ bindgen!({
 pub struct HostEngine {
     pub ctx: WasiCtx,
     pub table: ResourceTable,
+    http_client: Client,
 }
 
 impl HostEngine {
@@ -30,6 +36,72 @@ impl HostEngine {
         Self {
             ctx,
             table: ResourceTable::new(),
+            http_client: Client::new(),
+        }
+    }
+
+    async fn execute_single(client: Client, r: remote::Request) -> remote::Response {
+        use remote::Method;
+
+        let method = match r.method {
+            Method::Get => reqwest::Method::GET,
+            Method::Post => reqwest::Method::POST,
+            Method::Put => reqwest::Method::PUT,
+            Method::Delete => reqwest::Method::DELETE,
+            Method::Patch => reqwest::Method::PATCH,
+        };
+
+        let mut req_builder = client.request(method, &r.url);
+
+        for (name, value) in &r.headers {
+            req_builder = req_builder.header(name.as_str(), value.as_str());
+        }
+
+        if let Some(ms) = r.timeout_ms {
+            req_builder = req_builder.timeout(std::time::Duration::from_millis(ms as u64));
+        }
+
+        if !r.body.is_empty() {
+            req_builder = req_builder.body(r.body.clone());
+        }
+
+        match req_builder.send().await {
+            Ok(res) => {
+                let status = res.status().as_u16();
+                let headers = res
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or_default().to_string()))
+                    .collect::<Vec<(String, String)>>();
+
+                let body_bytes = match res.bytes().await {
+                    Ok(b) => b.to_vec(),
+                    Err(e) => {
+                        return remote::Response {
+                            id: r.id,
+                            status,
+                            headers,
+                            body: Vec::new(),
+                            error: Some(format!("failed to read body: {e}")),
+                        }
+                    }
+                };
+
+                remote::Response {
+                    id: r.id,
+                    status,
+                    headers,
+                    body: body_bytes,
+                    error: None,
+                }
+            }
+            Err(e) => remote::Response {
+                id: r.id,
+                status: 0,
+                headers: Vec::new(),
+                body: Vec::new(),
+                error: Some(e.to_string()),
+            },
         }
     }
 }
@@ -40,6 +112,23 @@ impl WasiView for HostEngine {
             ctx: &mut self.ctx,
             table: &mut self.table,
         }
+    }
+}
+
+impl remote::Host for HostEngine {
+    async fn call_batch(
+        &mut self,
+        reqs: Vec<remote::Request>,
+    ) -> Result<Vec<remote::Response>, String> {
+        let mut out = Vec::with_capacity(reqs.len());
+        let client = self.http_client.clone();
+
+        for r in reqs {
+            let resp = Self::execute_single(client.clone(), r);
+            out.push(resp.await);
+        }
+
+        Ok(out)
     }
 }
 

@@ -6,7 +6,7 @@ use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::WasiCtxBuilder;
 
-use crate::wasm::host::tangent::logs::log;
+use crate::wasm::host::tangent::logs::{log, remote};
 use crate::wasm::host::{HostEngine, Processor};
 pub struct WasmEngine {
     engine: Engine,
@@ -19,6 +19,7 @@ impl WasmEngine {
         let mut linker = Linker::<HostEngine>::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;
         log::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
+        remote::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
 
         Ok(Self { engine, linker })
     }
