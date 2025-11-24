@@ -1,0 +1,30 @@
+runtime:
+  plugins_path: "plugins/"
+plugins:
+  detection:
+    module_type: go
+    path: .
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json
+sources:
+  network_input:
+    type: tcp
+    bind_address: 0.0.0.0:9000
+sinks:
+  blackhole:
+    type: blackhole
+dag:
+  - from:
+      kind: source
+      name: network_input
+    to:
+      - kind: plugin
+        name: detection
+
+  - from:
+      kind: plugin
+      name: detection
+    to:
+      - kind: sink
+        name: blackhole

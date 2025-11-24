@@ -1,0 +1,119 @@
+package tangent:logs@0.1.0;
+
+interface remote {
+  enum method { get, post, put, delete, patch }
+
+  record request {
+    id:        string,
+    method:    method,
+    url:       string,
+    headers:   list<tuple<string, string>>,
+    body:      list<u8>,
+    timeout-ms: option<u32>,
+    cache-ttl-ms: option<u32>,
+  }
+
+  record response {
+    id:       string,
+    status:   u16,
+    headers:  list<tuple<string, string>>,
+    body:     list<u8>,
+    error:    option<string>,
+  }
+
+  call-batch: func(reqs: list<request>) -> result<list<response>, string>;
+}
+
+interface log {
+  variant scalar {
+    str(string),
+    int(s64),
+    float(f64),
+    boolean(bool),
+    bytes(list<u8>),
+  }
+
+  resource logview {
+    // JSONPath/dot-path style, e.g. "detail.findings[0].CompanyName"
+    has:      func(path: string) -> bool;
+    get:      func(path: string) -> option<scalar>;
+    len:      func(path: string) -> option<u32>;
+    get-list: func(path: string) -> option<list<scalar>>;
+    get-map:  func(path: string) -> option<list<tuple<string, scalar>>>;
+    keys:     func(path: string) -> list<string>;
+  }
+}
+
+interface cache {
+  use log.{scalar};
+
+  get: func(key: string) -> result<option<scalar>, string>;
+  set: func(key: string, value: scalar, ttl-ms: option<u64>) -> result<_, string>;
+  del: func(key: string) -> result<bool, string>;
+}
+
+
+interface mapper {
+  use log.{logview, scalar};
+
+  record meta {
+    name: string,
+    version: string,
+  }
+
+  variant pred {
+    has(string),
+    eq(tuple<string, scalar>),
+    prefix(tuple<string, string>),
+    in(tuple<string, list<scalar>>),
+    gt(tuple<string, f64>),
+    regex(tuple<string, string>),
+  }
+
+  record selector {
+    any: list<pred>,             // OR of predicates
+    all: list<pred>,             // AND of predicates
+    none: list<pred>,            // NOT of predicates
+  }
+
+  metadata: func() -> meta;
+
+  probe: func() -> list<selector>;
+
+  process-logs: func(input: list<logview>) -> result<list<u8>, string>;
+}
+
+world processor {
+  import wasi:cli/environment@0.2.0;
+  import wasi:cli/exit@0.2.0;
+  import wasi:io/error@0.2.0;
+  import wasi:io/poll@0.2.0;
+  import wasi:io/streams@0.2.0;
+  import wasi:cli/stdin@0.2.0;
+  import wasi:cli/stdout@0.2.0;
+  import wasi:cli/stderr@0.2.0;
+  import wasi:cli/terminal-input@0.2.0;
+  import wasi:cli/terminal-output@0.2.0;
+  import wasi:cli/terminal-stdin@0.2.0;
+  import wasi:cli/terminal-stdout@0.2.0;
+  import wasi:cli/terminal-stderr@0.2.0;
+  import wasi:clocks/monotonic-clock@0.2.0;
+  import wasi:clocks/wall-clock@0.2.0;
+  import wasi:filesystem/types@0.2.0;
+  import wasi:filesystem/preopens@0.2.0;
+  import wasi:sockets/network@0.2.0;
+  import wasi:sockets/instance-network@0.2.0;
+  import wasi:sockets/udp@0.2.0;
+  import wasi:sockets/udp-create-socket@0.2.0;
+  import wasi:sockets/tcp@0.2.0;
+  import wasi:sockets/tcp-create-socket@0.2.0;
+  import wasi:sockets/ip-name-lookup@0.2.0;
+  import wasi:random/random@0.2.0;
+  import wasi:random/insecure@0.2.0;
+  import wasi:random/insecure-seed@0.2.0;
+
+  import remote;
+  import log;
+  import cache;
+  export mapper;
+}
