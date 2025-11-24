@@ -225,6 +225,7 @@ __pycache__/
 **/test_out.ndjson
 **/.test.yaml
 **/plugins/
+cache.sqlite*
 "#;
 
 const PYTHON_REQUIREMENTS: &str = r#""#;
