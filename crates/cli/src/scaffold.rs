@@ -493,7 +493,7 @@ type ExampleOutput struct {
 
 var Metadata = tangent_sdk.Metadata{
 	Name:		"{module}",
-	Version:	"0.2.0",
+	Version:	"0.1.0",
 }
 
 var selectors = []tangent_sdk.Selector{

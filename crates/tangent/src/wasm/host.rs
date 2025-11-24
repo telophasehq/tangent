@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use anyhow::Result;
 use bytes::{Bytes, BytesMut};
 use reqwest::Client;
+use rusqlite::types::Value;
 use simd_json::base::ValueAsScalar;
 use simd_json::derived::{TypedArrayValue, TypedScalarValue};
 use simd_json::prelude::{ValueAsArray, ValueAsObject, ValueObjectAccess};
@@ -9,6 +11,7 @@ use simd_json::{BorrowedValue, StaticNode};
 use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
+use crate::cache::CacheHandle;
 use crate::wasm::host::tangent::logs::log;
 use crate::wasm::host::tangent::logs::remote;
 use log::Scalar;
@@ -29,14 +32,19 @@ pub struct HostEngine {
     pub ctx: WasiCtx,
     pub table: ResourceTable,
     http_client: Client,
+    cache: Option<Arc<CacheHandle>>,
+    /// If true, short-circuit remote calls with successful empty responses.
+    pub disable_remote_calls: bool,
 }
 
 impl HostEngine {
-    pub fn new(ctx: WasiCtx) -> Self {
+    pub fn new(ctx: WasiCtx, cache: Option<Arc<CacheHandle>>, disable_remote_calls: bool) -> Self {
         Self {
             ctx,
             table: ResourceTable::new(),
             http_client: Client::new(),
+            cache,
+            disable_remote_calls,
         }
     }
 
@@ -115,11 +123,50 @@ impl WasiView for HostEngine {
     }
 }
 
+impl Scalar {
+    pub fn to_sqlite(&self) -> (String, Value) {
+        match self {
+            Scalar::Str(s) => ("str".into(), Value::Text(s.clone())),
+            Scalar::Int(i) => ("int".into(), Value::Integer(*i)),
+            Scalar::Float(f) => ("float".into(), Value::Real(*f)),
+            Scalar::Boolean(b) => ("bool".into(), Value::Integer(if *b { 1 } else { 0 })),
+            Scalar::Bytes(b) => ("bytes".into(), Value::Blob(b.clone())),
+        }
+    }
+
+    pub fn from_sqlite(kind: &str, v: Value) -> Result<Self> {
+        use rusqlite::types::Value as V;
+        match (kind, v) {
+            ("str", V::Text(s)) => Ok(Scalar::Str(s)),
+            ("int", V::Integer(i)) => Ok(Scalar::Int(i)),
+            ("float", V::Real(f)) => Ok(Scalar::Float(f)),
+            ("bool", V::Integer(i)) => Ok(Scalar::Boolean(i != 0)),
+            ("bytes", V::Blob(b)) => Ok(Scalar::Bytes(b)),
+            (k, _) => anyhow::bail!("mismatched SQLite value for kind={k}"),
+        }
+    }
+}
+
 impl remote::Host for HostEngine {
     async fn call_batch(
         &mut self,
         reqs: Vec<remote::Request>,
     ) -> Result<Vec<remote::Response>, String> {
+        if self.disable_remote_calls {
+            // Short-circuit with successful empty responses.
+            let out = reqs
+                .into_iter()
+                .map(|r| remote::Response {
+                    id: r.id,
+                    status: 204,
+                    headers: Vec::new(),
+                    body: Vec::new(),
+                    error: None,
+                })
+                .collect();
+            return Ok(out);
+        }
+
         let mut out = Vec::with_capacity(reqs.len());
         let client = self.http_client.clone();
 
@@ -129,6 +176,29 @@ impl remote::Host for HostEngine {
         }
 
         Ok(out)
+    }
+}
+
+impl tangent::logs::cache::Host for HostEngine {
+    fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
+        let Some(cache) = &self.cache else {
+            return Err("cache disabled".into());
+        };
+        cache.get(&key).map_err(|e| e.to_string())
+    }
+
+    fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
+        let Some(cache) = &self.cache else {
+            return Err("cache disabled".into());
+        };
+        cache.set(&key, &value, ttl_ms).map_err(|e| e.to_string())
+    }
+
+    fn del(&mut self, key: String) -> Result<bool, String> {
+        let Some(cache) = &self.cache else {
+            return Err("cache disabled".into());
+        };
+        cache.del(&key).map_err(|e| e.to_string())
     }
 }
 

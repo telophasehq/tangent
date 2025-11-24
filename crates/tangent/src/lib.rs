@@ -14,6 +14,7 @@ use tangent_shared::Config;
 use crate::dag::DagRuntime;
 
 pub mod dag;
+pub mod cache;
 pub mod router;
 pub mod sinks;
 pub mod sources;

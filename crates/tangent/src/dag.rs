@@ -13,8 +13,8 @@ use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    router::Router, sinks::manager::SinkManager, sources, wasm::engine::WasmEngine,
-    worker::WorkerPool,
+    cache::CacheHandle, router::Router, sinks::manager::SinkManager, sources,
+    wasm::engine::WasmEngine, worker::WorkerPool,
 };
 
 pub struct DagRuntime {
@@ -36,8 +36,17 @@ impl DagRuntime {
 
         let workers = cfg.runtime.workers;
 
+        let cache = if cfg.runtime.cache.as_ref().is_some() {
+            Some(Arc::new(CacheHandle::open(
+                &cfg.runtime.cache.clone().unwrap(),
+                config_dir,
+            )?))
+        } else {
+            None
+        };
+
         let engines: Vec<WasmEngine> = (0..workers)
-            .map(|_| WasmEngine::new())
+            .map(|_| WasmEngine::new(cache.clone(), cfg.runtime.disable_remote_calls))
             .collect::<Result<_, _>>()?;
         let mut components: Vec<Vec<(Arc<str>, Component)>> = Vec::with_capacity(workers);
         for i in 0..workers {

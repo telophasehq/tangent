@@ -57,7 +57,10 @@ impl Default for BenchOptions {
 }
 
 pub async fn run(config_path: &PathBuf, opts: BenchOptions) -> Result<()> {
-    let cfg = Config::from_file(config_path)?;
+    let mut cfg = Config::from_file(config_path)?;
+
+    // disable remote calls in bench.
+    cfg.runtime.disable_remote_calls = true;
     run_with_config(cfg, opts).await
 }
 

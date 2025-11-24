@@ -98,6 +98,10 @@ enum PluginCommands {
         /// Runtime config
         #[arg(long, value_name = "FILE")]
         config: PathBuf,
+
+        /// Enable http calls in tests
+        #[arg(long, default_value_t = false)]
+        enable_http: bool,
     },
 
     /// Compile a WASM component from a config (py via componentize-py; go via TinyGo)
@@ -163,11 +167,16 @@ async fn main() -> Result<()> {
                 compile_wasm::compile_from_config(&cfg, &wit)?;
             }
             PluginCommands::Scaffold { name, lang } => scaffold::scaffold(&name, &lang)?,
-            PluginCommands::Test { plugin, config } => {
+            PluginCommands::Test {
+                plugin,
+                config,
+                enable_http,
+            } => {
                 let config = config.canonicalize().unwrap_or(config);
                 test::run(test::TestOptions {
                     plugin,
                     config_path: config,
+                    enable_http: enable_http,
                 })
                 .await?;
             }

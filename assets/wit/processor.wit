@@ -44,6 +44,14 @@ interface log {
   }
 }
 
+interface cache {
+  use log.{scalar};
+
+  get: func(key: string) -> result<option<scalar>, string>;
+  set: func(key: string, value: scalar, ttl-ms: option<u64>) -> result<_, string>;
+  del: func(key: string) -> result<bool, string>;
+}
+
 
 interface mapper {
   use log.{logview, scalar};
@@ -106,5 +114,6 @@ world processor {
 
   import remote;
   import log;
+  import cache;
   export mapper;
 }
