@@ -101,7 +101,6 @@ pub fn write_embedded_wit(dest: &Path) -> Result<()> {
 fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("go.mod"), go_mod_for(name))?;
     fs::write(dir.join("main.go"), go_main_for(name))?;
-    fs::create_dir(dir.join("tangenthelpers"))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("go", name))?;
     fs::write(dir.join("Agents.md"), GO_AGENTS_MD)?;
 
