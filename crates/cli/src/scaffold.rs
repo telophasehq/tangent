@@ -114,7 +114,6 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     run_setup(dir)?;
     run_go_download(dir)?;
 
-    run_wit_bindgen_go(dir, "processor", ".tangent/wit/")?;
     Ok(())
 }
 
@@ -183,32 +182,6 @@ fn run_wit_bindgen_py(cwd: &Path, world: &str, wit_entry: &str) -> Result<()> {
             msg = String::from_utf8_lossy(&out.stdout).to_string();
         }
         bail!("componentize-py failed:\n{}", msg);
-    }
-    Ok(())
-}
-
-fn run_wit_bindgen_go(cwd: &Path, world: &str, wit_entry: &str) -> Result<()> {
-    let out = Command::new("go")
-        .args([
-            "tool",
-            "wit-bindgen-go",
-            "generate",
-            "--world",
-            world,
-            "--out",
-            "internal",
-            &wit_entry,
-        ])
-        .current_dir(cwd)
-        .output()
-        .with_context(|| format!("failed to spawn wit-bindgen-go in {}", cwd.display()))?;
-
-    if !out.status.success() {
-        let mut msg = String::from_utf8_lossy(&out.stderr).to_string();
-        if msg.trim().is_empty() {
-            msg = String::from_utf8_lossy(&out.stdout).to_string();
-        }
-        bail!("wit-bindgen-go failed:\n{}", msg);
     }
     Ok(())
 }
