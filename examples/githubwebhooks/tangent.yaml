@@ -1,0 +1,32 @@
+runtime:
+  plugins_path: "plugins/"
+plugins:
+  githubwebhooks:
+    module_type: go
+    path: .
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json
+sources:
+  github:
+    type: github_webhook
+    bind_address: 0.0.0.0:9000
+    path: /webhook
+    token: github_token_111111111
+sinks:
+  blackhole:
+    type: blackhole
+dag:
+  - from:
+      kind: source
+      name: github
+    to:
+      - kind: plugin
+        name: githubwebhooks
+
+  - from:
+      kind: plugin
+      name: githubwebhooks
+    to:
+      - kind: sink
+        name: blackhole

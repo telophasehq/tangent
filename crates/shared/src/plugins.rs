@@ -1,3 +1,4 @@
+use ahash::HashMap;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -8,6 +9,9 @@ pub struct PluginConfig {
 
     #[serde(default)]
     pub tests: Vec<PluginTests>,
+
+    #[serde(default)]
+    pub config: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

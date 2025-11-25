@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::sources::file::FileConfig;
+use crate::sources::github_webhook::GithubWebhookConfig;
 use crate::sources::msk::MSKConfig;
 use crate::sources::socket::SocketConfig;
 use crate::sources::sqs::SQSConfig;
@@ -19,6 +20,8 @@ pub enum SourceConfig {
     Tcp(TcpConfig),
     #[serde(rename = "sqs")]
     SQS(SQSConfig),
+    #[serde(rename = "github_webhook")]
+    GithubWebhook(GithubWebhookConfig),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

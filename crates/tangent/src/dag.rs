@@ -13,8 +13,8 @@ use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    router::Router, sinks::manager::SinkManager, sources, wasm::engine::WasmEngine,
-    worker::WorkerPool,
+    cache::CacheHandle, router::Router, sinks::manager::SinkManager, sources,
+    wasm::engine::WasmEngine, worker::WorkerPool,
 };
 
 pub struct DagRuntime {
@@ -36,13 +36,22 @@ impl DagRuntime {
 
         let workers = cfg.runtime.workers;
 
-        let engines: Vec<WasmEngine> = (0..workers)
-            .map(|_| WasmEngine::new())
+        let cache = if cfg.runtime.cache.as_ref().is_some() {
+            Some(Arc::new(CacheHandle::open(
+                &cfg.runtime.cache.clone().unwrap(),
+                config_dir,
+            )?))
+        } else {
+            None
+        };
+
+        let mut engines: Vec<WasmEngine> = (0..workers)
+            .map(|_| WasmEngine::new(cache.clone(), cfg.runtime.disable_remote_calls))
             .collect::<Result<_, _>>()?;
         let mut components: Vec<Vec<(Arc<str>, Component)>> = Vec::with_capacity(workers);
         for i in 0..workers {
             components.push(Vec::<(Arc<str>, Component)>::new());
-            for (name, _) in &cfg.plugins {
+            for (name, plugin_cfg) in &cfg.plugins {
                 let component_file = format!("{name}.cwasm");
                 let plugin_path = plugin_root
                     .join(&component_file)
@@ -58,7 +67,7 @@ impl DagRuntime {
                 components[i].push((
                     Arc::clone(name),
                     engines[i]
-                        .load_precompiled(&plugin_path)
+                        .load_precompiled(Arc::clone(name), &plugin_path, plugin_cfg.config.clone())
                         .with_context(|| format!("loading {}", &component_file))?,
                 ));
             }
@@ -216,6 +225,17 @@ fn spawn_consumers(
                             .await
                     {
                         tracing::error!("SQS consumer error: {e}");
+                    }
+                }));
+            }
+            (name, SourceConfig::GithubWebhook(gw)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) =
+                        sources::github_webhook::run_consumer(name, gw, router, shutdown.clone())
+                            .await
+                    {
+                        tracing::error!("Github Webhook consumer error: {e}");
                     }
                 }));
             }

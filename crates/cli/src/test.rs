@@ -9,13 +9,13 @@ use std::sync::Arc;
 use anyhow::{bail, Context, Result};
 use tangent_shared::dag::{Edge, NodeRef};
 use tangent_shared::plugins::PluginConfig;
-use tangent_shared::runtime::RuntimeConfig;
+use tangent_shared::runtime::{CacheConfig, RuntimeConfig};
 use tangent_shared::sinks::common::{CommonSinkOptions, Compression, Encoding};
 use tangent_shared::Config;
 use tracing::{info, warn};
 
 use serde_json::{Map, Value};
-use tangent_runtime::RuntimeOptions;
+use tangent_runtime::{cache, RuntimeOptions};
 use tangent_shared::sinks::{
     common::{SinkConfig, SinkKind},
     file as fileSink,
@@ -27,6 +27,7 @@ use tangent_shared::sources::file;
 pub struct TestOptions {
     pub plugin: Option<String>,
     pub config_path: PathBuf,
+    pub enable_http: bool,
 }
 
 pub async fn run(opts: TestOptions) -> Result<()> {
@@ -109,6 +110,8 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 batch_size: 1,
                 batch_age: 1,
                 workers: 1,
+                cache: Some(CacheConfig::default()),
+                disable_remote_calls: !opts.enable_http,
             };
 
             let entry = Edge {
@@ -136,6 +139,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 module_type: "".to_string(), // not used
                 path: plugins_path,
                 tests: vec![],
+                config: plugin_cfg.config.clone(),
             };
 
             let mut plugins = BTreeMap::new();
@@ -154,6 +158,14 @@ pub async fn run(opts: TestOptions) -> Result<()> {
             let test_file = PathBuf::from(".test.yaml");
             let test_config_file = config_root.join(&test_file);
             fs::write(&test_config_file, yaml)?;
+
+            {
+                let sqlite_cache = cache::CacheHandle::open(
+                    test_config.runtime.cache.as_ref().unwrap(),
+                    config_root,
+                )?;
+                sqlite_cache.reset()?;
+            }
 
             tangent_runtime::run(&test_config_file, rt.clone()).await?;
 

@@ -127,7 +127,7 @@ impl Worker {
             }
 
             if !matched {
-                tracing::warn!("log did not match any mappers");
+                tracing::debug!("log did not match any mappers");
             }
         }
 

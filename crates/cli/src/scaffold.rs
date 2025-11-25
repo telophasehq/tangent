@@ -101,7 +101,6 @@ pub fn write_embedded_wit(dest: &Path) -> Result<()> {
 fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     fs::write(dir.join("go.mod"), go_mod_for(name))?;
     fs::write(dir.join("main.go"), go_main_for(name))?;
-    fs::create_dir(dir.join("tangenthelpers"))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("go", name))?;
     fs::write(dir.join("Agents.md"), GO_AGENTS_MD)?;
 
@@ -114,7 +113,6 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     run_setup(dir)?;
     run_go_download(dir)?;
 
-    run_wit_bindgen_go(dir, "processor", ".tangent/wit/")?;
     Ok(())
 }
 
@@ -187,32 +185,6 @@ fn run_wit_bindgen_py(cwd: &Path, world: &str, wit_entry: &str) -> Result<()> {
     Ok(())
 }
 
-fn run_wit_bindgen_go(cwd: &Path, world: &str, wit_entry: &str) -> Result<()> {
-    let out = Command::new("go")
-        .args([
-            "tool",
-            "wit-bindgen-go",
-            "generate",
-            "--world",
-            world,
-            "--out",
-            "internal",
-            &wit_entry,
-        ])
-        .current_dir(cwd)
-        .output()
-        .with_context(|| format!("failed to spawn wit-bindgen-go in {}", cwd.display()))?;
-
-    if !out.status.success() {
-        let mut msg = String::from_utf8_lossy(&out.stderr).to_string();
-        if msg.trim().is_empty() {
-            msg = String::from_utf8_lossy(&out.stdout).to_string();
-        }
-        bail!("wit-bindgen-go failed:\n{}", msg);
-    }
-    Ok(())
-}
-
 fn run_go_download(cwd: &Path) -> Result<()> {
     let out = Command::new("go")
         .args(["mod", "tidy"])
@@ -253,6 +225,7 @@ __pycache__/
 **/test_out.ndjson
 **/.test.yaml
 **/plugins/
+cache.sqlite*
 "#;
 
 const PYTHON_REQUIREMENTS: &str = r#""#;
@@ -493,7 +466,7 @@ type ExampleOutput struct {
 
 var Metadata = tangent_sdk.Metadata{
 	Name:		"{module}",
-	Version:	"0.2.0",
+	Version:	"0.1.0",
 }
 
 var selectors = []tangent_sdk.Selector{

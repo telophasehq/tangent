@@ -15,6 +15,14 @@ pub struct RuntimeConfig {
 
     #[serde(default = "default_plugin_path")]
     pub plugins_path: PathBuf,
+
+    #[serde(default)]
+    pub cache: Option<CacheConfig>,
+
+    /// When true, the runtime will not make outbound HTTP requests from plugins.
+    /// Useful for `tangent plugin test` or benchmarking to avoid external calls.
+    #[serde(default)]
+    pub disable_remote_calls: bool,
 }
 
 #[must_use]
@@ -32,4 +40,46 @@ fn default_workers() -> usize {
 
 fn default_plugin_path() -> PathBuf {
     "plugins/".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheConfig {
+    #[serde(default = "default_cache_path")]
+    pub path: PathBuf,
+
+    #[serde(default = "default_cache_ttl_ms")]
+    pub default_ttl_ms: u64,
+
+    #[serde(default = "default_cache_max_ttl_ms")]
+    pub max_ttl_ms: u64,
+
+    #[serde(default = "default_cache_lock_timeout_ms")]
+    pub lock_timeout_ms: u64,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            path: default_cache_path(),
+            default_ttl_ms: default_cache_ttl_ms(),
+            max_ttl_ms: default_cache_max_ttl_ms(),
+            lock_timeout_ms: default_cache_lock_timeout_ms(),
+        }
+    }
+}
+
+fn default_cache_path() -> PathBuf {
+    "cache.sqlite".into()
+}
+
+const fn default_cache_ttl_ms() -> u64 {
+    10 * 60 * 1000
+}
+
+const fn default_cache_max_ttl_ms() -> u64 {
+    60 * 60 * 1000
+}
+
+const fn default_cache_lock_timeout_ms() -> u64 {
+    30_000
 }
