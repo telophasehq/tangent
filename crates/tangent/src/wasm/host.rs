@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -33,6 +34,7 @@ pub struct HostEngine {
     pub table: ResourceTable,
     http_client: Client,
     cache: Option<Arc<CacheHandle>>,
+    plugin_cfg: HashMap<String, String>,
     /// If true, short-circuit remote calls with successful empty responses.
     pub disable_remote_calls: bool,
 }
@@ -44,6 +46,7 @@ impl HostEngine {
             table: ResourceTable::new(),
             http_client: Client::new(),
             cache,
+            plugin_cfg: HashMap::new(),
             disable_remote_calls,
         }
     }
@@ -179,6 +182,16 @@ impl remote::Host for HostEngine {
     }
 }
 
+impl tangent::logs::config::Host for HostEngine {
+    fn get(&mut self, key: String) -> Option<String> {
+        let value = self.plugin_cfg.get(&key);
+        if value.is_some() {
+            return Some(value.unwrap().to_owned());
+        }
+        None
+    }
+}
+
 impl tangent::logs::cache::Host for HostEngine {
     fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
         let Some(cache) = &self.cache else {
@@ -265,6 +278,12 @@ impl JsonLogView {
 }
 
 impl log::HostLogview for HostEngine {
+    fn log(&mut self, h: Resource<JsonLogView>) -> String {
+        let v: &JsonLogView = self.table.get(&h).unwrap();
+
+        String::from_utf8(v.0._raw.to_vec()).expect("json should be valid")
+    }
+
     fn has(&mut self, h: Resource<JsonLogView>, path: String) -> bool {
         let present = {
             let v: &JsonLogView = match self.table.get(&h) {

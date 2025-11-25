@@ -1,11 +1,11 @@
-module detection
+module githubwebhooks
 
 go 1.24.0
 
 toolchain go1.24.7
 
 require (
-	github.com/telophasehq/tangent-sdk-go v0.0.0-20251124222325-5006b0491cd1
+	github.com/telophasehq/tangent-sdk-go v0.0.0-20251125161341-27ee39c60b57
 	go.bytecodealliance.org/cm v0.3.0 // indirect
 )
 
@@ -28,7 +28,5 @@ require (
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect
 )
-
-replace github.com/telophasehq/tangent-sdk-go => ../../../tangent-sdk-go
 
 tool go.bytecodealliance.org/cmd/wit-bindgen-go

@@ -139,6 +139,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 module_type: "".to_string(), // not used
                 path: plugins_path,
                 tests: vec![],
+                config: plugin_cfg.config.clone(),
             };
 
             let mut plugins = BTreeMap::new();

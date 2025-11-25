@@ -7,7 +7,6 @@ import (
 
 	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
 	"github.com/telophasehq/tangent-sdk-go/cache"
-	"github.com/telophasehq/tangent-sdk-go/helpers"
 	"github.com/telophasehq/tangent-sdk-go/http"
 )
 
@@ -33,7 +32,7 @@ var selectors = []tangent_sdk.Selector{
 func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 	var out Alert
 
-	serviceName := helpers.GetString(lv, "source.name")
+	serviceName := lv.GetString("source.name")
 	seen, ok, err := cache.Get(*serviceName)
 	if err != nil {
 		return Alert{}, err
@@ -57,12 +56,12 @@ func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 			return Alert{}, err
 		}
 
-		resp, err := http.Call(http.RemoteRequest{
+		resp, err := http.Call(http.Request{
 			ID:     "slack-alert",
 			Method: http.RemoteMethodPost,
 			URL:    "https://slack.com/api/chat.postMessage",
 			Body:   body,
-			Headers: []http.RemoteHeader{
+			Headers: []http.Header{
 				{
 					Name:  "Content-Type",
 					Value: "application/json",
@@ -84,7 +83,7 @@ func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 			Error   string `json:"error,omitempty"`
 			Channel string `json:"channel"`
 		}
-		json.Unmarshal(resp[0].Body, &result)
+		json.Unmarshal(resp.Body, &result)
 
 		if !result.OK {
 			return Alert{}, fmt.Errorf("failed to post to slack: %s", result.Error)

@@ -12,6 +12,7 @@ name = "tangent_shared"
 path = "src/config.rs"
 
 [dependencies]
+ahash = "0.8.12"
 anyhow = "1.0.100"
 clap = { version = "4.5.48", features = ["derive"] }
 num_cpus = "1.17.0"
