@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use bytes::BytesMut;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tangent_shared::dag::NodeRef;
@@ -12,9 +12,7 @@ use tangent_shared::sources::npm_registry::NpmRegistryConfig;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 
-use crate::cache::CacheHandle;
 use crate::router::Router;
-use crate::wasm::host::tangent::logs::log::Scalar;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct NpmTimeMap {
@@ -59,13 +57,13 @@ pub async fn run_consumer(
     cfg: NpmRegistryConfig,
     router: Arc<Router>,
     shutdown: CancellationToken,
-    cache: Arc<CacheHandle>,
 ) -> Result<()> {
     let from = NodeRef::Source { name };
 
     let client = reqwest::Client::new();
 
-    let mut seen = SeenTracker::new(cache);
+    // In-memory state: package -> set of versions we've already emitted
+    let mut seen: HashMap<String, HashSet<String>> = HashMap::new();
 
     let interval_secs = cfg.interval_secs.max(10); // sane minimum
     let mut ticker = interval(Duration::from_secs(interval_secs));
@@ -99,9 +97,7 @@ pub async fn run_consumer(
                 }
 
                 for pkg in packages {
-                    if let Err(e) =
-                        poll_package(&pkg, &client, &cfg, &mut seen, &router, &from).await
-                    {
+                    if let Err(e) = poll_package(&pkg, &client, &cfg, &mut seen, &router, &from).await {
                         tracing::warn!(package = %pkg, "npm_registry poll error: {e:#}");
                     }
                 }
@@ -116,7 +112,7 @@ async fn poll_package(
     package: &str,
     client: &reqwest::Client,
     cfg: &NpmRegistryConfig,
-    seen: &mut SeenTracker,
+    seen: &mut HashMap<String, HashSet<String>>,
     router: &Arc<Router>,
     from: &NodeRef,
 ) -> Result<()> {
@@ -147,10 +143,14 @@ async fn poll_package(
     let package_name = doc.name.clone().unwrap_or_else(|| package.to_string());
     let time_map = doc.time.as_ref().map(|t| &t.entries);
 
+    let pkg_seen = seen
+        .entry(package_name.clone())
+        .or_insert_with(HashSet::new);
+
     let mut frames: Vec<BytesMut> = Vec::new();
 
     for (version, vinfo) in &doc.versions {
-        if seen.contains(&package_name, version)? {
+        if pkg_seen.contains(version) {
             continue;
         }
 
@@ -180,7 +180,7 @@ async fn poll_package(
         buf.extend_from_slice(b"\n");
         frames.push(buf);
 
-        seen.record(&package_name, version)?;
+        pkg_seen.insert(version.clone());
     }
 
     if !frames.is_empty() {
@@ -223,33 +223,4 @@ async fn list_org_packages(
         serde_json::from_slice(&bytes).context("failed to parse npm package doc")?;
 
     Ok(packages.keys().map(|x| x.to_owned()).collect())
-}
-
-const SEEN_VERSION_TTL_MS: u64 = 7 * 24 * 60 * 60 * 1000;
-const SEEN_VERSION_NAMESPACE: &str = "sources/npm_registry/seen";
-
-struct SeenTracker {
-    handle: Arc<CacheHandle>,
-}
-
-impl SeenTracker {
-    fn new(cache: Arc<CacheHandle>) -> Self {
-        Self { handle: cache }
-    }
-
-    fn contains(&mut self, package: &str, version: &str) -> Result<bool> {
-        let key = cache_key(package, version);
-        Ok(self.handle.get(&key)?.is_some())
-    }
-
-    fn record(&mut self, package: &str, version: &str) -> Result<()> {
-        let key = cache_key(package, version);
-        self.handle
-            .set(&key, &Scalar::Boolean(true), Some(SEEN_VERSION_TTL_MS))?;
-        Ok(())
-    }
-}
-
-fn cache_key(package: &str, version: &str) -> String {
-    format!("{SEEN_VERSION_NAMESPACE}:{package}:{version}")
 }
