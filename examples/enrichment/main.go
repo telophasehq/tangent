@@ -6,7 +6,6 @@ import (
 	"net/url"
 
 	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
-	"github.com/telophasehq/tangent-sdk-go/helpers"
 	"github.com/telophasehq/tangent-sdk-go/http"
 )
 
@@ -36,11 +35,11 @@ func ExampleMapper(lvs []tangent_sdk.Log) ([]EnrichedOutput, error) {
 	ipToIdx := make(map[string][]int)
 
 	for i, lv := range lvs {
-		if svc := helpers.GetString(lv, "service"); svc != nil {
+		if svc := lv.GetString("service"); svc != nil {
 			outs[i].Service = *svc
 		}
 
-		ipPtr := helpers.GetString(lv, "ip_address")
+		ipPtr := lv.GetString("ip_address")
 		if ipPtr == nil || *ipPtr == "" {
 			continue
 		}
@@ -54,18 +53,18 @@ func ExampleMapper(lvs []tangent_sdk.Log) ([]EnrichedOutput, error) {
 		return outs, nil
 	}
 
-	reqs := make([]http.RemoteRequest, 0, len(ipToIdx))
+	reqs := make([]http.Request, 0, len(ipToIdx))
 	for ip := range ipToIdx {
 		u := "https://ipinfo.io/" + url.QueryEscape(ip)
 
-		reqs = append(reqs, http.RemoteRequest{
+		reqs = append(reqs, http.Request{
 			ID:     ip,
-			Method: http.RemoteMethodGet,
+			Method: http.MethodGet,
 			URL:    u,
 		})
 	}
 
-	resps, err := http.RemoteCallBatch(reqs)
+	resps, err := http.CallBatch(reqs)
 	if err != nil {
 		return nil, fmt.Errorf("remote batch call failed: %w", err)
 	}

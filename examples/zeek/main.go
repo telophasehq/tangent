@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
-	"github.com/telophasehq/tangent-sdk-go/helpers"
 
 	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
 )
@@ -55,8 +54,8 @@ var selectors = []tangent_sdk.Selector{
 }
 
 func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
-	rawTS := helpers.GetString(lv, "ts")
-	rawWTS := helpers.GetString(lv, "_write_ts")
+	rawTS := lv.GetString("ts")
+	rawWTS := lv.GetString("_write_ts")
 
 	ts, err := time.Parse(time.RFC3339Nano, *rawTS)
 	if err != nil {
@@ -77,12 +76,12 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 	var severityID int32 = 1
 	typeUID := int64(classUID)*100 + int64(activityID)
 
-	uid := helpers.GetString(lv, "uid")
-	path := helpers.GetString(lv, "_path")
-	systemName := helpers.GetString(lv, "_system_name")
+	uid := lv.GetString("uid")
+	path := lv.GetString("_path")
+	systemName := lv.GetString("_system_name")
 
-	localOrig := helpers.GetBool(lv, "local_orig")
-	localResp := helpers.GetBool(lv, "local_resp")
+	localOrig := lv.GetBool("local_orig")
+	localResp := lv.GetBool("local_resp")
 
 	var directionID *int32
 	switch {
@@ -95,7 +94,7 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 	}
 
 	var duration *int64
-	if d := helpers.GetFloat64(lv, "duration"); d != nil {
+	if d := lv.GetFloat64("duration"); d != nil {
 		ms := int64(math.Round(*d))
 		duration = &ms
 	}
@@ -106,31 +105,31 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 		endTime = timeMs + *duration
 	}
 
-	origP := helpers.GetInt64(lv, "id.orig_p")
-	origH := helpers.GetString(lv, "id.orig_h")
-	respH := helpers.GetString(lv, "id.resp_h")
-	respP := helpers.GetInt64(lv, "id.resp_p")
+	origP := lv.GetInt64("id.orig_p")
+	origH := lv.GetString("id.orig_h")
+	respH := lv.GetString("id.resp_h")
+	respP := lv.GetInt64("id.resp_p")
 
 	var src, dst *v1_5_0.NetworkEndpoint
 	if origH != nil && origP != nil {
 		src = toNetEndpoint(*origH, int(*origP))
 
-		if srcMac := helpers.GetString(lv, "orig_l2_addr"); srcMac != nil {
+		if srcMac := lv.GetString("orig_l2_addr"); srcMac != nil {
 			src.Mac = srcMac
 		}
 	}
 
 	if respH != nil && respP != nil {
 		dst = toNetEndpoint(*respH, int(*respP))
-		if dstMac := helpers.GetString(lv, "resp_l2_addr"); dstMac != nil {
+		if dstMac := lv.GetString("resp_l2_addr"); dstMac != nil {
 			dst.Mac = dstMac
 		}
-		if cc := helpers.GetString(lv, "resp_cc"); cc != nil {
+		if cc := lv.GetString("resp_cc"); cc != nil {
 			dst.Location = &v1_5_0.GeoLocation{Country: cc}
 		}
 	}
 
-	proto := helpers.GetString(lv, "proto")
+	proto := lv.GetString("proto")
 	var pn int
 	var pName string
 	if proto != nil {
@@ -141,7 +140,7 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 		p := pName
 		connInfo.ProtocolName = &p
 	}
-	if communityUid := helpers.GetString(lv, "community_id"); communityUid != nil {
+	if communityUid := lv.GetString("community_id"); communityUid != nil {
 		connInfo.CommunityUid = communityUid
 	}
 	if pn != 0 {
@@ -151,7 +150,7 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 	if directionID != nil {
 		connInfo.DirectionId = *directionID
 	}
-	if h := helpers.GetString(lv, "history"); h != nil {
+	if h := lv.GetString("history"); h != nil {
 		connInfo.FlagHistory = h
 	}
 	if connInfo.ProtocolName == nil && connInfo.ProtocolNum == nil && connInfo.FlagHistory == nil {
@@ -159,11 +158,11 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 	}
 
 	// Traffic counters
-	ob := helpers.GetInt64(lv, "orig_bytes")
-	rb := helpers.GetInt64(lv, "resp_bytes")
-	mb := helpers.GetInt64(lv, "missed_bytes")
-	op := helpers.GetInt64(lv, "orig_pkts")
-	rp := helpers.GetInt64(lv, "resp_pkts")
+	ob := lv.GetInt64("orig_bytes")
+	rb := lv.GetInt64("resp_bytes")
+	mb := lv.GetInt64("missed_bytes")
+	op := lv.GetInt64("orig_pkts")
+	rp := lv.GetInt64("resp_pkts")
 
 	var totalBytes, totalPkts *int64
 	if ob != nil || rb != nil || op != nil || rp != nil {
@@ -218,11 +217,11 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 
 	// Optional strings
 	var appName *string
-	if s := helpers.GetString(lv, "service"); s != nil {
+	if s := lv.GetString("service"); s != nil {
 		appName = s
 	}
 	var statusCode *string
-	if cs := helpers.GetString(lv, "conn_state"); cs != nil {
+	if cs := lv.GetString("conn_state"); cs != nil {
 		statusCode = cs
 	}
 
@@ -231,29 +230,29 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 
 	var unmapped OCSFUnMapped
 
-	if missedBytes := helpers.GetInt64(lv, "missed_bytes"); missedBytes != nil {
+	if missedBytes := lv.GetInt64("missed_bytes"); missedBytes != nil {
 		unmapped.MissedBytes = missedBytes
 	}
 
-	if vlan := helpers.GetInt64(lv, "vlan"); vlan != nil {
+	if vlan := lv.GetInt64("vlan"); vlan != nil {
 		unmapped.VLAN = vlan
 	}
 
-	app, _ := helpers.GetStringList(lv, "app")
+	app, _ := lv.GetStringList("app")
 	unmapped.App = app
 
-	tunnelParents, _ := helpers.GetStringList(lv, "tunnel_parents")
+	tunnelParents, _ := lv.GetStringList("tunnel_parents")
 	unmapped.TunnelParent = tunnelParents
 
-	suriIDs, _ := helpers.GetStringList(lv, "suri_ids")
+	suriIDs, _ := lv.GetStringList("suri_ids")
 	unmapped.SuriIDs = suriIDs
 
 	var sp SPCap
-	sp.Trigger = helpers.GetString(lv, "spcap.trigger")
+	sp.Trigger = lv.GetString("spcap.trigger")
 
-	sp.URL = helpers.GetString(lv, "spcap.url")
+	sp.URL = lv.GetString("spcap.url")
 
-	if rule := helpers.GetInt64(lv, "spcap.rule"); rule != nil {
+	if rule := lv.GetInt64("spcap.rule"); rule != nil {
 		sp.Rule = rule
 	}
 
@@ -265,19 +264,19 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 		unmapped.LocalResp = localResp
 	}
 
-	if origIPBytes := helpers.GetInt64(lv, "orig_ip_bytes"); origIPBytes != nil {
+	if origIPBytes := lv.GetInt64("orig_ip_bytes"); origIPBytes != nil {
 		unmapped.OrigIPBytes = origIPBytes
 	}
 
-	if respIPBytes := helpers.GetInt64(lv, "resp_ip_bytes"); respIPBytes != nil {
+	if respIPBytes := lv.GetInt64("resp_ip_bytes"); respIPBytes != nil {
 		unmapped.RespIPBytes = respIPBytes
 	}
 
-	if pcr := helpers.GetFloat64(lv, "pcr"); pcr != nil {
+	if pcr := lv.GetFloat64("pcr"); pcr != nil {
 		unmapped.Pcr = pcr
 	}
 
-	if corelightShunted := helpers.GetBool(lv, "corelight_shunted"); corelightShunted != nil {
+	if corelightShunted := lv.GetBool("corelight_shunted"); corelightShunted != nil {
 		unmapped.CorelightShunted = corelightShunted
 	}
 	unmapped.SPCap = &sp
@@ -343,8 +342,8 @@ func protoToOCSF(p string) (int, string) {
 func buildObservablesFromLogview(v tangent_sdk.Log) []v1_5_0.Observable {
 	var out []v1_5_0.Observable
 
-	srcProvider := helpers.GetString(v, "id.orig_h_name.src")
-	if vals, ok := helpers.GetStringList(v, "id.orig_h_name.vals"); ok {
+	srcProvider := v.GetString("id.orig_h_name.src")
+	if vals, ok := v.GetStringList("id.orig_h_name.vals"); ok {
 		for _, s := range vals {
 			name := "src_endpoint.hostname"
 			typ := int32(1)
@@ -365,8 +364,8 @@ func buildObservablesFromLogview(v tangent_sdk.Log) []v1_5_0.Observable {
 		}
 	}
 
-	dstProvider := helpers.GetString(v, "id.resp_h_name.src")
-	if vals, ok := helpers.GetStringList(v, "id.resp_h_name.vals"); ok {
+	dstProvider := v.GetString("id.resp_h_name.src")
+	if vals, ok := v.GetStringList("id.resp_h_name.vals"); ok {
 		for _, s := range vals {
 			name := "dst_endpoint.hostname"
 			typ := int32(1)

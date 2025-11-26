@@ -33,6 +33,8 @@ github.com/telophasehq/tangent-sdk-go v0.0.0-20251118220303-15ccc0f29e4a h1:Ac4h
 github.com/telophasehq/tangent-sdk-go v0.0.0-20251118220303-15ccc0f29e4a/go.mod h1:Kix+kLK2lqunjZUAPBIqxaj4pSZ4b2WgAeZ/u0tq+6g=
 github.com/telophasehq/tangent-sdk-go v0.0.0-20251120150230-0b8b366f72c4 h1:uqfNUxRMIwbSiNz+vpuMpQnuj8ndgLKaA8plQA1S2js=
 github.com/telophasehq/tangent-sdk-go v0.0.0-20251120150230-0b8b366f72c4/go.mod h1:Kix+kLK2lqunjZUAPBIqxaj4pSZ4b2WgAeZ/u0tq+6g=
+github.com/telophasehq/tangent-sdk-go v0.0.0-20251125161341-27ee39c60b57 h1:SU5lasBQeQc15/uLJ2pXrm0A7l8Ok8BeTOoEK6QlzCc=
+github.com/telophasehq/tangent-sdk-go v0.0.0-20251125161341-27ee39c60b57/go.mod h1:Kix+kLK2lqunjZUAPBIqxaj4pSZ4b2WgAeZ/u0tq+6g=
 github.com/tetratelabs/wazero v1.9.0 h1:IcZ56OuxrtaEz8UYNRHBrUa9bYeX9oVY93KspZZBf/I=
 github.com/tetratelabs/wazero v1.9.0/go.mod h1:TSbcXCfFP0L2FGkRPxHphadXPjo1T6W+CseNNY7EkjM=
 github.com/ulikunitz/xz v0.5.12 h1:37Nm15o69RwBkXM0J6A5OlE67RZTfzUxTj8fB3dfcsc=

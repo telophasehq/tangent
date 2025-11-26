@@ -58,7 +58,7 @@ func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 
 		resp, err := http.Call(http.Request{
 			ID:     "slack-alert",
-			Method: http.RemoteMethodPost,
+			Method: http.MethodPost,
 			URL:    "https://slack.com/api/chat.postMessage",
 			Body:   body,
 			Headers: []http.Header{

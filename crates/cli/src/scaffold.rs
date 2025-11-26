@@ -480,40 +480,41 @@ var selectors = []tangent_sdk.Selector{
 func ExampleMapper(lv tangent_sdk.Log) (ExampleOutput, error) {
 	var out ExampleOutput
 	// Get String
-	msg := helpers.GetString(lv, "msg")
+	msg := lv.GetString("msg")
 	if msg != nil {
 		out.Msg = *msg
 	}
 
 	// get dot path
-	lvl := helpers.GetString(lv, "msg.level")
+	lvl := lv.GetString("msg.level")
 	if lvl != nil {
 		out.Level = *lvl
 	}
 
 	// get int
-	seen := helpers.GetInt64(lv, "seen")
+	seen := lv.GetInt64("seen")
 	if seen != nil {
 		out.Seen = *seen
 	}
 
 	// get float
-	duration := helpers.GetFloat64(lv, "duration")
+	duration := lv.GetFloat64("duration")
 	if duration != nil {
 		out.Duration = *duration
 	}
 
 	// get value from nested json
-	service := helpers.GetString(lv, "source.name")
+	service := lv.GetString("source.name")
 	if service != nil {
 		out.Service = *service
 	}
 
 	// get string list
-	tags, ok := helpers.GetStringList(lv, "tags")
+	tags, ok := lv.GetStringList("tags")
 	if ok {
 		out.Tags = tags
 	}
+
 	return out, nil
 }
 
