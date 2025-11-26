@@ -451,7 +451,6 @@ fn go_main_for(module: &str) -> String {
 
 import (
 	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
-	"github.com/telophasehq/tangent-sdk-go/helpers"
 )
 
 //easyjson:json
