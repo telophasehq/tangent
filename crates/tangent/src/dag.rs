@@ -91,8 +91,13 @@ impl DagRuntime {
 
         router.set_pool(&pool);
 
-        let consumer_handles =
-            spawn_consumers(sources, batch_size, router.clone(), shutdown.clone());
+        let consumer_handles = spawn_consumers(
+            sources,
+            batch_size,
+            router.clone(),
+            shutdown.clone(),
+            cache.clone(),
+        );
 
         Ok(Self {
             router,
@@ -163,6 +168,7 @@ fn spawn_consumers(
     batch_size: usize,
     router: Arc<Router>,
     shutdown: CancellationToken,
+    cache: Arc<CacheHandle>,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let mut handles = Vec::new();
     for src in sources {
@@ -234,10 +240,16 @@ fn spawn_consumers(
             }
             (name, SourceConfig::NPMRegistry(np)) => {
                 let router = router.clone();
+                let cache = cache.clone();
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) =
-                        sources::npm_registry::run_consumer(name, np, router, shutdown.clone())
-                            .await
+                    if let Err(e) = sources::npm_registry::run_consumer(
+                        name,
+                        np,
+                        router,
+                        shutdown.clone(),
+                        cache,
+                    )
+                    .await
                     {
                         tracing::error!("NPM Registry consumer error: {e}");
                     }
