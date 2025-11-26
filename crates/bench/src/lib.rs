@@ -192,6 +192,7 @@ pub async fn run_one_payload(
                             )
                             .await
                         }
+                        SourceConfig::NPMRegistry(_) => unimplemented!("not implemented"),
                         SourceConfig::GithubWebhook(_) => unimplemented!("not implemented"),
                         SourceConfig::File(_) => unimplemented!("not implemented"),
                     }

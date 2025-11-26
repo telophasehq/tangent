@@ -1,4 +1,4 @@
-module enrichment
+module npmpackageupdates
 
 go 1.24.0
 

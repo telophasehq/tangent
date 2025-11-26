@@ -36,14 +36,7 @@ impl DagRuntime {
 
         let workers = cfg.runtime.workers;
 
-        let cache = if cfg.runtime.cache.as_ref().is_some() {
-            Some(Arc::new(CacheHandle::open(
-                &cfg.runtime.cache.clone().unwrap(),
-                config_dir,
-            )?))
-        } else {
-            None
-        };
+        let cache = Arc::new(CacheHandle::open(&cfg.runtime.cache.clone(), config_dir)?);
 
         let mut engines: Vec<WasmEngine> = (0..workers)
             .map(|_| WasmEngine::new(cache.clone(), cfg.runtime.disable_remote_calls))
@@ -98,8 +91,13 @@ impl DagRuntime {
 
         router.set_pool(&pool);
 
-        let consumer_handles =
-            spawn_consumers(sources, batch_size, router.clone(), shutdown.clone());
+        let consumer_handles = spawn_consumers(
+            sources,
+            batch_size,
+            router.clone(),
+            shutdown.clone(),
+            cache.clone(),
+        );
 
         Ok(Self {
             router,
@@ -170,6 +168,7 @@ fn spawn_consumers(
     batch_size: usize,
     router: Arc<Router>,
     shutdown: CancellationToken,
+    cache: Arc<CacheHandle>,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let mut handles = Vec::new();
     for src in sources {
@@ -236,6 +235,23 @@ fn spawn_consumers(
                             .await
                     {
                         tracing::error!("Github Webhook consumer error: {e}");
+                    }
+                }));
+            }
+            (name, SourceConfig::NPMRegistry(np)) => {
+                let router = router.clone();
+                let cache = cache.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) = sources::npm_registry::run_consumer(
+                        name,
+                        np,
+                        router,
+                        shutdown.clone(),
+                        cache,
+                    )
+                    .await
+                    {
+                        tracing::error!("NPM Registry consumer error: {e}");
                     }
                 }));
             }

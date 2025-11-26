@@ -219,6 +219,11 @@ fn run_go_compile(
         bail!("tinygo build failed");
     }
 
+    let json_generated = entry_point_path.join("json_generated.go");
+    if std::fs::exists(&json_generated)? {
+        std::fs::remove_file(&json_generated)?;
+    }
+
     Ok(())
 }
 

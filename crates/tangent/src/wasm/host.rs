@@ -33,14 +33,14 @@ pub struct HostEngine {
     pub ctx: WasiCtx,
     pub table: ResourceTable,
     http_client: Client,
-    cache: Option<Arc<CacheHandle>>,
+    cache: Arc<CacheHandle>,
     plugin_cfg: HashMap<String, String>,
     /// If true, short-circuit remote calls with successful empty responses.
     pub disable_remote_calls: bool,
 }
 
 impl HostEngine {
-    pub fn new(ctx: WasiCtx, cache: Option<Arc<CacheHandle>>, disable_remote_calls: bool) -> Self {
+    pub fn new(ctx: WasiCtx, cache: Arc<CacheHandle>, disable_remote_calls: bool) -> Self {
         Self {
             ctx,
             table: ResourceTable::new(),
@@ -194,24 +194,17 @@ impl tangent::logs::config::Host for HostEngine {
 
 impl tangent::logs::cache::Host for HostEngine {
     fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
-        let Some(cache) = &self.cache else {
-            return Err("cache disabled".into());
-        };
-        cache.get(&key).map_err(|e| e.to_string())
+        self.cache.get(&key).map_err(|e| e.to_string())
     }
 
     fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
-        let Some(cache) = &self.cache else {
-            return Err("cache disabled".into());
-        };
-        cache.set(&key, &value, ttl_ms).map_err(|e| e.to_string())
+        self.cache
+            .set(&key, &value, ttl_ms)
+            .map_err(|e| e.to_string())
     }
 
     fn del(&mut self, key: String) -> Result<bool, String> {
-        let Some(cache) = &self.cache else {
-            return Err("cache disabled".into());
-        };
-        cache.del(&key).map_err(|e| e.to_string())
+        self.cache.del(&key).map_err(|e| e.to_string())
     }
 }
 

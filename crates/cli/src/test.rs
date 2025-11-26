@@ -110,7 +110,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 batch_size: 1,
                 batch_age: 1,
                 workers: 1,
-                cache: Some(CacheConfig::default()),
+                cache: CacheConfig::default(),
                 disable_remote_calls: !opts.enable_http,
             };
 
@@ -160,10 +160,8 @@ pub async fn run(opts: TestOptions) -> Result<()> {
             fs::write(&test_config_file, yaml)?;
 
             {
-                let sqlite_cache = cache::CacheHandle::open(
-                    test_config.runtime.cache.as_ref().unwrap(),
-                    config_root,
-                )?;
+                let sqlite_cache =
+                    cache::CacheHandle::open(&test_config.runtime.cache, config_root)?;
                 sqlite_cache.reset()?;
             }
 

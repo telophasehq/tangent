@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::sources::file::FileConfig;
 use crate::sources::github_webhook::GithubWebhookConfig;
 use crate::sources::msk::MSKConfig;
+use crate::sources::npm_registry::NpmRegistryConfig;
 use crate::sources::socket::SocketConfig;
 use crate::sources::sqs::SQSConfig;
 use crate::sources::tcp::TcpConfig;
@@ -22,6 +23,8 @@ pub enum SourceConfig {
     SQS(SQSConfig),
     #[serde(rename = "github_webhook")]
     GithubWebhook(GithubWebhookConfig),
+    #[serde(rename = "npm_registry")]
+    NPMRegistry(NpmRegistryConfig),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
