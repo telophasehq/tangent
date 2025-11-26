@@ -35,8 +35,10 @@ pub struct Config {
 
 impl Config {
     pub fn from_file(path: &PathBuf) -> Result<Self> {
-        let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-        let cfg = serde_yaml::from_slice(&bytes)
+        let contents =
+            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let expanded = Self::expand_env(&contents);
+        let cfg = serde_yaml::from_str(&expanded)
             .with_context(|| format!("parsing YAML {}", path.display()))?;
 
         Ok(cfg)
@@ -48,6 +50,27 @@ impl Config {
 
     pub const fn batch_size_kb(&self) -> usize {
         self.runtime.batch_size << 10
+    }
+
+    fn expand_env(s: &str) -> String {
+        let mut out = String::new();
+        let mut rest = s;
+
+        while let Some(start) = rest.find("${") {
+            out.push_str(&rest[..start]);
+            if let Some(end) = rest[start + 2..].find('}') {
+                let var = &rest[start + 2..start + 2 + end];
+                let val = std::env::var(var).unwrap_or_default();
+                out.push_str(&val);
+                rest = &rest[start + 3 + end..];
+            } else {
+                // no closing }, just append
+                out.push_str(&rest[start..]);
+                break;
+            }
+        }
+        out.push_str(rest);
+        out
     }
 
     pub fn validate(&self) -> Result<()> {

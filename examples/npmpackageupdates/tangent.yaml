@@ -1,32 +1,31 @@
 runtime:
   plugins_path: "plugins/"
 plugins:
-  githubwebhooks:
+  npmpackageupdates:
     module_type: go
     path: .
     tests:
       - input: tests/input.json
         expected: tests/expected.json
 sources:
-  github:
-    type: github_webhook
-    bind_address: 0.0.0.0:9000
-    path: /webhook
-    token: "${GITHUB_TOKEN}"  
+  npm_registry:
+    type: npm_registry
+    orgs: ["my-org"]
+    token: "${NPM_TOKEN}"
 sinks:
   blackhole:
     type: blackhole
 dag:
   - from:
       kind: source
-      name: github
+      name: npm_registry
     to:
       - kind: plugin
-        name: githubwebhooks
+        name: npmpackageupdates
 
   - from:
       kind: plugin
-      name: githubwebhooks
+      name: npmpackageupdates
     to:
       - kind: sink
         name: blackhole
