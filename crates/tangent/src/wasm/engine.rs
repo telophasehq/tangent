@@ -14,16 +14,13 @@ use crate::wasm::host::{HostEngine, Processor};
 pub struct WasmEngine {
     engine: Engine,
     linker: Linker<HostEngine>,
-    cache: Option<std::sync::Arc<CacheHandle>>,
+    cache: std::sync::Arc<CacheHandle>,
     config: HashMap<Arc<str>, HashMap<String, String>>,
     disable_remote_calls: bool,
 }
 
 impl WasmEngine {
-    pub fn new(
-        cache: Option<std::sync::Arc<CacheHandle>>,
-        disable_remote_calls: bool,
-    ) -> Result<Self> {
+    pub fn new(cache: std::sync::Arc<CacheHandle>, disable_remote_calls: bool) -> Result<Self> {
         let engine = tangent_shared::wasm_engine::build()?;
         let mut linker = Linker::<HostEngine>::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;

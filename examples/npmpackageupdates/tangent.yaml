@@ -10,7 +10,7 @@ plugins:
 sources:
   npm_registry:
     type: npm_registry
-    orgs: ["my-org"]
+    orgs: ["my-npm-org"]
     token: "${NPM_TOKEN}"
 sinks:
   blackhole:

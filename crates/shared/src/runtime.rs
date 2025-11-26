@@ -16,8 +16,8 @@ pub struct RuntimeConfig {
     #[serde(default = "default_plugin_path")]
     pub plugins_path: PathBuf,
 
-    #[serde(default)]
-    pub cache: Option<CacheConfig>,
+    #[serde(default = "default_cache")]
+    pub cache: CacheConfig,
 
     /// When true, the runtime will not make outbound HTTP requests from plugins.
     /// Useful for `tangent plugin test` or benchmarking to avoid external calls.
@@ -40,6 +40,10 @@ fn default_workers() -> usize {
 
 fn default_plugin_path() -> PathBuf {
     "plugins/".into()
+}
+
+fn default_cache() -> CacheConfig {
+    CacheConfig::default()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
