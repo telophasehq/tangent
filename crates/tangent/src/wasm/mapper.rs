@@ -30,7 +30,7 @@ impl Mappers {
         let mut mappers = Vec::with_capacity(components.len());
 
         for (name, component) in components {
-            let mut store = engine.make_store();
+            let mut store = engine.make_store(name);
 
             let proc = engine.make_processor(&mut store, component).await?;
             let guest = proc.tangent_logs_mapper();

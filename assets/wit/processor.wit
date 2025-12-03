@@ -49,6 +49,12 @@ interface config {
   get: func(key: string) -> option<string>;
 }
 
+interface lock {
+  acquire: func(key: string) -> bool;
+  release: func(key: string);
+}
+
+
 interface cache {
   use log.{scalar};
 
@@ -121,5 +127,6 @@ world processor {
   import log;
   import cache;
   import config;
+  import lock;
   export mapper;
 }

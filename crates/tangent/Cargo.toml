@@ -38,6 +38,7 @@ serde_yaml = "0.9.34"
 tangent_shared = { path = "../shared", package = "tangent-shared" }
 rdkafka = { version = "0.38.0", features = ["cmake-build", "ssl-vendored"] }
 bytes = "1.10.1"
+chrono = { version = "0.4", features = ["clock"] }
 tokio-util = { version = "0.7.16", features = ["codec"] }
 tokio-stream = { version = "0.1.17", features = ["io-util"] }
 aws-sdk-sqs = "1.84.1"
