@@ -1,5 +1,6 @@
 use ahash::HashMap;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -11,7 +12,7 @@ pub struct PluginConfig {
     pub tests: Vec<PluginTests>,
 
     #[serde(default)]
-    pub config: HashMap<String, String>,
+    pub config: HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

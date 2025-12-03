@@ -17,5 +17,5 @@ pub struct NpmRegistryConfig {
 }
 
 fn default_interval_secs() -> u64 {
-    30
+    5
 }

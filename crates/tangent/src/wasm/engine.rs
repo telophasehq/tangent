@@ -4,18 +4,19 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt};
 use anyhow::Result;
 
+use serde_json::Value;
 use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::WasiCtxBuilder;
 
 use crate::cache::CacheHandle;
-use crate::wasm::host::tangent::logs::{cache, config, log, remote};
+use crate::wasm::host::tangent::logs::{cache, config, lock, log, remote};
 use crate::wasm::host::{HostEngine, Processor};
 pub struct WasmEngine {
     engine: Engine,
     linker: Linker<HostEngine>,
     cache: std::sync::Arc<CacheHandle>,
-    config: HashMap<Arc<str>, HashMap<String, String>>,
+    config: HashMap<Arc<str>, Arc<HashMap<String, Value>>>,
     disable_remote_calls: bool,
 }
 
@@ -28,6 +29,7 @@ impl WasmEngine {
         remote::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         cache::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         config::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
+        lock::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
 
         Ok(Self {
             engine,
@@ -46,16 +48,16 @@ impl WasmEngine {
         &mut self,
         name: Arc<str>,
         loc: &Path,
-        cfg: HashMap<String, String>,
+        cfg: HashMap<String, Value>,
     ) -> Result<Component> {
         let comp = unsafe { Component::deserialize_file(&self.engine, &loc)? };
 
-        self.config.insert(name, cfg);
+        self.config.insert(name, Arc::new(cfg));
 
         Ok(comp)
     }
 
-    pub fn make_store(&self) -> Store<HostEngine> {
+    pub fn make_store(&self, component_name: &Arc<str>) -> Store<HostEngine> {
         Store::new(
             &self.engine,
             HostEngine::new(
@@ -65,6 +67,7 @@ impl WasmEngine {
                     .inherit_env()
                     .build(),
                 self.cache.clone(),
+                self.config.get(component_name).unwrap().clone(),
                 self.disable_remote_calls,
             ),
         )

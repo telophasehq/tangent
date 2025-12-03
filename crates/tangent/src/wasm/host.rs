@@ -1,10 +1,14 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
+use ahash::HashMap;
+use ahash::HashMapExt;
 use anyhow::Result;
 use bytes::{Bytes, BytesMut};
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use reqwest::Client;
 use rusqlite::types::Value;
+use serde_json::Value as JSONValue;
 use simd_json::base::ValueAsScalar;
 use simd_json::derived::{TypedArrayValue, TypedScalarValue};
 use simd_json::prelude::{ValueAsArray, ValueAsObject, ValueObjectAccess};
@@ -16,6 +20,8 @@ use crate::cache::CacheHandle;
 use crate::wasm::host::tangent::logs::log;
 use crate::wasm::host::tangent::logs::remote;
 use log::Scalar;
+
+static LOCKS: Lazy<Mutex<HashMap<String, bool>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 bindgen!({
     world: "processor",
@@ -34,19 +40,24 @@ pub struct HostEngine {
     pub table: ResourceTable,
     http_client: Client,
     cache: Arc<CacheHandle>,
-    plugin_cfg: HashMap<String, String>,
+    plugin_cfg: Arc<HashMap<String, JSONValue>>,
     /// If true, short-circuit remote calls with successful empty responses.
     pub disable_remote_calls: bool,
 }
 
 impl HostEngine {
-    pub fn new(ctx: WasiCtx, cache: Arc<CacheHandle>, disable_remote_calls: bool) -> Self {
+    pub fn new(
+        ctx: WasiCtx,
+        cache: Arc<CacheHandle>,
+        config: Arc<HashMap<String, JSONValue>>,
+        disable_remote_calls: bool,
+    ) -> Self {
         Self {
             ctx,
             table: ResourceTable::new(),
             http_client: Client::new(),
             cache,
-            plugin_cfg: HashMap::new(),
+            plugin_cfg: config,
             disable_remote_calls,
         }
     }
@@ -184,11 +195,35 @@ impl remote::Host for HostEngine {
 
 impl tangent::logs::config::Host for HostEngine {
     fn get(&mut self, key: String) -> Option<String> {
-        let value = self.plugin_cfg.get(&key);
-        if value.is_some() {
-            return Some(value.unwrap().to_owned());
+        self.plugin_cfg.get(&key).map(|v| {
+            match v {
+                // Plain string config (e.g. slack_channel)
+                serde_json::Value::String(s) => s.clone(),
+                // Anything else (objects, arrays, numbers, bools, null)
+                // – serialize to JSON for the guest
+                other => other.to_string(),
+            }
+        })
+    }
+}
+
+impl tangent::logs::lock::Host for HostEngine {
+    fn acquire(&mut self, key: String) -> bool {
+        let mut map = LOCKS.lock();
+        let entry = map.entry(key).or_insert(false);
+        if !*entry {
+            *entry = true;
+            true
+        } else {
+            false
         }
-        None
+    }
+
+    fn release(&mut self, key: String) {
+        let mut map = LOCKS.lock();
+        if let Some(locked) = map.get_mut(&key) {
+            *locked = false;
+        }
     }
 }
 

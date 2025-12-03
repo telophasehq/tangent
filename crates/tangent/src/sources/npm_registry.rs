@@ -1,10 +1,10 @@
 // tangent_runtime/src/sources/npm_registry.rs
 
+use ahash::HashMap;
 use anyhow::{anyhow, Context, Result};
 use bytes::BytesMut;
-use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tangent_shared::dag::NodeRef;
@@ -12,46 +12,7 @@ use tangent_shared::sources::npm_registry::NpmRegistryConfig;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 
-use crate::cache::CacheHandle;
 use crate::router::Router;
-use crate::wasm::host::tangent::logs::log::Scalar;
-
-#[derive(Debug, Deserialize, Serialize)]
-struct NpmTimeMap {
-    // we only care about dynamic keys, so use a generic map
-    #[serde(flatten)]
-    entries: HashMap<String, String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct NpmDist {
-    #[serde(default)]
-    shasum: Option<String>,
-    #[serde(default)]
-    integrity: Option<String>,
-    #[serde(default)]
-    tarball: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct NpmVersion {
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    dist: Option<NpmDist>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct NpmPackageDoc {
-    #[serde(default)]
-    name: Option<String>,
-
-    #[serde(default)]
-    versions: HashMap<String, NpmVersion>,
-
-    #[serde(default)]
-    time: Option<NpmTimeMap>,
-}
 
 /// Poll the NPM registry for configured packages and emit new versions as NDJSON.
 pub async fn run_consumer(
@@ -59,15 +20,12 @@ pub async fn run_consumer(
     cfg: NpmRegistryConfig,
     router: Arc<Router>,
     shutdown: CancellationToken,
-    cache: Arc<CacheHandle>,
 ) -> Result<()> {
     let from = NodeRef::Source { name };
 
     let client = reqwest::Client::new();
 
-    let mut seen = SeenTracker::new(cache);
-
-    let interval_secs = cfg.interval_secs.max(10); // sane minimum
+    let interval_secs = cfg.interval_secs.max(5); // sane minimum
     let mut ticker = interval(Duration::from_secs(interval_secs));
 
     if cfg.packages.is_none() && cfg.orgs.is_none() {
@@ -98,9 +56,10 @@ pub async fn run_consumer(
                     }
                 }
 
+                tracing::info!("polling {:?} packages", packages);
                 for pkg in packages {
                     if let Err(e) =
-                        poll_package(&pkg, &client, &cfg, &mut seen, &router, &from).await
+                        poll_package(&pkg, &client, &cfg, &router, &from).await
                     {
                         tracing::warn!(package = %pkg, "npm_registry poll error: {e:#}");
                     }
@@ -116,7 +75,6 @@ async fn poll_package(
     package: &str,
     client: &reqwest::Client,
     cfg: &NpmRegistryConfig,
-    seen: &mut SeenTracker,
     router: &Arc<Router>,
     from: &NodeRef,
 ) -> Result<()> {
@@ -137,50 +95,62 @@ async fn poll_package(
     }
 
     let bytes = resp
-        .bytes()
+        .text()
         .await
         .context("failed to read npm response body")?;
 
-    let doc: NpmPackageDoc =
-        serde_json::from_slice(&bytes).context("failed to parse npm package doc")?;
+    let doc: Value = serde_json::from_str(&bytes).context("failed to parse npm package doc")?;
 
-    let package_name = doc.name.clone().unwrap_or_else(|| package.to_string());
-    let time_map = doc.time.as_ref().map(|t| &t.entries);
+    let package_name = doc
+        .get("name")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| package.to_string());
+    let time_map = doc.get("time").and_then(Value::as_object);
+    let cutoff = Utc::now() - ChronoDuration::minutes(RECENT_WINDOW_MINUTES);
+
+    let versions = match doc.get("versions").and_then(Value::as_object) {
+        Some(map) => map,
+        None => return Ok(()),
+    };
 
     let mut frames: Vec<BytesMut> = Vec::new();
 
-    for (version, vinfo) in &doc.versions {
-        if seen.contains(&package_name, version)? {
+    for (version, vinfo) in versions {
+        let ts_str = match time_map
+            .and_then(|m| m.get(version))
+            .and_then(Value::as_str)
+        {
+            Some(ts) => ts,
+            None => continue,
+        };
+
+        let published_at = match DateTime::parse_from_rfc3339(ts_str) {
+            Ok(parsed) => parsed.with_timezone(&Utc),
+            Err(err) => {
+                tracing::debug!(
+                    package = %package_name,
+                    version = %version,
+                    error = %err,
+                    "skipping npm version without parsable timestamp"
+                );
+                continue;
+            }
+        };
+
+        if published_at < cutoff {
             continue;
-        }
-
-        let ts = time_map.and_then(|m| m.get(version)).cloned();
-
-        let mut v_enriched =
-            serde_json::to_value(vinfo).context("failed to convert npm version to json")?;
-        let obj = v_enriched
-            .as_object_mut()
-            .ok_or_else(|| anyhow!("npm version should be a JSON object"))?;
-
-        obj.entry("name".to_string())
-            .or_insert_with(|| Value::String(package_name.clone()));
-        obj.insert("version".to_string(), Value::String(version.clone()));
-
-        if let Some(ts_val) = ts {
-            obj.insert("time".to_string(), Value::String(ts_val));
         }
 
         let event = json!({
             "kind": "npm_package_version",
-            "npm": v_enriched,
+            "npm": vinfo,
         });
 
         let mut buf = BytesMut::with_capacity(256);
         buf.extend_from_slice(event.to_string().as_bytes());
         buf.extend_from_slice(b"\n");
         frames.push(buf);
-
-        seen.record(&package_name, version)?;
     }
 
     if !frames.is_empty() {
@@ -225,31 +195,4 @@ async fn list_org_packages(
     Ok(packages.keys().map(|x| x.to_owned()).collect())
 }
 
-const SEEN_VERSION_TTL_MS: u64 = 7 * 24 * 60 * 60 * 1000;
-const SEEN_VERSION_NAMESPACE: &str = "sources/npm_registry/seen";
-
-struct SeenTracker {
-    handle: Arc<CacheHandle>,
-}
-
-impl SeenTracker {
-    fn new(cache: Arc<CacheHandle>) -> Self {
-        Self { handle: cache }
-    }
-
-    fn contains(&mut self, package: &str, version: &str) -> Result<bool> {
-        let key = cache_key(package, version);
-        Ok(self.handle.get(&key)?.is_some())
-    }
-
-    fn record(&mut self, package: &str, version: &str) -> Result<()> {
-        let key = cache_key(package, version);
-        self.handle
-            .set(&key, &Scalar::Boolean(true), Some(SEEN_VERSION_TTL_MS))?;
-        Ok(())
-    }
-}
-
-fn cache_key(package: &str, version: &str) -> String {
-    format!("{SEEN_VERSION_NAMESPACE}:{package}:{version}")
-}
+const RECENT_WINDOW_MINUTES: i64 = 500;
