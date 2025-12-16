@@ -61,7 +61,7 @@ brew install tangent-cli
 tangent --version
 
 # with install script
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/telophasehq/tangent/releases/download/latest/tangent-cli-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/telophasehq/tangent/releases/latest/download/tangent-cli-installer.sh | sh
 tangent --version
 
 # cargo
