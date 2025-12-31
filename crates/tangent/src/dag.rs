@@ -31,12 +31,15 @@ impl DagRuntime {
         shutdown: CancellationToken,
     ) -> anyhow::Result<Self> {
         let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
-        let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
+        let config_dir = cfg_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
         let plugin_root = config_dir.join(&cfg.runtime.plugins_path).canonicalize()?;
 
         let workers = cfg.runtime.workers;
 
-        let cache = Arc::new(CacheHandle::open(&cfg.runtime.cache.clone(), config_dir)?);
+        let cache = Arc::new(CacheHandle::open(&cfg.runtime.cache.clone(), &config_dir)?);
 
         let mut engines: Vec<WasmEngine> = (0..workers)
             .map(|_| WasmEngine::new(cache.clone(), cfg.runtime.disable_remote_calls))
@@ -91,8 +94,15 @@ impl DagRuntime {
 
         router.set_pool(&pool);
 
-        let consumer_handles =
-            spawn_consumers(sources, batch_size, router.clone(), shutdown.clone());
+        let consumer_handles = spawn_consumers(
+            sources,
+            config_dir.clone(),
+            cache.clone(),
+            cfg.runtime.disable_remote_calls,
+            batch_size,
+            router.clone(),
+            shutdown.clone(),
+        );
 
         Ok(Self {
             router,
@@ -160,6 +170,9 @@ impl DagRuntime {
 
 fn spawn_consumers(
     sources: BTreeMap<Arc<str>, SourceConfig>,
+    config_dir: PathBuf,
+    cache: Arc<CacheHandle>,
+    disable_remote_calls: bool,
     batch_size: usize,
     router: Arc<Router>,
     shutdown: CancellationToken,
@@ -240,6 +253,26 @@ fn spawn_consumers(
                             .await
                     {
                         tracing::error!("NPM Registry consumer error: {e}");
+                    }
+                }));
+            }
+            (name, SourceConfig::Wasm(ws)) => {
+                let router = router.clone();
+                let cache = cache.clone();
+                let base_dir = config_dir.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) = sources::wasm::run_consumer(
+                        name,
+                        ws,
+                        base_dir,
+                        cache,
+                        disable_remote_calls,
+                        router,
+                        shutdown.clone(),
+                    )
+                    .await
+                    {
+                        tracing::error!("wasm source error: {e}");
                     }
                 }));
             }

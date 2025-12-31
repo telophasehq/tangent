@@ -7,6 +7,7 @@ use crate::sources::npm_registry::NpmRegistryConfig;
 use crate::sources::socket::SocketConfig;
 use crate::sources::sqs::SQSConfig;
 use crate::sources::tcp::TcpConfig;
+use crate::sources::wasm::WasmSourceConfig;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
@@ -25,6 +26,8 @@ pub enum SourceConfig {
     GithubWebhook(GithubWebhookConfig),
     #[serde(rename = "npm_registry")]
     NPMRegistry(NpmRegistryConfig),
+    #[serde(rename = "wasm")]
+    Wasm(WasmSourceConfig),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -6,3 +6,4 @@ pub mod npm_registry;
 pub mod socket;
 pub mod sqs;
 pub mod tcp;
+pub mod wasm;
