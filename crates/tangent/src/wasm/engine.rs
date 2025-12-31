@@ -12,6 +12,7 @@ use wasmtime_wasi::WasiCtxBuilder;
 use crate::cache::CacheHandle;
 use crate::wasm::host::tangent::logs::{cache, config, lock, log, remote};
 use crate::wasm::host::{HostEngine, Processor};
+use crate::wasm::source::Source as WasmSource;
 pub struct WasmEngine {
     engine: Engine,
     linker: Linker<HostEngine>,
@@ -79,5 +80,13 @@ impl WasmEngine {
         component: &Component,
     ) -> Result<Processor> {
         Processor::instantiate_async(store, component, &self.linker).await
+    }
+
+    pub async fn make_source(
+        &self,
+        store: &mut Store<HostEngine>,
+        component: &Component,
+    ) -> Result<WasmSource> {
+        WasmSource::instantiate_async(store, component, &self.linker).await
     }
 }
