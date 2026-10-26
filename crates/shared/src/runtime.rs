@@ -21,6 +21,11 @@ pub struct RuntimeConfig {
     #[serde(default, alias = "cache")]
     pub state: StateConfig,
 
+    /// How the stream is partitioned. With a partition key set, a plugin's
+    /// state calls are scoped to the partition of the record it is processing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition: Option<PartitionConfig>,
+
     /// When true, the runtime will not make outbound HTTP requests from plugins.
     /// Useful for `tangent plugin test` or benchmarking to avoid external calls.
     #[serde(default)]
@@ -42,6 +47,21 @@ fn default_workers() -> usize {
 
 fn default_plugin_path() -> PathBuf {
     "plugins/".into()
+}
+
+/// Which fields of a record identify its partition, e.g. `[org_id]`. The
+/// values are joined with `separator`; a record with none of the fields is
+/// unpartitioned.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartitionConfig {
+    pub key: Vec<String>,
+
+    #[serde(default = "default_separator")]
+    pub separator: String,
+}
+
+fn default_separator() -> String {
+    "|".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -42,6 +42,9 @@ pub struct HostEngine {
     pub table: ResourceTable,
     http_client: Client,
     state: Arc<dyn StateStore>,
+    /// Partition of the records the guest is processing right now; the
+    /// worker sets it before each call. Scopes the guest's state.
+    pub partition: Arc<str>,
     plugin_cfg: Arc<HashMap<String, JSONValue>>,
     /// If true, short-circuit remote calls with successful empty responses.
     pub disable_remote_calls: bool,
@@ -59,6 +62,7 @@ impl HostEngine {
             table: ResourceTable::new(),
             http_client: Client::new(),
             state,
+            partition: Arc::from(""),
             plugin_cfg: config,
             disable_remote_calls,
         }
@@ -231,11 +235,12 @@ impl tangent::logs::lock::Host for HostEngine {
     }
 }
 
-/// The guest's `cache` interface is the `cache` namespace of the state store.
+/// The guest's `cache` interface is the `cache` namespace of the state store,
+/// scoped to the partition of the records being processed.
 impl tangent::logs::cache::Host for HostEngine {
     async fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
         self.state
-            .get(CACHE_NS, "", &key)
+            .get(CACHE_NS, &self.partition, &key)
             .await
             .map(|v| v.map(Scalar::from))
             .map_err(|e| e.to_string())
@@ -243,14 +248,14 @@ impl tangent::logs::cache::Host for HostEngine {
 
     async fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
         self.state
-            .set(CACHE_NS, "", &key, &value.into(), ttl_ms)
+            .set(CACHE_NS, &self.partition, &key, &value.into(), ttl_ms)
             .await
             .map_err(|e| e.to_string())
     }
 
     async fn del(&mut self, key: String) -> Result<bool, String> {
         self.state
-            .del(CACHE_NS, "", &key)
+            .del(CACHE_NS, &self.partition, &key)
             .await
             .map_err(|e| e.to_string())
     }
@@ -275,6 +280,11 @@ impl JsonLogView {
             _raw: raw,
             doc: v_static,
         })))
+    }
+
+    /// Size of the record this view was parsed from.
+    pub fn byte_len(&self) -> usize {
+        self.0._raw.len()
     }
 
     pub fn lookup<'a>(&'a self, path: &str) -> Option<&'a BorrowedValue<'a>> {

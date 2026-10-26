@@ -42,7 +42,7 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 
 3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins). Each plugin runs in its own lightweight sandbox.
 
-## State
+## State and partitioning
 Plugins keep state through the `cache` interface (`cache.Get` / `cache.Set` with a TTL). That state lives in the runtime's **state store**, configured under `runtime.state`:
 
 ```yaml
@@ -52,9 +52,11 @@ runtime:
     path: state.sqlite
     default_ttl_ms: 600000 # 0 = never expire
     max_ttl_ms: 3600000    # cap on any TTL; 0 = no cap
+  partition:
+    key: [org_id]          # fields that identify a record's partition
 ```
 
-Entries are keyed by `(namespace, partition, key)`; plugins use the `cache` namespace and, until a stream is partitioned, the empty partition. `cache:` is still accepted as the section name, and an older `cache.sqlite` migrates on first open.
+Entries are keyed by `(namespace, partition, key)`. With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `cache.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition, as before (`cache:` is still accepted as the section name, and an older `cache.sqlite` migrates on first open).
 
 The store is readable while the pipeline runs:
 
