@@ -43,9 +43,9 @@ pub struct HostEngine {
     pub table: ResourceTable,
     http_client: Client,
     state: Arc<dyn StateStore>,
-    /// Name of the plugin in this store, which is the namespace of its state:
-    /// plugins never see each other's keys.
-    plugin: Arc<str>,
+    /// Namespace of this plugin's state: the one every plugin shares, unless
+    /// the plugin was given a `state_namespace` of its own.
+    ns: Arc<str>,
     /// Partition of the records the guest is processing right now; the
     /// worker sets it before each call. Scopes the guest's state.
     pub partition: Arc<str>,
@@ -58,7 +58,7 @@ impl HostEngine {
     pub fn new(
         ctx: WasiCtx,
         state: Arc<dyn StateStore>,
-        plugin: Arc<str>,
+        ns: Arc<str>,
         config: Arc<HashMap<String, JSONValue>>,
         disable_remote_calls: bool,
     ) -> Self {
@@ -67,7 +67,7 @@ impl HostEngine {
             table: ResourceTable::new(),
             http_client: Client::new(),
             state,
-            plugin,
+            ns,
             partition: Arc::from(""),
             plugin_cfg: config,
             disable_remote_calls,
@@ -241,12 +241,12 @@ impl tangent::logs::lock::Host for HostEngine {
     }
 }
 
-/// The guest's state: its own namespace of the state store (the plugin's
-/// name), scoped to the partition of the records being processed.
+/// The guest's state: the plugins' namespace of the state store, scoped to
+/// the partition of the records being processed.
 impl tangent::logs::state::Host for HostEngine {
     async fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
         self.state
-            .get(&self.plugin, &self.partition, &key)
+            .get(&self.ns, &self.partition, &key)
             .await
             .map(|v| v.map(Scalar::from))
             .map_err(|e| e.to_string())
@@ -254,21 +254,21 @@ impl tangent::logs::state::Host for HostEngine {
 
     async fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
         self.state
-            .set(&self.plugin, &self.partition, &key, &value.into(), ttl_ms)
+            .set(&self.ns, &self.partition, &key, &value.into(), ttl_ms)
             .await
             .map_err(|e| e.to_string())
     }
 
     async fn del(&mut self, key: String) -> Result<bool, String> {
         self.state
-            .del(&self.plugin, &self.partition, &key)
+            .del(&self.ns, &self.partition, &key)
             .await
             .map_err(|e| e.to_string())
     }
 
     async fn incr(&mut self, key: String, by: i64, ttl_ms: Option<u64>) -> Result<i64, String> {
         self.state
-            .incr(&self.plugin, &self.partition, &key, by, ttl_ms)
+            .incr(&self.ns, &self.partition, &key, by, ttl_ms)
             .await
             .map_err(|e| e.to_string())
     }

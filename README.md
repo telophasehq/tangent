@@ -57,12 +57,12 @@ runtime:
     key: [org_id]          # fields that identify a record's partition
 ```
 
-Entries are keyed by `(namespace, partition, key)`. A plugin's namespace is its name in `plugins:`, so plugins never see each other's keys unless you want them to: give several plugins the same `state_namespace` and they share one store.
+Entries are keyed by `(namespace, partition, key)`. Plugins share one namespace, `plugins`, so what one plugin writes the next can read; within a partition all of it runs on one worker, so there is nothing to race against (below). Give a plugin a `state_namespace` of its own when it must not share, such as two instances of one plugin with different configs:
 
 ```yaml
 plugins:
-  enrich: { module_type: go,   path: ./enrich, state_namespace: shared }
-  detect: { module_type: rust, path: ./detect, state_namespace: shared }
+  detect_login:  { module_type: rust, path: ./detect, state_namespace: login }
+  detect_export: { module_type: rust, path: ./detect, state_namespace: export }
 ```
 
 With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition. [examples/partition](/examples/partition) counts events per org with a single `count` key.
@@ -71,7 +71,7 @@ The store is readable while the pipeline runs:
 
 ```bash
 tangent state --config tangent.yaml ls                          # keys per namespace and partition
-tangent state --config tangent.yaml get seen --ns detect --partition acme   # one entry; --ns defaults to the only namespace
+tangent state --config tangent.yaml get seen --partition acme   # one entry (--ns defaults to the only namespace)
 tangent state --config tangent.yaml scan --prefix user: --limit 50
 tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
 ```

@@ -8,10 +8,8 @@ one key, `count`, and remembers each event name under `seen:<event>`. Because
 the runtime scopes every `state` call to the current record's partition, those
 keys are per org: `acme` and `globex` each get their own `count`, and
 `first: true` means "first time *this org* did this".
-The plugin is named
-`counter` in `tangent.yaml`, so its entries live in the `counter` namespace;
-another plugin in the pipeline would only see them if both set the same
-`state_namespace`.
+Its entries live in
+`plugins`, the namespace every plugin in a pipeline shares.
 
 ```yaml
 runtime:

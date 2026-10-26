@@ -9,7 +9,7 @@ use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::WasiCtxBuilder;
 
-use crate::state::StateStore;
+use crate::state::{StateStore, PLUGIN_NS};
 use crate::wasm::host::tangent::logs::{config, lock, log, remote, state};
 use crate::wasm::host::{HostEngine, Processor};
 pub struct WasmEngine {
@@ -17,7 +17,7 @@ pub struct WasmEngine {
     linker: Linker<HostEngine>,
     state: Arc<dyn StateStore>,
     config: HashMap<Arc<str>, Arc<HashMap<String, Value>>>,
-    /// Each plugin's state namespace: its name, or the one it was told to share.
+    /// Each plugin's state namespace: `PLUGIN_NS` unless configured otherwise.
     state_ns: HashMap<Arc<str>, Arc<str>>,
     disable_remote_calls: bool,
 }
@@ -56,7 +56,7 @@ impl WasmEngine {
     ) -> Result<Component> {
         let comp = unsafe { Component::deserialize_file(&self.engine, &loc)? };
 
-        let ns = state_ns.map_or_else(|| Arc::clone(&name), Arc::from);
+        let ns: Arc<str> = state_ns.map_or_else(|| Arc::from(PLUGIN_NS), Arc::from);
         self.state_ns.insert(Arc::clone(&name), ns);
         self.config.insert(name, Arc::new(cfg));
 
@@ -75,7 +75,7 @@ impl WasmEngine {
                 self.state.clone(),
                 self.state_ns
                     .get(component_name)
-                    .map_or_else(|| Arc::clone(component_name), Arc::clone),
+                    .map_or_else(|| Arc::from(PLUGIN_NS), Arc::clone),
                 self.config.get(component_name).unwrap().clone(),
                 self.disable_remote_calls,
             ),
