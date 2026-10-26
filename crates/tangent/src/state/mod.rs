@@ -1,7 +1,8 @@
 //! Keyed state shared by everything in a pipeline: plugins (through the WIT
 //! `state` interface) and the runtime's own stateful nodes. Entries live in
-//! a namespace (`plugins` for plugin state, a node's name otherwise), within
-//! a partition of the stream (empty when unpartitioned), under a key.
+//! a namespace (a plugin's name, or the `state_namespace` several plugins
+//! share; a runtime node's name otherwise), within a partition of the
+//! stream (empty when unpartitioned), under a key.
 //!
 //! The store is an async trait so backends can be local or networked:
 //! `sqlite` is durable on one host and queryable from outside the process
@@ -20,9 +21,6 @@ use tangent_shared::runtime::{StateBackend, StateConfig};
 
 pub mod lru;
 pub mod sqlite;
-
-/// Namespace of plugin state (the WIT `state` interface, formerly `cache`).
-pub const PLUGIN_NS: &str = "plugins";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "lowercase")]

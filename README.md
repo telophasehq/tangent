@@ -43,7 +43,7 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins). Each plugin runs in its own lightweight sandbox.
 
 ## State and partitioning
-Plugins keep state through the `state` interface: `state.Get`, `state.Set`, `state.Incr` and `state.Del`, each write with an optional TTL (`cache` is the older name of the same interface and still works). That state lives in the runtime's **state store**, configured under `runtime.state`:
+Plugins keep state through the `state` interface: `state.Get`, `state.Set`, `state.Incr` and `state.Del`, each write with an optional TTL. That state lives in the runtime's **state store**, configured under `runtime.state`:
 
 ```yaml
 runtime:
@@ -57,13 +57,21 @@ runtime:
     key: [org_id]          # fields that identify a record's partition
 ```
 
-Entries are keyed by `(namespace, partition, key)`. With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition, as before. Configs that still say `cache:` and databases from before the state store (`cache.sqlite`) are picked up unchanged. [examples/partition](/examples/partition) counts events per org with a single `count` key.
+Entries are keyed by `(namespace, partition, key)`. A plugin's namespace is its name in `plugins:`, so plugins never see each other's keys unless you want them to: give several plugins the same `state_namespace` and they share one store.
+
+```yaml
+plugins:
+  enrich: { module_type: go,   path: ./enrich, state_namespace: shared }
+  detect: { module_type: rust, path: ./detect, state_namespace: shared }
+```
+
+With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition. [examples/partition](/examples/partition) counts events per org with a single `count` key.
 
 The store is readable while the pipeline runs:
 
 ```bash
 tangent state --config tangent.yaml ls                          # keys per namespace and partition
-tangent state --config tangent.yaml get seen --partition acme   # one entry
+tangent state --config tangent.yaml get seen --ns detect --partition acme   # one entry; --ns defaults to the only namespace
 tangent state --config tangent.yaml scan --prefix user: --limit 50
 tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
 ```

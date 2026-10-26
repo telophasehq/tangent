@@ -17,8 +17,7 @@ pub struct RuntimeConfig {
     pub plugins_path: PathBuf,
 
     /// The state store plugins (and the runtime) keep keyed state in.
-    /// `cache:` is accepted as the older name of this section.
-    #[serde(default, alias = "cache")]
+    #[serde(default)]
     pub state: StateConfig,
 
     /// How the stream is partitioned. With a partition key set, a plugin's

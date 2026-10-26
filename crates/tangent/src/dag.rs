@@ -68,7 +68,12 @@ impl DagRuntime {
                 components[i].push((
                     Arc::clone(name),
                     engines[i]
-                        .load_precompiled(Arc::clone(name), &plugin_path, plugin_cfg.config.clone())
+                        .load_precompiled(
+                            Arc::clone(name),
+                            &plugin_path,
+                            plugin_cfg.config.clone(),
+                            plugin_cfg.state_namespace.as_deref(),
+                        )
                         .with_context(|| format!("loading {}", &component_file))?,
                 ));
             }

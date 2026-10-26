@@ -49,12 +49,23 @@ interface config {
   get: func(key: string) -> option<string>;
 }
 
-interface cache {
+interface lock {
+  acquire: func(key: string) -> bool;
+  release: func(key: string);
+}
+
+
+/// Keyed state in the pipeline's state store, shared by every worker and
+/// scoped by the runtime to the partition of the records being processed.
+/// A write's ttl-ms: none takes the pipeline's default, 0 never expires.
+interface state {
   use log.{scalar};
 
-  get: func(key: string) -> result<option<scalar>, string>;
-  set: func(key: string, value: scalar, ttl-ms: option<u64>) -> result<_, string>;
-  del: func(key: string) -> result<bool, string>;
+  get:  func(key: string) -> result<option<scalar>, string>;
+  set:  func(key: string, value: scalar, ttl-ms: option<u64>) -> result<_, string>;
+  del:  func(key: string) -> result<bool, string>;
+  /// Add `by` to an integer entry (missing counts as 0); returns the new value.
+  incr: func(key: string, by: s64, ttl-ms: option<u64>) -> result<s64, string>;
 }
 
 
@@ -119,7 +130,8 @@ world processor {
 
   import remote;
   import log;
-  import cache;
+  import state;
   import config;
+  import lock;
   export mapper;
 }

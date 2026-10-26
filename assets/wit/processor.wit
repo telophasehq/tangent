@@ -68,16 +68,6 @@ interface state {
   incr: func(key: string, by: s64, ttl-ms: option<u64>) -> result<s64, string>;
 }
 
-/// The former name of `state`: the same entries, kept so plugins built
-/// against it keep running. New plugins import `state`.
-interface cache {
-  use log.{scalar};
-
-  get: func(key: string) -> result<option<scalar>, string>;
-  set: func(key: string, value: scalar, ttl-ms: option<u64>) -> result<_, string>;
-  del: func(key: string) -> result<bool, string>;
-}
-
 
 interface mapper {
   use log.{logview, scalar};
@@ -141,7 +131,6 @@ world processor {
   import remote;
   import log;
   import state;
-  import cache;
   import config;
   import lock;
   export mapper;

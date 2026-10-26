@@ -6,8 +6,8 @@ import (
 	"os"
 
 	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
-	"github.com/telophasehq/tangent-sdk-go/cache"
 	"github.com/telophasehq/tangent-sdk-go/http"
+	"github.com/telophasehq/tangent-sdk-go/state"
 )
 
 //easyjson:json
@@ -33,7 +33,7 @@ func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 	var out Alert
 
 	serviceName := lv.GetString("source.name")
-	seen, ok, err := cache.Get(*serviceName)
+	seen, ok, err := state.Get(*serviceName)
 	if err != nil {
 		return Alert{}, err
 	}
@@ -91,7 +91,7 @@ func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 
 		out.Triggered = true
 	} else {
-		err = cache.Set(*serviceName, true, nil)
+		err = state.Set(*serviceName, true, nil)
 		if err != nil {
 			return Alert{}, err
 		}

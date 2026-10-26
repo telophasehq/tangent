@@ -8,7 +8,7 @@ runtime:
   partition:
     key: [org_id]              # each org gets its own keys
 plugins:
-  partition:
+  counter:
     module_type: rust
     path: .
     tests:
@@ -30,11 +30,11 @@ dag:
       name: network_input
     to:
       - kind: plugin
-        name: partition
+        name: counter
 
   - from:
       kind: plugin
-      name: partition
+      name: counter
     to:
       - kind: sink
         name: out

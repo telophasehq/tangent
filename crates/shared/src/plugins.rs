@@ -13,6 +13,11 @@ pub struct PluginConfig {
 
     #[serde(default)]
     pub config: HashMap<String, Value>,
+
+    /// Namespace of this plugin's state; its own name when unset. Plugins
+    /// given the same namespace share one set of keys.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_namespace: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

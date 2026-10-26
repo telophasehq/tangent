@@ -10,13 +10,15 @@ use wasmtime::{Engine, Store};
 use wasmtime_wasi::WasiCtxBuilder;
 
 use crate::state::StateStore;
-use crate::wasm::host::tangent::logs::{cache, config, lock, log, remote, state};
+use crate::wasm::host::tangent::logs::{config, lock, log, remote, state};
 use crate::wasm::host::{HostEngine, Processor};
 pub struct WasmEngine {
     engine: Engine,
     linker: Linker<HostEngine>,
     state: Arc<dyn StateStore>,
     config: HashMap<Arc<str>, Arc<HashMap<String, Value>>>,
+    /// Each plugin's state namespace: its name, or the one it was told to share.
+    state_ns: HashMap<Arc<str>, Arc<str>>,
     disable_remote_calls: bool,
 }
 
@@ -28,8 +30,6 @@ impl WasmEngine {
         log::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         remote::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         state::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
-        // Former name of `state`; plugins built against it keep linking.
-        cache::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         config::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         lock::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
 
@@ -39,6 +39,7 @@ impl WasmEngine {
             state,
             disable_remote_calls,
             config: HashMap::new(),
+            state_ns: HashMap::new(),
         })
     }
 
@@ -51,9 +52,12 @@ impl WasmEngine {
         name: Arc<str>,
         loc: &Path,
         cfg: HashMap<String, Value>,
+        state_ns: Option<&str>,
     ) -> Result<Component> {
         let comp = unsafe { Component::deserialize_file(&self.engine, &loc)? };
 
+        let ns = state_ns.map_or_else(|| Arc::clone(&name), Arc::from);
+        self.state_ns.insert(Arc::clone(&name), ns);
         self.config.insert(name, Arc::new(cfg));
 
         Ok(comp)
@@ -69,6 +73,9 @@ impl WasmEngine {
                     .inherit_env()
                     .build(),
                 self.state.clone(),
+                self.state_ns
+                    .get(component_name)
+                    .map_or_else(|| Arc::clone(component_name), Arc::clone),
                 self.config.get(component_name).unwrap().clone(),
                 self.disable_remote_calls,
             ),

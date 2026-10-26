@@ -21,9 +21,10 @@ pub enum StateCommands {
     /// One entry, as JSON
     Get {
         key: String,
-        /// Namespace; plugin state is in "plugins"
-        #[arg(long, default_value = "plugins")]
-        ns: String,
+        /// Namespace: a plugin's name, or the `state_namespace` plugins share.
+        /// Defaults to the pipeline's only namespace.
+        #[arg(long)]
+        ns: Option<String>,
         /// Partition; empty for an unpartitioned stream
         #[arg(long, default_value = "")]
         partition: String,
@@ -86,6 +87,10 @@ pub async fn run(config: &PathBuf, cmd: StateCommands) -> Result<()> {
             }
         }
         StateCommands::Get { key, ns, partition } => {
+            let ns = match ns {
+                Some(ns) => ns,
+                None => only_namespace(&cfg)?,
+            };
             match store.get(&ns, &partition, &key).await? {
                 Some(v) => println!("{}", serde_json::to_string(&v)?),
                 None => {
@@ -110,4 +115,24 @@ pub async fn run(config: &PathBuf, cmd: StateCommands) -> Result<()> {
         StateCommands::Sql { .. } => unreachable!("handled above"),
     }
     Ok(())
+}
+
+/// The namespace to assume when none is given: the one the pipeline's
+/// plugins use, when they all use the same.
+fn only_namespace(cfg: &Config) -> Result<String> {
+    let mut namespaces: Vec<&str> = cfg
+        .plugins
+        .iter()
+        .map(|(name, p)| p.state_namespace.as_deref().unwrap_or(name.as_ref()))
+        .collect();
+    namespaces.sort_unstable();
+    namespaces.dedup();
+    match namespaces.as_slice() {
+        [one] => Ok(one.to_string()),
+        [] => bail!("pass --ns: this pipeline has no plugins"),
+        many => bail!(
+            "pass --ns: this pipeline has several namespaces ({})",
+            many.join(", ")
+        ),
+    }
 }

@@ -4,9 +4,6 @@
 //! are microseconds of local I/O, so they run inline on the async executor.
 //!
 //! Schema: `state(ns, partition, key, kind, value, expires_at, updated_at)`.
-//! A database from before namespaces (one `cache` table) is migrated on open
-//! into the plugin namespace, `partition = ''`; a config on the default path
-//! also picks up the old default file, `cache.sqlite`.
 
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -22,12 +19,9 @@ use std::time::Duration;
 use tangent_shared::runtime::StateConfig;
 use tracing::info;
 
-use super::{expires_at, now_ms, sqlite_path, Count, Entry, StateStore, StateValue, PLUGIN_NS};
+use super::{expires_at, now_ms, sqlite_path, Count, Entry, StateStore, StateValue};
 
 static OPEN_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
-
-/// Default file of the cache before it became the state store.
-const LEGACY_CACHE_FILE: &str = "cache.sqlite";
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS state (
@@ -59,7 +53,6 @@ impl SqliteStore {
                 .with_context(|| format!("creating state dir {}", parent.display()))?;
         }
         let lock = acquire_lock(&path, Duration::from_millis(cfg.lock_timeout_ms))?;
-        adopt_legacy_file(cfg, base_dir, &path)?;
         let conn = Connection::open_with_flags(
             &path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -73,7 +66,6 @@ impl SqliteStore {
         conn.pragma_update(None, "wal_autocheckpoint", 1000i64)?;
         conn.execute_batch(SCHEMA)
             .context("creating state schema")?;
-        migrate_legacy_cache(&conn)?;
         info!(target = "state", path = %path.display(), "state db initialized");
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -139,65 +131,6 @@ fn sql_to_json(v: Value) -> serde_json::Value {
             Err(_) => format!("<{} bytes>", b.len()).into(),
         },
     }
-}
-
-/// A config that never named a path used to get `cache.sqlite`; it now gets
-/// `state.sqlite`. Until the new file exists, move the old one (and its WAL)
-/// across so the data survives the rename; the table migrates right after.
-fn adopt_legacy_file(cfg: &StateConfig, base_dir: &Path, path: &Path) -> Result<()> {
-    if path.exists() || cfg.path != StateConfig::default().path {
-        return Ok(());
-    }
-    let legacy = base_dir.join(LEGACY_CACHE_FILE);
-    if !legacy.exists() {
-        return Ok(());
-    }
-    let with_suffix = |p: &Path, suffix: &str| {
-        let mut s = p.as_os_str().to_owned();
-        s.push(suffix);
-        std::path::PathBuf::from(s)
-    };
-    for suffix in ["", "-wal", "-shm"] {
-        let from = with_suffix(&legacy, suffix);
-        if from.exists() {
-            let to = with_suffix(path, suffix);
-            std::fs::rename(&from, &to)
-                .with_context(|| format!("moving {} to {}", from.display(), to.display()))?;
-        }
-    }
-    info!(
-        target = "state",
-        from = %legacy.display(),
-        to = %path.display(),
-        "adopted legacy cache file"
-    );
-    Ok(())
-}
-
-/// One `cache(key, kind, value, expires_at, updated_at)` table from before
-/// namespaces: fold it into `state` and drop it.
-fn migrate_legacy_cache(conn: &Connection) -> Result<()> {
-    let legacy: Option<String> = conn
-        .query_row(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cache'",
-            [],
-            |r| r.get(0),
-        )
-        .optional()?;
-    if legacy.is_none() {
-        return Ok(());
-    }
-    let moved = conn.execute(
-        "INSERT OR IGNORE INTO state (ns, partition, key, kind, value, expires_at, updated_at)
-         SELECT ?1, '', key, kind, value, expires_at, updated_at FROM cache",
-        [PLUGIN_NS],
-    )?;
-    conn.execute("DROP TABLE cache", [])?;
-    info!(
-        target = "state",
-        moved, "migrated legacy cache table into state"
-    );
-    Ok(())
 }
 
 fn to_sqlite(v: &StateValue) -> Result<(&'static str, Value)> {
@@ -452,13 +385,13 @@ mod tests {
         let dir = temp_dir("reader");
         let store = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
         store
-            .set(PLUGIN_NS, "org-1", "seen", &StateValue::Int(3), Some(0))
+            .set("detect", "org-1", "seen", &StateValue::Int(3), Some(0))
             .await
             .unwrap();
         let path = sqlite_path(&StateConfig::default(), &dir);
         let reader = SqliteStore::open_readonly(&path).unwrap();
         assert_eq!(
-            reader.get(PLUGIN_NS, "org-1", "seen").await.unwrap(),
+            reader.get("detect", "org-1", "seen").await.unwrap(),
             Some(StateValue::Int(3))
         );
         let rows = reader
@@ -470,83 +403,6 @@ mod tests {
             reader.sql("DELETE FROM state", 10).is_err(),
             "writes are refused"
         );
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[tokio::test]
-    async fn migrates_the_legacy_cache_table() {
-        let dir = temp_dir("legacy");
-        let path = sqlite_path(&StateConfig::default(), &dir);
-        {
-            let conn = Connection::open(&path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE cache(key TEXT PRIMARY KEY, kind TEXT, value BLOB NOT NULL,
-                                    expires_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
-            )
-            .unwrap();
-            conn.execute(
-                "INSERT INTO cache VALUES ('old', 'str', 'value', ?1, 1)",
-                [i64::MAX],
-            )
-            .unwrap();
-        }
-        let store = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
-        assert_eq!(
-            store.get(PLUGIN_NS, "", "old").await.unwrap(),
-            Some(StateValue::Str("value".into()))
-        );
-        let tables: Vec<String> = {
-            let conn = store.conn.lock();
-            let mut st = conn
-                .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-                .unwrap();
-            st.query_map([], |r| r.get(0))
-                .unwrap()
-                .collect::<Result<_, _>>()
-                .unwrap()
-        };
-        assert_eq!(tables, ["state"]);
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[tokio::test]
-    async fn adopts_the_legacy_cache_file_on_the_default_path() {
-        let dir = temp_dir("legacy-file");
-        let legacy = dir.join(LEGACY_CACHE_FILE);
-        {
-            let conn = Connection::open(&legacy).unwrap();
-            conn.pragma_update(None, "journal_mode", "WAL").unwrap();
-            conn.execute_batch(
-                "CREATE TABLE cache(key TEXT PRIMARY KEY, kind TEXT, value BLOB NOT NULL,
-                                    expires_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
-            )
-            .unwrap();
-            conn.execute(
-                "INSERT INTO cache VALUES ('old', 'int', 7, ?1, 1)",
-                [i64::MAX],
-            )
-            .unwrap();
-        }
-        let store = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
-        assert_eq!(
-            store.get(PLUGIN_NS, "", "old").await.unwrap(),
-            Some(StateValue::Int(7))
-        );
-        assert!(sqlite_path(&StateConfig::default(), &dir).exists());
-        assert!(!legacy.exists(), "old file was moved, not copied");
-        drop(store);
-
-        // An explicit path is left alone, even with an old file beside it.
-        std::fs::remove_dir_all(&dir).unwrap();
-        std::fs::create_dir_all(&dir).unwrap();
-        Connection::open(&legacy).unwrap();
-        let cfg = StateConfig {
-            path: "mine.sqlite".into(),
-            ..StateConfig::default()
-        };
-        let store = SqliteStore::open(&cfg, &dir).unwrap();
-        assert_eq!(store.get(PLUGIN_NS, "", "old").await.unwrap(), None);
-        assert!(legacy.exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

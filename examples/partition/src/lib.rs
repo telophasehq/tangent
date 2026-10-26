@@ -41,7 +41,7 @@ fn string_from_scalar(s: Scalar) -> Option<String> {
 impl Guest for Component {
     fn metadata() -> Meta {
         Meta {
-            name: "partition".to_string(),
+            name: "counter".to_string(),
             version: "0.1.0".to_string(),
         }
     }
