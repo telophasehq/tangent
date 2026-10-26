@@ -21,8 +21,8 @@ pub enum StateCommands {
     /// One entry, as JSON
     Get {
         key: String,
-        /// Namespace; plugins' state is in "cache"
-        #[arg(long, default_value = "cache")]
+        /// Namespace; plugin state is in "plugins"
+        #[arg(long, default_value = "plugins")]
         ns: String,
         /// Partition; empty for an unpartitioned stream
         #[arg(long, default_value = "")]

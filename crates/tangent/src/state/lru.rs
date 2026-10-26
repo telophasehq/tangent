@@ -212,10 +212,16 @@ mod tests {
         .unwrap();
         let one = StateValue::Int(1);
         store.set("ns", "", "a", &one, None).await.unwrap();
-        store.set("ns", "", "b", &StateValue::Int(2), None).await.unwrap();
+        store
+            .set("ns", "", "b", &StateValue::Int(2), None)
+            .await
+            .unwrap();
         // Reading `a` leaves `b` as the least recently used.
         assert_eq!(store.get("ns", "", "a").await.unwrap(), Some(one.clone()));
-        store.set("ns", "", "c", &StateValue::Int(3), None).await.unwrap();
+        store
+            .set("ns", "", "c", &StateValue::Int(3), None)
+            .await
+            .unwrap();
         assert_eq!(store.get("ns", "", "b").await.unwrap(), None, "evicted");
         assert_eq!(store.get("ns", "", "a").await.unwrap(), Some(one));
         assert_eq!(

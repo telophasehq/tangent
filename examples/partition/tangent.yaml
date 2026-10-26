@@ -6,7 +6,7 @@ runtime:
     default_ttl_ms: 86400000   # a day; 0 = never expire
     max_ttl_ms: 0              # no cap on TTLs (the default caps them at an hour)
   partition:
-    key: [org_id]              # each org gets its own cache keys
+    key: [org_id]              # each org gets its own keys
 plugins:
   partition:
     module_type: rust

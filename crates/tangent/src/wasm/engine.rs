@@ -10,7 +10,7 @@ use wasmtime::{Engine, Store};
 use wasmtime_wasi::WasiCtxBuilder;
 
 use crate::state::StateStore;
-use crate::wasm::host::tangent::logs::{cache, config, lock, log, remote};
+use crate::wasm::host::tangent::logs::{cache, config, lock, log, remote, state};
 use crate::wasm::host::{HostEngine, Processor};
 pub struct WasmEngine {
     engine: Engine,
@@ -27,6 +27,8 @@ impl WasmEngine {
         wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;
         log::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         remote::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
+        state::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
+        // Former name of `state`; plugins built against it keep linking.
         cache::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         config::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         lock::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;

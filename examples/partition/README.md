@@ -5,7 +5,7 @@ Per-tenant state without tenant handling in the plugin.
 `tangent.yaml` partitions the stream by `org_id` and keeps plugin state in a
 SQLite state store. The plugin ([src/lib.rs](src/lib.rs)) counts events under
 one key, `count`, and remembers each event name under `seen:<event>`. Because
-the runtime scopes every `cache` call to the current record's partition, those
+the runtime scopes every `state` call to the current record's partition, those
 keys are per org: `acme` and `globex` each get their own `count`, and
 `first: true` means "first time *this org* did this".
 

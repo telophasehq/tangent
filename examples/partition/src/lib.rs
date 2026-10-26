@@ -1,7 +1,7 @@
 //! Per-tenant counters with no tenant handling in the plugin.
 //!
 //! The config partitions the stream by `org_id`, so the runtime hands this
-//! plugin one org's records at a time and scopes every `cache` call to that
+//! plugin one org's records at a time and scopes every `state` call to that
 //! org. `count` is therefore "events from this org" and `seen:<event>` is
 //! "has this org done this before", with no org anywhere in the keys.
 
@@ -14,8 +14,8 @@ wit_bindgen::generate!({
 });
 
 use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
-use tangent::logs::cache;
 use tangent::logs::log::{Logview, Scalar};
+use tangent::logs::state;
 
 struct Component;
 
@@ -61,16 +61,12 @@ impl Guest for Component {
             let org_id = lv.get("org_id").and_then(string_from_scalar).unwrap_or_default();
             let event = lv.get("event").and_then(string_from_scalar).unwrap_or_default();
 
-            let n = match cache::get("count")? {
-                Some(Scalar::Int(seen)) => seen + 1,
-                _ => 1,
-            };
-            cache::set("count", &Scalar::Int(n), None)?;
+            let n = state::incr("count", 1, None)?;
 
             let seen_key = format!("seen:{event}");
-            let first = cache::get(&seen_key)?.is_none();
+            let first = state::get(&seen_key)?.is_none();
             if first {
-                cache::set(&seen_key, &Scalar::Boolean(true), None)?;
+                state::set(&seen_key, &Scalar::Boolean(true), None)?;
             }
 
             let out = Out {

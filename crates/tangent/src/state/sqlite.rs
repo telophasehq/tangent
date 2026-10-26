@@ -5,8 +5,8 @@
 //!
 //! Schema: `state(ns, partition, key, kind, value, expires_at, updated_at)`.
 //! A database from before namespaces (one `cache` table) is migrated on open
-//! into `ns = 'cache'`, `partition = ''`; a config on the default path also
-//! picks up the old default file, `cache.sqlite`.
+//! into the plugin namespace, `partition = ''`; a config on the default path
+//! also picks up the old default file, `cache.sqlite`.
 
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -22,7 +22,7 @@ use std::time::Duration;
 use tangent_shared::runtime::StateConfig;
 use tracing::info;
 
-use super::{expires_at, now_ms, sqlite_path, Count, Entry, StateStore, StateValue};
+use super::{expires_at, now_ms, sqlite_path, Count, Entry, StateStore, StateValue, PLUGIN_NS};
 
 static OPEN_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
@@ -189,8 +189,8 @@ fn migrate_legacy_cache(conn: &Connection) -> Result<()> {
     }
     let moved = conn.execute(
         "INSERT OR IGNORE INTO state (ns, partition, key, kind, value, expires_at, updated_at)
-         SELECT 'cache', '', key, kind, value, expires_at, updated_at FROM cache",
-        [],
+         SELECT ?1, '', key, kind, value, expires_at, updated_at FROM cache",
+        [PLUGIN_NS],
     )?;
     conn.execute("DROP TABLE cache", [])?;
     info!(
@@ -452,13 +452,13 @@ mod tests {
         let dir = temp_dir("reader");
         let store = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
         store
-            .set("cache", "org-1", "seen", &StateValue::Int(3), Some(0))
+            .set(PLUGIN_NS, "org-1", "seen", &StateValue::Int(3), Some(0))
             .await
             .unwrap();
         let path = sqlite_path(&StateConfig::default(), &dir);
         let reader = SqliteStore::open_readonly(&path).unwrap();
         assert_eq!(
-            reader.get("cache", "org-1", "seen").await.unwrap(),
+            reader.get(PLUGIN_NS, "org-1", "seen").await.unwrap(),
             Some(StateValue::Int(3))
         );
         let rows = reader
@@ -492,7 +492,7 @@ mod tests {
         }
         let store = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
         assert_eq!(
-            store.get("cache", "", "old").await.unwrap(),
+            store.get(PLUGIN_NS, "", "old").await.unwrap(),
             Some(StateValue::Str("value".into()))
         );
         let tables: Vec<String> = {
@@ -529,7 +529,7 @@ mod tests {
         }
         let store = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
         assert_eq!(
-            store.get("cache", "", "old").await.unwrap(),
+            store.get(PLUGIN_NS, "", "old").await.unwrap(),
             Some(StateValue::Int(7))
         );
         assert!(sqlite_path(&StateConfig::default(), &dir).exists());
@@ -545,7 +545,7 @@ mod tests {
             ..StateConfig::default()
         };
         let store = SqliteStore::open(&cfg, &dir).unwrap();
-        assert_eq!(store.get("cache", "", "old").await.unwrap(), None);
+        assert_eq!(store.get(PLUGIN_NS, "", "old").await.unwrap(), None);
         assert!(legacy.exists());
         let _ = std::fs::remove_dir_all(dir);
     }

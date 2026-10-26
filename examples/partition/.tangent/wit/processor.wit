@@ -55,6 +55,21 @@ interface lock {
 }
 
 
+/// Keyed state in the pipeline's state store, shared by every worker and
+/// scoped by the runtime to the partition of the records being processed.
+/// A write's ttl-ms: none takes the pipeline's default, 0 never expires.
+interface state {
+  use log.{scalar};
+
+  get:  func(key: string) -> result<option<scalar>, string>;
+  set:  func(key: string, value: scalar, ttl-ms: option<u64>) -> result<_, string>;
+  del:  func(key: string) -> result<bool, string>;
+  /// Add `by` to an integer entry (missing counts as 0); returns the new value.
+  incr: func(key: string, by: s64, ttl-ms: option<u64>) -> result<s64, string>;
+}
+
+/// The former name of `state`: the same entries, kept so plugins built
+/// against it keep running. New plugins import `state`.
 interface cache {
   use log.{scalar};
 
@@ -125,6 +140,7 @@ world processor {
 
   import remote;
   import log;
+  import state;
   import cache;
   import config;
   import lock;

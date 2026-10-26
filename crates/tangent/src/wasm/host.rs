@@ -15,7 +15,7 @@ use simd_json::{BorrowedValue, StaticNode};
 use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
-use crate::state::{StateStore, StateValue, CACHE_NS};
+use crate::state::{StateStore, StateValue, PLUGIN_NS};
 use crate::wasm::host::tangent::logs::log;
 use crate::wasm::host::tangent::logs::remote;
 use log::Scalar;
@@ -28,6 +28,10 @@ bindgen!({
     exports: {default: async},
     imports: {
         "tangent:logs/remote.call-batch": async,
+        "tangent:logs/state.get": async,
+        "tangent:logs/state.set": async,
+        "tangent:logs/state.del": async,
+        "tangent:logs/state.incr": async,
         "tangent:logs/cache.get": async,
         "tangent:logs/cache.set": async,
         "tangent:logs/cache.del": async,
@@ -235,29 +239,72 @@ impl tangent::logs::lock::Host for HostEngine {
     }
 }
 
-/// The guest's `cache` interface is the `cache` namespace of the state store,
-/// scoped to the partition of the records being processed.
-impl tangent::logs::cache::Host for HostEngine {
-    async fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
+/// Plugin state: the `plugins` namespace of the state store, scoped to the
+/// partition of the records being processed. `state` is the guest interface;
+/// `cache` is its former name and reaches the same entries.
+impl HostEngine {
+    // `&mut self`: the futures must be Send, and `&HostEngine` is not (WasiCtx).
+    async fn state_get(&mut self, key: &str) -> Result<Option<Scalar>, String> {
         self.state
-            .get(CACHE_NS, &self.partition, &key)
+            .get(PLUGIN_NS, &self.partition, key)
             .await
             .map(|v| v.map(Scalar::from))
             .map_err(|e| e.to_string())
     }
 
-    async fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
+    async fn state_set(
+        &mut self,
+        key: &str,
+        value: Scalar,
+        ttl_ms: Option<u64>,
+    ) -> Result<(), String> {
         self.state
-            .set(CACHE_NS, &self.partition, &key, &value.into(), ttl_ms)
+            .set(PLUGIN_NS, &self.partition, key, &value.into(), ttl_ms)
             .await
             .map_err(|e| e.to_string())
     }
 
-    async fn del(&mut self, key: String) -> Result<bool, String> {
+    async fn state_del(&mut self, key: &str) -> Result<bool, String> {
         self.state
-            .del(CACHE_NS, &self.partition, &key)
+            .del(PLUGIN_NS, &self.partition, key)
             .await
             .map_err(|e| e.to_string())
+    }
+}
+
+impl tangent::logs::state::Host for HostEngine {
+    async fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
+        self.state_get(&key).await
+    }
+
+    async fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
+        self.state_set(&key, value, ttl_ms).await
+    }
+
+    async fn del(&mut self, key: String) -> Result<bool, String> {
+        self.state_del(&key).await
+    }
+
+    async fn incr(&mut self, key: String, by: i64, ttl_ms: Option<u64>) -> Result<i64, String> {
+        self.state
+            .incr(PLUGIN_NS, &self.partition, &key, by, ttl_ms)
+            .await
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// The former name of `state`, kept for plugins built against it.
+impl tangent::logs::cache::Host for HostEngine {
+    async fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
+        self.state_get(&key).await
+    }
+
+    async fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
+        self.state_set(&key, value, ttl_ms).await
+    }
+
+    async fn del(&mut self, key: String) -> Result<bool, String> {
+        self.state_del(&key).await
     }
 }
 

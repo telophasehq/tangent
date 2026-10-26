@@ -43,7 +43,7 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins). Each plugin runs in its own lightweight sandbox.
 
 ## State and partitioning
-Plugins keep state through the `cache` interface (`cache.Get` / `cache.Set` with a TTL). That state lives in the runtime's **state store**, configured under `runtime.state`:
+Plugins keep state through the `state` interface: `state.Get`, `state.Set`, `state.Incr` and `state.Del`, each write with an optional TTL (`cache` is the older name of the same interface and still works). That state lives in the runtime's **state store**, configured under `runtime.state`:
 
 ```yaml
 runtime:
@@ -57,7 +57,7 @@ runtime:
     key: [org_id]          # fields that identify a record's partition
 ```
 
-Entries are keyed by `(namespace, partition, key)`. With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `cache.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition, as before (`cache:` is still accepted as the section name, and an older `cache.sqlite` migrates on first open). [examples/partition](/examples/partition) counts events per org with a single `count` key.
+Entries are keyed by `(namespace, partition, key)`. With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition, as before. Configs that still say `cache:` and databases from before the state store (`cache.sqlite`) are picked up unchanged. [examples/partition](/examples/partition) counts events per org with a single `count` key.
 
 The store is readable while the pipeline runs:
 

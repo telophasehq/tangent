@@ -133,6 +133,3 @@ const fn default_state_lock_timeout_ms() -> u64 {
 const fn default_state_max_entries() -> usize {
     100_000
 }
-
-/// The former name of the state section.
-pub type CacheConfig = StateConfig;
