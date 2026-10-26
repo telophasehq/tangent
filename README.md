@@ -64,7 +64,7 @@ The store is readable while the pipeline runs:
 tangent state --config tangent.yaml ls                          # keys per namespace and partition
 tangent state --config tangent.yaml get seen --partition acme   # one entry
 tangent state --config tangent.yaml scan --prefix user: --limit 50
-tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"
+tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
 ```
 
 ## Benchmarks

@@ -1,11 +1,13 @@
 //! `tangent state`: look inside a pipeline's state store, while it runs.
-//! Opens the SQLite file read-only, without the runtime's lock.
+//! `ls`, `get` and `scan` go through the `StateStore` trait and work on any
+//! backend that can be opened from outside the process; `sql` is the sqlite
+//! backend's own.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
 use clap::Subcommand;
-use tangent_runtime::state::{sqlite::SqliteStore, sqlite_path, StateStore};
+use tangent_runtime::state::{self, sqlite::SqliteStore, sqlite_path};
 use tangent_shared::runtime::StateBackend;
 use tangent_shared::Config;
 
@@ -47,19 +49,26 @@ pub enum StateCommands {
 
 pub async fn run(config: &PathBuf, cmd: StateCommands) -> Result<()> {
     let cfg = Config::from_file(config)?;
-    if cfg.runtime.state.backend != StateBackend::Sqlite {
-        bail!(
-            "state backend {:?} cannot be inspected from outside the process",
-            cfg.runtime.state.backend
-        );
-    }
     let dir = config.parent().unwrap_or(Path::new("."));
-    let path = sqlite_path(&cfg.runtime.state, dir);
-    if !path.exists() {
-        bail!("no state at {} (has the pipeline run yet?)", path.display());
-    }
-    let store = SqliteStore::open_readonly(&path)?;
 
+    if let StateCommands::Sql { query, limit } = cmd {
+        if cfg.runtime.state.backend != StateBackend::Sqlite {
+            bail!(
+                "`sql` needs the sqlite backend; this pipeline uses {:?}",
+                cfg.runtime.state.backend
+            );
+        }
+        let path = sqlite_path(&cfg.runtime.state, dir);
+        if !path.exists() {
+            bail!("no state at {} (has the pipeline run yet?)", path.display());
+        }
+        for row in SqliteStore::open_readonly(&path)?.sql(&query, limit)? {
+            println!("{}", serde_json::Value::Object(row));
+        }
+        return Ok(());
+    }
+
+    let store = state::open_reader(&cfg.runtime.state, dir)?;
     match cmd {
         StateCommands::Ls { ns } => {
             let counts = store.counts(ns.as_deref()).await?;
@@ -98,11 +107,7 @@ pub async fn run(config: &PathBuf, cmd: StateCommands) -> Result<()> {
                 println!("{}", serde_json::to_string(&e)?);
             }
         }
-        StateCommands::Sql { query, limit } => {
-            for row in store.sql(&query, limit)? {
-                println!("{}", serde_json::Value::Object(row));
-            }
-        }
+        StateCommands::Sql { .. } => unreachable!("handled above"),
     }
     Ok(())
 }

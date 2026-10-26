@@ -133,6 +133,25 @@ pub fn open(cfg: &StateConfig, base_dir: &Path) -> Result<Arc<dyn StateStore>> {
     })
 }
 
+/// A read-only handle on a store from outside the pipeline's process: nothing
+/// is created or locked. Which backends can be read this way is the
+/// backend's business (`memory` has no outside; a networked store would
+/// return a client).
+pub fn open_reader(cfg: &StateConfig, base_dir: &Path) -> Result<Arc<dyn StateStore>> {
+    match cfg.backend {
+        StateBackend::Sqlite => {
+            let path = sqlite_path(cfg, base_dir);
+            if !path.exists() {
+                anyhow::bail!("no state at {} (has the pipeline run yet?)", path.display());
+            }
+            Ok(Arc::new(sqlite::SqliteStore::open_readonly(&path)?))
+        }
+        StateBackend::Memory => anyhow::bail!(
+            "the memory backend lives inside the pipeline's process; there is nothing to read from outside"
+        ),
+    }
+}
+
 /// The SQLite file a config points at, resolved like `open` does.
 pub fn sqlite_path(cfg: &StateConfig, base_dir: &Path) -> std::path::PathBuf {
     if cfg.path.is_absolute() {
