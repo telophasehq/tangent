@@ -56,7 +56,7 @@ runtime:
     key: [org_id]          # fields that identify a record's partition
 ```
 
-Entries are keyed by `(namespace, partition, key)`. With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `cache.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition, as before (`cache:` is still accepted as the section name, and an older `cache.sqlite` migrates on first open).
+Entries are keyed by `(namespace, partition, key)`. With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `cache.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition, as before (`cache:` is still accepted as the section name, and an older `cache.sqlite` migrates on first open). [examples/partition](/examples/partition) counts events per org with a single `count` key.
 
 The store is readable while the pipeline runs:
 

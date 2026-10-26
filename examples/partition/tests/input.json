@@ -1,0 +1,8 @@
+[
+  { "org_id": "acme", "event": "login" },
+  { "org_id": "acme", "event": "login" },
+  { "org_id": "globex", "event": "login" },
+  { "org_id": "acme", "event": "export" },
+  { "org_id": "globex", "event": "export" },
+  { "org_id": "acme", "event": "login" }
+]

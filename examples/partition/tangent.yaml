@@ -1,0 +1,40 @@
+runtime:
+  plugins_path: "plugins/"
+  state:
+    backend: sqlite            # or memory
+    path: state.sqlite
+    default_ttl_ms: 86400000   # a day; 0 = never expire
+    max_ttl_ms: 0              # no cap on TTLs (the default caps them at an hour)
+  partition:
+    key: [org_id]              # each org gets its own cache keys
+plugins:
+  partition:
+    module_type: rust
+    path: .
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json
+sources:
+  network_input:
+    type: tcp
+    bind_address: 0.0.0.0:9000
+sinks:
+  out:
+    type: file
+    path: out.ndjson
+    compression:
+      type: none
+dag:
+  - from:
+      kind: source
+      name: network_input
+    to:
+      - kind: plugin
+        name: partition
+
+  - from:
+      kind: plugin
+      name: partition
+    to:
+      - kind: sink
+        name: out
