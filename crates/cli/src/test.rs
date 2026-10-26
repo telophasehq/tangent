@@ -9,13 +9,13 @@ use std::sync::Arc;
 use anyhow::{bail, Context, Result};
 use tangent_shared::dag::{Edge, NodeRef};
 use tangent_shared::plugins::PluginConfig;
-use tangent_shared::runtime::{CacheConfig, RuntimeConfig};
+use tangent_shared::runtime::{RuntimeConfig, StateBackend, StateConfig};
 use tangent_shared::sinks::common::{CommonSinkOptions, Compression, Encoding};
 use tangent_shared::Config;
 use tracing::{info, warn};
 
 use serde_json::{Map, Value};
-use tangent_runtime::{cache, RuntimeOptions};
+use tangent_runtime::RuntimeOptions;
 use tangent_shared::sinks::{
     common::{SinkConfig, SinkKind},
     file as fileSink,
@@ -110,7 +110,14 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 batch_size: 1,
                 batch_age: 1,
                 workers: 1,
-                cache: CacheConfig::default(),
+                // Fresh in-memory state per test: starts empty, touches no
+                // file, and never contends with a running pipeline's SQLite
+                // store. TTLs come from the config so a stateful plugin is
+                // tested the way it runs.
+                state: StateConfig {
+                    backend: StateBackend::Memory,
+                    ..cfg.runtime.state.clone()
+                },
                 disable_remote_calls: !opts.enable_http,
             };
 
@@ -158,12 +165,6 @@ pub async fn run(opts: TestOptions) -> Result<()> {
             let test_file = PathBuf::from(".test.yaml");
             let test_config_file = config_root.join(&test_file);
             fs::write(&test_config_file, yaml)?;
-
-            {
-                let sqlite_cache =
-                    cache::CacheHandle::open(&test_config.runtime.cache, config_root)?;
-                sqlite_cache.reset()?;
-            }
 
             tangent_runtime::run(&test_config_file, rt.clone()).await?;
 

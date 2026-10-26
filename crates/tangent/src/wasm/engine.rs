@@ -9,19 +9,19 @@ use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::WasiCtxBuilder;
 
-use crate::cache::CacheHandle;
+use crate::state::StateStore;
 use crate::wasm::host::tangent::logs::{cache, config, lock, log, remote};
 use crate::wasm::host::{HostEngine, Processor};
 pub struct WasmEngine {
     engine: Engine,
     linker: Linker<HostEngine>,
-    cache: std::sync::Arc<CacheHandle>,
+    state: Arc<dyn StateStore>,
     config: HashMap<Arc<str>, Arc<HashMap<String, Value>>>,
     disable_remote_calls: bool,
 }
 
 impl WasmEngine {
-    pub fn new(cache: std::sync::Arc<CacheHandle>, disable_remote_calls: bool) -> Result<Self> {
+    pub fn new(state: Arc<dyn StateStore>, disable_remote_calls: bool) -> Result<Self> {
         let engine = tangent_shared::wasm_engine::build()?;
         let mut linker = Linker::<HostEngine>::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;
@@ -34,7 +34,7 @@ impl WasmEngine {
         Ok(Self {
             engine,
             linker,
-            cache,
+            state,
             disable_remote_calls,
             config: HashMap::new(),
         })
@@ -66,7 +66,7 @@ impl WasmEngine {
                     .inherit_stderr()
                     .inherit_env()
                     .build(),
-                self.cache.clone(),
+                self.state.clone(),
                 self.config.get(component_name).unwrap().clone(),
                 self.disable_remote_calls,
             ),

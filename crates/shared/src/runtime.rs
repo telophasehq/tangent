@@ -16,8 +16,10 @@ pub struct RuntimeConfig {
     #[serde(default = "default_plugin_path")]
     pub plugins_path: PathBuf,
 
-    #[serde(default = "default_cache")]
-    pub cache: CacheConfig,
+    /// The state store plugins (and the runtime) keep keyed state in.
+    /// `cache:` is accepted as the older name of this section.
+    #[serde(default, alias = "cache")]
+    pub state: StateConfig,
 
     /// When true, the runtime will not make outbound HTTP requests from plugins.
     /// Useful for `tangent plugin test` or benchmarking to avoid external calls.
@@ -42,48 +44,64 @@ fn default_plugin_path() -> PathBuf {
     "plugins/".into()
 }
 
-fn default_cache() -> CacheConfig {
-    CacheConfig::default()
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheConfig {
-    #[serde(default = "default_cache_path")]
+pub struct StateConfig {
+    #[serde(default)]
+    pub backend: StateBackend,
+
+    /// SQLite file (relative to the config), for the `sqlite` backend.
+    #[serde(default = "default_state_path")]
     pub path: PathBuf,
 
-    #[serde(default = "default_cache_ttl_ms")]
+    /// TTL applied when a write gives none; 0 means entries never expire.
+    #[serde(default = "default_state_ttl_ms")]
     pub default_ttl_ms: u64,
 
-    #[serde(default = "default_cache_max_ttl_ms")]
+    /// Longest TTL a write may ask for; 0 means no cap.
+    #[serde(default = "default_state_max_ttl_ms")]
     pub max_ttl_ms: u64,
 
-    #[serde(default = "default_cache_lock_timeout_ms")]
+    #[serde(default = "default_state_lock_timeout_ms")]
     pub lock_timeout_ms: u64,
 }
 
-impl Default for CacheConfig {
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum StateBackend {
+    /// Durable, queryable with any SQLite client, shared by all workers.
+    #[default]
+    Sqlite,
+    /// Process-local and gone on exit; for tests and benchmarks.
+    Memory,
+}
+
+impl Default for StateConfig {
     fn default() -> Self {
         Self {
-            path: default_cache_path(),
-            default_ttl_ms: default_cache_ttl_ms(),
-            max_ttl_ms: default_cache_max_ttl_ms(),
-            lock_timeout_ms: default_cache_lock_timeout_ms(),
+            backend: StateBackend::default(),
+            path: default_state_path(),
+            default_ttl_ms: default_state_ttl_ms(),
+            max_ttl_ms: default_state_max_ttl_ms(),
+            lock_timeout_ms: default_state_lock_timeout_ms(),
         }
     }
 }
 
-fn default_cache_path() -> PathBuf {
-    "cache.sqlite".into()
+fn default_state_path() -> PathBuf {
+    "state.sqlite".into()
 }
 
-const fn default_cache_ttl_ms() -> u64 {
+const fn default_state_ttl_ms() -> u64 {
     10 * 60 * 1000
 }
 
-const fn default_cache_max_ttl_ms() -> u64 {
+const fn default_state_max_ttl_ms() -> u64 {
     60 * 60 * 1000
 }
 
-const fn default_cache_lock_timeout_ms() -> u64 {
+const fn default_state_lock_timeout_ms() -> u64 {
     30_000
 }
+
+/// The former name of the state section.
+pub type CacheConfig = StateConfig;

@@ -7,7 +7,6 @@ use bytes::{Bytes, BytesMut};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use reqwest::Client;
-use rusqlite::types::Value;
 use serde_json::Value as JSONValue;
 use simd_json::base::ValueAsScalar;
 use simd_json::derived::{TypedArrayValue, TypedScalarValue};
@@ -16,7 +15,7 @@ use simd_json::{BorrowedValue, StaticNode};
 use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
-use crate::cache::CacheHandle;
+use crate::state::{StateStore, StateValue, CACHE_NS};
 use crate::wasm::host::tangent::logs::log;
 use crate::wasm::host::tangent::logs::remote;
 use log::Scalar;
@@ -29,6 +28,9 @@ bindgen!({
     exports: {default: async},
     imports: {
         "tangent:logs/remote.call-batch": async,
+        "tangent:logs/cache.get": async,
+        "tangent:logs/cache.set": async,
+        "tangent:logs/cache.del": async,
     },
     with: {
         "tangent:logs/log.logview": JsonLogView,
@@ -39,7 +41,7 @@ pub struct HostEngine {
     pub ctx: WasiCtx,
     pub table: ResourceTable,
     http_client: Client,
-    cache: Arc<CacheHandle>,
+    state: Arc<dyn StateStore>,
     plugin_cfg: Arc<HashMap<String, JSONValue>>,
     /// If true, short-circuit remote calls with successful empty responses.
     pub disable_remote_calls: bool,
@@ -48,7 +50,7 @@ pub struct HostEngine {
 impl HostEngine {
     pub fn new(
         ctx: WasiCtx,
-        cache: Arc<CacheHandle>,
+        state: Arc<dyn StateStore>,
         config: Arc<HashMap<String, JSONValue>>,
         disable_remote_calls: bool,
     ) -> Self {
@@ -56,7 +58,7 @@ impl HostEngine {
             ctx,
             table: ResourceTable::new(),
             http_client: Client::new(),
-            cache,
+            state,
             plugin_cfg: config,
             disable_remote_calls,
         }
@@ -137,26 +139,28 @@ impl WasiView for HostEngine {
     }
 }
 
-impl Scalar {
-    pub fn to_sqlite(&self) -> (String, Value) {
-        match self {
-            Scalar::Str(s) => ("str".into(), Value::Text(s.clone())),
-            Scalar::Int(i) => ("int".into(), Value::Integer(*i)),
-            Scalar::Float(f) => ("float".into(), Value::Real(*f)),
-            Scalar::Boolean(b) => ("bool".into(), Value::Integer(if *b { 1 } else { 0 })),
-            Scalar::Bytes(b) => ("bytes".into(), Value::Blob(b.clone())),
+impl From<Scalar> for StateValue {
+    fn from(s: Scalar) -> Self {
+        match s {
+            Scalar::Str(s) => StateValue::Str(s),
+            Scalar::Int(i) => StateValue::Int(i),
+            Scalar::Float(f) => StateValue::Float(f),
+            Scalar::Boolean(b) => StateValue::Bool(b),
+            Scalar::Bytes(b) => StateValue::Bytes(b),
         }
     }
+}
 
-    pub fn from_sqlite(kind: &str, v: Value) -> Result<Self> {
-        use rusqlite::types::Value as V;
-        match (kind, v) {
-            ("str", V::Text(s)) => Ok(Scalar::Str(s)),
-            ("int", V::Integer(i)) => Ok(Scalar::Int(i)),
-            ("float", V::Real(f)) => Ok(Scalar::Float(f)),
-            ("bool", V::Integer(i)) => Ok(Scalar::Boolean(i != 0)),
-            ("bytes", V::Blob(b)) => Ok(Scalar::Bytes(b)),
-            (k, _) => anyhow::bail!("mismatched SQLite value for kind={k}"),
+impl From<StateValue> for Scalar {
+    fn from(v: StateValue) -> Self {
+        match v {
+            StateValue::Str(s) => Scalar::Str(s),
+            StateValue::Int(i) => Scalar::Int(i),
+            StateValue::Float(f) => Scalar::Float(f),
+            StateValue::Bool(b) => Scalar::Boolean(b),
+            StateValue::Bytes(b) => Scalar::Bytes(b),
+            // The guest has no JSON scalar; it gets the text.
+            StateValue::Json(j) => Scalar::Str(j.to_string()),
         }
     }
 }
@@ -227,19 +231,28 @@ impl tangent::logs::lock::Host for HostEngine {
     }
 }
 
+/// The guest's `cache` interface is the `cache` namespace of the state store.
 impl tangent::logs::cache::Host for HostEngine {
-    fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
-        self.cache.get(&key).map_err(|e| e.to_string())
-    }
-
-    fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
-        self.cache
-            .set(&key, &value, ttl_ms)
+    async fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
+        self.state
+            .get(CACHE_NS, "", &key)
+            .await
+            .map(|v| v.map(Scalar::from))
             .map_err(|e| e.to_string())
     }
 
-    fn del(&mut self, key: String) -> Result<bool, String> {
-        self.cache.del(&key).map_err(|e| e.to_string())
+    async fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
+        self.state
+            .set(CACHE_NS, "", &key, &value.into(), ttl_ms)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn del(&mut self, key: String) -> Result<bool, String> {
+        self.state
+            .del(CACHE_NS, "", &key)
+            .await
+            .map_err(|e| e.to_string())
     }
 }
 

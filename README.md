@@ -42,6 +42,29 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 
 3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins). Each plugin runs in its own lightweight sandbox.
 
+## State
+Plugins keep state through the `cache` interface (`cache.Get` / `cache.Set` with a TTL). That state lives in the runtime's **state store**, configured under `runtime.state`:
+
+```yaml
+runtime:
+  state:
+    backend: sqlite        # or memory; distributed backends slot in here
+    path: state.sqlite
+    default_ttl_ms: 600000 # 0 = never expire
+    max_ttl_ms: 3600000    # cap on any TTL; 0 = no cap
+```
+
+Entries are keyed by `(namespace, partition, key)`; plugins use the `cache` namespace and, until a stream is partitioned, the empty partition. `cache:` is still accepted as the section name, and an older `cache.sqlite` migrates on first open.
+
+The store is readable while the pipeline runs:
+
+```bash
+tangent state --config tangent.yaml ls                          # keys per namespace and partition
+tangent state --config tangent.yaml get seen --partition acme   # one entry
+tangent state --config tangent.yaml scan --prefix user: --limit 50
+tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"
+```
+
 ## Benchmarks
 Benchmarks show end-to-end throughput with simple log transformation plugins implemented in [Rust](/examples/rust/src/lib.rs), [Go](/examples/golang/main.go), and [Python](/examples/python/mapper.py). Each plugin is compiled to WASM and run inside Tangent.
 

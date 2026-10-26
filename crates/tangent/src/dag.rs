@@ -1,20 +1,15 @@
 use ahash::AHashMap as HashMap;
 
 use anyhow::{anyhow, Context, Result};
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
 use tangent_shared::{dag::NodeRef, sources::common::SourceConfig, Config};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    cache::CacheHandle, router::Router, sinks::manager::SinkManager, sources,
-    wasm::engine::WasmEngine, worker::WorkerPool,
+    router::Router, sinks::manager::SinkManager, sources, state, wasm::engine::WasmEngine,
+    worker::WorkerPool,
 };
 
 pub struct DagRuntime {
@@ -27,19 +22,32 @@ pub struct DagRuntime {
 impl DagRuntime {
     pub async fn build(
         cfg: Config,
-        cfg_path: &PathBuf,
+        cfg_path: &Path,
         shutdown: CancellationToken,
     ) -> anyhow::Result<Self> {
         let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
         let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
-        let plugin_root = config_dir.join(&cfg.runtime.plugins_path).canonicalize()?;
+        // A pipeline without plugins has no plugin directory to resolve.
+        let plugin_root = if cfg.plugins.is_empty() {
+            config_dir.to_path_buf()
+        } else {
+            config_dir
+                .join(&cfg.runtime.plugins_path)
+                .canonicalize()
+                .with_context(|| {
+                    format!(
+                        "canonicalizing plugins_path {}",
+                        config_dir.join(&cfg.runtime.plugins_path).display()
+                    )
+                })?
+        };
 
         let workers = cfg.runtime.workers;
 
-        let cache = Arc::new(CacheHandle::open(&cfg.runtime.cache.clone(), config_dir)?);
+        let store = state::open(&cfg.runtime.state, config_dir)?;
 
         let mut engines: Vec<WasmEngine> = (0..workers)
-            .map(|_| WasmEngine::new(cache.clone(), cfg.runtime.disable_remote_calls))
+            .map(|_| WasmEngine::new(Arc::clone(&store), cfg.runtime.disable_remote_calls))
             .collect::<Result<_, _>>()?;
         let mut components: Vec<Vec<(Arc<str>, Component)>> = Vec::with_capacity(workers);
         for i in 0..workers {
