@@ -48,10 +48,11 @@ Plugins keep state through the `cache` interface (`cache.Get` / `cache.Set` with
 ```yaml
 runtime:
   state:
-    backend: sqlite        # or memory; distributed backends slot in here
+    backend: sqlite        # or lru (in-process, bounded); distributed backends slot in here
     path: state.sqlite
     default_ttl_ms: 600000 # 0 = never expire
     max_ttl_ms: 3600000    # cap on any TTL; 0 = no cap
+    max_entries: 100000    # lru only: evict the least recently used past this
   partition:
     key: [org_id]          # fields that identify a record's partition
 ```

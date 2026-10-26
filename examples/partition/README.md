@@ -12,7 +12,7 @@ keys are per org: `acme` and `globex` each get their own `count`, and
 ```yaml
 runtime:
   state:
-    backend: sqlite            # or memory
+    backend: sqlite            # or lru
     path: state.sqlite
     default_ttl_ms: 86400000   # a day; 0 = never expire
     max_ttl_ms: 0              # no cap on TTLs (the default caps them at an hour)
@@ -34,7 +34,7 @@ tangent plugin test --config tangent.yaml
 `tests/input.json` interleaves two orgs; `tests/expected.json` shows each org
 counting on its own. The plugin is handed one org at a time, so a batch comes
 out grouped by org in the order the orgs first appeared. Tests run against a
-fresh in-memory store with the config's TTL and partition settings.
+fresh in-process `lru` store with the config's TTL and partition settings.
 
 ## Run
 ```bash

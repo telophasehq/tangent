@@ -1,7 +1,7 @@
 runtime:
   plugins_path: "plugins/"
   state:
-    backend: sqlite            # or memory
+    backend: sqlite            # or lru
     path: state.sqlite
     default_ttl_ms: 86400000   # a day; 0 = never expire
     max_ttl_ms: 0              # no cap on TTLs (the default caps them at an hour)

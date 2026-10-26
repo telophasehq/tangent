@@ -5,7 +5,7 @@
 //!
 //! The store is an async trait so backends can be local or networked:
 //! `sqlite` is durable on one host and queryable from outside the process
-//! (`tangent state ...`), `memory` is for tests and benchmarks, and a
+//! (`tangent state ...`), `lru` is in-process and bounded by `max_entries`, and a
 //! distributed backend (DynamoDB: `ns#partition` as the hash key, `key` as
 //! the range key, `incr` as an atomic ADD, TTL as the item TTL) fits the same
 //! interface.
@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tangent_shared::runtime::{StateBackend, StateConfig};
 
-pub mod memory;
+pub mod lru;
 pub mod sqlite;
 
 /// Namespace of the plugin-facing `cache` interface.
@@ -129,13 +129,13 @@ pub fn open(cfg: &StateConfig, base_dir: &Path) -> Result<Arc<dyn StateStore>> {
     }
     Ok(match cfg.backend {
         StateBackend::Sqlite => Arc::new(sqlite::SqliteStore::open(cfg, base_dir)?),
-        StateBackend::Memory => Arc::new(memory::MemoryStore::new(cfg.clone())),
+        StateBackend::Lru => Arc::new(lru::LruStore::new(cfg.clone())?),
     })
 }
 
 /// A read-only handle on a store from outside the pipeline's process: nothing
 /// is created or locked. Which backends can be read this way is the
-/// backend's business (`memory` has no outside; a networked store would
+/// backend's business (`lru` has no outside; a networked store would
 /// return a client).
 pub fn open_reader(cfg: &StateConfig, base_dir: &Path) -> Result<Arc<dyn StateStore>> {
     match cfg.backend {
@@ -146,8 +146,8 @@ pub fn open_reader(cfg: &StateConfig, base_dir: &Path) -> Result<Arc<dyn StateSt
             }
             Ok(Arc::new(sqlite::SqliteStore::open_readonly(&path)?))
         }
-        StateBackend::Memory => anyhow::bail!(
-            "the memory backend lives inside the pipeline's process; there is nothing to read from outside"
+        StateBackend::Lru => anyhow::bail!(
+            "the lru backend lives inside the pipeline's process; there is nothing to read from outside"
         ),
     }
 }
@@ -169,7 +169,7 @@ mod tests {
     fn a_default_ttl_above_the_cap_is_refused() {
         let dir = std::env::temp_dir();
         let bad = StateConfig {
-            backend: StateBackend::Memory,
+            backend: StateBackend::Lru,
             default_ttl_ms: 86_400_000,
             max_ttl_ms: 3_600_000,
             ..StateConfig::default()

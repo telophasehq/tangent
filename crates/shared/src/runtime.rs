@@ -83,6 +83,10 @@ pub struct StateConfig {
 
     #[serde(default = "default_state_lock_timeout_ms")]
     pub lock_timeout_ms: u64,
+
+    /// Entries the `lru` backend holds before evicting the least recently used.
+    #[serde(default = "default_state_max_entries")]
+    pub max_entries: usize,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -91,8 +95,10 @@ pub enum StateBackend {
     /// Durable, queryable with any SQLite client, shared by all workers.
     #[default]
     Sqlite,
-    /// Process-local and gone on exit; for tests and benchmarks.
-    Memory,
+    /// In-process, bounded by `max_entries` (the least recently used entry
+    /// goes first) and gone on exit; for tests, benchmarks and pipelines
+    /// whose state may start over.
+    Lru,
 }
 
 impl Default for StateConfig {
@@ -103,6 +109,7 @@ impl Default for StateConfig {
             default_ttl_ms: default_state_ttl_ms(),
             max_ttl_ms: default_state_max_ttl_ms(),
             lock_timeout_ms: default_state_lock_timeout_ms(),
+            max_entries: default_state_max_entries(),
         }
     }
 }
@@ -121,6 +128,10 @@ const fn default_state_max_ttl_ms() -> u64 {
 
 const fn default_state_lock_timeout_ms() -> u64 {
     30_000
+}
+
+const fn default_state_max_entries() -> usize {
+    100_000
 }
 
 /// The former name of the state section.
