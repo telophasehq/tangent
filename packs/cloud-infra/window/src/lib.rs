@@ -270,7 +270,7 @@ fn annotate(cfg: &Cfg, mut rec: Value) -> Result<Value, String> {
                 break;
             }
             if shown.insert((*s).clone()) {
-                recent.push((*e).clone());
+                recent.push(compact(e, &cfg.time));
             }
         }
         recent.reverse();
@@ -287,6 +287,56 @@ fn annotate(cfg: &Cfg, mut rec: Value) -> Result<Value, String> {
         obj.insert("_window".into(), Value::Object(win));
     }
     Ok(rec)
+}
+
+/// One line of history: when, who did what, from where, to what, and how it
+/// ended. The record itself stays in the store whole; the judge reads the
+/// current record in full and its history this way, which keeps a busy
+/// actor's day in a few kilobytes. Real CloudTrail and Okta records run
+/// 3-5 KB each, and twenty of them per scope killed a local model.
+fn compact(e: &Value, time: &str) -> Value {
+    let mut m = Map::new();
+    if let Some(t) = lookup(e, time).and_then(text) {
+        m.insert("ts".into(), json!(t));
+    }
+    if let Some(src) = e.get("source").and_then(Value::as_str) {
+        m.insert("source".into(), json!(src));
+    }
+    for k in ["kind", "actor", "ip", "dest", "target"] {
+        if let Some(v) = lookup(e, &format!("_norm.{k}")).and_then(text) {
+            m.insert(k.into(), json!(v));
+        }
+    }
+    if let Some(ip) = e.pointer("/_ip/_norm.ip").and_then(Value::as_object) {
+        let mut parts: Vec<String> = Vec::new();
+        for k in ["country", "org"] {
+            if let Some(v) = ip.get(k).and_then(Value::as_str) {
+                parts.push(v.to_string());
+            }
+        }
+        match ip.get("hosting") {
+            Some(Value::String(h)) => parts.push(format!("{h} hosting")),
+            Some(Value::Bool(true)) => parts.push("hosting".into()),
+            _ => {}
+        }
+        for k in ["tor", "vpn", "ours"] {
+            if ip.get(k).and_then(Value::as_bool) == Some(true) {
+                parts.push(k.into());
+            }
+        }
+        if !parts.is_empty() {
+            m.insert("where".into(), json!(parts.join(", ")));
+        }
+    }
+    let outcome = e
+        .pointer("/outcome/result")
+        .or_else(|| e.get("errorCode"))
+        .or_else(|| e.get("conclusion"))
+        .and_then(Value::as_str);
+    if let Some(o) = outcome {
+        m.insert("outcome".into(), json!(o));
+    }
+    Value::Object(m)
 }
 
 impl Guest for Component {
