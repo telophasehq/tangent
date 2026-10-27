@@ -181,13 +181,16 @@ fn head(s: &str, n: usize) -> String {
     t
 }
 
-/// The first JSON object in the reply, after any <think>…</think> block and
-/// inside any code fence; a reply with no object becomes `{"text": ...}`.
+/// The first JSON object in the reply, after any <think>…</think> or
+/// <reasoning>…</reasoning> block and inside any code fence; a reply with no
+/// object becomes `{"text": ...}`.
 pub fn parse_reply(content: &str) -> Value {
-    let s = match content.rfind("</think>") {
-        Some(i) => &content[i + "</think>".len()..],
-        None => content,
-    };
+    // Reasoning models think out loud first; the answer comes after the tag.
+    let s = ["</think>", "</reasoning>"]
+        .iter()
+        .filter_map(|tag| content.rfind(tag).map(|i| i + tag.len()))
+        .max()
+        .map_or(content, |i| &content[i..]);
     if let Some(start) = s.find('{') {
         if let Some(obj) = balanced_object(&s[start..]) {
             if let Ok(v @ Value::Object(_)) = serde_json::from_str::<Value>(obj) {
@@ -307,6 +310,12 @@ mod tests {
         assert_eq!(parse_reply("no json at all")["text"], "no json at all");
         assert_eq!(parse_reply("{\"a\": ")["text"], "{\"a\":");
         assert_eq!(parse_reply("[1, 2]")["text"], "[1, 2]");
+        // gpt-oss style: the reasoning quotes the input before the answer.
+        let v = parse_reply(
+            "<reasoning>The input {\"event\": \"x\"} looks fine.</reasoning>{\"flag\": false}",
+        );
+        assert_eq!(v["flag"], false);
+        assert!(v.get("event").is_none(), "{v}");
     }
 
     #[test]
