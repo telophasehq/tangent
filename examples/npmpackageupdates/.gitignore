@@ -8,3 +8,4 @@ __pycache__/
 **/.test.yaml
 **/plugins/
 cache.sqlite*
+state.sqlite*

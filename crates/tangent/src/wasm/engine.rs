@@ -9,34 +9,37 @@ use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::WasiCtxBuilder;
 
-use crate::cache::CacheHandle;
-use crate::wasm::host::tangent::logs::{cache, config, lock, log, remote};
+use crate::state::{StateStore, PLUGIN_NS};
+use crate::wasm::host::tangent::logs::{config, lock, log, remote, state};
 use crate::wasm::host::{HostEngine, Processor};
 pub struct WasmEngine {
     engine: Engine,
     linker: Linker<HostEngine>,
-    cache: std::sync::Arc<CacheHandle>,
+    state: Arc<dyn StateStore>,
     config: HashMap<Arc<str>, Arc<HashMap<String, Value>>>,
+    /// Each plugin's state namespace: `PLUGIN_NS` unless configured otherwise.
+    state_ns: HashMap<Arc<str>, Arc<str>>,
     disable_remote_calls: bool,
 }
 
 impl WasmEngine {
-    pub fn new(cache: std::sync::Arc<CacheHandle>, disable_remote_calls: bool) -> Result<Self> {
+    pub fn new(state: Arc<dyn StateStore>, disable_remote_calls: bool) -> Result<Self> {
         let engine = tangent_shared::wasm_engine::build()?;
         let mut linker = Linker::<HostEngine>::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;
         log::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         remote::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
-        cache::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
+        state::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         config::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         lock::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
 
         Ok(Self {
             engine,
             linker,
-            cache,
+            state,
             disable_remote_calls,
             config: HashMap::new(),
+            state_ns: HashMap::new(),
         })
     }
 
@@ -49,9 +52,12 @@ impl WasmEngine {
         name: Arc<str>,
         loc: &Path,
         cfg: HashMap<String, Value>,
+        state_ns: Option<&str>,
     ) -> Result<Component> {
         let comp = unsafe { Component::deserialize_file(&self.engine, &loc)? };
 
+        let ns: Arc<str> = state_ns.map_or_else(|| Arc::from(PLUGIN_NS), Arc::from);
+        self.state_ns.insert(Arc::clone(&name), ns);
         self.config.insert(name, Arc::new(cfg));
 
         Ok(comp)
@@ -66,7 +72,10 @@ impl WasmEngine {
                     .inherit_stderr()
                     .inherit_env()
                     .build(),
-                self.cache.clone(),
+                self.state.clone(),
+                self.state_ns
+                    .get(component_name)
+                    .map_or_else(|| Arc::from(PLUGIN_NS), Arc::clone),
                 self.config.get(component_name).unwrap().clone(),
                 self.disable_remote_calls,
             ),

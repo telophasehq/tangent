@@ -11,7 +11,7 @@ use tokio::sync::OnceCell;
 
 use crate::{
     sinks::manager::SinkManager,
-    worker::{Ack, Record, WorkerPool},
+    worker::{Ack, Payload, Record, WorkerPool},
 };
 
 #[derive(Clone)]
@@ -105,7 +105,7 @@ impl Router {
                     NodeRef::Plugin { .. } => {
                         let pool = pool.as_ref().expect("pool must be set for plugin edges");
                         let rec = Record {
-                            payload: frame,
+                            payload: Payload::Raw(frame),
                             ack: Some(shared.clone()),
                         };
                         pool.dispatch(rec).await?;
@@ -134,7 +134,7 @@ impl Router {
                     NodeRef::Plugin { .. } => {
                         if let Some(ref pool) = pool {
                             let rec = Record {
-                                payload: frame.clone(),
+                                payload: Payload::Raw(frame.clone()),
                                 ack: Some(shared.clone()),
                             };
                             pool.dispatch(rec).await?;

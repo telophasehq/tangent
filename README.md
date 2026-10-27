@@ -42,6 +42,40 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 
 3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins). Each plugin runs in its own lightweight sandbox.
 
+## State and partitioning
+Plugins keep state through the `state` interface: `state.Get`, `state.Set`, `state.Incr` and `state.Del`, each write with an optional TTL. That state lives in the runtime's **state store**, configured under `runtime.state`:
+
+```yaml
+runtime:
+  state:
+    backend: sqlite        # or lru (in-process, bounded); distributed backends slot in here
+    path: state.sqlite
+    default_ttl_ms: 600000 # 0 = never expire
+    max_ttl_ms: 3600000    # cap on any TTL; 0 = no cap
+    max_entries: 100000    # lru only: evict the least recently used past this
+  partition:
+    key: [org_id]          # fields that identify a record's partition
+```
+
+Entries are keyed by `(namespace, partition, key)`. Plugins share one namespace, `plugins`, so what one plugin writes the next can read; within a partition all of it runs on one worker, so there is nothing to race against (below). Give a plugin a `state_namespace` of its own when it must not share, such as two instances of one plugin with different configs:
+
+```yaml
+plugins:
+  detect_login:  { module_type: rust, path: ./detect, state_namespace: login }
+  detect_export: { module_type: rust, path: ./detect, state_namespace: export }
+```
+
+With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition. [examples/partition](/examples/partition) counts events per org with a single `count` key.
+
+The store is readable while the pipeline runs:
+
+```bash
+tangent state --config tangent.yaml ls                          # keys per namespace and partition
+tangent state --config tangent.yaml get seen --partition acme   # one entry (--ns defaults to the only namespace)
+tangent state --config tangent.yaml scan --prefix user: --limit 50
+tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
+```
+
 ## Benchmarks
 Benchmarks show end-to-end throughput with simple log transformation plugins implemented in [Rust](/examples/rust/src/lib.rs), [Go](/examples/golang/main.go), and [Python](/examples/python/mapper.py). Each plugin is compiled to WASM and run inside Tangent.
 

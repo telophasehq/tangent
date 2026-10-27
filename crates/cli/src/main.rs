@@ -8,6 +8,7 @@ use tangent_bench::BenchOptions;
 use tangent_runtime::RuntimeOptions;
 
 mod scaffold;
+mod state;
 mod test;
 mod wit_assets;
 
@@ -76,6 +77,15 @@ enum Commands {
     Plugin {
         #[command(subcommand)]
         command: PluginCommands,
+    },
+
+    /// Inspect a pipeline's state store (read-only, works while it runs)
+    State {
+        /// Path to YAML config; the store is found from `runtime.state`
+        #[arg(long, value_name = "FILE")]
+        config: PathBuf,
+        #[command(subcommand)]
+        command: state::StateCommands,
     },
 }
 
@@ -157,6 +167,11 @@ async fn main() -> Result<()> {
                 synthesize,
             };
             tangent_bench::run(&config, opts).await?;
+        }
+
+        Commands::State { config, command } => {
+            let cfg = config.canonicalize().unwrap_or(config);
+            state::run(&cfg, command).await?;
         }
 
         Commands::Plugin { command } => match command {

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
-	"github.com/telophasehq/tangent-sdk-go/cache"
+	"github.com/telophasehq/tangent-sdk-go/state"
 )
 
 //easyjson:json
@@ -49,21 +49,21 @@ func DetectNPMPublish(lv tangent_sdk.Log) (Alert, error) {
 		return out, nil
 	}
 
-	cacheTTL := 15 * time.Minute
+	ttl := 15 * time.Minute
 	startedKey := fmt.Sprintf("npm-publish-started-%s-logname", *sha)
 	pkgKey := fmt.Sprintf("npm-publish-started-%s-pkgname", *sha)
 	shasumKey := fmt.Sprintf("npm-publish-started-%s-npmSHA", *sha)
 
 	// 1) Mark that this SHA started an npm publish step, and record which log file
 	if strings.Contains(m, "##[group]Run") && strings.Contains(m, "npm publish") {
-		if err := cache.Set(startedKey, *logName, &cacheTTL); err != nil {
+		if err := state.Set(startedKey, *logName, &ttl); err != nil {
 			return out, err
 		}
 		return out, nil
 	}
 
 	// Everything below requires that we previously saw a publish step for this SHA/log
-	startedLogNameVal, ok, err := cache.Get(startedKey)
+	startedLogNameVal, ok, err := state.Get(startedKey)
 	if err != nil {
 		return out, err
 	}
@@ -75,7 +75,7 @@ func DetectNPMPublish(lv tangent_sdk.Log) (Alert, error) {
 	// 2) Capture package name from `npm notice name: foo`
 	if strings.HasPrefix(m, "npm notice name:") {
 		pkgName := strings.TrimSpace(strings.TrimPrefix(m, "npm notice name:"))
-		if err := cache.Set(pkgKey, pkgName, &cacheTTL); err != nil {
+		if err := state.Set(pkgKey, pkgName, &ttl); err != nil {
 			return out, err
 		}
 		return out, nil
@@ -84,7 +84,7 @@ func DetectNPMPublish(lv tangent_sdk.Log) (Alert, error) {
 	// 3) Capture npm tarball shasum from `npm notice shasum: abc123...`
 	if strings.HasPrefix(m, "npm notice shasum:") {
 		npmSHA := strings.TrimSpace(strings.TrimPrefix(m, "npm notice shasum:"))
-		if err := cache.Set(shasumKey, npmSHA, &cacheTTL); err != nil {
+		if err := state.Set(shasumKey, npmSHA, &ttl); err != nil {
 			return out, err
 		}
 		return out, nil
@@ -96,7 +96,7 @@ func DetectNPMPublish(lv tangent_sdk.Log) (Alert, error) {
 		publishToken := strings.TrimSpace(strings.TrimPrefix(m, "+ "))
 
 		successKey := fmt.Sprintf("npm-publish-success-%s", publishToken)
-		if err := cache.Set(successKey, true, &cacheTTL); err != nil {
+		if err := state.Set(successKey, true, &ttl); err != nil {
 			return out, err
 		}
 

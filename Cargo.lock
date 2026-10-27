@@ -4884,6 +4884,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "log",
+ "lru",
  "memchr",
  "num_cpus",
  "once_cell",
