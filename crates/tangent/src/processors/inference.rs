@@ -21,7 +21,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tangent_shared::dag::NodeRef;
-use tangent_shared::processors::inference::{Backend, InferenceConfig, OnError};
+use tangent_shared::processors::inference::{Answer, Backend, InferenceConfig, OnError};
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinSet;
 
@@ -78,7 +78,7 @@ impl Ctx {
         serde_json::to_string_pretty(&Value::Object(m)).unwrap_or_default()
     }
 
-    async fn ask(&self, user: String) -> Result<Value> {
+    async fn ask(&self, user: String) -> Result<(Value, bool)> {
         let mut request = CompletionRequest::new(user)
             .preamble(self.prompt.clone())
             .temperature(self.cfg.temperature)
@@ -110,13 +110,24 @@ impl Ctx {
                 reply.finish_reason()
             );
         }
-        let parsed = parse_reply(&text);
-        if let Some(path) = &self.cfg.forward_if {
-            if lookup(&parsed, path).is_none() {
-                bail!("reply has no {path:?}: {}", head(&text, 200));
+        match self.cfg.answer {
+            Answer::Json => {
+                let parsed = parse_reply(&text);
+                if let Some(path) = &self.cfg.forward_if {
+                    if lookup(&parsed, path).is_none() {
+                        bail!("reply has no {path:?}: {}", head(&text, 200));
+                    }
+                }
+                let forward = self.forwards(&parsed);
+                Ok((parsed, forward))
+            }
+            Answer::YesNo => {
+                let Some(yes) = yes_no(&text) else {
+                    bail!("reply is not yes or no: {}", head(&text, 80));
+                };
+                Ok((json!({"answer": if yes { "yes" } else { "no" }}), yes))
             }
         }
-        Ok(parsed)
     }
 
     /// Does this reply let the record through?
@@ -137,10 +148,7 @@ impl Ctx {
             };
             let start = Instant::now();
             let (reply, forward) = match self.ask(self.user_message(&v)).await {
-                Ok(reply) => {
-                    let forward = self.forwards(&reply);
-                    (reply, forward)
-                }
+                Ok(decided) => decided,
                 Err(e) => {
                     tracing::warn!(processor = %self.name, "inference failed: {e:#}");
                     match self.cfg.on_error {
@@ -210,12 +218,7 @@ fn head(s: &str, n: usize) -> String {
 /// <reasoning>…</reasoning> block and inside any code fence; a reply with no
 /// object becomes `{"text": ...}`.
 pub fn parse_reply(content: &str) -> Value {
-    // Reasoning models think out loud first; the answer comes after the tag.
-    let s = ["</think>", "</reasoning>"]
-        .iter()
-        .filter_map(|tag| content.rfind(tag).map(|i| i + tag.len()))
-        .max()
-        .map_or(content, |i| &content[i..]);
+    let s = answer_part(content);
     if let Some(start) = s.find('{') {
         if let Some(obj) = balanced_object(&s[start..]) {
             if let Ok(v @ Value::Object(_)) = serde_json::from_str::<Value>(obj) {
@@ -227,6 +230,33 @@ pub fn parse_reply(content: &str) -> Value {
         }
     }
     json!({ "text": s.trim() })
+}
+
+/// The answer: whatever follows the last reasoning block, if any. Reasoning
+/// models think out loud first; the answer comes after the tag (gpt-oss in
+/// harmony markup: after `<|channel|>final<|message|>`).
+fn answer_part(content: &str) -> &str {
+    ["</think>", "</reasoning>", "<|channel|>final<|message|>"]
+        .iter()
+        .filter_map(|tag| content.rfind(tag).map(|i| i + tag.len()))
+        .max()
+        .map_or(content, |i| &content[i..])
+}
+
+/// A one-word verdict: the first word of the answer, however it is dressed
+/// ("Yes.", "**no**", "YES, look at it"). None when it is neither.
+pub fn yes_no(content: &str) -> Option<bool> {
+    let word: String = answer_part(content)
+        .trim_start_matches(|c: char| !c.is_alphanumeric())
+        .chars()
+        .take_while(|c| c.is_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    match word.as_str() {
+        "yes" | "y" | "true" | "1" => Some(true),
+        "no" | "n" | "false" | "0" => Some(false),
+        _ => None,
+    }
 }
 
 /// A small model drops a key name or a quote now and then. Keep every
@@ -374,6 +404,33 @@ mod tests {
             parse_reply("{not json at all}")["text"],
             "{not json at all}"
         );
+        // gpt-oss through mlx: harmony channels inline, the answer in `final`.
+        let v = parse_reply(
+            "<|channel|>analysis<|message|>Input {\"x\": 1}; routine.<|end|><|start|>assistant<|channel|>final<|message|>{\"flag\": false}<|return|>",
+        );
+        assert_eq!(v["flag"], false);
+        assert!(v.get("x").is_none(), "{v}");
+    }
+
+    #[test]
+    fn one_word_verdicts() {
+        for yes in [
+            "yes",
+            "Yes.",
+            "**YES**",
+            "YES, look at it",
+            "<think>hmm</think>\nyes",
+            "<|channel|>analysis<|message|>Odd destination.<|end|><|start|>assistant<|channel|>final<|message|>yes",
+            "y",
+        ] {
+            assert_eq!(yes_no(yes), Some(true), "{yes:?}");
+        }
+        for no in ["no", "No\n", "**no**", "n", "No, routine"] {
+            assert_eq!(yes_no(no), Some(false), "{no:?}");
+        }
+        for neither in ["maybe", "", "{\"flag\": true}", "yesterday"] {
+            assert_eq!(yes_no(neither), None, "{neither:?}");
+        }
     }
 
     #[test]

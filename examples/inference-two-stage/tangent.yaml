@@ -1,0 +1,56 @@
+# Two models. A small one on this machine answers yes or no to every record;
+# only the yeses reach a stronger hosted one, which writes the verdict.
+#
+#   mlx_lm.server --model mlx-community/GLM-4.7-Flash-4bit --port 8080
+#   aws sso login --profile <your-profile>
+#   tangent run --config tangent.yaml
+#   nc localhost 9000 < events.ndjson
+#   cat flagged.ndjson
+runtime:
+  workers: 1
+
+sources:
+  events:
+    type: tcp
+    bind_address: 0.0.0.0:9000
+
+processors:
+  filter:
+    type: inference
+    backend: openai
+    url: http://localhost:8080/v1
+    model: mlx-community/GLM-4.7-Flash-4bit
+    prompt_file: filter.md
+    answer: yes_no                  # one word: yes forwards, no drops, anything else is an error
+    output: _filter                 # {"answer": "yes"} on the records that go on
+    concurrency: 8
+    max_tokens: 8                   # the answer is one token; a reasoning model would need ~100
+    extra:
+      chat_template_kwargs:
+        enable_thinking: false
+
+  judge:
+    type: inference
+    backend: bedrock
+    model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    region: us-west-2
+    prompt_file: judge.md
+    output: _judge
+    forward_if: flag                # the judge can still say no
+    concurrency: 8
+    timeout_ms: 30000
+
+sinks:
+  flagged:
+    type: file
+    path: flagged.ndjson
+    compression:
+      type: none
+
+dag:
+  - from: { kind: source, name: events }
+    to: [{ kind: processor, name: filter }]
+  - from: { kind: processor, name: filter }
+    to: [{ kind: processor, name: judge }]
+  - from: { kind: processor, name: judge }
+    to: [{ kind: sink, name: flagged }]

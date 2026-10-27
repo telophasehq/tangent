@@ -31,6 +31,10 @@ pub struct InferenceConfig {
     /// System prompt (relative to the config file).
     pub prompt_file: PathBuf,
 
+    /// What the model is asked to reply with.
+    #[serde(default)]
+    pub answer: Answer,
+
     /// Record fields to show the model; the whole record when empty.
     #[serde(default)]
     pub fields: Vec<String>,
@@ -85,6 +89,20 @@ pub enum Backend {
     Openai,
     /// Amazon Bedrock through the Converse API, with the AWS credential chain.
     Bedrock,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Answer {
+    /// A JSON object, merged into the record under `output`; `forward_if`
+    /// names the field that lets a record through.
+    #[default]
+    Json,
+    /// One word: `yes` forwards the record, `no` drops it, anything else is a
+    /// failure (see `on_error`). The word lands under `output` as
+    /// `{"answer": ...}`. Cheap enough to read a whole stream: a first pass
+    /// in front of a slower model.
+    YesNo,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]

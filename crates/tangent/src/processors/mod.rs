@@ -113,7 +113,7 @@ mod tests {
     use bytes::BytesMut;
     use serde_json::{json, Map, Value};
     use tangent_shared::dag::NodeRef;
-    use tangent_shared::processors::inference::{Backend, InferenceConfig, OnError};
+    use tangent_shared::processors::inference::{Answer, Backend, InferenceConfig, OnError};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::Mutex;
 
@@ -171,7 +171,9 @@ mod tests {
                         buf.extend_from_slice(&tmp[..n]);
                     }
                     let body = String::from_utf8_lossy(&buf[body_start..]).into_owned();
-                    let content = if body.contains("bad") {
+                    let content = if body.contains("answer yes or no") {
+                        if body.contains("bad") { "Yes." } else { "no" }.to_string()
+                    } else if body.contains("bad") {
                         r#"{"flag": true, "one_line": "bad thing"}"#.to_string()
                     } else {
                         "<think>looks fine</think>\n```json\n{\"flag\": false, \"one_line\": \"fine\"}\n```"
@@ -208,6 +210,7 @@ mod tests {
             region: None,
             profile: None,
             prompt_file: "judge.md".into(),
+            answer: Answer::Json,
             fields: Vec::new(),
             output: "_judge".into(),
             forward_if: Some("flag".into()),
@@ -222,15 +225,19 @@ mod tests {
     }
 
     /// Run `records` through one inference processor into a recording sink.
-    async fn run_pipeline(cfg: InferenceConfig, records: &[&str]) -> (Vec<String>, Vec<String>) {
+    async fn run_pipeline(
+        cfg: InferenceConfig,
+        prompt: &str,
+        records: &[&str],
+    ) -> (Vec<String>, Vec<String>) {
         let dir = std::env::temp_dir().join(format!(
             "tangent-inference-{}-{}",
             std::process::id(),
-            cfg.on_error as u8
+            cfg.on_error as u8 + 2 * cfg.answer as u8
         ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("judge.md"), "You are a test judge.\n").unwrap();
+        std::fs::write(dir.join("judge.md"), prompt).unwrap();
 
         let sink = Arc::new(RecordingSink::default());
         let sink_name: Arc<str> = Arc::from("out");
@@ -282,6 +289,7 @@ mod tests {
         let (url, seen) = stub_model().await;
         let (writes, _) = run_pipeline(
             config(&url, OnError::Pass),
+            "You are a test judge.\n",
             &[
                 r#"{"id": 1, "msg": "all good"}"#,
                 r#"{"id": 2, "msg": "bad login"}"#,
@@ -319,10 +327,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_yes_no_filter_forwards_only_the_yeses() {
+        let (url, seen) = stub_model().await;
+        let mut cfg = config(&url, OnError::Pass);
+        cfg.answer = Answer::YesNo;
+        cfg.forward_if = None;
+        let (writes, _) = run_pipeline(
+            cfg,
+            "Should someone look? answer yes or no.\n",
+            &[
+                r#"{"id": 1, "msg": "all good"}"#,
+                r#"{"id": 2, "msg": "bad login"}"#,
+                r#"{"id": 3, "msg": "also fine"}"#,
+            ],
+        )
+        .await;
+        assert_eq!(writes.len(), 1, "{writes:?}");
+        let out: Value = serde_json::from_str(writes[0].trim()).unwrap();
+        assert_eq!(out["id"], 2);
+        assert_eq!(out["_judge"]["answer"], "yes");
+        assert_eq!(seen.lock().await.len(), 3, "every record was asked about");
+    }
+
+    #[tokio::test]
     async fn an_unreachable_model_passes_or_drops_as_configured() {
         // Nothing listens on port 1.
         let dead = "http://127.0.0.1:1/v1";
-        let (writes, _) = run_pipeline(config(dead, OnError::Pass), &[r#"{"id": 9}"#]).await;
+        let (writes, _) = run_pipeline(
+            config(dead, OnError::Pass),
+            "You are a test judge.\n",
+            &[r#"{"id": 9}"#],
+        )
+        .await;
         assert_eq!(writes.len(), 1, "{writes:?}");
         let out: Value = serde_json::from_str(writes[0].trim()).unwrap();
         assert_eq!(out["id"], 9);
@@ -331,7 +367,12 @@ mod tests {
             "{out}"
         );
 
-        let (writes, _) = run_pipeline(config(dead, OnError::Drop), &[r#"{"id": 9}"#]).await;
+        let (writes, _) = run_pipeline(
+            config(dead, OnError::Drop),
+            "You are a test judge.\n",
+            &[r#"{"id": 9}"#],
+        )
+        .await;
         assert!(writes.is_empty(), "{writes:?}");
     }
 }
