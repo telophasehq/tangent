@@ -1,13 +1,13 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt};
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use serde_json::Value;
 use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store};
-use wasmtime_wasi::WasiCtxBuilder;
+use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
 
 use crate::state::{StateStore, PLUGIN_NS};
 use crate::wasm::host::tangent::logs::{config, lock, log, remote, state};
@@ -19,6 +19,9 @@ pub struct WasmEngine {
     config: HashMap<Arc<str>, Arc<HashMap<String, Value>>>,
     /// Each plugin's state namespace: `PLUGIN_NS` unless configured otherwise.
     state_ns: HashMap<Arc<str>, Arc<str>>,
+    /// Each plugin's data directory (`plugins.<name>.data`), seen by the
+    /// guest read-only at `/data`.
+    data: HashMap<Arc<str>, PathBuf>,
     disable_remote_calls: bool,
 }
 
@@ -40,6 +43,7 @@ impl WasmEngine {
             disable_remote_calls,
             config: HashMap::new(),
             state_ns: HashMap::new(),
+            data: HashMap::new(),
         })
     }
 
@@ -53,25 +57,37 @@ impl WasmEngine {
         loc: &Path,
         cfg: HashMap<String, Value>,
         state_ns: Option<&str>,
+        data: Option<&Path>,
     ) -> Result<Component> {
         let comp = unsafe { Component::deserialize_file(&self.engine, &loc)? };
 
         let ns: Arc<str> = state_ns.map_or_else(|| Arc::from(PLUGIN_NS), Arc::from);
         self.state_ns.insert(Arc::clone(&name), ns);
+        if let Some(dir) = data {
+            self.data.insert(Arc::clone(&name), dir.to_path_buf());
+        }
         self.config.insert(name, Arc::new(cfg));
 
         Ok(comp)
     }
 
-    pub fn make_store(&self, component_name: &Arc<str>) -> Store<HostEngine> {
-        Store::new(
+    pub fn make_store(&self, component_name: &Arc<str>) -> Result<Store<HostEngine>> {
+        let mut wasi = WasiCtxBuilder::new();
+        wasi.inherit_stdout().inherit_stderr().inherit_env();
+        if let Some(dir) = self.data.get(component_name) {
+            // The plugin's data directory, read-only, at /data in the guest.
+            wasi.preopened_dir(dir, "/data", DirPerms::READ, FilePerms::READ)
+                .with_context(|| {
+                    format!(
+                        "opening data directory {} for plugin {component_name}",
+                        dir.display()
+                    )
+                })?;
+        }
+        Ok(Store::new(
             &self.engine,
             HostEngine::new(
-                WasiCtxBuilder::new()
-                    .inherit_stdout()
-                    .inherit_stderr()
-                    .inherit_env()
-                    .build(),
+                wasi.build(),
                 self.state.clone(),
                 self.state_ns
                     .get(component_name)
@@ -79,7 +95,7 @@ impl WasmEngine {
                 self.config.get(component_name).unwrap().clone(),
                 self.disable_remote_calls,
             ),
-        )
+        ))
     }
 
     pub async fn make_processor(

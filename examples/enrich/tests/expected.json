@@ -1,0 +1,10 @@
+[
+  {"_ip": {"sourceIPAddress": {"asn": 15169, "country": "US", "hosting": "datacenter", "ip": "8.8.8.8", "org": "Google LLC", "ours": false, "private": false, "tor": false, "vpn": false}}, "event": "login", "sourceIPAddress": "8.8.8.8"},
+  {"_ip": {"client.ipAddress": {"ip": "203.0.113.7", "ours": true, "private": false, "tor": false, "vpn": false}}, "client": {"ipAddress": "203.0.113.7"}, "event": "login"},
+  {"_ip": {"ip": {"ip": "10.1.2.3", "ours": false, "private": true, "tor": false, "vpn": false}}, "event": "api", "ip": "10.1.2.3"},
+  {"_ip": {"actor_ip": {"asn": 16509, "country": "KR", "hosting": "aws", "ip": "3.5.140.1", "org": "Amazon.com, Inc.", "ours": false, "private": false, "tor": false, "vpn": false}}, "actor_ip": "3.5.140.1", "event": "api"},
+  {"_ip": {"ip": {"asn": 15169, "country": "ZA", "hosting": "gcp", "ip": "34.1.208.1", "org": "Google LLC", "ours": false, "private": false, "tor": false, "vpn": false}}, "event": "api", "ip": "34.1.208.1"},
+  {"_ip": {"ip": {"country": "US", "hosting": "cloudflare", "ip": "173.245.48.1", "ours": false, "private": false, "tor": false, "vpn": false}}, "event": "api", "ip": "173.245.48.1:443"},
+  {"_ip": {"ip": {"ip": "192.0.2.1", "ours": false, "private": false, "tor": false, "vpn": false}}, "event": "api", "ip": "192.0.2.1"},
+  {"event": "noise", "msg": "no address here"}
+]

@@ -1,0 +1,42 @@
+# Decorate records with what is known about their IP addresses, offline.
+#
+#   ./setup.sh                                   # toolchain, and the data files under data/
+#   tangent plugin compile --config tangent.yaml
+#   tangent plugin test --config tangent.yaml
+#   tangent run --config tangent.yaml
+#   nc localhost 9000 < tests/input.json          # (one record per line)
+#
+# Refresh the data now and then (MaxMind publishes Tuesdays and Fridays):
+#   ./setup.sh data
+runtime:
+  plugins_path: plugins/
+
+plugins:
+  enrich:
+    module_type: rust
+    path: .
+    data: data/                  # read-only at /data in the guest; filled by setup.sh
+    config:
+      fields: [sourceIPAddress, client.ipAddress, actor_ip, ip]   # record paths that hold an address
+      ours: [203.0.113.0/24]     # the org's own addresses: office, VPN, CI egress
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json
+
+sources:
+  events:
+    type: tcp
+    bind_address: 0.0.0.0:9000
+
+sinks:
+  out:
+    type: file
+    path: out.ndjson
+    compression:
+      type: none
+
+dag:
+  - from: { kind: source, name: events }
+    to: [{ kind: plugin, name: enrich }]
+  - from: { kind: plugin, name: enrich }
+    to: [{ kind: sink, name: out }]

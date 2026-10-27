@@ -1,0 +1,10 @@
+[
+  { "event": "login", "sourceIPAddress": "8.8.8.8" },
+  { "event": "login", "client": { "ipAddress": "203.0.113.7" } },
+  { "event": "api", "ip": "10.1.2.3" },
+  { "event": "api", "actor_ip": "3.5.140.1" },
+  { "event": "api", "ip": "34.1.208.1" },
+  { "event": "api", "ip": "173.245.48.1:443" },
+  { "event": "api", "ip": "192.0.2.1" },
+  { "event": "noise", "msg": "no address here" }
+]
