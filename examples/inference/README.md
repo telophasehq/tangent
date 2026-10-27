@@ -32,6 +32,15 @@ Any OpenAI-compatible endpoint works: change `url` and `model`, add
 `chat_template_kwargs` setting is mlx_lm's way of skipping the thinking phase,
 which otherwise makes a verdict take minutes instead of seconds).
 
+For Claude on Bedrock, swap the endpoint for the `bedrock` backend; credentials
+come from the usual AWS chain:
+
+```yaml
+    backend: bedrock
+    model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    region: us-west-2
+```
+
 ## Run
 
 ```bash

@@ -3,16 +3,30 @@ use serde_json::{Map, Value};
 use std::path::PathBuf;
 
 /// Ask a model about each record. The node sends `prompt_file` as the system
-/// message and the record (or the listed `fields`) as the user message to an
-/// OpenAI-compatible chat endpoint, and adds the JSON object the model
-/// replies with to the record under `output`.
+/// message and the record (or the listed `fields`) as the user message, and
+/// adds the JSON object the model replies with to the record under `output`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct InferenceConfig {
-    /// Base URL of the chat completions API.
+    /// Where the model is served.
+    #[serde(default)]
+    pub backend: Backend,
+
+    /// Base URL of the chat completions API (`openai` backend).
     #[serde(default = "default_url")]
     pub url: String,
 
+    /// Model id as the backend knows it, e.g. `mlx-community/GLM-4.7-Flash-4bit`
+    /// or `us.anthropic.claude-haiku-4-5-20251001-v1:0`.
     pub model: String,
+
+    /// AWS region for the `bedrock` backend; the SDK's default when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+
+    /// AWS profile for the `bedrock` backend; the default credential chain
+    /// when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
 
     /// System prompt (relative to the config file).
     pub prompt_file: PathBuf,
@@ -45,11 +59,12 @@ pub struct InferenceConfig {
     pub temperature: f64,
 
     /// Extra request parameters merged into the body, e.g.
-    /// `chat_template_kwargs: {enable_thinking: false}` for mlx_lm.server.
+    /// `chat_template_kwargs: {enable_thinking: false}` for mlx_lm.server or
+    /// `reasoning_effort: low` for gpt-oss.
     #[serde(default)]
     pub extra: Map<String, Value>,
 
-    /// Bearer token for the endpoint, e.g. "${OPENAI_API_KEY}".
+    /// Bearer token for the `openai` backend, e.g. "${OPENAI_API_KEY}".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
 
@@ -57,6 +72,17 @@ pub struct InferenceConfig {
     /// without the `forward_if` field.
     #[serde(default)]
     pub on_error: OnError,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Backend {
+    /// An OpenAI-compatible chat completions endpoint at `url`: OpenAI,
+    /// mlx_lm.server, llama-server, vLLM, Bedrock's OpenAI endpoint, ...
+    #[default]
+    Openai,
+    /// Amazon Bedrock through the Converse API, with the AWS credential chain.
+    Bedrock,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]

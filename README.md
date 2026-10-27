@@ -91,6 +91,8 @@ processors:
     extra: { chat_template_kwargs: { enable_thinking: false } }
 ```
 
+The model is reached through [rig](https://github.com/0xPlaygrounds/rig): `backend: openai` (the default) for any OpenAI-compatible chat endpoint such as OpenAI, mlx_lm.server, llama-server, vLLM or Bedrock's OpenAI endpoint, and `backend: bedrock` for Amazon Bedrock's Converse API with the AWS credential chain (`region`, `profile`).
+
 The record (or its `fields`) is the user message. `forward_if` names a field of the reply: only records where it is true go on, and a reply without it counts as a failure. `on_error: pass` (the default) forwards a failed record with `{"error": ...}` under `output` so nothing is lost silently; `on_error: drop` drops it. `concurrency` bounds requests in flight. See [examples/inference](/examples/inference).
 
 ## Benchmarks
