@@ -3,7 +3,8 @@
 #
 #   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
 #   make test       the cases in cases/ through norm, gate and window; no model needed
-#   make run        the pipeline; forward NDJSON records to :9400
+#   make run        the pipeline: reads CloudTrail, GitHub, Okta and Workspace for the credentials
+#                   you export (see the Makefile); anything else as NDJSON on :9400
 #
 # Edit profile/profile.yaml first: it is everything the gate knows about you.
 runtime:
@@ -20,7 +21,27 @@ runtime:
     max_ttl_ms: 0
 
 sources:
-  events:                       # one JSON record per line, with a `source` field naming its shape
+  # Each API is read directly, with nothing in between; a source whose
+  # credential is empty says so once and stays idle. See the Makefile for the
+  # variables and the README for what each credential needs.
+  cloudtrail:                   # LookupEvents: management events, nothing to set up (cloudtrail:LookupEvents)
+    type: cloudtrail
+    region: ${AWS_REGION}
+    profile: ${AWS_PROFILE}
+    queue_url: ${CLOUDTRAIL_QUEUE_URL}   # set: a trail's delivered files, every event, through its SQS notifications
+  github_audit:                 # the organization's audit log (a token with read:audit_log)
+    type: github_audit
+    org: ${GITHUB_ORG}
+    token: ${GITHUB_TOKEN}
+  okta:                         # the System Log (an API token)
+    type: okta
+    org_url: ${OKTA_ORG_URL}
+    token: ${OKTA_API_TOKEN}
+  google_workspace:             # login, token, drive and admin activity (a service account acting as an admin)
+    type: google_workspace
+    credentials_file: ${GOOGLE_APPLICATION_CREDENTIALS}
+    subject: ${GOOGLE_ADMIN_EMAIL}
+  events:                       # anything else: one JSON record per line, with a `source` field naming its shape
     type: tcp
     bind_address: 0.0.0.0:9400
 
@@ -88,6 +109,14 @@ sinks:
       type: none
 
 dag:
+  - from: { kind: source, name: cloudtrail }
+    to: [{ kind: plugin, name: norm }]
+  - from: { kind: source, name: github_audit }
+    to: [{ kind: plugin, name: norm }]
+  - from: { kind: source, name: okta }
+    to: [{ kind: plugin, name: norm }]
+  - from: { kind: source, name: google_workspace }
+    to: [{ kind: plugin, name: norm }]
   - from: { kind: source, name: events }
     to: [{ kind: plugin, name: norm }]
   - from: { kind: plugin, name: norm }

@@ -33,7 +33,18 @@ JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_AP
 
 ### Getting logs in
 
-Every record is one JSON line with a `source` field naming its shape (`cloudtrail`, `github_audit`, `okta`, `google_workspace`, `gha_ci`, `runner_egress`) and a `ts`. Today that means a forwarder: Vector, Fluent Bit, or a script reading your S3 delivery buckets, sending to `:9400`. Direct sources that poll Okta and Workspace and read CloudTrail and GitHub audit streaming from S3 are the next thing this pack gets; the plugins do not change when they land.
+Four sources read their APIs directly, with nothing in between. Each wakes up when its credential is exported (the Makefile lists the variables) and, left empty, says so once and stays idle.
+
+| source | export | what it reads |
+|---|---|---|
+| `cloudtrail` | AWS credentials: `AWS_PROFILE` and `AWS_REGION`, or the SDK's default chain; the identity needs `cloudtrail:LookupEvents` | `LookupEvents` on the account: management events (IAM, STS, console sign-ins, bucket policy changes), about fifteen minutes behind, nothing to set up. With `CLOUDTRAIL_QUEUE_URL`, an SQS queue fed by a trail (S3 event notifications on its bucket, or the trail's own SNS notifications): every event, data events included, gzipped files every few minutes; the identity then also needs to receive and delete on the queue and read the bucket |
+| `github_audit` | `GITHUB_ORG`, `GITHUB_TOKEN` with `read:audit_log` (the audit log API is a GitHub Enterprise Cloud feature) | the organization's audit log, web and git events |
+| `okta` | `OKTA_ORG_URL` (`https://acme.okta.com`), `OKTA_API_TOKEN` from Security → API → Tokens, made by a read-only administrator | the System Log |
+| `google_workspace` | `GOOGLE_APPLICATION_CREDENTIALS`, a service account key file with domain-wide delegation for the scope `https://www.googleapis.com/auth/admin.reports.audit.readonly`; `GOOGLE_ADMIN_EMAIL`, the administrator it acts as (the Admin SDK API enabled on the project) | login, token, drive and admin activity |
+
+A source keeps its place in the runtime's state store (the `sources` namespace), so a restart resumes where it stopped; on first start it reads the last hour (`since`). Records arrive as the APIs write them, plus `source` and `ts`; norm knows the four shapes.
+
+Anything else (CI logs, runner egress, a forwarder for a source not listed) is one JSON line per record on `:9400`, with a `source` field naming its shape (`gha_ci`, `runner_egress`, or one of the four above) and a `ts`.
 
 ## The profile
 
