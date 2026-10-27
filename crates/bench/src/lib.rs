@@ -195,6 +195,12 @@ pub async fn run_one_payload(
                         SourceConfig::NPMRegistry(_) => unimplemented!("not implemented"),
                         SourceConfig::GithubWebhook(_) => unimplemented!("not implemented"),
                         SourceConfig::File(_) => unimplemented!("not implemented"),
+                        SourceConfig::Cloudtrail(_)
+                        | SourceConfig::GithubAudit(_)
+                        | SourceConfig::Okta(_)
+                        | SourceConfig::GoogleWorkspace(_) => {
+                            anyhow::bail!("polling sources are not benchmarked")
+                        }
                     }
                 }
             )

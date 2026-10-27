@@ -8,7 +8,11 @@ use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    router::Router, sinks::manager::SinkManager, sources, state, wasm::engine::WasmEngine,
+    router::Router,
+    sinks::manager::SinkManager,
+    sources, state,
+    state::StateStore,
+    wasm::engine::WasmEngine,
     worker::WorkerPool,
 };
 
@@ -132,8 +136,13 @@ impl DagRuntime {
 
         router.set_pool(&pool);
 
-        let consumer_handles =
-            spawn_consumers(cfg.sources, batch_size, router.clone(), shutdown.clone());
+        let consumer_handles = spawn_consumers(
+            cfg.sources,
+            batch_size,
+            router.clone(),
+            Arc::clone(&store),
+            shutdown.clone(),
+        );
 
         Ok(Self {
             router,
@@ -218,11 +227,14 @@ fn spawn_consumers(
     sources: BTreeMap<Arc<str>, SourceConfig>,
     batch_size: usize,
     router: Arc<Router>,
+    store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let mut handles = Vec::new();
     for src in sources {
         let shutdown = shutdown.clone();
+        // The polling sources keep their cursor in the state store.
+        let store = Arc::clone(&store);
         match src {
             (name, SourceConfig::MSK(kc)) => {
                 let router = router.clone();
@@ -296,6 +308,65 @@ fn spawn_consumers(
                             .await
                     {
                         tracing::error!("NPM Registry consumer error: {e}");
+                    }
+                }));
+            }
+            (name, SourceConfig::Cloudtrail(ct)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) = sources::cloudtrail::run_consumer(
+                        name,
+                        ct,
+                        batch_size,
+                        router,
+                        store,
+                        shutdown.clone(),
+                    )
+                    .await
+                    {
+                        tracing::error!("cloudtrail consumer error: {e:#}");
+                    }
+                }));
+            }
+            (name, SourceConfig::GithubAudit(ga)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) = sources::github_audit::run_consumer(
+                        name,
+                        ga,
+                        router,
+                        store,
+                        shutdown.clone(),
+                    )
+                    .await
+                    {
+                        tracing::error!("github_audit consumer error: {e:#}");
+                    }
+                }));
+            }
+            (name, SourceConfig::Okta(ok)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) =
+                        sources::okta::run_consumer(name, ok, router, store, shutdown.clone()).await
+                    {
+                        tracing::error!("okta consumer error: {e:#}");
+                    }
+                }));
+            }
+            (name, SourceConfig::GoogleWorkspace(gw)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) = sources::google_workspace::run_consumer(
+                        name,
+                        gw,
+                        router,
+                        store,
+                        shutdown.clone(),
+                    )
+                    .await
+                    {
+                        tracing::error!("google_workspace consumer error: {e:#}");
                     }
                 }));
             }
