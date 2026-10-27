@@ -1,0 +1,13 @@
+id: saas/provider-keys-stolen-from-vendor-console
+title: Keys saved in a third-party developer console are taken in its breach and run up usage from everywhere (OpenCode Console, Oct 2026)
+category: saas
+priority: P2
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [app]
+events: 40
+expected:
+  flag: true
+  one_line: customer key ak_c4d, which has only ever called from one AWS address, made 40 requests in an hour from five countries including a Tor exit
+  check_first: disable the key and tell the customer; the vendor console where it was stored; the usage bill

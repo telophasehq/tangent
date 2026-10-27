@@ -1,0 +1,13 @@
+id: vendor/platform-breach-env-secrets-reused
+title: "A hosting vendor's breach exposes stored environment variables; what was in them is used from a datacenter within a day (Railway, Oct 2026)"
+category: vendor
+priority: P1
+scope: org            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [cloudtrail, github_audit, app]
+events: 24
+expected:
+  flag: true
+  one_line: "the day after the vendor's notice, the deploy user's AWS key, dev-sam's GitHub token and the service's own API key were all used from one Dutch datacenter address within ten minutes"
+  check_first: "rotate everything that lived in the vendor's environment variables; the vendor's incident timeline"

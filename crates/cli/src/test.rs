@@ -100,7 +100,10 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                     compression: Compression::None,
                     encoding: Encoding::NDJSON,
                     object_max_bytes: tangent_shared::sinks::common::object_max_bytes(),
-                    in_flight_limit: tangent_shared::sinks::common::in_flight_limit(),
+                    // One write at a time: a fixture is compared line by line,
+                    // so the output's batches must land in the order they
+                    // were produced.
+                    in_flight_limit: 1,
                     default: true,
                 },
             };

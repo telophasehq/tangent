@@ -1,0 +1,13 @@
+id: github/pat-mass-push
+title: One personal access token pushes to a dozen repos in three minutes
+category: supply-chain
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 5m
+alone_innocent: true   # does each line look fine on its own?
+sources: [github_audit]
+events: 12
+expected:
+  flag: true
+  one_line: "dev-mallory's PAT pushed to 12 repos in 3 minutes, including ones they never touched"
+  check_first: whether the PAT is on a compromised laptop or in a leaked CI secret

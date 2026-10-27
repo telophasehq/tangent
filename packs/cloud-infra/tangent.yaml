@@ -1,0 +1,104 @@
+# cloud-infra: your own infrastructure's logs, read by a model only when context
+# says a person should look.
+#
+#   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
+#   make test       the cases in cases/ through norm, gate and window; no model needed
+#   make run        the pipeline; forward NDJSON records to :9400
+#
+# Edit profile/profile.yaml first: it is everything the gate knows about you.
+runtime:
+  workers: 2
+  plugins_path: plugins/
+  partition:
+    key: [_norm.org]            # your own logs all land in the one partition named in profile.yaml
+    time: ts                    # the record's own time keys its row
+    retain_ms: 2592000000       # 30 days of history per partition, read back for the judge
+  state:
+    backend: sqlite
+    path: state.sqlite
+    default_ttl_ms: 0
+    max_ttl_ms: 0
+
+sources:
+  events:                       # one JSON record per line, with a `source` field naming its shape
+    type: tcp
+    bind_address: 0.0.0.0:9400
+
+plugins:
+  norm:                         # every source's shape into _norm.{actor, org, kind, ip, country, dest, target}
+    module_type: rust
+    path: norm
+    data: profile
+    tests:
+      - input: tests/norm/input.json
+        expected: tests/norm/expected.json
+  enrich:                       # what is known about the address: country, ASN, hosting, Tor, VPN, yours
+    module_type: rust
+    path: ../../examples/enrich
+    data: ../../examples/enrich/data
+    config:
+      fields: [_norm.ip]
+      ours: [10.0.0.0/8]        # your own ranges: office, VPN, CI egress
+  gate:                         # the profile decides what the judge reads; once per reason per hour
+    module_type: rust
+    path: gate
+    data: profile
+    tests:
+      - input: tests/gate/input.json
+        expected: tests/gate/expected.json
+  window:                       # the actor's last day and the org's last hour, from retained rows
+    module_type: rust
+    path: window
+    config:
+      time: ts
+      scopes: { actor: _norm.actor, org: _norm.org }
+      spans: { actor: 24h, org: 1h }
+      max_events: 20
+    tests:
+      - input: tests/window/input.json
+        expected: tests/window/expected.json
+  flagged:                      # keeps what the judge flagged, and what it could not read
+    module_type: rust
+    path: ../../examples/inference-local/flagged
+
+inference:
+  judge:
+    backend: openai             # any OpenAI-compatible endpoint; see the Makefile for the defaults
+    url: ${JUDGE_URL}
+    model: ${JUDGE_MODEL}
+    api_key: ${JUDGE_API_KEY}
+    prompt_file: judge.md
+    max_tokens: 600
+    timeout_ms: 90000
+    concurrency: 4
+    extra:
+      chat_template_kwargs:
+        enable_thinking: false  # local reasoning models: answer, do not think aloud
+
+sinks:
+  alerts:                       # what a person should look at
+    type: file
+    path: alerts.ndjson
+    compression:
+      type: none
+  verdicts:                     # every verdict, flagged or not
+    type: file
+    path: verdicts.ndjson
+    compression:
+      type: none
+
+dag:
+  - from: { kind: source, name: events }
+    to: [{ kind: plugin, name: norm }]
+  - from: { kind: plugin, name: norm }
+    to: [{ kind: plugin, name: enrich }]
+  - from: { kind: plugin, name: enrich }
+    to: [{ kind: plugin, name: gate }]
+  - from: { kind: plugin, name: gate }
+    to: [{ kind: plugin, name: window }]
+  - from: { kind: plugin, name: window }
+    to: [{ kind: inference, name: judge }]
+  - from: { kind: inference, name: judge }
+    to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]
+  - from: { kind: plugin, name: flagged }
+    to: [{ kind: sink, name: alerts }]

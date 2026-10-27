@@ -1,0 +1,13 @@
+id: identity/impossible-travel
+title: Two successful logins, two continents, 22 minutes apart
+category: identity
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [okta]
+events: 2
+expected:
+  flag: true
+  one_line: bob signed in from San Francisco and from Singapore 22 minutes apart
+  check_first: "which session is bob's; terminate the other"

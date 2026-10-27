@@ -61,3 +61,8 @@ jobs:
       - name: Run make test (examples/enrich)
         run: make test
         working-directory: examples/enrich
+
+      # A pack: three plugins, a profile, cases as fixtures; no model needed for the test.
+      - name: Run make test (packs/cloud-infra)
+        run: make test
+        working-directory: packs/cloud-infra

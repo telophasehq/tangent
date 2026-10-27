@@ -1,0 +1,13 @@
+id: cloud/s3-bucket-public
+title: Public access block removed and a bucket policy grants everyone read
+category: cloud
+priority: P1
+scope: org            # the window that reveals it
+cadence: 5m
+alone_innocent: true   # does each line look fine on its own?
+sources: [cloudtrail]
+events: 2
+expected:
+  flag: true
+  one_line: "acme-customer-exports lost its public access block and got a Principal:* read policy"
+  check_first: revert both; check access logs

@@ -1,0 +1,13 @@
+id: identity/sso-bypass-password-login
+title: Password login succeeds in an org with SSO enforced
+category: identity
+priority: P1
+scope: actor            # the window that reveals it
+cadence: single
+alone_innocent: false   # does each line look fine on its own?
+sources: [app]
+events: 2
+expected:
+  flag: true
+  one_line: carol logged in with a password although the org enforces SSO
+  check_first: "how a password login path is still reachable; carol's recent sessions"

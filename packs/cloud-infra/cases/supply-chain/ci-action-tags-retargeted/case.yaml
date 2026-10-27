@@ -1,0 +1,13 @@
+id: supply-chain/ci-action-tags-retargeted
+title: "A security scanner's Action has its version tags force-pushed to a stealer (TeamPCP: Trivy, KICS; March 2026)"
+category: supply-chain
+priority: P1
+scope: plan            # the window that reveals it
+cadence: run-completion
+alone_innocent: true   # does each line look fine on its own?
+sources: [gha_ci, runner_egress, cloudtrail]
+events: 10
+expected:
+  flag: true
+  one_line: CI ran a retargeted trivy-action tag; the runner posted 190 KB to a look-alike host, and the deploy key was used from a Dutch datacenter 11 minutes later
+  check_first: "the action's tag against its commit; rotate every secret the runner could see, the deploy key first"

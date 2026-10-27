@@ -1,0 +1,13 @@
+id: saas/integration-token-stolen-bulk-read
+title: "A SaaS integration's OAuth token is stolen in the vendor's breach and used to read everything (Salesloft Drift, Aug 2025)"
+category: saas
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 5m
+alone_innocent: true   # does each line look fine on its own?
+sources: [app]
+events: 41
+expected:
+  flag: true
+  one_line: "the Drift integration's token read all 40 pages of findings and every user from a Dutch host in six minutes; it has only ever called from the vendor's AWS range"
+  check_first: "revoke the integration's token; the vendor's incident page; what the pages contained"

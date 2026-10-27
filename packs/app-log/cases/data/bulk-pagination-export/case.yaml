@@ -1,0 +1,13 @@
+id: data/bulk-pagination-export
+title: One API key pages through every finding in four minutes
+category: data
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 5m
+alone_innocent: true   # does each line look fine on its own?
+sources: [app]
+events: 40
+expected:
+  flag: true
+  one_line: ak_9c1 fetched 40 pages of /v1/findings in four minutes, the whole dataset
+  check_first: whose key; whether an export was expected

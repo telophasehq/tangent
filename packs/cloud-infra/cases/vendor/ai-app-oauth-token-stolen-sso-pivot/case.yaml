@@ -1,0 +1,13 @@
+id: vendor/ai-app-oauth-token-stolen-sso-pivot
+title: An AI productivity app an employee connected to her Google account is breached; its OAuth token reads her Drive, then her SSO opens the internal tools (Vercel via Context.ai, April 2026)
+category: vendor
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [google_workspace, okta, app]
+events: 18
+expected:
+  flag: true
+  one_line: "the Context AI app erin authorized three weeks ago read six documents from her Drive from a Dutch host, then her Google SSO signed into Linear and the admin console from the same host and read eight projects' environment variables"
+  check_first: "revoke the app's OAuth grant and every session of erin's; which environment variables were read; the vendor's breach notice"

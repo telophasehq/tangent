@@ -1,0 +1,13 @@
+id: github/shai-hulud-workflow-runner
+title: "Shai-Hulud: a workflow file pushed straight to main, a runner registered, egress to webhook.site"
+category: supply-chain
+priority: P1
+scope: org            # the window that reveals it
+cadence: 5m
+alone_innocent: true   # does each line look fine on its own?
+sources: [github_audit, runner_egress]
+events: 4
+expected:
+  flag: true
+  one_line: a new workflow was pushed directly to main, a self-hosted runner registered, and the run sent data to webhook.site
+  check_first: the workflow file; revoke the token that pushed it

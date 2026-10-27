@@ -1,0 +1,13 @@
+id: cloud/sg-open-world
+title: A security group opens Postgres to the internet
+category: cloud
+priority: P1
+scope: org            # the window that reveals it
+cadence: single
+alone_innocent: false   # does each line look fine on its own?
+sources: [cloudtrail]
+events: 1
+expected:
+  flag: true
+  one_line: sg-0a1b opened 5432 to 0.0.0.0/0
+  check_first: which database sits behind it; revert

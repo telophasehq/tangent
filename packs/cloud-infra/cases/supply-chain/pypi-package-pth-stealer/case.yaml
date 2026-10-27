@@ -1,0 +1,13 @@
+id: supply-chain/pypi-package-pth-stealer
+title: "A backdoored PyPI release runs on every Python start and ships the runner's credentials (LiteLLM 1.82.8, March 2026)"
+category: supply-chain
+priority: P1
+scope: plan            # the window that reveals it
+cadence: run-completion
+alone_innocent: true   # does each line look fine on its own?
+sources: [gha_ci, runner_egress, cloudtrail]
+events: 10
+expected:
+  flag: true
+  one_line: pip installed litellm 1.82.8; every Python step afterwards posted 300 KB to a look-alike host, and the deploy key was used from Finland 14 minutes later
+  check_first: pin litellm below 1.82.7 everywhere; treat every env var, SSH key and kube config on that runner as stolen

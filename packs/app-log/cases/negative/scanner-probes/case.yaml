@@ -1,0 +1,13 @@
+id: negative/scanner-probes
+title: Internet scanners probe the public API for PHP and WordPress files
+category: negative
+priority: P1
+scope: org            # the window that reveals it
+cadence: 5m
+alone_innocent: true   # does each line look fine on its own?
+sources: [hiro]
+events: 5
+expected:
+  flag: false
+  one_line: Censys and friends probing /phpinfo, /.env and /wp-login.php, all 404
+  check_first: ""

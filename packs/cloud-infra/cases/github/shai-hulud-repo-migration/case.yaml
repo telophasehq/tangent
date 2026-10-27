@@ -1,0 +1,13 @@
+id: github/shai-hulud-repo-migration
+title: "Shai-Hulud: a repo named Shai-Hulud appears, a private repo goes public as -migration"
+category: supply-chain
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 5m
+alone_innocent: true   # does each line look fine on its own?
+sources: [github_audit]
+events: 4
+expected:
+  flag: true
+  one_line: "mallory's token created a repo named Shai-Hulud and flipped payments-api public as payments-api-migration"
+  check_first: "mallory's npm and GitHub tokens are compromised; the Shai-Hulud repo holds exfiltrated secrets"

@@ -1,0 +1,13 @@
+id: identity/mfa-disabled
+title: Admin deactivates their own MFA factor, then signs in without it
+category: identity
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: false   # does each line look fine on its own?
+sources: [okta]
+events: 2
+expected:
+  flag: true
+  one_line: "alice's MFA factor was deactivated from a new IP and she signed in without MFA six minutes later"
+  check_first: "who holds alice's session; re-enroll the factor"

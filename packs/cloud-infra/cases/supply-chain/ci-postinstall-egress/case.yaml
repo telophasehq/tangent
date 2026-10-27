@@ -1,0 +1,13 @@
+id: supply-chain/ci-postinstall-egress
+title: npm install runs a postinstall that talks to webhook.site from the build runner
+category: supply-chain
+priority: P1
+scope: plan            # the window that reveals it
+cadence: run-completion
+alone_innocent: true   # does each line look fine on its own?
+sources: [gha_ci, runner_egress]
+events: 6
+expected:
+  flag: true
+  one_line: "a postinstall script in a fresh @ctrl/tinycolor version ran bundle.js and the runner posted 48 KB to webhook.site"
+  check_first: the compromised package version; rotate every secret the runner could see

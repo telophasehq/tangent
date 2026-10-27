@@ -1,0 +1,88 @@
+# app-log: the product's logs, judged per customer. Same plugins as cloud-infra,
+# partitioned by the customer's tenant id instead of folded into one org.
+runtime:
+  workers: 2
+  plugins_path: plugins/
+  partition:
+    key: [_norm.org]            # the customer's tenant id, as norm extracts it from each source
+    time: ts
+    retain_ms: 2592000000       # 30 days of each customer's history
+  state:
+    backend: sqlite
+    path: state.sqlite
+    default_ttl_ms: 0
+    max_ttl_ms: 0
+
+sources:
+  events:
+    type: tcp
+    bind_address: 0.0.0.0:9401
+
+plugins:
+  norm:
+    module_type: rust
+    path: ../cloud-infra/norm
+    data: profile               # org and own_sources are empty here: nothing is folded, every tenant is its own partition
+  enrich:
+    module_type: rust
+    path: ../../examples/enrich
+    data: ../../examples/enrich/data
+    config:
+      fields: [_norm.ip]
+  gate:
+    module_type: rust
+    path: ../cloud-infra/gate
+    data: profile               # one profile for every customer, until profiles live in the customer's partition
+  window:
+    module_type: rust
+    path: ../cloud-infra/window
+    config:
+      time: ts
+      scopes: { actor: _norm.actor, org: _norm.org }
+      spans: { actor: 24h, org: 1h }
+      max_events: 20
+  flagged:
+    module_type: rust
+    path: ../../examples/inference-local/flagged
+
+inference:
+  judge:
+    backend: openai
+    url: ${JUDGE_URL}
+    model: ${JUDGE_MODEL}
+    api_key: ${JUDGE_API_KEY}
+    prompt_file: ../cloud-infra/judge.md
+    max_tokens: 600
+    timeout_ms: 90000
+    concurrency: 4
+    extra:
+      chat_template_kwargs:
+        enable_thinking: false
+
+sinks:
+  alerts:
+    type: file
+    path: alerts.ndjson
+    compression:
+      type: none
+  verdicts:
+    type: file
+    path: verdicts.ndjson
+    compression:
+      type: none
+
+dag:
+  - from: { kind: source, name: events }
+    to: [{ kind: plugin, name: norm }]
+  - from: { kind: plugin, name: norm }
+    to: [{ kind: plugin, name: enrich }]
+  - from: { kind: plugin, name: enrich }
+    to: [{ kind: plugin, name: gate }]
+  - from: { kind: plugin, name: gate }
+    to: [{ kind: plugin, name: window }]
+  - from: { kind: plugin, name: window }
+    to: [{ kind: inference, name: judge }]
+  - from: { kind: inference, name: judge }
+    to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]
+  - from: { kind: plugin, name: flagged }
+    to: [{ kind: sink, name: alerts }]

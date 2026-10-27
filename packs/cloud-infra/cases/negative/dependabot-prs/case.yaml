@@ -1,0 +1,13 @@
+id: negative/dependabot-prs
+title: Dependabot opens its weekly batch of PRs and CI runs them
+category: negative
+priority: P1
+scope: org            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [github_audit]
+events: 10
+expected:
+  flag: false
+  one_line: five Dependabot PRs and their CI runs
+  check_first: ""

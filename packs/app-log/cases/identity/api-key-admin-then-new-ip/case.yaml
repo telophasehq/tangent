@@ -1,0 +1,13 @@
+id: identity/api-key-admin-then-new-ip
+title: An admin-scoped API key is created at the office and first used from a VPS
+category: identity
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 6h
+alone_innocent: true   # does each line look fine on its own?
+sources: [app]
+events: 3
+expected:
+  flag: true
+  one_line: "bob's new admin-scoped API key was first used from a DigitalOcean IP to list all users"
+  check_first: whether bob deployed something on a VPS; rotate the key

@@ -1,0 +1,13 @@
+id: cloud/cloudtrail-stop-logging
+title: CloudTrail logging stopped
+category: cloud
+priority: P1
+scope: org            # the window that reveals it
+cadence: single
+alone_innocent: false   # does each line look fine on its own?
+sources: [cloudtrail]
+events: 1
+expected:
+  flag: true
+  one_line: StopLogging was called on the org trail
+  check_first: who and from where; turn it back on

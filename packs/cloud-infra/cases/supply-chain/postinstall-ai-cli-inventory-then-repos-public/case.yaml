@@ -1,0 +1,13 @@
+id: supply-chain/postinstall-ai-cli-inventory-then-repos-public
+title: "nx/s1ngularity: a postinstall drives the developer's AI CLIs to inventory secrets; days later the stolen token flips repos public (Aug 2025)"
+category: supply-chain
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [github_audit]
+events: 18
+expected:
+  flag: true
+  one_line: "dev-sam's token created s1ngularity-repository-0 at install time; two days later it made eight private repos public and renamed them with an -s1ngularity-repository suffix in two minutes, from a Dutch host"
+  check_first: "revoke dev-sam's GitHub and npm tokens; restore the eight repos to private; the laptop that ran the install"

@@ -1,0 +1,13 @@
+id: negative/dependabot-bumps-axios
+title: Dependabot bumps axios to a clean release and CI runs it
+category: negative
+priority: P1
+scope: org            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [github_audit, gha_ci, runner_egress]
+events: 5
+expected:
+  flag: false
+  one_line: a Dependabot PR bumping axios, its CI run, egress to the registry only
+  check_first: ""
