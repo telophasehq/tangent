@@ -25,7 +25,8 @@ processors:
     prompt_file: judge.md
     output: _judge                  # the model's reply lands here
     forward_if: flag                # only records the model flags go on
-    concurrency: 1                  # one request at a time: a laptop GPU serves one
+    concurrency: 8                  # mlx_lm.server batches decodes: ~4x over one at a time on an M4 Max
+    max_tokens: 300                 # a verdict is ~50 tokens; this bounds a runaway reply at a few seconds
     timeout_ms: 120000              # a small local model may think for a while
     extra:
       chat_template_kwargs:

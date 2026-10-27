@@ -18,7 +18,8 @@ processors:
     prompt_file: judge.md
     output: _judge
     forward_if: flag
-    concurrency: 1
+    concurrency: 8
+    max_tokens: 300
     extra:
       chat_template_kwargs: { enable_thinking: false }
 ```
@@ -43,9 +44,12 @@ ollama serve
 `chat_template_kwargs.enable_thinking: false` is understood by mlx_lm and
 llama-server; without it a reasoning model spends its whole token budget
 thinking and a verdict takes minutes instead of seconds. Ollama ignores it.
-`concurrency: 1` is right for a laptop GPU, which serves one request at a time;
-see [../inference-bedrock](../inference-bedrock) for a hosted model where the
-same node runs 8 or 32 requests at once.
+`concurrency: 8` matters even on a laptop: mlx_lm.server batches concurrent
+decodes, and on an M4 Max eight in flight finish about four times faster than
+one at a time (llama-server needs `--parallel 8` for the same; Ollama,
+`OLLAMA_NUM_PARALLEL`). `max_tokens: 300` bounds the occasional runaway reply,
+which otherwise runs to the cap and costs half a minute. See
+[../inference-bedrock](../inference-bedrock) for the same node on a hosted model.
 
 ## Run
 
@@ -65,8 +69,8 @@ cat flagged.ndjson
 `flagged.ndjson`, each with the model's one-line summary and reasoning; the
 scanner probe, the deploy and the finished step pass quietly. A small model may
 also flag Okta's 429 rate limit, which is what the prompt's "do not flag" list
-is there to tune. With thinking off, GLM-4.7-Flash takes about a second per
-event on an M-series Mac.
+is there to tune. With thinking off, GLM-4.7-Flash takes about 0.9 s per
+verdict on an M4 Max, and with eight in flight the pipeline does 3-4 events/s.
 
 When the model cannot be reached, records are forwarded with
 `{"error": ...}` under `_judge` (`on_error: pass`, the default), so nothing is
