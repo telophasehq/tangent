@@ -6,6 +6,7 @@
 //!   aws-ip-ranges.json, gcp-ip-ranges.json,    the providers' published ranges
 //!   cloudflare-ips-v4.txt, cloudflare-ips-v6.txt
 //!   tor-exits.txt                              the Tor Project's exit list
+//!   datacenter-ips.txt, vpn-ips.txt            X4BNet's broad datacenter and VPN range lists
 //! A file that is missing just leaves its fields out.
 //!
 //! plugins.enrich.config:
@@ -14,7 +15,7 @@
 //!   output: _ip                                        # where the facts land
 //!
 //! For each configured field that holds an address, the record gains
-//! `<output>.<field>`: `{ip, country, asn, org, hosting, tor, ours, private}`.
+//! `<output>.<field>`: `{ip, country, asn, org, hosting, tor, vpn, ours, private}`.
 //! Every record passes through; this plugin only adds.
 
 wit_bindgen::generate!({
@@ -63,6 +64,7 @@ struct Data {
     /// Each provider's published ranges, merged and sorted, as spans over
     /// the IPv6 address space (IPv4 mapped), so one binary search answers.
     hosting: Vec<(&'static str, Vec<(u128, u128)>)>,
+    vpn: Vec<(u128, u128)>,
     tor: HashSet<IpAddr>,
 }
 
@@ -78,6 +80,7 @@ struct IpInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     hosting: Option<&'static str>,
     tor: bool,
+    vpn: bool,
     ours: bool,
     private: bool,
 }
@@ -242,6 +245,15 @@ fn load() -> Data {
     if !cf.is_empty() {
         hosting.push(("cloudflare", merged(cf.into_iter().map(span).collect())));
     }
+    // X4BNet's lists are broad (they take in public DNS and CDNs too), so a
+    // provider's own ranges answer first and these come last.
+    if let Some(t) = read_text("datacenter-ips.txt") {
+        let nets = nets_from_lines(&t);
+        hosting.push(("datacenter", merged(nets.into_iter().map(span).collect())));
+    }
+    let vpn = read_text("vpn-ips.txt")
+        .map(|t| merged(nets_from_lines(&t).into_iter().map(span).collect()))
+        .unwrap_or_default();
     let tor = read_text("tor-exits.txt")
         .map(|t| t.lines().filter_map(|l| l.trim().parse().ok()).collect())
         .unwrap_or_default();
@@ -250,6 +262,7 @@ fn load() -> Data {
         country: mmdb("GeoLite2-Country.mmdb").or_else(|| mmdb("GeoLite2-City.mmdb")),
         asn: mmdb("GeoLite2-ASN.mmdb"),
         hosting,
+        vpn,
         tor,
     }
 }
@@ -292,6 +305,7 @@ fn enrich(d: &Data, cfg: &Cfg, ip: IpAddr) -> IpInfo {
             .find(|(_, spans)| contains(spans, k))
             .map(|(name, _)| *name),
         tor: d.tor.contains(&ip),
+        vpn: contains(&d.vpn, k),
         ours: contains(&cfg.ours, k),
         private: is_private(ip),
     }

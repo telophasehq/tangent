@@ -13,8 +13,9 @@ files on disk. Nothing leaves the machine.
 ```
 
 Per address: country, ASN and organization (MaxMind GeoLite2), whether it is in
-a cloud provider's published ranges (`hosting: aws | gcp | cloudflare`), whether
-it is a Tor exit, whether it is one of the org's own (`ours`, from config), and
+a cloud provider's published ranges (`hosting: aws | gcp | cloudflare`, or
+`datacenter` from a broad public list), whether it is a Tor exit or in a VPN
+provider's range, whether it is one of the org's own (`ours`, from config), and
 whether it is private. A model or a rule downstream reads "Hetzner", "Tor
 exit", "one of ours" instead of a bare number.
 
@@ -31,6 +32,7 @@ them; MaxMind publishes on Tuesdays and Fridays.
 | `gcp-ip-ranges.json` | [Google Cloud](https://www.gstatic.com/ipranges/cloud.json) | public |
 | `cloudflare-ips-v4.txt`, `-v6.txt` | [Cloudflare](https://www.cloudflare.com/ips/) | public |
 | `tor-exits.txt` | [Tor Project](https://check.torproject.org/torbulkexitlist) | public |
+| `datacenter-ips.txt`, `vpn-ips.txt` | [X4BNet lists_vpn](https://github.com/X4BNet/lists_vpn), broad datacenter and VPN ranges | MIT |
 
 Drop in `GeoLite2-City.mmdb` instead of Country to get the same fields from
 the larger database. A file that is missing leaves its fields out; nothing

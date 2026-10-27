@@ -74,6 +74,9 @@ fetch_data() {
   fetch https://www.cloudflare.com/ips-v4 data/cloudflare-ips-v4.txt
   fetch https://www.cloudflare.com/ips-v6 data/cloudflare-ips-v6.txt
   fetch https://check.torproject.org/torbulkexitlist data/tor-exits.txt
+  echo "==> Datacenter and VPN ranges (X4BNet)"
+  fetch https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv4.txt data/datacenter-ips.txt
+  fetch https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt data/vpn-ips.txt
   ls -la data | awk 'NR>1 && $9 != "" {printf "    %8d  %s\n", $5, $9}'
 }
 
