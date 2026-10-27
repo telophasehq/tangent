@@ -1,9 +1,10 @@
-# inference
+# inference-local
 
-A model reads every record; only what it flags goes on.
+A model on this machine reads every record; only what it flags goes on.
+Nothing leaves the box.
 
 `tangent.yaml` has no plugins. Records go from a TCP source to an `inference`
-processor, which sends each one to an OpenAI-compatible chat endpoint with
+processor, which sends each one to a local OpenAI-compatible server with
 [judge.md](judge.md) as the system prompt, adds the model's JSON reply to the
 record under `_judge`, and forwards the record only when `_judge.flag` is true.
 
@@ -11,35 +12,40 @@ record under `_judge`, and forwards the record only when `_judge.flag` is true.
 processors:
   judge:
     type: inference
+    backend: openai
     url: http://localhost:8080/v1
     model: mlx-community/GLM-4.7-Flash-4bit
     prompt_file: judge.md
     output: _judge
     forward_if: flag
+    concurrency: 1
     extra:
       chat_template_kwargs: { enable_thinking: false }
 ```
 
-## A model on your Mac
+## A model on your machine
+
+Any server that speaks the OpenAI chat API works; pick one:
 
 ```bash
+# Apple silicon
 pip install mlx-lm
 mlx_lm.server --model mlx-community/GLM-4.7-Flash-4bit --port 8080
+
+# llama.cpp, any OS (downloads and caches the GGUF itself)
+brew install llama.cpp
+llama-server -hf unsloth/GLM-4.7-Flash-GGUF:Q4_K_M --port 8080
+
+# Ollama: set url to http://localhost:11434/v1 and model to e.g. gpt-oss:20b
+ollama serve
 ```
 
-Any OpenAI-compatible endpoint works: change `url` and `model`, add
-`api_key: "${OPENAI_API_KEY}"` for a hosted one, and drop `extra` (the
-`chat_template_kwargs` setting is mlx_lm's way of skipping the thinking phase,
-which otherwise makes a verdict take minutes instead of seconds).
-
-For Claude on Bedrock, swap the endpoint for the `bedrock` backend; credentials
-come from the usual AWS chain:
-
-```yaml
-    backend: bedrock
-    model: us.anthropic.claude-haiku-4-5-20251001-v1:0
-    region: us-west-2
-```
+`chat_template_kwargs.enable_thinking: false` is understood by mlx_lm and
+llama-server; without it a reasoning model spends its whole token budget
+thinking and a verdict takes minutes instead of seconds. Ollama ignores it.
+`concurrency: 1` is right for a laptop GPU, which serves one request at a time;
+see [../inference-bedrock](../inference-bedrock) for a hosted model where the
+same node runs 8 or 32 requests at once.
 
 ## Run
 
