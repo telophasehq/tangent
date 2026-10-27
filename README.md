@@ -76,6 +76,23 @@ tangent state --config tangent.yaml scan --prefix user: --limit 50
 tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
 ```
 
+## Processors
+Processors are nodes implemented in the runtime itself, for work a sandboxed plugin cannot do well. They sit in the DAG as `kind: processor`. The first is `inference`, which asks a model about each record:
+
+```yaml
+processors:
+  judge:
+    type: inference
+    url: http://localhost:8080/v1          # any OpenAI-compatible chat endpoint
+    model: mlx-community/GLM-4.7-Flash-4bit
+    prompt_file: judge.md                  # the system message
+    output: _judge                         # the model's JSON reply lands here
+    forward_if: flag                       # pass only records the model flags
+    extra: { chat_template_kwargs: { enable_thinking: false } }
+```
+
+The record (or its `fields`) is the user message. `forward_if` names a field of the reply: only records where it is true go on, and a reply without it counts as a failure. `on_error: pass` (the default) forwards a failed record with `{"error": ...}` under `output` so nothing is lost silently; `on_error: drop` drops it. `concurrency` bounds requests in flight. See [examples/inference](/examples/inference).
+
 ## Benchmarks
 Benchmarks show end-to-end throughput with simple log transformation plugins implemented in [Rust](/examples/rust/src/lib.rs), [Go](/examples/golang/main.go), and [Python](/examples/python/mapper.py). Each plugin is compiled to WASM and run inside Tangent.
 

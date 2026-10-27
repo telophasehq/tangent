@@ -10,6 +10,7 @@ use tangent_shared::dag::NodeRef;
 use tokio::sync::OnceCell;
 
 use crate::{
+    processors::ProcessorManager,
     sinks::manager::SinkManager,
     worker::{Ack, Payload, Record, WorkerPool},
 };
@@ -44,6 +45,7 @@ impl Ack for RefCountAck {
 pub struct Router {
     outs: HashMap<NodeRef, Vec<NodeRef>>,
     pool: OnceCell<Weak<WorkerPool>>,
+    processors: OnceCell<Weak<ProcessorManager>>,
     sink_manager: Arc<SinkManager>,
 }
 
@@ -52,6 +54,7 @@ impl Router {
         Self {
             outs,
             pool: OnceCell::new(),
+            processors: OnceCell::new(),
             sink_manager,
         }
     }
@@ -62,6 +65,14 @@ impl Router {
     #[inline]
     fn pool(&self) -> Option<Arc<WorkerPool>> {
         self.pool.get().and_then(|w| w.upgrade())
+    }
+
+    pub fn set_processors(&self, processors: &Arc<ProcessorManager>) {
+        let _ = self.processors.set(Arc::downgrade(processors));
+    }
+    #[inline]
+    fn processors(&self) -> Option<Arc<ProcessorManager>> {
+        self.processors.get().and_then(|w| w.upgrade())
     }
 
     pub async fn forward(
@@ -96,6 +107,15 @@ impl Router {
             );
         }
 
+        let processors = self.processors();
+        if tos.iter().any(|to| matches!(to, NodeRef::Processor { .. })) && processors.is_none() {
+            anyhow::bail!(
+                "router called before processors set (from={:?}, tos={:?})",
+                from,
+                tos
+            );
+        }
+
         let shared = Arc::new(RefCountAck::new(acks, deliveries));
 
         if tos.len() == 1 {
@@ -109,6 +129,16 @@ impl Router {
                             ack: Some(shared.clone()),
                         };
                         pool.dispatch(rec).await?;
+                    }
+                    NodeRef::Processor { name } => {
+                        let pm = processors
+                            .as_ref()
+                            .expect("processors must be set for processor edges");
+                        let rec = Record {
+                            payload: Payload::Raw(frame),
+                            ack: Some(shared.clone()),
+                        };
+                        pm.dispatch(name, rec).await?;
                     }
                     NodeRef::Sink { name, key_prefix } => {
                         self.sink_manager
@@ -142,6 +172,18 @@ impl Router {
                             let _ = shared.ack().await;
                         }
                     }
+                    NodeRef::Processor { name } => match &processors {
+                        Some(pm) => {
+                            let rec = Record {
+                                payload: Payload::Raw(frame.clone()),
+                                ack: Some(shared.clone()),
+                            };
+                            pm.dispatch(name, rec).await?;
+                        }
+                        None => {
+                            let _ = shared.ack().await;
+                        }
+                    },
                     NodeRef::Sink { name, key_prefix } => {
                         self.sink_manager
                             .enqueue(
