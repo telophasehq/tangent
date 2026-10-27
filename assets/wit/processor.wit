@@ -66,6 +66,9 @@ interface state {
   del:  func(key: string) -> result<bool, string>;
   /// Add `by` to an integer entry (missing counts as 0); returns the new value.
   incr: func(key: string, by: s64, ttl-ms: option<u64>) -> result<s64, string>;
+  /// Entries with `start <= key < end`, in key order, at most `limit`. Keys that
+  /// start with their time make a scope's history a key range.
+  scan: func(start: string, end: string, limit: u32) -> result<list<tuple<string, scalar>>, string>;
 }
 
 
