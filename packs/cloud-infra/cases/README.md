@@ -70,6 +70,17 @@ announced. A judge that flags these is a judge nobody reads.
 | `identity/impossible-travel` | flag P1 | `okta` | 2 | Two successful logins, two continents, 22 minutes apart |
 | `identity/mfa-disabled` | flag P1 | `okta` | 2 | Admin deactivates their own MFA factor, then signs in without it |
 
+### GitHub
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `github/branch-protection-off-force-push` | flag P1 | `github_audit` | 3 | Branch protection removed, main force-pushed, protection restored |
+| `github/new-owner-and-deploy-key` | flag P2 | `github_audit` | 2 | A contractor becomes org owner and adds a read-write deploy key |
+| `github/pat-mass-push` | flag P1 | `github_audit` | 12 | One personal access token pushes to a dozen repos in three minutes |
+| `github/pwn-request-workflow-from-fork` | flag P2 | `github_audit` | 2 | A PR from a fork edits a workflow that runs with secrets |
+| `github/shai-hulud-repo-migration` | flag P1 | `github_audit` | 4 | Shai-Hulud: a repo named Shai-Hulud appears, a private repo goes public as -migration |
+| `github/shai-hulud-workflow-runner` | flag P1 | `github_audit`, `runner_egress` | 4 | Shai-Hulud: a workflow file pushed straight to main, a runner registered, egress to webhook.site |
+
 ### Data
 
 | case | | sources | events | what the logs show |
@@ -81,12 +92,6 @@ announced. A judge that flags these is a judge nobody reads.
 
 | case | | sources | events | what the logs show |
 |---|---|---|---|---|
-| `github/branch-protection-off-force-push` | flag P1 | `github_audit` | 3 | Branch protection removed, main force-pushed, protection restored |
-| `github/new-owner-and-deploy-key` | flag P2 | `github_audit` | 2 | A contractor becomes org owner and adds a read-write deploy key |
-| `github/pat-mass-push` | flag P1 | `github_audit` | 12 | One personal access token pushes to a dozen repos in three minutes |
-| `github/pwn-request-workflow-from-fork` | flag P2 | `github_audit` | 2 | A PR from a fork edits a workflow that runs with secrets |
-| `github/shai-hulud-repo-migration` | flag P1 | `github_audit` | 4 | Shai-Hulud: a repo named Shai-Hulud appears, a private repo goes public as -migration |
-| `github/shai-hulud-workflow-runner` | flag P1 | `github_audit`, `runner_egress` | 4 | Shai-Hulud: a workflow file pushed straight to main, a runner registered, egress to webhook.site |
 | `supply-chain/action-prints-runner-memory` | flag P1 | `gha_ci`, `cloudtrail` | 6 | A popular Action's tags are moved to a commit that prints the runner's memory, secrets included, into the job log (tj-actions/changed-files, March 2025) |
 | `supply-chain/ci-action-tags-retargeted` | flag P1 | `gha_ci`, `runner_egress`, `cloudtrail` | 10 | A security scanner's Action has its version tags force-pushed to a stealer (TeamPCP: Trivy, KICS; March 2026) |
 | `supply-chain/ci-postinstall-egress` | flag P1 | `gha_ci`, `runner_egress` | 6 | npm install runs a postinstall that talks to webhook.site from the build runner |
