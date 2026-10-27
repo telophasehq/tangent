@@ -1,5 +1,6 @@
-//! Ask a model about each record through an OpenAI-compatible chat endpoint.
-//! The system prompt is a file; the user message is the record (or selected
+//! Ask a model about each record. The model is reached through rig: any
+//! OpenAI-compatible chat endpoint, or Amazon Bedrock's Converse API. The
+//! system prompt is a file; the user message is the record (or selected
 //! fields) as pretty JSON; the JSON object in the reply is added to the
 //! record. Requests run with bounded concurrency off the hot path. A failure,
 //! or a reply without the `forward_if` field, passes the record through with
@@ -8,12 +9,17 @@
 use anyhow::{anyhow, bail, Context, Result};
 use bytes::BytesMut;
 use futures::FutureExt;
+use rig_core::completion::request::CompletionRequest;
+use rig_core::completion::AssistantContent;
+use rig_core::operation::Completion;
+use rig_core::providers::openai::{OpenAIConfig, Route};
+use rig_core::DynModel;
 use serde_json::{json, Map, Value};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tangent_shared::dag::NodeRef;
-use tangent_shared::processors::inference::{InferenceConfig, OnError};
+use tangent_shared::processors::inference::{Backend, InferenceConfig, OnError};
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinSet;
 
@@ -26,8 +32,34 @@ struct Ctx {
     from: NodeRef,
     cfg: InferenceConfig,
     prompt: String,
-    client: reqwest::Client,
+    model: DynModel<Completion>,
     router: Arc<Router>,
+}
+
+/// The model `cfg` points at, behind rig's erased handle.
+fn model(cfg: &InferenceConfig) -> Result<DynModel<Completion>> {
+    Ok(match cfg.backend {
+        Backend::Openai => {
+            // Local servers accept any key; a hosted one needs the real thing.
+            let key = cfg.api_key.clone().unwrap_or_else(|| "none".into());
+            OpenAIConfig::new(key)
+                .with_base_url(cfg.url.trim_end_matches('/'))
+                .with_route(Route::Chat)
+                .client()
+                .chat(&cfg.model)
+                .erase()
+        }
+        Backend::Bedrock => {
+            let mut runtime = rig_bedrock::client::BedrockRuntime::builder();
+            if let Some(region) = &cfg.region {
+                runtime = runtime.region(region);
+            }
+            if let Some(profile) = &cfg.profile {
+                runtime = runtime.profile_name(profile);
+            }
+            runtime.build().completion(&cfg.model).erase()
+        }
+    })
 }
 
 impl Ctx {
@@ -45,53 +77,44 @@ impl Ctx {
     }
 
     async fn ask(&self, user: String) -> Result<Value> {
-        let mut body = json!({
-            "model": self.cfg.model,
-            "messages": [
-                {"role": "system", "content": self.prompt},
-                {"role": "user", "content": user},
-            ],
-            "temperature": self.cfg.temperature,
-            "max_tokens": self.cfg.max_tokens,
-        });
-        if let Value::Object(b) = &mut body {
-            for (k, v) in &self.cfg.extra {
-                b.insert(k.clone(), v.clone());
-            }
+        let mut request = CompletionRequest::new(user)
+            .preamble(self.prompt.clone())
+            .temperature(self.cfg.temperature)
+            .max_tokens(u64::from(self.cfg.max_tokens));
+        if !self.cfg.extra.is_empty() {
+            request = request.additional_params(Value::Object(self.cfg.extra.clone()));
         }
-        let url = format!("{}/chat/completions", self.cfg.url.trim_end_matches('/'));
-        let mut req = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_vec(&body)?);
-        if let Some(key) = &self.cfg.api_key {
-            req = req.bearer_auth(key);
+        let reply = tokio::time::timeout(
+            Duration::from_millis(self.cfg.timeout_ms),
+            self.model.call(request),
+        )
+        .await
+        .map_err(|_| anyhow!("no reply within {} ms", self.cfg.timeout_ms))?
+        .map_err(|e| anyhow!("{e}"))?;
+
+        // Reasoning comes back as its own block, so the text is the answer.
+        let text: String = reply
+            .choice
+            .iter()
+            .filter_map(|c| match c {
+                AssistantContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        if text.trim().is_empty() {
+            bail!(
+                "reply has no text (finish: {:?}; the model may have spent its budget thinking)",
+                reply.finish_reason()
+            );
         }
-        let resp = req.send().await.with_context(|| format!("POST {url}"))?;
-        let status = resp.status();
-        let text = resp.text().await.context("reading reply")?;
-        if !status.is_success() {
-            bail!("HTTP {status}: {}", head(&text, 200));
-        }
-        let v: Value = serde_json::from_str(&text)
-            .with_context(|| format!("reply is not JSON: {}", head(&text, 200)))?;
-        if let Some(e) = v.get("error") {
-            bail!("server error: {e}");
-        }
-        let content = v["choices"][0]["message"]["content"]
-            .as_str()
-            .ok_or_else(|| {
-                let finish = v["choices"][0]["finish_reason"].as_str().unwrap_or("?");
-                anyhow!("reply has no content (finish_reason={finish}); the model may have spent its budget thinking")
-            })?;
-        let reply = parse_reply(content);
+        let parsed = parse_reply(&text);
         if let Some(path) = &self.cfg.forward_if {
-            if lookup(&reply, path).is_none() {
-                bail!("reply has no {path:?}: {}", head(content, 200));
+            if lookup(&parsed, path).is_none() {
+                bail!("reply has no {path:?}: {}", head(&text, 200));
             }
         }
-        Ok(reply)
+        Ok(parsed)
     }
 
     /// Does this reply let the record through?
@@ -247,9 +270,7 @@ pub async fn run(
     if prompt.trim().is_empty() {
         bail!("prompt {} is empty", prompt_path.display());
     }
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(cfg.timeout_ms))
-        .build()?;
+    let model = model(&cfg)?;
     let concurrency = cfg.concurrency.max(1);
     let ctx = Arc::new(Ctx {
         from: NodeRef::Processor {
@@ -258,12 +279,12 @@ pub async fn run(
         name,
         cfg,
         prompt,
-        client,
+        model,
         router,
     });
     tracing::info!(
         processor = %ctx.name,
-        url = %ctx.cfg.url,
+        backend = ?ctx.cfg.backend,
         model = %ctx.cfg.model,
         forward_if = ctx.cfg.forward_if.as_deref().unwrap_or("-"),
         "inference ready"

@@ -113,7 +113,7 @@ mod tests {
     use bytes::BytesMut;
     use serde_json::{json, Map, Value};
     use tangent_shared::dag::NodeRef;
-    use tangent_shared::processors::inference::{InferenceConfig, OnError};
+    use tangent_shared::processors::inference::{Backend, InferenceConfig, OnError};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::Mutex;
 
@@ -202,8 +202,11 @@ mod tests {
             json!({"enable_thinking": false}),
         );
         InferenceConfig {
+            backend: Backend::Openai,
             url: url.to_string(),
             model: "stub".into(),
+            region: None,
+            profile: None,
             prompt_file: "judge.md".into(),
             fields: Vec::new(),
             output: "_judge".into(),
@@ -298,7 +301,14 @@ mod tests {
             let req: Value = serde_json::from_str(body).unwrap();
             assert_eq!(req["model"], "stub");
             assert_eq!(req["messages"][0]["role"], "system");
-            assert_eq!(req["messages"][0]["content"], "You are a test judge.\n");
+            // The system prompt, as a string or as content parts.
+            assert!(
+                req["messages"][0]["content"]
+                    .to_string()
+                    .contains("You are a test judge."),
+                "{}",
+                req["messages"][0]
+            );
             assert_eq!(req["messages"][1]["role"], "user");
             assert_eq!(
                 req["chat_template_kwargs"]["enable_thinking"], false,
@@ -317,7 +327,7 @@ mod tests {
         let out: Value = serde_json::from_str(writes[0].trim()).unwrap();
         assert_eq!(out["id"], 9);
         assert!(
-            out["_judge"]["error"].as_str().unwrap().contains("POST"),
+            !out["_judge"]["error"].as_str().unwrap().is_empty(),
             "{out}"
         );
 
