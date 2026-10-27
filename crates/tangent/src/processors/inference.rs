@@ -9,6 +9,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use bytes::BytesMut;
 use futures::FutureExt;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use rig_core::completion::request::CompletionRequest;
 use rig_core::completion::AssistantContent;
 use rig_core::operation::Completion;
@@ -219,9 +221,33 @@ pub fn parse_reply(content: &str) -> Value {
             if let Ok(v @ Value::Object(_)) = serde_json::from_str::<Value>(obj) {
                 return v;
             }
+            if let Some(v) = salvage(obj) {
+                return v;
+            }
         }
     }
     json!({ "text": s.trim() })
+}
+
+/// A small model drops a key name or a quote now and then. Keep every
+/// well-formed `"key": value` pair, which is usually the verdict, and the
+/// raw text for whoever reads the record.
+fn salvage(obj: &str) -> Option<Value> {
+    static PAIR: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r#""([A-Za-z_][A-Za-z0-9_]*)"\s*:\s*(true|false|null|-?\d+(?:\.\d+)?|"(?:[^"\\]|\\.)*")"#)
+            .expect("salvage pattern")
+    });
+    let mut m = Map::new();
+    for cap in PAIR.captures_iter(obj) {
+        let value = serde_json::from_str::<Value>(&cap[2]).unwrap_or(Value::Null);
+        m.entry(cap[1].to_string()).or_insert(value);
+    }
+    if m.is_empty() {
+        return None;
+    }
+    m.entry("text".to_string())
+        .or_insert_with(|| Value::String(obj.trim().to_string()));
+    Some(Value::Object(m))
 }
 
 /// `s` starts at `{`; the slice up to its matching `}`, string-aware.
@@ -337,6 +363,17 @@ mod tests {
         );
         assert_eq!(v["flag"], false);
         assert!(v.get("event").is_none(), "{v}");
+        // A small model dropped a key name: the well-formed pairs survive.
+        let v = parse_reply(
+            r#"{"flag": true, "rotate_iam_key sent 48KB to transfer.sh", "why": "a generic file host"}"#,
+        );
+        assert_eq!(v["flag"], true);
+        assert_eq!(v["why"], "a generic file host");
+        assert!(v["text"].as_str().unwrap().contains("48KB"));
+        assert_eq!(
+            parse_reply("{not json at all}")["text"],
+            "{not json at all}"
+        );
     }
 
     #[test]
