@@ -1,0 +1,45 @@
+# A model on this machine reads every record; only what it flags goes on.
+#
+#   tangent run --config tangent.yaml
+#   nc localhost 9000 < events.ndjson
+#   cat flagged.ndjson
+#
+# Any OpenAI-compatible local server works. One of:
+#   mlx_lm.server --model mlx-community/GLM-4.7-Flash-4bit --port 8080     # Apple silicon
+#   llama-server -hf unsloth/GLM-4.7-Flash-GGUF:Q4_K_M --port 8080         # llama.cpp, any OS
+#   ollama serve   (then: model: gpt-oss:20b, url: http://localhost:11434/v1)
+runtime:
+  workers: 1
+
+sources:
+  events:
+    type: tcp
+    bind_address: 0.0.0.0:9000
+
+processors:
+  judge:
+    type: inference
+    backend: openai                 # the protocol, not the vendor
+    url: http://localhost:8080/v1
+    model: mlx-community/GLM-4.7-Flash-4bit
+    prompt_file: judge.md
+    output: _judge                  # the model's reply lands here
+    forward_if: flag                # only records the model flags go on
+    concurrency: 1                  # one request at a time: a laptop GPU serves one
+    timeout_ms: 120000              # a small local model may think for a while
+    extra:
+      chat_template_kwargs:
+        enable_thinking: false      # mlx_lm and llama-server: answer in seconds, not minutes
+
+sinks:
+  flagged:
+    type: file
+    path: flagged.ndjson
+    compression:
+      type: none
+
+dag:
+  - from: { kind: source, name: events }
+    to: [{ kind: processor, name: judge }]
+  - from: { kind: processor, name: judge }
+    to: [{ kind: sink, name: flagged }]

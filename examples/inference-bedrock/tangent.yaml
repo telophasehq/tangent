@@ -1,0 +1,39 @@
+# Claude on Amazon Bedrock reads every record; only what it flags goes on.
+#
+#   aws sso login --profile <your-profile>      (or any AWS credential source)
+#   tangent run --config tangent.yaml
+#   nc localhost 9000 < events.ndjson
+#   cat flagged.ndjson
+runtime:
+  workers: 1
+
+sources:
+  events:
+    type: tcp
+    bind_address: 0.0.0.0:9000
+
+processors:
+  judge:
+    type: inference
+    backend: bedrock                # the Converse API, AWS credential chain
+    model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    region: us-west-2
+    # profile: prod                 # an AWS profile; the default chain when unset
+    prompt_file: judge.md
+    output: _judge
+    forward_if: flag
+    concurrency: 8                  # a hosted model takes many requests at once
+    timeout_ms: 30000               # a hung request must not hold a slot for long
+
+sinks:
+  flagged:
+    type: file
+    path: flagged.ndjson
+    compression:
+      type: none
+
+dag:
+  - from: { kind: source, name: events }
+    to: [{ kind: processor, name: judge }]
+  - from: { kind: processor, name: judge }
+    to: [{ kind: sink, name: flagged }]

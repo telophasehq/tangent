@@ -93,7 +93,7 @@ processors:
 
 The model is reached through [rig](https://github.com/0xPlaygrounds/rig): `backend: openai` (the default) for any OpenAI-compatible chat endpoint such as OpenAI, mlx_lm.server, llama-server, vLLM or Bedrock's OpenAI endpoint, and `backend: bedrock` for Amazon Bedrock's Converse API with the AWS credential chain (`region`, `profile`).
 
-The record (or its `fields`) is the user message. `forward_if` names a field of the reply: only records where it is true go on, and a reply without it counts as a failure. `on_error: pass` (the default) forwards a failed record with `{"error": ...}` under `output` so nothing is lost silently; `on_error: drop` drops it. `concurrency` bounds requests in flight. See [examples/inference](/examples/inference).
+The record (or its `fields`) is the user message. `forward_if` names a field of the reply: only records where it is true go on, and a reply without it counts as a failure. `on_error: pass` (the default) forwards a failed record with `{"error": ...}` under `output` so nothing is lost silently; `on_error: drop` drops it. `concurrency` bounds requests in flight (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
 
 ## Benchmarks
 Benchmarks show end-to-end throughput with simple log transformation plugins implemented in [Rust](/examples/rust/src/lib.rs), [Go](/examples/golang/main.go), and [Python](/examples/python/mapper.py). Each plugin is compiled to WASM and run inside Tangent.

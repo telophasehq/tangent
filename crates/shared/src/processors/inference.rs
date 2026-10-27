@@ -49,6 +49,8 @@ pub struct InferenceConfig {
     #[serde(default = "default_concurrency")]
     pub concurrency: usize,
 
+    /// A request past this is a failure (see `on_error`); it also frees the
+    /// concurrency slot it held. 30 s by default; a local model may need more.
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
 
@@ -105,7 +107,7 @@ const fn default_concurrency() -> usize {
     1
 }
 const fn default_timeout_ms() -> u64 {
-    120_000
+    30_000
 }
 const fn default_max_tokens() -> u32 {
     2_000
