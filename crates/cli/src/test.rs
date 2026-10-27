@@ -38,8 +38,12 @@ pub async fn run(opts: TestOptions) -> Result<()> {
         .unwrap_or_else(|| Path::new("."))
         .canonicalize()?;
 
-    let mut rt = RuntimeOptions::default();
-    rt.once = true;
+    // A test run exports no metrics: there is nothing to scrape, and the
+    // second test in one process could not bind the port the first still holds.
+    let rt = RuntimeOptions {
+        prometheus_bind: None,
+        once: true,
+    };
 
     let mut plugins_to_test = Vec::<(Arc<str>, PluginConfig)>::new();
 
