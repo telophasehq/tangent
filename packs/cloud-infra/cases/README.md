@@ -1,8 +1,11 @@
 # cases
 
-What the judge has to catch, and what it must leave alone — written down as
+What the judge has to catch, and what it must leave alone, written down as
 event sequences before arguing about designs. Every design question (per
-record or per window, which model, which cadence) gets measured against these.
+record or per window, which model, which cadence) is measured against these.
+`make test` runs seven of them through norm, gate and window as fixtures;
+the full set is replayed inside weeks of ordinary traffic for the numbers in
+the pack's README.
 
 Each case is a directory:
 
@@ -13,73 +16,133 @@ cases/<category>/<name>/
 ```
 
 Nothing in here is real: no customer, person, repo or account exists. The
-cases that use an application's audit log or an AI agent's logs live in the
-`app-log` pack.
+cases built on a product's own audit log or an AI agent's logs are in the
+[app-log pack](../../app-log/cases/).
 
 ## Sources and their shapes
 
-| `source` | shape | scope keys |
-|---|---|---|
-| `okta` | Okta System Log: `eventType`, `actor.alternateId`, `client.ipAddress`, `securityContext.asOrg` | actor |
-| `github_audit` | GitHub org audit log: `action`, `actor`, `repo`, `actor_ip`, `programmatic_access_type` | actor, org |
-| `cloudtrail` | CloudTrail record: `eventSource`, `eventName`, `userIdentity`, `sourceIPAddress`, `requestParameters` | actor, account |
-| `google_workspace` | Reports API activity: `actor.email`, `events[].name` | actor |
-| `app` | a startup's own audit log: `event`, `actor`, `ip`, `org` | actor, org |
-| `gha_ci` / `runner_egress` | GitHub Actions job lines; egress from the build runner | run |
-| `hiro` | Hiro structlog: `service`, `event`, `organization_id` → `task_id` → `plan_id` → `step_id` | org, plan |
+| `source` | shape |
+|---|---|
+| `cloudtrail` | CloudTrail record: `eventSource`, `eventName`, `userIdentity`, `sourceIPAddress`, `requestParameters` |
+| `github_audit` | GitHub org audit log: `action`, `actor`, `repo`, `actor_ip`, `programmatic_access_type` |
+| `okta` | Okta System Log: `eventType`, `actor.alternateId`, `client.ipAddress`, `securityContext.asOrg` |
+| `google_workspace` | Workspace Reports API activity: `actor.email`, `ipAddress`, `events[].name` |
+| `gha_ci` | GitHub Actions job lines: `repo`, `run_id`, `step`, `line` |
+| `runner_egress` | egress from the build runner: `repo`, `run_id`, `dst_host`, `bytes_out` |
+| `app` | a product's own audit log: `event`, `actor`, `ip`, `org` |
+| `hiro` | an AI agent's structlog: `service`, `event`, `organization_id` → `task_id` → `plan_id` → `step_id` |
 
-Every event also carries `ts` so a harness can order mixed sources.
+Every event also carries `ts`, so mixed sources order.
 
-## What the cases show
+## The 34 cases
 
-Most of the positives are **pairs or sequences of lines that are innocent on
-their own** (`alone_innocent: true`): a login and a token, a role change and
-an export, a workflow push and a runner registration, a secret read and a POST.
-That is the argument for judging windows per scope — actor, org, plan — rather
-than lines. A few are single lines nobody should need a model for (root login,
-CloudTrail stopped, bucket public, MFA off): those belong on a rule-based fast
-lane that the model never gets to second-guess.
+28 should flag, 6 must not. `P1` is the first corpus to pass; `P2` is next.
 
-The negatives are the things that look alarming and are not: deploys, scanner
-probes, vendor rate limits, the top-of-the-hour fan-out, Dependabot, the
-on-call's 3 a.m. login from home, an admin exporting their own report. A judge
-that flags these is a judge nobody reads.
+Most positives are sequences of lines innocent on their own
+(`alone_innocent: true` in `case.yaml`): a login and a token, a role change
+and an export, a workflow push and a runner registration, a secret read and a
+POST. That is why the judge reads windows per actor and per org, not lines.
+A few are single lines nobody needs a model for (root login, CloudTrail
+stopped, a bucket made public, MFA off); the gate sends those on a rule and
+the judge confirms them.
 
-`P1` is the first corpus to pass; `P2` is next.
+The negatives are what looks alarming and is not: Dependabot's weekly batch,
+the scanner action's ordinary run, the on-call's 3 a.m. login from home, a
+rotation the morning after a vendor's notice, a repo made public as its README
+announced. A judge that flags these is a judge nobody reads.
+
+### Cloud (CloudTrail)
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `cloud/assume-role-new-principal-then-reads` | flag P2 | `cloudtrail` | 21 | An external account assumes the read-only role and reads customer exports |
+| `cloud/cloudtrail-stop-logging` | flag P1 | `cloudtrail` | 1 | CloudTrail logging stopped |
+| `cloud/iam-key-create-attach-star-then-use` | flag P1 | `cloudtrail` | 5 | A new IAM user gets an access key and AdministratorAccess, then reads buckets from a new IP |
+| `cloud/root-console-login` | flag P1 | `cloudtrail` | 1 | Root account console login without MFA |
+| `cloud/s3-bucket-public` | flag P1 | `cloudtrail` | 2 | Public access block removed and a bucket policy grants everyone read |
+| `cloud/sg-open-world` | flag P1 | `cloudtrail` | 1 | A security group opens Postgres to the internet |
+
+### Identity
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `identity/admin-login-new-asn` | flag P1 | `okta` | 5 | Admin console login from a hosting-provider ASN in a new country |
+| `identity/impossible-travel` | flag P1 | `okta` | 2 | Two successful logins, two continents, 22 minutes apart |
+| `identity/mfa-disabled` | flag P1 | `okta` | 2 | Admin deactivates their own MFA factor, then signs in without it |
+
+### Data
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `data/gmail-forwarding-rule` | flag P1 | `google_workspace` | 1 | Finance user's mailbox starts forwarding to an outside Gmail address |
+| `data/snapshot-shared-external` | flag P1 | `cloudtrail` | 1 | An RDS snapshot is shared with another AWS account |
+
+### Supply chain (CI, dependencies)
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `github/branch-protection-off-force-push` | flag P1 | `github_audit` | 3 | Branch protection removed, main force-pushed, protection restored |
+| `github/new-owner-and-deploy-key` | flag P2 | `github_audit` | 2 | A contractor becomes org owner and adds a read-write deploy key |
+| `github/pat-mass-push` | flag P1 | `github_audit` | 12 | One personal access token pushes to a dozen repos in three minutes |
+| `github/pwn-request-workflow-from-fork` | flag P2 | `github_audit` | 2 | A PR from a fork edits a workflow that runs with secrets |
+| `github/shai-hulud-repo-migration` | flag P1 | `github_audit` | 4 | Shai-Hulud: a repo named Shai-Hulud appears, a private repo goes public as -migration |
+| `github/shai-hulud-workflow-runner` | flag P1 | `github_audit`, `runner_egress` | 4 | Shai-Hulud: a workflow file pushed straight to main, a runner registered, egress to webhook.site |
+| `supply-chain/action-prints-runner-memory` | flag P1 | `gha_ci`, `cloudtrail` | 6 | A popular Action's tags are moved to a commit that prints the runner's memory, secrets included, into the job log (tj-actions/changed-files, March 2025) |
+| `supply-chain/ci-action-tags-retargeted` | flag P1 | `gha_ci`, `runner_egress`, `cloudtrail` | 10 | A security scanner's Action has its version tags force-pushed to a stealer (TeamPCP: Trivy, KICS; March 2026) |
+| `supply-chain/ci-postinstall-egress` | flag P1 | `gha_ci`, `runner_egress` | 6 | npm install runs a postinstall that talks to webhook.site from the build runner |
+| `supply-chain/new-dependency-typosquat` | flag P2 | `github_audit`, `gha_ci` | 2 | A PR adds a two-day-old package whose name is one letter off a popular one |
+| `supply-chain/postinstall-ai-cli-inventory-then-repos-public` | flag P1 | `github_audit` | 18 | nx/s1ngularity: a postinstall drives the developer's AI CLIs to inventory secrets; days later the stolen token flips repos public (Aug 2025) |
+| `supply-chain/preinstall-worm-publishes-credentials-as-repos` | flag P1 | `gha_ci`, `runner_egress`, `github_audit` | 10 | Shai-Hulud, second wave: a preinstall fetches Bun, hunts credentials and publishes them as repos with the runner's token (Nov 2025; again with valid provenance, Aug 2026) |
+| `supply-chain/pypi-package-pth-stealer` | flag P1 | `gha_ci`, `runner_egress`, `cloudtrail` | 10 | A backdoored PyPI release runs on every Python start and ships the runner's credentials (LiteLLM 1.82.8, March 2026) |
+| `supply-chain/trojan-dependency-rat` | flag P1 | `gha_ci`, `runner_egress`, `github_audit` | 14 | A hijacked maintainer account publishes axios with a new dependency whose postinstall drops a RAT (March 2026) |
+
+### A vendor's breach
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `vendor/ai-app-oauth-token-stolen-sso-pivot` | flag P1 | `google_workspace`, `okta`, `app` | 18 | An AI productivity app an employee connected to her Google account is breached; its OAuth token reads her Drive, then her SSO opens the internal tools (Vercel via Context.ai, April 2026) |
+| `vendor/platform-breach-env-secrets-reused` | flag P1 | `cloudtrail`, `github_audit`, `app` | 24 | A hosting vendor's breach exposes stored environment variables; what was in them is used from a datacenter within a day (Railway, Oct 2026) |
+
+### AI agents
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `ai-agent/agent-escapes-task-uses-found-credentials` | flag P1 | `hiro`, `cloudtrail` | 14 | An agent given one credential finds more and uses them across services in minutes (OpenAI's evaluation-sandbox escape, July 2026) |
+
+### Must not flag
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `negative/dependabot-bumps-axios` | quiet P1 | `github_audit`, `gha_ci`, `runner_egress` | 5 | Dependabot bumps axios to a clean release and CI runs it |
+| `negative/dependabot-prs` | quiet P1 | `github_audit` | 10 | Dependabot opens its weekly batch of PRs and CI runs them |
+| `negative/oncall-3am-login` | quiet P1 | `okta`, `app` | 5 | The on-call engineer signs in at 3 a.m. from home, as every time they are paged |
+| `negative/repo-made-public-as-planned` | quiet P1 | `github_audit` | 2 | An admin makes the docs repo public, as the README it pushed first announces |
+| `negative/scanner-action-usual-run` | quiet P1 | `gha_ci`, `runner_egress` | 5 | The image scan step runs as it does on every build |
+| `negative/secret-rotation-after-vendor-notice` | quiet P1 | `cloudtrail`, `app` | 10 | Admins rotate keys the morning after a vendor's breach notice |
 
 ## Cases from disclosed incidents, 2025–2026
 
-Seventeen cases follow the paths of real compromises as acme's logs would show
-them. Hosts, names and addresses are synthetic; the sequence of events is
-taken from the public write-ups.
+11 of the cases follow the paths of real compromises as the logs would show them. Hosts, names and addresses are synthetic; the sequence of events is taken from the public write-ups.
 
-| case | incident | what the logs show |
-|---|---|---|
-| `supply-chain/ci-action-tags-retargeted` | TeamPCP: Trivy and KICS GitHub Actions, March 2026 | a retargeted action tag, runner egress to a look-alike host, the deploy key used from a datacenter minutes later |
-| `supply-chain/pypi-package-pth-stealer` | TeamPCP: LiteLLM 1.82.7/1.82.8 on PyPI, March 2026 | a `.pth` stealer posting the environment on every Python start, then the deploy key abroad |
-| `supply-chain/trojan-dependency-rat` | axios 1.14.1 / 0.30.4 maintainer hijack, March 2026 | a dependency the package never had, a postinstall, beacons, private repos cloned with a developer's token |
-| `supply-chain/postinstall-ai-cli-inventory-then-repos-public` | nx "s1ngularity", August 2025 | a repo named `s1ngularity-repository-0` at install time; days later repos flipped public and renamed |
-| `supply-chain/preinstall-worm-publishes-credentials-as-repos` | Shai-Hulud second wave, November 2025; "mini Shai-Hulud" with valid provenance, August 2026 | a preinstall fetching Bun, repos created from the runner with the worm's description |
-| `supply-chain/action-prints-runner-memory` | tj-actions/changed-files, March 2025 | a base64 memory dump in the job log, the deploy key used abroad afterwards |
-| `vendor/platform-breach-env-secrets-reused` | Railway environment-variable breach, October 2026 | every secret that lived in the vendor's env vars used from one address within a day |
-| `saas/provider-keys-stolen-from-vendor-console` | OpenCode Console breach, October 2026 | a key that only ever called from one address calling from five countries in an hour |
-| `saas/integration-token-stolen-bulk-read` | Salesloft Drift, August 2025 | an integration's token paging through everything from a host it never used |
-| `ai-agent/repo-settings-redirect-model-credentials` | Claude Code CVE-2026-21852 | an agent's model calls going to the host a cloned repo's settings named |
-| `ai-agent/agent-escapes-task-uses-found-credentials` | OpenAI's evaluation-sandbox escape, July 2026 | one credential, then a role, six secrets and three services in four minutes |
-| `ai-agent/mcp-server-copies-every-message-out` | postmark-mcp 1.0.16, September 2025 | every notification also posted to a host no plan named |
-| `vendor/ai-app-oauth-token-stolen-sso-pivot` | Vercel via Context.ai, April 2026 | an AI app's OAuth token reading an employee's Drive from a new host, then her SSO into the internal tools |
-
-With four look-alikes that must not flag: a rotation the morning after a
-vendor's notice, Dependabot bumping axios to a clean release, the scanner
-action's ordinary run, and a repo made public as its README announced.
+| case | incident |
+|---|---|
+| `supply-chain/ci-action-tags-retargeted` | TeamPCP: Trivy and KICS GitHub Actions, March 2026 |
+| `supply-chain/pypi-package-pth-stealer` | TeamPCP: LiteLLM 1.82.7/1.82.8 on PyPI, March 2026 |
+| `supply-chain/trojan-dependency-rat` | axios 1.14.1 / 0.30.4 maintainer hijack, March 2026 |
+| `supply-chain/postinstall-ai-cli-inventory-then-repos-public` | nx "s1ngularity", August 2025 |
+| `github/shai-hulud-repo-migration` | Shai-Hulud, first wave, September 2025 |
+| `github/shai-hulud-workflow-runner` | Shai-Hulud, first wave, September 2025 |
+| `supply-chain/preinstall-worm-publishes-credentials-as-repos` | Shai-Hulud second wave, November 2025; "mini Shai-Hulud" with valid provenance, August 2026 |
+| `supply-chain/action-prints-runner-memory` | tj-actions/changed-files, March 2025 |
+| `vendor/platform-breach-env-secrets-reused` | Railway environment-variable breach, October 2026 |
+| `vendor/ai-app-oauth-token-stolen-sso-pivot` | Vercel via Context.ai, April 2026 |
+| `ai-agent/agent-escapes-task-uses-found-credentials` | OpenAI's evaluation-sandbox escape, July 2026 |
 
 Sources: [TeamPCP (Unit 42)](https://unit42.paloaltonetworks.com/teampcp-supply-chain-attacks/),
 [TeamPCP (Arctic Wolf)](https://arcticwolf.com/resources/blog/teampcp-supply-chain-attack-campaign-targets-trivy-checkmarx-kics-and-litellm-potential-downstream-impact-to-additional-projects/),
 [axios (Elastic)](https://www.elastic.co/security-labs/how-we-caught-the-axios-supply-chain-attack),
-[Railway (TechCrunch)](https://techcrunch.com/2026/10/22/developer-platform-railway-urges-all-users-to-revoke-secret-keys-after-cyberattack/),
-[OpenCode Console (BleepingComputer)](https://bleepingcomputer.com/news/security/opencode-hack-exposes-api-keys-amid-ai-distillation-attacks),
-[OpenAI incident (OpenAI)](https://openai.com/index/hugging-face-incident-and-the-road-ahead/),
-[Vercel via Context.ai (TechCrunch)](https://techcrunch.com/2026/04/20/app-host-vercel-confirms-security-incident-says-customer-data-was-stolen-via-breach-at-context-ai/),
-[Claude Code leak and CVE (NodeSource)](https://nodesource.com/blog/anthropic-claude-code-source-leak-bun-bug),
+[npm compromise advisory (CISA)](https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem),
 [mini Shai-Hulud (Socket)](https://socket.dev/blog/openapi-react-query-codegen-npm-compromise),
-[npm compromise advisory (CISA)](https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem).
+[Railway (TechCrunch)](https://techcrunch.com/2026/10/22/developer-platform-railway-urges-all-users-to-revoke-secret-keys-after-cyberattack/),
+[Vercel via Context.ai (TechCrunch)](https://techcrunch.com/2026/04/20/app-host-vercel-confirms-security-incident-says-customer-data-was-stolen-via-breach-at-context-ai/),
+[OpenAI incident (OpenAI)](https://openai.com/index/hugging-face-incident-and-the-road-ahead/).
