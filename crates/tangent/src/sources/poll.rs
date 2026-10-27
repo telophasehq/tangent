@@ -27,6 +27,9 @@ pub const SOURCES_NS: &str = "sources";
 pub struct Poller {
     pub name: Arc<str>,
     pub from: NodeRef,
+    /// The state partition the cursor and seen ids live in: the source's
+    /// name, or `name/scope` for a source that polls several things.
+    partition: Arc<str>,
     store: Arc<dyn StateStore>,
     router: Arc<Router>,
     late: Duration,
@@ -44,6 +47,7 @@ impl Poller {
             from: NodeRef::Source {
                 name: Arc::clone(&name),
             },
+            partition: Arc::clone(&name),
             name,
             store,
             router,
@@ -51,9 +55,16 @@ impl Poller {
         }
     }
 
+    /// The same source, keeping a separate cursor for `scope` (a region, say).
+    #[must_use]
+    pub fn scoped(mut self, scope: &str) -> Self {
+        self.partition = format!("{}/{scope}", self.name).into();
+        self
+    }
+
     /// Where the last poll stopped, if there was one.
     pub async fn cursor(&self) -> Option<DateTime<Utc>> {
-        match self.store.get(SOURCES_NS, &self.name, "cursor").await {
+        match self.store.get(SOURCES_NS, &self.partition, "cursor").await {
             Ok(Some(StateValue::Str(s))) => s.parse().ok(),
             _ => None,
         }
@@ -81,7 +92,7 @@ impl Poller {
             .store
             .set(
                 SOURCES_NS,
-                &self.name,
+                &self.partition,
                 "cursor",
                 &StateValue::Str(at.to_rfc3339()),
                 Some(0),
@@ -96,7 +107,7 @@ impl Poller {
     /// later poll could find it again.
     pub async fn first_sight(&self, id: &str) -> bool {
         let key = format!("seen:{id}");
-        match self.store.get(SOURCES_NS, &self.name, &key).await {
+        match self.store.get(SOURCES_NS, &self.partition, &key).await {
             Ok(Some(_)) => false,
             _ => {
                 let ttl = (self.late.num_milliseconds() * 3).max(60_000) as u64;
@@ -104,7 +115,7 @@ impl Poller {
                     .store
                     .set(
                         SOURCES_NS,
-                        &self.name,
+                        &self.partition,
                         &key,
                         &StateValue::Bool(true),
                         Some(ttl),

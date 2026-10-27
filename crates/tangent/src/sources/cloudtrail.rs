@@ -50,36 +50,86 @@ pub async fn run_consumer(
         return run_delivery(name, queue_url.to_string(), &aws, chunks, router, shutdown).await;
     }
 
-    let poller = Poller::new(
-        Arc::clone(&name),
-        store,
-        router,
-        Duration::milliseconds(LATE_MS),
+    // `LookupEvents` is regional. One poller per region named, each with its
+    // own cursor; none named, the SDK's region (from `region` or the default
+    // chain) and the source's own cursor.
+    let regions: Vec<String> = cfg
+        .regions
+        .iter()
+        .map(|r| r.trim().to_string())
+        .filter(|r| !r.is_empty())
+        .collect();
+    tracing::info!(
+        source = %name,
+        since = %cfg.since,
+        regions = ?regions,
+        "cloudtrail source polling LookupEvents"
     );
-    let client = aws_sdk_cloudtrail::Client::new(&aws);
+    if regions.is_empty() {
+        let poller = Poller::new(
+            Arc::clone(&name),
+            store,
+            router,
+            Duration::milliseconds(LATE_MS),
+        );
+        let client = aws_sdk_cloudtrail::Client::new(&aws);
+        run_region(&name, &cfg, client, poller, None, shutdown).await;
+        return Ok(());
+    }
+    let runs = regions.iter().map(|region| {
+        let conf = aws_sdk_cloudtrail::config::Builder::from(&aws)
+            .region(aws_config::Region::new(region.clone()))
+            .build();
+        let poller = Poller::new(
+            Arc::clone(&name),
+            Arc::clone(&store),
+            Arc::clone(&router),
+            Duration::milliseconds(LATE_MS),
+        )
+        .scoped(region);
+        run_region(
+            &name,
+            &cfg,
+            aws_sdk_cloudtrail::Client::from_conf(conf),
+            poller,
+            Some(region.as_str()),
+            shutdown.clone(),
+        )
+    });
+    futures::future::join_all(runs).await;
+    Ok(())
+}
+
+/// The poll loop for one region (or the SDK's), until shutdown.
+async fn run_region(
+    name: &Arc<str>,
+    cfg: &CloudtrailConfig,
+    client: aws_sdk_cloudtrail::Client,
+    poller: Poller,
+    region: Option<&str>,
+    shutdown: CancellationToken,
+) {
+    let region = region.unwrap_or("default");
     let mut ticker = tokio::time::interval(StdDuration::from_secs(cfg.interval_secs.max(10)));
     let mut failing = false;
-    tracing::info!(source = %name, since = %cfg.since, "cloudtrail source polling LookupEvents");
-
     loop {
         tokio::select! {
             () = shutdown.cancelled() => break,
-            _ = ticker.tick() => match poll(&client, &cfg, &poller).await {
+            _ = ticker.tick() => match poll(&client, cfg, &poller).await {
                 Ok(n) => {
                     failing = false;
                     if n > 0 {
-                        tracing::debug!(source = %name, events = n, "cloudtrail poll");
+                        tracing::debug!(source = %name, region, events = n, "cloudtrail poll");
                     }
                 }
                 Err(e) if !failing => {
                     failing = true;
-                    tracing::warn!(source = %name, "cloudtrail poll failed (retrying each interval): {e:#}");
+                    tracing::warn!(source = %name, region, "cloudtrail poll failed (retrying each interval): {e:#}");
                 }
-                Err(e) => tracing::debug!(source = %name, "cloudtrail poll failed: {e:#}"),
+                Err(e) => tracing::debug!(source = %name, region, "cloudtrail poll failed: {e:#}"),
             },
         }
     }
-    Ok(())
 }
 
 /// One pass over `LookupEvents` from the cursor (less the lateness window)

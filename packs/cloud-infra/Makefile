@@ -12,6 +12,7 @@ export JUDGE_URL JUDGE_MODEL JUDGE_API_KEY
 # set; left empty, it says so once and stays idle. The README says what each
 # credential needs.
 AWS_REGION ?=                   # CloudTrail: the SDK's default chain when unset
+AWS_REGIONS ?=                  # several, comma-separated (us-east-1,us-west-2); include us-east-1, where IAM, STS and sign-ins are recorded
 AWS_PROFILE ?=
 CLOUDTRAIL_QUEUE_URL ?=         # set: a trail's delivery through its SQS notifications instead of LookupEvents
 GITHUB_ORG ?=                   # the organization's login
@@ -20,7 +21,7 @@ OKTA_ORG_URL ?=                 # https://acme.okta.com
 OKTA_API_TOKEN ?=
 GOOGLE_APPLICATION_CREDENTIALS ?=   # a service account key file with domain-wide delegation
 GOOGLE_ADMIN_EMAIL ?=           # the admin the service account acts as
-export AWS_REGION AWS_PROFILE CLOUDTRAIL_QUEUE_URL GITHUB_ORG GITHUB_TOKEN OKTA_ORG_URL OKTA_API_TOKEN GOOGLE_APPLICATION_CREDENTIALS GOOGLE_ADMIN_EMAIL
+export AWS_REGION AWS_REGIONS AWS_PROFILE CLOUDTRAIL_QUEUE_URL GITHUB_ORG GITHUB_TOKEN OKTA_ORG_URL OKTA_API_TOKEN GOOGLE_APPLICATION_CREDENTIALS GOOGLE_ADMIN_EMAIL
 
 setup:
 	./setup.sh
