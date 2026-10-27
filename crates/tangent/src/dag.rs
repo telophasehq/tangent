@@ -65,6 +65,16 @@ impl DagRuntime {
                         )
                     })?;
 
+                let data_dir = match &plugin_cfg.data {
+                    Some(dir) => Some(config_dir.join(dir).canonicalize().with_context(|| {
+                        format!(
+                            "plugin {name}: data directory {}",
+                            config_dir.join(dir).display()
+                        )
+                    })?),
+                    None => None,
+                };
+
                 components[i].push((
                     Arc::clone(name),
                     engines[i]
@@ -73,6 +83,7 @@ impl DagRuntime {
                             &plugin_path,
                             plugin_cfg.config.clone(),
                             plugin_cfg.state_namespace.as_deref(),
+                            data_dir.as_deref(),
                         )
                         .with_context(|| format!("loading {}", &component_file))?,
                 ));

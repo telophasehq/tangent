@@ -149,6 +149,8 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 tests: vec![],
                 config: plugin_cfg.config.clone(),
                 state_namespace: plugin_cfg.state_namespace.clone(),
+                // Relative to the test config, which sits next to the original.
+                data: plugin_cfg.data.clone(),
             };
 
             let mut plugins = BTreeMap::new();

@@ -65,6 +65,8 @@ plugins:
   detect_export: { module_type: rust, path: ./detect, state_namespace: export }
 ```
 
+A plugin may read files too: `data: <dir>` mounts a directory, relative to the config file, read-only at `/data` in the guest, for reference data too big for `config` such as an IP database or published address ranges. [examples/enrich](/examples/enrich) reads MaxMind GeoLite2 and the cloud providers' ranges that way, and its `setup.sh` fetches them.
+
 With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition. [examples/partition](/examples/partition) counts events per org with a single `count` key.
 
 The store is readable while the pipeline runs:

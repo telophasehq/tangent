@@ -19,6 +19,12 @@ pub struct PluginConfig {
     /// of their own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_namespace: Option<String>,
+
+    /// A directory of files the plugin may read, relative to the config file,
+    /// mounted read-only in the guest at `/data`. For reference data too big
+    /// for `config`: an IP database, published address ranges, an org profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

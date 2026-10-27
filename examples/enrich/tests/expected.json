@@ -1,0 +1,17 @@
+[
+  { "event": "login", "sourceIPAddress": "8.8.8.8",
+    "_ip": { "sourceIPAddress": { "ip": "8.8.8.8", "country": "US", "asn": 15169, "org": "Google LLC", "tor": false, "ours": false, "private": false } } },
+  { "event": "login", "client": { "ipAddress": "203.0.113.7" },
+    "_ip": { "client.ipAddress": { "ip": "203.0.113.7", "tor": false, "ours": true, "private": false } } },
+  { "event": "api", "ip": "10.1.2.3",
+    "_ip": { "ip": { "ip": "10.1.2.3", "tor": false, "ours": false, "private": true } } },
+  { "event": "api", "actor_ip": "3.5.140.1",
+    "_ip": { "actor_ip": { "ip": "3.5.140.1", "country": "KR", "asn": 16509, "org": "Amazon.com, Inc.", "hosting": "aws", "tor": false, "ours": false, "private": false } } },
+  { "event": "api", "ip": "34.1.208.1",
+    "_ip": { "ip": { "ip": "34.1.208.1", "country": "ZA", "asn": 15169, "org": "Google LLC", "hosting": "gcp", "tor": false, "ours": false, "private": false } } },
+  { "event": "api", "ip": "173.245.48.1:443",
+    "_ip": { "ip": { "ip": "173.245.48.1", "country": "US", "hosting": "cloudflare", "tor": false, "ours": false, "private": false } } },
+  { "event": "api", "ip": "192.0.2.1",
+    "_ip": { "ip": { "ip": "192.0.2.1", "tor": false, "ours": false, "private": false } } },
+  { "event": "noise", "msg": "no address here" }
+]
