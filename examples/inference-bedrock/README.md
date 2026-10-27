@@ -3,14 +3,13 @@
 Claude on Amazon Bedrock reads every record; only what it flags goes on.
 
 Same pipeline as [../inference-local](../inference-local), with the `bedrock`
-backend: the `inference` processor calls the Converse API with the AWS
+backend: the `inference` node calls the Converse API with the AWS
 credential chain (environment, profile, SSO, instance or task role), so there is
 no key to configure.
 
 ```yaml
-processors:
+inference:
   judge:
-    type: inference
     backend: bedrock
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     region: us-west-2

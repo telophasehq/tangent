@@ -8,14 +8,14 @@ use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    processors::ProcessorManager, router::Router, sinks::manager::SinkManager, sources, state,
+    inference::InferenceNodes, router::Router, sinks::manager::SinkManager, sources, state,
     wasm::engine::WasmEngine, worker::WorkerPool,
 };
 
 pub struct DagRuntime {
     pub router: Arc<Router>,
     pool: Arc<WorkerPool>,
-    processors: Arc<ProcessorManager>,
+    inference: Arc<InferenceNodes>,
     sink_manager: Arc<SinkManager>,
     consumer_handles: Vec<tokio::task::JoinHandle<()>>,
 }
@@ -87,12 +87,12 @@ impl DagRuntime {
 
         let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
 
-        let processors = Arc::new(ProcessorManager::new(
-            &cfg.processors,
+        let inference = Arc::new(InferenceNodes::new(
+            &cfg.inference,
             config_dir,
             Arc::clone(&router),
         )?);
-        router.set_processors(&processors);
+        router.set_inference(&inference);
 
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
@@ -119,7 +119,7 @@ impl DagRuntime {
         Ok(Self {
             router,
             pool,
-            processors,
+            inference,
             sink_manager,
             consumer_handles,
         })
@@ -129,7 +129,7 @@ impl DagRuntime {
         let Self {
             router,
             pool,
-            processors,
+            inference,
             sink_manager,
             consumer_handles,
         } = self;
@@ -165,19 +165,19 @@ impl DagRuntime {
             tracing::warn!("WorkerPool still has refs; cannot consume for join()");
         }
 
-        // Processors come after the workers (plugins may feed them) and
+        // Inference nodes come after the workers (plugins may feed them) and
         // forward into the sinks, so they finish before the sinks do.
-        tracing::info!("waiting on processors to shutdown...");
-        match Arc::try_unwrap(processors) {
+        tracing::info!("waiting on inference nodes to shutdown...");
+        match Arc::try_unwrap(inference) {
             Ok(owned) => {
                 if let Err(e) = timeout(worker_timeout, owned.join()).await {
                     tracing::warn!(
                         ?e,
-                        "processor shutdown timeout exceeded. Records may be dropped."
+                        "inference shutdown timeout exceeded. Records may be dropped."
                     );
                 }
             }
-            Err(_) => tracing::warn!("ProcessorManager still has refs; cannot consume for join()"),
+            Err(_) => tracing::warn!("InferenceNodes still has refs; cannot consume for join()"),
         }
 
         tracing::info!("waiting on sink manager to shutdown...");
@@ -376,7 +376,7 @@ mod tests {
         let runtime = DagRuntime {
             router,
             pool: worker_pool,
-            processors: Arc::new(ProcessorManager::empty()),
+            inference: Arc::new(InferenceNodes::empty()),
             sink_manager: Arc::clone(&sink_manager),
             consumer_handles: vec![],
         };

@@ -4,14 +4,13 @@ A model on this machine reads every record; only what it flags goes on.
 Nothing leaves the box.
 
 `tangent.yaml` has no plugins. Records go from a TCP source to an `inference`
-processor, which sends each one to a local OpenAI-compatible server with
+node, which sends each one to a local OpenAI-compatible server with
 [judge.md](judge.md) as the system prompt, adds the model's JSON reply to the
 record under `_judge`, and forwards the record only when `_judge.flag` is true.
 
 ```yaml
-processors:
+inference:
   judge:
-    type: inference
     backend: openai
     url: http://localhost:8080/v1
     model: mlx-community/GLM-4.7-Flash-4bit

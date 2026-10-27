@@ -21,11 +21,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tangent_shared::dag::NodeRef;
-use tangent_shared::processors::inference::{Answer, Backend, InferenceConfig, OnError};
+use tangent_shared::inference::{Answer, Backend, InferenceConfig, OnError};
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinSet;
 
-use crate::processors::{lines, lookup};
+use super::{lines, lookup};
 use crate::router::Router;
 use crate::worker::Record;
 
@@ -143,14 +143,14 @@ impl Ctx {
         let payload = rec.payload.into_bytes();
         for line in lines(&payload) {
             let Ok(v) = serde_json::from_slice::<Value>(line) else {
-                tracing::warn!(processor = %self.name, "record is not JSON; dropping");
+                tracing::warn!(node = %self.name, "record is not JSON; dropping");
                 continue;
             };
             let start = Instant::now();
             let (reply, forward) = match self.ask(self.user_message(&v)).await {
                 Ok(decided) => decided,
                 Err(e) => {
-                    tracing::warn!(processor = %self.name, "inference failed: {e:#}");
+                    tracing::warn!(node = %self.name, "inference failed: {e:#}");
                     match self.cfg.on_error {
                         OnError::Drop => continue,
                         OnError::Pass => (json!({"error": format!("{e:#}")}), true),
@@ -158,7 +158,7 @@ impl Ctx {
                 }
             };
             tracing::debug!(
-                processor = %self.name,
+                node = %self.name,
                 ms = start.elapsed().as_millis() as u64,
                 forward,
                 "inference"
@@ -329,7 +329,7 @@ pub async fn run(
     let model = model(&cfg)?;
     let concurrency = cfg.concurrency.max(1);
     let ctx = Arc::new(Ctx {
-        from: NodeRef::Processor {
+        from: NodeRef::Inference {
             name: Arc::clone(&name),
         },
         name,
@@ -339,7 +339,7 @@ pub async fn run(
         router,
     });
     tracing::info!(
-        processor = %ctx.name,
+        node = %ctx.name,
         backend = ?ctx.cfg.backend,
         model = %ctx.cfg.model,
         forward_if = ctx.cfg.forward_if.as_deref().unwrap_or("-"),
@@ -352,7 +352,7 @@ pub async fn run(
         // Reap finished requests without blocking on them.
         while let Some(Some(res)) = js.join_next().now_or_never() {
             if let Err(e) = res {
-                tracing::warn!(processor = %ctx.name, "inference task failed: {e}");
+                tracing::warn!(node = %ctx.name, "inference task failed: {e}");
             }
         }
         let permit = sem.clone().acquire_owned().await?;
@@ -360,14 +360,14 @@ pub async fn run(
         js.spawn(async move {
             let _permit = permit;
             if let Err(e) = ctx.handle(rec).await {
-                tracing::warn!(processor = %ctx.name, "forwarding failed: {e:#}");
+                tracing::warn!(node = %ctx.name, "forwarding failed: {e:#}");
             }
         });
     }
     // Input closed: finish what is in flight before the sinks shut down.
     while let Some(res) = js.join_next().await {
         if let Err(e) = res {
-            tracing::warn!(processor = %ctx.name, "inference task failed: {e}");
+            tracing::warn!(node = %ctx.name, "inference task failed: {e}");
         }
     }
     Ok(())

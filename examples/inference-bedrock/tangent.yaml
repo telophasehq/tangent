@@ -12,9 +12,8 @@ sources:
     type: tcp
     bind_address: 0.0.0.0:9000
 
-processors:
+inference:
   judge:
-    type: inference
     backend: bedrock                # the Converse API, AWS credential chain
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     region: us-west-2
@@ -34,6 +33,6 @@ sinks:
 
 dag:
   - from: { kind: source, name: events }
-    to: [{ kind: processor, name: judge }]
-  - from: { kind: processor, name: judge }
+    to: [{ kind: inference, name: judge }]
+  - from: { kind: inference, name: judge }
     to: [{ kind: sink, name: flagged }]

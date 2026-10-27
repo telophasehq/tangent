@@ -76,13 +76,12 @@ tangent state --config tangent.yaml scan --prefix user: --limit 50
 tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
 ```
 
-## Processors
-Processors are nodes implemented in the runtime itself, for work a sandboxed plugin cannot do well. They sit in the DAG as `kind: processor`. The first is `inference`, which asks a model about each record:
+## Inference
+An `inference` node asks a model about each record. Nodes are configured under `inference:`, each with its own model and prompt, and sit in the DAG as `kind: inference`:
 
 ```yaml
-processors:
+inference:
   judge:
-    type: inference
     url: http://localhost:8080/v1          # any OpenAI-compatible chat endpoint
     model: mlx-community/GLM-4.7-Flash-4bit
     prompt_file: judge.md                  # the system message

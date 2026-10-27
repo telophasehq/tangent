@@ -11,8 +11,8 @@ pub enum NodeRef {
     Plugin {
         name: Arc<str>,
     },
-    /// A native node implemented in the runtime (see `processors`).
-    Processor {
+    /// An inference node: a model reads each record (see `inference`).
+    Inference {
         name: Arc<str>,
     },
     Sink {

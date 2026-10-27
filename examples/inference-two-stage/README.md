@@ -8,9 +8,8 @@ events ──▶ filter (local, answer: yes_no) ──▶ judge (Bedrock, JSON) 
 ```
 
 ```yaml
-processors:
+inference:
   filter:
-    type: inference
     backend: openai
     url: http://localhost:8080/v1
     model: mlx-community/GLM-4.7-Flash-4bit
@@ -21,7 +20,6 @@ processors:
     max_tokens: 8
     extra: { chat_template_kwargs: { enable_thinking: false } }
   judge:
-    type: inference
     backend: bedrock
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     region: us-west-2

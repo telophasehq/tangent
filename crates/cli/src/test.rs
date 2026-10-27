@@ -156,7 +156,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
 
             let test_config = tangent_shared::Config {
                 runtime,
-                processors: Default::default(),
+                inference: Default::default(),
                 sources,
                 sinks,
                 plugins,

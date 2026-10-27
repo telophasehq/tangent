@@ -16,9 +16,8 @@ sources:
     type: tcp
     bind_address: 0.0.0.0:9000
 
-processors:
+inference:
   judge:
-    type: inference
     backend: openai                 # the protocol, not the vendor
     url: http://localhost:8080/v1
     model: mlx-community/GLM-4.7-Flash-4bit
@@ -41,6 +40,6 @@ sinks:
 
 dag:
   - from: { kind: source, name: events }
-    to: [{ kind: processor, name: judge }]
-  - from: { kind: processor, name: judge }
+    to: [{ kind: inference, name: judge }]
+  - from: { kind: inference, name: judge }
     to: [{ kind: sink, name: flagged }]

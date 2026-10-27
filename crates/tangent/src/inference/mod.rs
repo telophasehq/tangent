@@ -1,32 +1,32 @@
-//! Native nodes. Each processor owns one task and one bounded channel; the
-//! router dispatches records to it the way it dispatches to the worker pool,
-//! and the processor forwards whatever it emits back through the router under
-//! `NodeRef::Processor { name }`.
+//! Inference nodes: a model reads each record. Each node owns one task and one
+//! bounded channel; the router dispatches records to it the way it dispatches
+//! to the worker pool, and the node forwards whatever it emits back through
+//! the router under `NodeRef::Inference { name }`.
 
 use ahash::AHashMap as HashMap;
 use anyhow::{anyhow, bail, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
-use tangent_shared::processors::ProcessorConfig;
+use tangent_shared::inference::InferenceConfig;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::router::Router;
 use crate::worker::Record;
 
-pub mod inference;
+mod node;
 
 const CHANNEL_CAPACITY: usize = 4096;
 
-pub struct ProcessorManager {
+pub struct InferenceNodes {
     senders: HashMap<Arc<str>, mpsc::Sender<Record>>,
     handles: Vec<JoinHandle<()>>,
 }
 
-impl ProcessorManager {
+impl InferenceNodes {
     pub fn new(
-        cfgs: &BTreeMap<Arc<str>, ProcessorConfig>,
+        cfgs: &BTreeMap<Arc<str>, InferenceConfig>,
         config_dir: &Path,
         router: Arc<Router>,
     ) -> Result<Self> {
@@ -43,13 +43,9 @@ impl ProcessorManager {
             );
             handles.push(tokio::spawn(async move {
                 let label = Arc::clone(&name);
-                let res = match cfg {
-                    ProcessorConfig::Inference(c) => {
-                        inference::run(name, c, &dir, rx, router).await
-                    }
-                };
+                let res = node::run(name, cfg, &dir, rx, router).await;
                 if let Err(e) = res {
-                    tracing::error!(processor = %label, "processor exited: {e:#}");
+                    tracing::error!(node = %label, "inference node exited: {e:#}");
                 }
             }));
         }
@@ -65,20 +61,20 @@ impl ProcessorManager {
 
     pub async fn dispatch(&self, name: &Arc<str>, rec: Record) -> Result<()> {
         let Some(tx) = self.senders.get(name) else {
-            bail!("unknown processor: {name}");
+            bail!("unknown inference node: {name}");
         };
         tx.send(rec)
             .await
-            .map_err(|_| anyhow!("processor {name} is no longer running"))
+            .map_err(|_| anyhow!("inference node {name} is no longer running"))
     }
 
-    /// Close the inputs and wait for every processor to finish what it has.
+    /// Close the inputs and wait for every node to finish what it has.
     pub async fn join(self) {
         let Self { senders, handles } = self;
         drop(senders);
         for h in handles {
             if let Err(e) = h.await {
-                tracing::warn!("processor task failed: {e}");
+                tracing::warn!("inference node task failed: {e}");
             }
         }
     }
@@ -113,7 +109,7 @@ mod tests {
     use bytes::BytesMut;
     use serde_json::{json, Map, Value};
     use tangent_shared::dag::NodeRef;
-    use tangent_shared::processors::inference::{Answer, Backend, InferenceConfig, OnError};
+    use tangent_shared::inference::{Answer, Backend, InferenceConfig, OnError};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::Mutex;
 
@@ -224,7 +220,7 @@ mod tests {
         }
     }
 
-    /// Run `records` through one inference processor into a recording sink.
+    /// Run `records` through one inference node into a recording sink.
     async fn run_pipeline(
         cfg: InferenceConfig,
         prompt: &str,
@@ -248,7 +244,7 @@ mod tests {
         let name: Arc<str> = Arc::from("judge");
         let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
         outs.insert(
-            NodeRef::Processor { name: name.clone() },
+            NodeRef::Inference { name: name.clone() },
             vec![NodeRef::Sink {
                 name: sink_name,
                 key_prefix: None,
@@ -256,9 +252,9 @@ mod tests {
         );
         let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
         let mut cfgs = BTreeMap::new();
-        cfgs.insert(name.clone(), ProcessorConfig::Inference(cfg));
-        let pm = Arc::new(ProcessorManager::new(&cfgs, &dir, Arc::clone(&router)).unwrap());
-        router.set_processors(&pm);
+        cfgs.insert(name.clone(), cfg);
+        let pm = Arc::new(InferenceNodes::new(&cfgs, &dir, Arc::clone(&router)).unwrap());
+        router.set_inference(&pm);
 
         for r in records {
             pm.dispatch(

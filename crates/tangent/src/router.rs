@@ -10,7 +10,7 @@ use tangent_shared::dag::NodeRef;
 use tokio::sync::OnceCell;
 
 use crate::{
-    processors::ProcessorManager,
+    inference::InferenceNodes,
     sinks::manager::SinkManager,
     worker::{Ack, Payload, Record, WorkerPool},
 };
@@ -45,7 +45,7 @@ impl Ack for RefCountAck {
 pub struct Router {
     outs: HashMap<NodeRef, Vec<NodeRef>>,
     pool: OnceCell<Weak<WorkerPool>>,
-    processors: OnceCell<Weak<ProcessorManager>>,
+    inference: OnceCell<Weak<InferenceNodes>>,
     sink_manager: Arc<SinkManager>,
 }
 
@@ -54,7 +54,7 @@ impl Router {
         Self {
             outs,
             pool: OnceCell::new(),
-            processors: OnceCell::new(),
+            inference: OnceCell::new(),
             sink_manager,
         }
     }
@@ -67,12 +67,12 @@ impl Router {
         self.pool.get().and_then(|w| w.upgrade())
     }
 
-    pub fn set_processors(&self, processors: &Arc<ProcessorManager>) {
-        let _ = self.processors.set(Arc::downgrade(processors));
+    pub fn set_inference(&self, nodes: &Arc<InferenceNodes>) {
+        let _ = self.inference.set(Arc::downgrade(nodes));
     }
     #[inline]
-    fn processors(&self) -> Option<Arc<ProcessorManager>> {
-        self.processors.get().and_then(|w| w.upgrade())
+    fn inference(&self) -> Option<Arc<InferenceNodes>> {
+        self.inference.get().and_then(|w| w.upgrade())
     }
 
     pub async fn forward(
@@ -107,10 +107,10 @@ impl Router {
             );
         }
 
-        let processors = self.processors();
-        if tos.iter().any(|to| matches!(to, NodeRef::Processor { .. })) && processors.is_none() {
+        let inference = self.inference();
+        if tos.iter().any(|to| matches!(to, NodeRef::Inference { .. })) && inference.is_none() {
             anyhow::bail!(
-                "router called before processors set (from={:?}, tos={:?})",
+                "router called before inference nodes set (from={:?}, tos={:?})",
                 from,
                 tos
             );
@@ -130,10 +130,10 @@ impl Router {
                         };
                         pool.dispatch(rec).await?;
                     }
-                    NodeRef::Processor { name } => {
-                        let pm = processors
+                    NodeRef::Inference { name } => {
+                        let pm = inference
                             .as_ref()
-                            .expect("processors must be set for processor edges");
+                            .expect("inference nodes must be set for inference edges");
                         let rec = Record {
                             payload: Payload::Raw(frame),
                             ack: Some(shared.clone()),
@@ -172,7 +172,7 @@ impl Router {
                             let _ = shared.ack().await;
                         }
                     }
-                    NodeRef::Processor { name } => match &processors {
+                    NodeRef::Inference { name } => match &inference {
                         Some(pm) => {
                             let rec = Record {
                                 payload: Payload::Raw(frame.clone()),
