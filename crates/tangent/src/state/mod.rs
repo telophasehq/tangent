@@ -90,6 +90,18 @@ pub trait StateStore: Send + Sync {
         limit: usize,
     ) -> Result<Vec<Entry>>;
 
+    /// Live entries of one (namespace, partition) with `from <= key < to`, in
+    /// key order, at most `limit`: the slice a plugin reads a scope's history
+    /// with when keys start with their time.
+    async fn range(
+        &self,
+        ns: &str,
+        partition: &str,
+        from: &str,
+        to: &str,
+        limit: usize,
+    ) -> Result<Vec<Entry>>;
+
     /// Key counts per (namespace, partition), filtered by namespace when given.
     async fn counts(&self, ns: Option<&str>) -> Result<Vec<Count>>;
 
@@ -289,11 +301,46 @@ pub(crate) mod conformance {
         let never = store.scan(Some("ns"), Some(""), "j", 10).await.unwrap();
         assert_eq!(never[0].expires_at_ms, None);
 
+        // A range is a slice of one partition, from inclusive to exclusive, in
+        // key order, however the keys were written.
+        for (i, k) in ["ev:0003", "ev:0001", "ev:0004", "ev:0002"]
+            .iter()
+            .enumerate()
+        {
+            store
+                .set("ns", "p2", k, &StateValue::Int(i as i64), None)
+                .await
+                .unwrap();
+        }
+        let mid = store
+            .range("ns", "p2", "ev:0002", "ev:0004", 10)
+            .await
+            .unwrap();
+        assert_eq!(
+            mid.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(),
+            ["ev:0002", "ev:0003"]
+        );
+        let first_two = store.range("ns", "p2", "ev:", "ev:~", 2).await.unwrap();
+        assert_eq!(
+            first_two.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(),
+            ["ev:0001", "ev:0002"],
+            "the limit keeps the first keys of the range"
+        );
+        assert!(
+            store
+                .range("ns", "", "ev:", "ev:~", 10)
+                .await
+                .unwrap()
+                .is_empty(),
+            "a range stays inside its partition"
+        );
+
         let mut counts = store.counts(None).await.unwrap();
         counts.sort_by(|a, b| (&a.ns, &a.partition).cmp(&(&b.ns, &b.partition)));
-        assert_eq!(counts.len(), 2);
+        assert_eq!(counts.len(), 3);
         assert_eq!((counts[0].partition.as_str(), counts[0].keys), ("", 5));
         assert_eq!((counts[1].partition.as_str(), counts[1].keys), ("p1", 2));
+        assert_eq!((counts[2].partition.as_str(), counts[2].keys), ("p2", 4));
 
         assert!(store.del("ns", "p1", "n").await.unwrap());
         assert!(!store.del("ns", "p1", "n").await.unwrap());

@@ -102,9 +102,22 @@ impl DagRuntime {
                 batch_age,
                 Arc::clone(&router),
                 cfg.runtime.partition.clone(),
+                Arc::clone(&store),
             )
             .await?,
         );
+        if let Some(p) = &cfg.runtime.partition {
+            if let Some(ttl) = p.retain_ms {
+                let cap = cfg.runtime.state.max_ttl_ms;
+                if cap != 0 && ttl > cap {
+                    tracing::warn!(
+                        retain_ms = ttl,
+                        max_ttl_ms = cap,
+                        "partition.retain_ms is longer than runtime.state.max_ttl_ms; retained records will expire sooner"
+                    );
+                }
+            }
+        }
 
         router.set_pool(&pool);
 

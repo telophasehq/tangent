@@ -155,6 +155,36 @@ impl StateStore for LruStore {
         Ok(out)
     }
 
+    async fn range(
+        &self,
+        ns: &str,
+        partition: &str,
+        from: &str,
+        to: &str,
+        limit: usize,
+    ) -> Result<Vec<Entry>> {
+        let now = now_ms();
+        let mut out: Vec<Entry> = self
+            .entries
+            .lock()
+            .iter()
+            .filter(|((n, p, k), s)| {
+                live(s, now) && n == ns && p == partition && k.as_str() >= from && k.as_str() < to
+            })
+            .map(|((n, p, k), s)| Entry {
+                ns: n.clone(),
+                partition: p.clone(),
+                key: k.clone(),
+                value: s.value.clone(),
+                expires_at_ms: s.expires_at_ms,
+                updated_at_ms: s.updated_at_ms,
+            })
+            .collect();
+        out.sort_by(|a, b| a.key.cmp(&b.key));
+        out.truncate(limit);
+        Ok(out)
+    }
+
     async fn counts(&self, ns: Option<&str>) -> Result<Vec<Count>> {
         let now = now_ms();
         let mut acc: BTreeMap<(String, String), u64> = BTreeMap::new();

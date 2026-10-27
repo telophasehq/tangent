@@ -33,6 +33,7 @@ bindgen!({
         "tangent:logs/state.set": async,
         "tangent:logs/state.del": async,
         "tangent:logs/state.incr": async,
+        "tangent:logs/state.scan": async,
     },
     with: {
         "tangent:logs/log.logview": JsonLogView,
@@ -271,6 +272,24 @@ impl tangent::logs::state::Host for HostEngine {
         self.state
             .incr(&self.ns, &self.partition, &key, by, ttl_ms)
             .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn scan(
+        &mut self,
+        from: String,
+        to: String,
+        limit: u32,
+    ) -> Result<Vec<(String, Scalar)>, String> {
+        self.state
+            .range(&self.ns, &self.partition, &from, &to, limit as usize)
+            .await
+            .map(|entries| {
+                entries
+                    .into_iter()
+                    .map(|e| (e.key, Scalar::from(e.value)))
+                    .collect()
+            })
             .map_err(|e| e.to_string())
     }
 }
