@@ -7,3 +7,4 @@ plugins/
 **/test_out.json
 **/test_out.ndjson
 **/.test.yaml
+state.sqlite*

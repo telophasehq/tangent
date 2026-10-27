@@ -88,13 +88,16 @@ impl DagRuntime {
 
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
-        let sources = cfg.sources;
 
+        // Every worker hosts every plugin and every inference node, and walks
+        // the DAG for the records it is handed.
         let pool = Arc::new(
             WorkerPool::new(
                 workers,
                 engines,
                 components,
+                &cfg.inference,
+                config_dir,
                 batch_size,
                 batch_age,
                 Arc::clone(&router),
@@ -106,7 +109,7 @@ impl DagRuntime {
         router.set_pool(&pool);
 
         let consumer_handles =
-            spawn_consumers(sources, batch_size, router.clone(), shutdown.clone());
+            spawn_consumers(cfg.sources, batch_size, router.clone(), shutdown.clone());
 
         Ok(Self {
             router,
@@ -143,10 +146,25 @@ impl DagRuntime {
             }
         }
 
-        tracing::info!("waiting on workers to shutdown...");
-
+        // Nothing new comes in now, but records already handed to a worker
+        // are still on their way through the DAG, a model call included.
+        // Wait for the DAG to go quiet, then take the workers down.
+        tracing::info!("draining workers...");
+        let quiet = timeout(worker_timeout, async {
+            while router.in_flight() > 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        if quiet.is_err() {
+            tracing::warn!(
+                in_flight = router.in_flight(),
+                "drain timeout exceeded. Records may be dropped."
+            );
+        }
         drop(router);
 
+        tracing::info!("waiting on workers to shutdown...");
         if let Ok(pool_owned) = Arc::try_unwrap(pool) {
             if let Err(e) = timeout(worker_timeout, pool_owned.join()).await {
                 tracing::warn!(?e, "pool shutdown timeout exceeded. Logs may be dropped.");

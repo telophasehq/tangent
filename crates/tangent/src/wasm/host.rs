@@ -10,6 +10,7 @@ use reqwest::Client;
 use serde_json::Value as JSONValue;
 use simd_json::base::ValueAsScalar;
 use simd_json::derived::{TypedArrayValue, TypedScalarValue};
+use simd_json::prelude::Writable;
 use simd_json::prelude::{ValueAsArray, ValueAsObject, ValueObjectAccess};
 use simd_json::{BorrowedValue, StaticNode};
 use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
@@ -300,6 +301,11 @@ impl JsonLogView {
         self.0._raw.len()
     }
 
+    /// The record as JSON text again.
+    pub fn to_json(&self) -> String {
+        self.0.doc.encode()
+    }
+
     pub fn lookup<'a>(&'a self, path: &str) -> Option<&'a BorrowedValue<'a>> {
         let mut v = &self.0.doc;
 
@@ -343,9 +349,11 @@ impl JsonLogView {
 
 impl log::HostLogview for HostEngine {
     fn log(&mut self, h: Resource<JsonLogView>) -> String {
+        // Serialized again rather than the input bytes: parsing de-escaped
+        // strings in place, so the buffer is not JSON any more once a value
+        // held a quote or a backslash.
         let v: &JsonLogView = self.table.get(&h).unwrap();
-
-        String::from_utf8(v.0._raw.to_vec()).expect("json should be valid")
+        v.to_json()
     }
 
     fn has(&mut self, h: Resource<JsonLogView>, path: String) -> bool {
@@ -426,3 +434,20 @@ impl HasData for HostEngine {
 }
 
 impl log::Host for HostEngine {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// simd-json parses in place: a de-escaped string is written over the
+    /// input, so the bytes a view was parsed from are not JSON any more once
+    /// a value held a quote or a backslash. `log()` encodes the tree again.
+    #[test]
+    fn a_record_with_an_escaped_quote_round_trips_through_the_view() {
+        let input = br#"{"why":"he said \"hi\"","flag":true}"#;
+        let view = JsonLogView::from_bytes(BytesMut::from(&input[..])).unwrap();
+        let again: serde_json::Value = serde_json::from_str(&view.to_json()).unwrap();
+        assert_eq!(again["why"], "he said \"hi\"");
+        assert_eq!(again["flag"], true);
+    }
+}

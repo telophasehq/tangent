@@ -10,6 +10,7 @@ use crate::sinks::common::SinkConfig;
 use crate::sources::common::SourceConfig;
 
 pub mod dag;
+pub mod inference;
 pub mod plugins;
 pub mod runtime;
 pub mod sinks;
@@ -28,6 +29,11 @@ pub struct Config {
 
     #[serde(default)]
     pub plugins: std::collections::BTreeMap<Arc<str>, plugins::PluginConfig>,
+
+    /// Inference nodes, each with its own model and prompt, addressed as
+    /// `kind: inference` in the DAG.
+    #[serde(default)]
+    pub inference: std::collections::BTreeMap<Arc<str>, inference::InferenceConfig>,
 
     #[serde(default)]
     pub dag: Vec<Edge>,
@@ -79,6 +85,7 @@ impl Config {
             match n {
                 NodeRef::Source { name } => this.sources.contains_key(name),
                 NodeRef::Plugin { name } => this.plugins.contains_key(name),
+                NodeRef::Inference { name } => this.inference.contains_key(name),
                 NodeRef::Sink {
                     name,
                     key_prefix: _,

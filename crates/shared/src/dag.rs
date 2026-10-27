@@ -11,6 +11,10 @@ pub enum NodeRef {
     Plugin {
         name: Arc<str>,
     },
+    /// An inference node: a model reads each record (see `inference`).
+    Inference {
+        name: Arc<str>,
+    },
     Sink {
         name: Arc<str>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

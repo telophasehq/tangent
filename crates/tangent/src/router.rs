@@ -10,18 +10,37 @@ use tangent_shared::dag::NodeRef;
 use tokio::sync::OnceCell;
 
 use crate::{
+    inference::lines,
     sinks::manager::SinkManager,
     worker::{Ack, Payload, Record, WorkerPool},
 };
 
+/// The records in a frame, one per NDJSON line. A frame with one line is
+/// handed on as it is; a frame of many lines is split, because a worker
+/// parses one record at a time.
+fn records_in(frame: BytesMut) -> Vec<BytesMut> {
+    if lines(&frame).nth(1).is_none() {
+        return vec![frame];
+    }
+    lines(&frame)
+        .map(|l| {
+            let mut b = BytesMut::with_capacity(l.len() + 1);
+            b.extend_from_slice(l);
+            b.extend_from_slice(b"\n");
+            b
+        })
+        .collect()
+}
+
+/// Acks its inner acks once, when the last of `n` deliveries has acked.
 #[derive(Clone)]
-struct RefCountAck {
+pub(crate) struct RefCountAck {
     remaining: Arc<AtomicUsize>,
     inners: Arc<Vec<Arc<dyn Ack>>>,
 }
 
 impl RefCountAck {
-    fn new(inner: Vec<Arc<dyn Ack>>, n: usize) -> Self {
+    pub(crate) fn new(inner: Vec<Arc<dyn Ack>>, n: usize) -> Self {
         Self {
             remaining: Arc::new(AtomicUsize::new(n)),
             inners: Arc::new(inner),
@@ -45,6 +64,9 @@ pub struct Router {
     outs: HashMap<NodeRef, Vec<NodeRef>>,
     pool: OnceCell<Weak<WorkerPool>>,
     sink_manager: Arc<SinkManager>,
+    /// Records handed to a worker and not yet through their walk of the DAG.
+    /// Zero means the DAG is quiet.
+    in_flight: Arc<AtomicUsize>,
 }
 
 impl Router {
@@ -53,7 +75,17 @@ impl Router {
             outs,
             pool: OnceCell::new(),
             sink_manager,
+            in_flight: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    /// Records between a source and a sink right now.
+    pub fn in_flight(&self) -> usize {
+        self.in_flight.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn in_flight_counter(&self) -> Arc<AtomicUsize> {
+        Arc::clone(&self.in_flight)
     }
 
     pub fn set_pool(&self, pool: &Arc<WorkerPool>) {
@@ -64,6 +96,19 @@ impl Router {
         self.pool.get().and_then(|w| w.upgrade())
     }
 
+    /// Where records from `node` go next; nothing where the DAG ends.
+    pub fn outs(&self, node: &NodeRef) -> &[NodeRef] {
+        self.outs.get(node).map_or(&[], Vec::as_slice)
+    }
+
+    pub fn sinks(&self) -> &Arc<SinkManager> {
+        &self.sink_manager
+    }
+
+    /// Records from a source into the DAG. With a plugin or an inference node
+    /// among the source's outputs, each record goes to the worker pool once,
+    /// and the worker walks the DAG from the source, its sinks included; with
+    /// only sinks, the frames go to them whole, as they are.
     pub async fn forward(
         &self,
         from: &NodeRef,
@@ -78,86 +123,79 @@ impl Router {
             return Ok(());
         };
 
-        let deliveries = frames.len() * tos.len();
+        let needs_worker = tos
+            .iter()
+            .any(|to| matches!(to, NodeRef::Plugin { .. } | NodeRef::Inference { .. }));
+        if needs_worker {
+            let Some(pool) = self.pool() else {
+                anyhow::bail!(
+                    "router called before pool set (from={:?}, tos={:?}, frames={})",
+                    from,
+                    tos,
+                    frames.len(),
+                );
+            };
+            let records: Vec<BytesMut> = frames.drain(..).flat_map(records_in).collect();
+            if records.is_empty() {
+                for a in acks {
+                    let _ = a.ack().await;
+                }
+                return Ok(());
+            }
+            let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(acks, records.len()));
+            for record in records {
+                pool.dispatch(Record {
+                    payload: Payload::Raw(record),
+                    ack: Some(Arc::clone(&shared)),
+                    from: from.clone(),
+                })
+                .await?;
+            }
+            return Ok(());
+        }
+
+        let sinks: Vec<&NodeRef> = tos
+            .iter()
+            .filter(|to| matches!(to, NodeRef::Sink { .. }))
+            .collect();
+        let deliveries = frames.len() * sinks.len();
         if deliveries == 0 {
             for a in acks {
                 let _ = a.ack().await;
             }
             return Ok(());
         }
-
-        let pool = self.pool();
-        if tos.iter().any(|to| matches!(to, NodeRef::Plugin { .. })) && pool.is_none() {
-            anyhow::bail!(
-                "router called before pool set (from={:?}, tos={:?}, frames={})",
-                from,
-                tos,
-                frames.len(),
-            );
-        }
-
-        let shared = Arc::new(RefCountAck::new(acks, deliveries));
-
-        if tos.len() == 1 {
-            let to = &tos[0];
-            for frame in frames.drain(..) {
-                match to {
-                    NodeRef::Plugin { .. } => {
-                        let pool = pool.as_ref().expect("pool must be set for plugin edges");
-                        let rec = Record {
-                            payload: Payload::Raw(frame),
-                            ack: Some(shared.clone()),
-                        };
-                        pool.dispatch(rec).await?;
-                    }
-                    NodeRef::Sink { name, key_prefix } => {
-                        self.sink_manager
-                            .enqueue(
-                                name.clone(),
-                                key_prefix.clone(),
-                                frame,
-                                vec![shared.clone()],
-                            )
-                            .await?;
-                    }
-                    NodeRef::Source { .. } => {
-                        let _ = shared.ack().await;
-                    }
-                }
-            }
-            return Ok(());
-        }
-
+        let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(acks, deliveries));
         for frame in frames.drain(..) {
-            for to in tos {
-                match to {
-                    NodeRef::Plugin { .. } => {
-                        if let Some(ref pool) = pool {
-                            let rec = Record {
-                                payload: Payload::Raw(frame.clone()),
-                                ack: Some(shared.clone()),
-                            };
-                            pool.dispatch(rec).await?;
-                        } else {
-                            let _ = shared.ack().await;
-                        }
-                    }
-                    NodeRef::Sink { name, key_prefix } => {
-                        self.sink_manager
-                            .enqueue(
-                                name.clone(),
-                                key_prefix.clone(),
-                                frame.clone(),
-                                vec![shared.clone()],
-                            )
-                            .await?;
-                    }
-                    NodeRef::Source { .. } => {
-                        let _ = shared.ack().await;
-                    }
+            for to in &sinks {
+                if let NodeRef::Sink { name, key_prefix } = to {
+                    self.sink_manager
+                        .enqueue(
+                            name.clone(),
+                            key_prefix.clone(),
+                            frame.clone(),
+                            vec![Arc::clone(&shared)],
+                        )
+                        .await?;
                 }
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_frame_of_many_lines_is_many_records() {
+        let one = records_in(BytesMut::from("{\"a\":1}\n"));
+        assert_eq!(one.len(), 1);
+        assert_eq!(&one[0][..], b"{\"a\":1}\n");
+        let many = records_in(BytesMut::from("{\"a\":1}\n\n{\"a\":2}\n{\"a\":3}"));
+        assert_eq!(many.len(), 3);
+        assert_eq!(&many[1][..], b"{\"a\":2}\n");
+        assert_eq!(&many[2][..], b"{\"a\":3}\n");
     }
 }

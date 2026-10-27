@@ -1,0 +1,46 @@
+# Claude on Amazon Bedrock reads every record; a plugin keeps what it flagged.
+#
+#   aws sso login --profile <your-profile>      (or any AWS credential source)
+#   tangent plugin compile --config tangent.yaml
+#   tangent run --config tangent.yaml
+#   nc localhost 9000 < events.ndjson
+#   cat flagged.ndjson
+runtime:
+  workers: 1
+  plugins_path: plugins/
+
+sources:
+  events:
+    type: tcp
+    bind_address: 0.0.0.0:9000
+
+inference:
+  judge:
+    backend: bedrock                # the Converse API, AWS credential chain
+    model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    aws:
+      region: us-west-2
+      # profile: prod               # an AWS profile; the default chain when unset
+    prompt_file: judge.md           # the reply lands on the record as judge
+    concurrency: 8                  # a hosted model takes many requests at once
+    timeout_ms: 30000               # a hung request must not hold a slot for long
+
+plugins:
+  flagged:                          # the same plugin as inference-local: keeps judge.flag == true
+    module_type: rust
+    path: ../inference-local/flagged
+
+sinks:
+  flagged:
+    type: file
+    path: flagged.ndjson
+    compression:
+      type: none
+
+dag:
+  - from: { kind: source, name: events }
+    to: [{ kind: inference, name: judge }]
+  - from: { kind: inference, name: judge }
+    to: [{ kind: plugin, name: flagged }]
+  - from: { kind: plugin, name: flagged }
+    to: [{ kind: sink, name: flagged }]

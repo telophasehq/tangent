@@ -1,0 +1,4 @@
+flagged.ndjson
+state.sqlite*
+plugins/
+.DS_Store
