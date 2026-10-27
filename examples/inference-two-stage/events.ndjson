@@ -1,6 +1,0 @@
-{"timestamp":"2026-10-26T20:01:02Z","service":"api","org_id":"acme","level":"info","event":"http_request","method":"GET","path":"/phpinfo","status":404,"user_agent":"CensysInspect/1.1","client_ip":"162.142.125.10"}
-{"timestamp":"2026-10-26T20:01:09Z","service":"api","org_id":"acme","level":"info","event":"deploy_started","sha":"8f3c2a1","actor":"github-actions"}
-{"timestamp":"2026-10-26T20:02:31Z","service":"plan-worker","org_id":"globex","level":"info","event":"step_completed","task_id":"t-4412","plan_id":"p-9","step":"rotate_iam_key","duration_ms":812}
-{"timestamp":"2026-10-26T20:02:33Z","service":"plan-worker","org_id":"globex","level":"warning","event":"outbound_request","task_id":"t-4412","plan_id":"p-9","step":"rotate_iam_key","destination":"https://transfer.sh/upload","bytes":48213}
-{"timestamp":"2026-10-26T20:03:00Z","service":"poller","org_id":"acme","level":"error","event":"integration_sync_failed","vendor":"okta","error":"HTTP 429 Too Many Requests","retry_in_s":60}
-{"timestamp":"2026-10-26T20:03:41Z","service":"api","org_id":"acme","level":"info","event":"api_key_used","key_id":"ak_7f2","scope":"admin","client_ip":"185.220.101.4","country":"RU","previous_country":"US"}

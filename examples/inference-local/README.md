@@ -4,15 +4,15 @@ A model on this machine reads every record; a plugin keeps what it flagged.
 Nothing leaves the box.
 
 ```
-events ──▶ judge (inference: adds _judge) ──▶ flagged (plugin: keeps _judge.flag) ──▶ flagged.ndjson
+events ──▶ judge (inference: adds judge) ──▶ flagged (plugin: keeps judge.flag) ──▶ flagged.ndjson
 ```
 
 The `judge` node sends each record to a local OpenAI-compatible server with
 [judge.md](judge.md) as the system prompt and adds the model's JSON reply to
-the record as `_judge` (the node's name, underscored). That is all an
+the record as `judge` (the node's name). That is all an
 inference node does: it adds and forwards, it never drops. The
 [flagged](flagged/src/lib.rs) plugin is the filter — its `probe()` selects
-records with `_judge.flag == true`, or with `_judge.error` (the judge could not
+records with `judge.flag == true`, or with `judge.error` (the judge could not
 read the reply, so a person should), and its body passes them through
 unchanged.
 
@@ -59,8 +59,7 @@ one at a time (llama-server needs `--parallel 8` for the same; Ollama,
 `OLLAMA_NUM_PARALLEL`). `max_tokens: 300` bounds the occasional runaway reply,
 which otherwise runs to the cap and costs half a minute. See
 [../inference-bedrock](../inference-bedrock) for the same pipeline on a hosted
-model and [../inference-two-stage](../inference-two-stage) for two models in a
-row.
+model.
 
 ## Run
 
@@ -85,5 +84,5 @@ the prompt's "do not flag" list is there to tune. With thinking off, GLM-4.7-Fla
 verdict on an M4 Max, and with eight in flight the pipeline does 3-4 events/s.
 
 When the model cannot be reached or its reply cannot be read, the record still
-goes on with `{"error": ...}` as `_judge`; the plugin keeps those too, so
+goes on with `{"error": ...}` as `judge`; the plugin keeps those too, so
 nothing is lost silently.

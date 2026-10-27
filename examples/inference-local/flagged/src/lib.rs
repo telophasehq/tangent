@@ -35,8 +35,8 @@ impl Guest for Component {
     // A record passes when any selector matches.
     fn probe() -> Vec<Selector> {
         vec![
-            only(Pred::Eq(("_judge.flag".to_string(), Scalar::Boolean(true)))),
-            only(Pred::Has("_judge.error".to_string())),
+            only(Pred::Eq(("judge.flag".to_string(), Scalar::Boolean(true)))),
+            only(Pred::Has("judge.error".to_string())),
         ]
     }
 

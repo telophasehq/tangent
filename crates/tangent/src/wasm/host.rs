@@ -434,3 +434,20 @@ impl HasData for HostEngine {
 }
 
 impl log::Host for HostEngine {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// simd-json parses in place: a de-escaped string is written over the
+    /// input, so the bytes a view was parsed from are not JSON any more once
+    /// a value held a quote or a backslash. `log()` encodes the tree again.
+    #[test]
+    fn a_record_with_an_escaped_quote_round_trips_through_the_view() {
+        let input = br#"{"why":"he said \"hi\"","flag":true}"#;
+        let view = JsonLogView::from_bytes(BytesMut::from(&input[..])).unwrap();
+        let again: serde_json::Value = serde_json::from_str(&view.to_json()).unwrap();
+        assert_eq!(again["why"], "he said \"hi\"");
+        assert_eq!(again["flag"], true);
+    }
+}

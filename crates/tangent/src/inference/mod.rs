@@ -1,104 +1,260 @@
-//! Inference nodes: a model reads each record. Each node owns one task and one
-//! bounded channel; the router dispatches records to it the way it dispatches
-//! to the worker pool, and the node forwards whatever it emits back through
-//! the router under `NodeRef::Inference { name }`.
+//! Inference nodes: a model reads each record. A node lives inside each
+//! worker and runs in DAG order with the plugins: the worker hands it the
+//! records that reached it, waits for the replies (`concurrency` at a time),
+//! and carries the annotated records on to the node's outputs. The system
+//! prompt is a file; the user message is the record (or selected fields) as
+//! pretty JSON; the reply is added to the record under the node's name. The
+//! node adds and forwards, never drops: a failure lands as `{"error": ...}`
+//! in the same field, and a plugin downstream decides what goes on.
+//!
+//! The reply is read as JSON and nothing else. The backend is asked to make
+//! it so: a schema (`schema_file`) through rig's structured output, or JSON
+//! mode on an OpenAI-compatible server. A server that ignores both (mlx_lm)
+//! is held to the prompt, and a reply that is not a JSON object is the error.
 
-use ahash::AHashMap as HashMap;
-use anyhow::{anyhow, bail, Result};
-use std::collections::BTreeMap;
-use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use anyhow::{anyhow, bail, Context, Result};
+use rig_core::completion::request::CompletionRequest;
+use rig_core::completion::AssistantContent;
+use rig_core::operation::Completion;
+use rig_core::providers::openai::{OpenAIConfig, Route};
+use rig_core::{schemars, DynModel};
+use serde_json::{json, Map, Value};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tangent_shared::inference::InferenceConfig;
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
+use std::time::{Duration, Instant};
+use tangent_shared::inference::{Backend, InferenceConfig};
+use tokio::sync::Semaphore;
 
-use crate::router::Router;
-use crate::worker::Record;
-
-mod node;
-
-const CHANNEL_CAPACITY: usize = 4096;
-
-pub struct InferenceNodes {
-    senders: HashMap<Arc<str>, mpsc::Sender<Record>>,
-    handles: Vec<JoinHandle<()>>,
-    /// The router's count of records in the DAG; a record is counted from
-    /// dispatch until its node has forwarded it.
-    in_flight: Arc<AtomicUsize>,
+pub struct InferenceNode {
+    pub name: Arc<str>,
+    cfg: InferenceConfig,
+    prompt: String,
+    /// The shape the backend is asked to enforce, from `schema_file`.
+    schema: Option<schemars::Schema>,
+    model: DynModel<Completion>,
+    /// `concurrency` permits: requests in flight from this worker.
+    sem: Semaphore,
 }
 
-impl InferenceNodes {
-    pub fn new(
-        cfgs: &BTreeMap<Arc<str>, InferenceConfig>,
-        config_dir: &Path,
-        router: Arc<Router>,
-    ) -> Result<Self> {
-        let mut senders = HashMap::with_capacity(cfgs.len());
-        let mut handles = Vec::with_capacity(cfgs.len());
-        let in_flight = router.in_flight_counter();
-        for (name, cfg) in cfgs {
-            let (tx, rx) = mpsc::channel::<Record>(CHANNEL_CAPACITY);
-            senders.insert(Arc::clone(name), tx);
-            let (name, cfg, dir, router, in_flight) = (
-                Arc::clone(name),
-                cfg.clone(),
-                config_dir.to_path_buf(),
-                Arc::clone(&router),
-                Arc::clone(&in_flight),
-            );
-            handles.push(tokio::spawn(async move {
-                let label = Arc::clone(&name);
-                let res = node::run(name, cfg, &dir, rx, router, in_flight).await;
-                if let Err(e) = res {
-                    tracing::error!(node = %label, "inference node exited: {e:#}");
-                }
-            }));
-        }
-        Ok(Self {
-            senders,
-            handles,
-            in_flight,
-        })
+fn resolve(config_dir: &Path, file: &Path) -> PathBuf {
+    if file.is_absolute() {
+        file.to_path_buf()
+    } else {
+        config_dir.join(file)
     }
+}
 
-    pub fn empty() -> Self {
-        Self {
-            senders: HashMap::default(),
-            handles: Vec::new(),
-            in_flight: Arc::new(AtomicUsize::new(0)),
+/// The model `cfg` points at, behind rig's erased handle.
+fn model(cfg: &InferenceConfig) -> Result<DynModel<Completion>> {
+    Ok(match cfg.backend {
+        Backend::Openai => {
+            // Local servers accept any key; a hosted one needs the real thing.
+            let key = cfg.api_key.clone().unwrap_or_else(|| "none".into());
+            OpenAIConfig::new(key)
+                .with_base_url(cfg.url.trim_end_matches('/'))
+                .with_route(Route::Chat)
+                .client()
+                .chat(&cfg.model)
+                .erase()
         }
-    }
+        Backend::Bedrock => {
+            let mut runtime = rig_bedrock::client::BedrockRuntime::builder();
+            if let Some(region) = &cfg.aws.region {
+                runtime = runtime.region(region);
+            }
+            if let Some(profile) = &cfg.aws.profile {
+                runtime = runtime.profile_name(profile);
+            }
+            runtime.build().completion(&cfg.model).erase()
+        }
+    })
+}
 
-    pub async fn dispatch(&self, name: &Arc<str>, rec: Record) -> Result<()> {
-        let Some(tx) = self.senders.get(name) else {
-            bail!("unknown inference node: {name}");
+impl InferenceNode {
+    pub fn new(name: Arc<str>, cfg: InferenceConfig, config_dir: &Path) -> Result<Self> {
+        let prompt_path = resolve(config_dir, &cfg.prompt_file);
+        let prompt = std::fs::read_to_string(&prompt_path)
+            .with_context(|| format!("reading prompt {}", prompt_path.display()))?;
+        if prompt.trim().is_empty() {
+            bail!("prompt {} is empty", prompt_path.display());
+        }
+        let schema = match &cfg.schema_file {
+            Some(file) => {
+                let path = resolve(config_dir, file);
+                let text = std::fs::read_to_string(&path)
+                    .with_context(|| format!("reading schema {}", path.display()))?;
+                let value: Value = serde_json::from_str(&text)
+                    .with_context(|| format!("schema {} is not JSON", path.display()))?;
+                Some(
+                    schemars::Schema::try_from(value)
+                        .map_err(|e| anyhow!("schema {}: {e}", path.display()))?,
+                )
+            }
+            None => None,
         };
-        self.in_flight.fetch_add(1, Ordering::AcqRel);
-        tx.send(rec).await.map_err(|_| {
-            self.in_flight.fetch_sub(1, Ordering::AcqRel);
-            anyhow!("inference node {name} is no longer running")
+        let model = model(&cfg)?;
+        let sem = Semaphore::new(cfg.concurrency.max(1));
+        tracing::info!(
+            node = %name,
+            backend = ?cfg.backend,
+            model = %cfg.model,
+            "inference ready"
+        );
+        Ok(Self {
+            name,
+            cfg,
+            prompt,
+            schema,
+            model,
+            sem,
         })
     }
 
-    /// Close the inputs and wait for every node to finish what it has.
-    pub async fn join(self) {
-        let Self {
-            senders,
-            handles,
-            in_flight: _,
-        } = self;
-        drop(senders);
-        for h in handles {
-            if let Err(e) = h.await {
-                tracing::warn!("inference node task failed: {e}");
+    /// Every record through the model at once, each under one of the node's
+    /// permits; the annotated records, in the order given.
+    pub async fn annotate_all(&self, records: Vec<Value>) -> Vec<Value> {
+        futures::future::join_all(records.into_iter().map(|v| async move {
+            let _permit = self.sem.acquire().await.expect("semaphore is never closed");
+            self.annotate(v).await
+        }))
+        .await
+    }
+
+    /// One record through the model: the reply, or the error, added under the
+    /// node's name.
+    pub async fn annotate(&self, v: Value) -> Value {
+        let start = Instant::now();
+        let reply = match self.ask(self.user_message(&v)).await {
+            Ok(reply) => reply,
+            Err(e) => {
+                tracing::warn!(node = %self.name, "inference failed: {e:#}");
+                json!({"error": format!("{e:#}")})
+            }
+        };
+        tracing::debug!(
+            node = %self.name,
+            ms = start.elapsed().as_millis() as u64,
+            "inference"
+        );
+        let mut obj = match v {
+            Value::Object(m) => m,
+            other => {
+                let mut m = Map::new();
+                m.insert("value".into(), other);
+                m
+            }
+        };
+        obj.insert(self.name.to_string(), reply);
+        Value::Object(obj)
+    }
+
+    fn user_message(&self, v: &Value) -> String {
+        if self.cfg.fields.is_empty() {
+            return serde_json::to_string_pretty(v).unwrap_or_default();
+        }
+        let mut m = Map::new();
+        for f in &self.cfg.fields {
+            if let Some(x) = lookup(v, f) {
+                m.insert(f.clone(), x.clone());
             }
         }
+        serde_json::to_string_pretty(&Value::Object(m)).unwrap_or_default()
     }
+
+    fn request(&self, user: String) -> CompletionRequest {
+        let mut request = CompletionRequest::new(user)
+            .preamble(self.prompt.clone())
+            .max_tokens(u64::from(self.cfg.max_tokens));
+        if let Some(t) = self.cfg.temperature {
+            request = request.temperature(t);
+        }
+        let mut params = Map::new();
+        match (&self.schema, self.cfg.backend) {
+            (Some(schema), _) => request = request.output_schema(schema.clone()),
+            // JSON mode: any object. Converse has no such mode without a schema.
+            (None, Backend::Openai) => {
+                params.insert("response_format".into(), json!({"type": "json_object"}));
+            }
+            (None, Backend::Bedrock) => {}
+        }
+        for (k, v) in &self.cfg.extra {
+            params.insert(k.clone(), v.clone());
+        }
+        if !params.is_empty() {
+            request = request.additional_params(Value::Object(params));
+        }
+        request
+    }
+
+    /// The reply as a JSON object, after `retries` more tries for a request
+    /// that got no reply.
+    async fn ask(&self, user: String) -> Result<Value> {
+        let attempts = self.cfg.retries.saturating_add(1);
+        let mut attempt = 0;
+        let text = loop {
+            attempt += 1;
+            match self.call(user.clone()).await {
+                Ok(text) => break text,
+                Err(e) if attempt < attempts => {
+                    let wait = Duration::from_secs(1 << (attempt - 1).min(6));
+                    tracing::warn!(
+                        node = %self.name,
+                        attempt,
+                        "inference failed, retrying in {wait:?}: {e:#}"
+                    );
+                    tokio::time::sleep(wait).await;
+                }
+                Err(e) => return Err(e),
+            }
+        };
+        let value: Value = serde_json::from_str(text.trim())
+            .map_err(|e| anyhow!("reply is not JSON ({e}): {}", head(&text, 200)))?;
+        if !value.is_object() {
+            bail!("reply is not a JSON object: {}", head(&text, 200));
+        }
+        Ok(value)
+    }
+
+    /// One request: the reply's text, or why there is none.
+    async fn call(&self, user: String) -> Result<String> {
+        let reply = tokio::time::timeout(
+            Duration::from_millis(self.cfg.timeout_ms),
+            self.model.call(self.request(user)),
+        )
+        .await
+        .map_err(|_| anyhow!("no reply within {} ms", self.cfg.timeout_ms))?
+        .map_err(|e| anyhow!("{e}"))?;
+
+        // Reasoning comes back as its own block, so the text is the answer.
+        let text: String = reply
+            .choice
+            .iter()
+            .filter_map(|c| match c {
+                AssistantContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        if text.trim().is_empty() {
+            bail!(
+                "reply has no text (finish: {:?}; the model may have spent its budget thinking)",
+                reply.finish_reason()
+            );
+        }
+        Ok(text)
+    }
+}
+
+fn head(s: &str, n: usize) -> String {
+    let mut t: String = s.trim().chars().take(n).collect();
+    if t.len() < s.trim().len() {
+        t.push('…');
+    }
+    t
 }
 
 /// Dot-path lookup into a JSON value: "a.b.c".
-pub fn lookup<'a>(v: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+pub fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
     if let Some(direct) = v.get(path) {
         return Some(direct);
     }
@@ -117,46 +273,28 @@ pub fn lines(payload: &[u8]) -> impl Iterator<Item = &[u8]> {
         .filter(|l| !l.iter().all(u8::is_ascii_whitespace))
 }
 
+/// An OpenAI-compatible chat server in a few lines, for tests here and in the
+/// worker: it flags any request whose body mentions "bad", answers in prose
+/// to one that mentions "prose", fails the first two requests that mention
+/// "flaky" with a 500, and records every request body.
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::sinks::manager::{Sink, SinkManager, SinkWrite};
-    use crate::worker::Payload;
-    use async_trait::async_trait;
-    use bytes::BytesMut;
-    use serde_json::{json, Map, Value};
-    use tangent_shared::dag::NodeRef;
-    use tangent_shared::inference::{Answer, Backend, InferenceConfig};
+pub(crate) mod stub {
+    use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::Mutex;
 
-    #[derive(Default)]
-    struct RecordingSink {
-        writes: Mutex<Vec<String>>,
-    }
-
-    #[async_trait]
-    impl Sink for RecordingSink {
-        async fn write(&self, req: SinkWrite) -> Result<()> {
-            self.writes
-                .lock()
-                .await
-                .push(String::from_utf8_lossy(&req.payload).into_owned());
-            Ok(())
-        }
-    }
-
-    /// An OpenAI-compatible chat server in a few lines: it flags any request
-    /// whose body mentions "bad", wraps the other verdict in a think block and
-    /// a code fence, and records every request body.
-    async fn stub_model() -> (String, Arc<Mutex<Vec<String>>>) {
+    pub async fn model() -> (String, Arc<Mutex<Vec<String>>>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/v1", listener.local_addr().unwrap());
         let seen = Arc::new(Mutex::new(Vec::new()));
         let log = Arc::clone(&seen);
+        let flaky_failures = Arc::new(AtomicUsize::new(0));
         tokio::spawn(async move {
             while let Ok((mut sock, _)) = listener.accept().await {
                 let log = Arc::clone(&log);
+                let flaky_failures = Arc::clone(&flaky_failures);
                 tokio::spawn(async move {
                     let mut buf = Vec::new();
                     let mut tmp = [0u8; 4096];
@@ -184,15 +322,20 @@ mod tests {
                         buf.extend_from_slice(&tmp[..n]);
                     }
                     let body = String::from_utf8_lossy(&buf[body_start..]).into_owned();
-                    let content = if body.contains("answer yes or no") {
-                        if body.contains("bad") { "Yes." } else { "no" }.to_string()
+                    log.lock().await.push(body.clone());
+                    if body.contains("flaky") && flaky_failures.fetch_add(1, Ordering::SeqCst) < 2 {
+                        let resp = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                        let _ = sock.write_all(resp.as_bytes()).await;
+                        let _ = sock.shutdown().await;
+                        return;
+                    }
+                    let content = if body.contains("prose") {
+                        "Looks fine to me, nothing to flag.".to_string()
                     } else if body.contains("bad") {
                         r#"{"flag": true, "one_line": "bad thing"}"#.to_string()
                     } else {
-                        "<think>looks fine</think>\n```json\n{\"flag\": false, \"one_line\": \"fine\"}\n```"
-                            .to_string()
+                        r#"{"flag": false, "one_line": "fine"}"#.to_string()
                     };
-                    log.lock().await.push(body);
                     let reply = json!({
                         "choices": [{"message": {"content": content}, "finish_reason": "stop"}]
                     })
@@ -210,117 +353,80 @@ mod tests {
         (url, seen)
     }
 
-    fn config(url: &str) -> InferenceConfig {
-        let mut extra = Map::new();
+    /// A node config against `url`, with the prompt (and a schema, when
+    /// given) written under a fresh directory the caller removes.
+    pub fn config(url: &str) -> tangent_shared::inference::InferenceConfig {
+        let mut extra = serde_json::Map::new();
         extra.insert(
             "chat_template_kwargs".into(),
             json!({"enable_thinking": false}),
         );
-        InferenceConfig {
-            backend: Backend::Openai,
+        tangent_shared::inference::InferenceConfig {
+            backend: tangent_shared::inference::Backend::Openai,
             url: url.to_string(),
+            api_key: None,
             model: "stub".into(),
-            region: None,
-            profile: None,
+            aws: Default::default(),
             prompt_file: "judge.md".into(),
-            answer: Answer::Json,
+            schema_file: None,
             fields: Vec::new(),
-            output: None,
             concurrency: 2,
             timeout_ms: 5_000,
+            retries: 0,
             max_tokens: 50,
-            temperature: 0.0,
+            temperature: None,
             extra,
-            api_key: None,
         }
     }
 
-    /// Run `records` through one inference node into a recording sink.
-    async fn run_pipeline(
-        cfg: InferenceConfig,
-        prompt: &str,
-        records: &[&str],
-    ) -> (Vec<String>, Vec<String>) {
+    pub fn dir(tag: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "tangent-inference-{}-{}",
+            "tangent-inference-{tag}-{}-{}",
             std::process::id(),
-            cfg.answer as u8
+            std::thread::current()
+                .name()
+                .unwrap_or("t")
+                .replace("::", "-")
         ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("judge.md"), prompt).unwrap();
-
-        let sink = Arc::new(RecordingSink::default());
-        let sink_name: Arc<str> = Arc::from("out");
-        let sink_manager = Arc::new(SinkManager::for_test(
-            vec![(sink_name.clone(), sink.clone() as Arc<dyn Sink>)],
-            1,
-        ));
-        let name: Arc<str> = Arc::from("judge");
-        let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
-        outs.insert(
-            NodeRef::Inference { name: name.clone() },
-            vec![NodeRef::Sink {
-                name: sink_name,
-                key_prefix: None,
-            }],
-        );
-        let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
-        let mut cfgs = BTreeMap::new();
-        cfgs.insert(name.clone(), cfg);
-        let pm = Arc::new(InferenceNodes::new(&cfgs, &dir, Arc::clone(&router)).unwrap());
-        router.set_inference(&pm);
-
-        for r in records {
-            pm.dispatch(
-                &name,
-                Record {
-                    payload: Payload::Raw(BytesMut::from(format!("{r}\n").as_str())),
-                    ack: None,
-                    to: None,
-                },
-            )
-            .await
-            .unwrap();
-        }
-        drop(router);
-        Arc::try_unwrap(pm).ok().expect("manager refs").join().await;
-        Arc::try_unwrap(sink_manager)
-            .ok()
-            .expect("sink manager refs")
-            .join()
-            .await
-            .unwrap();
-        let _ = std::fs::remove_dir_all(dir);
-        let writes = sink.writes.lock().await.clone();
-        (writes, Vec::new())
+        std::fs::write(
+            dir.join("judge.md"),
+            "You are a test judge. Reply in JSON.\n",
+        )
+        .unwrap();
+        dir
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[tokio::test]
     async fn annotates_every_record_with_the_verdict() {
-        let (url, seen) = stub_model().await;
-        let (writes, _) = run_pipeline(
-            config(&url),
-            "You are a test judge.\n",
-            &[
-                r#"{"id": 1, "msg": "all good"}"#,
-                r#"{"id": 2, "msg": "bad login"}"#,
-                r#"{"id": 3, "msg": "also fine"}"#,
-            ],
-        )
-        .await;
-        // Every record goes on; the verdict rides along under `_judge`.
-        assert_eq!(writes.len(), 3, "{writes:?}");
-        let outs: Vec<Value> = writes
-            .iter()
-            .map(|w| serde_json::from_str(w.trim()).unwrap())
-            .collect();
-        let bad = outs.iter().find(|o| o["id"] == 2).expect("record 2");
-        assert_eq!(bad["_judge"]["flag"], true);
-        assert_eq!(bad["_judge"]["one_line"], "bad thing");
-        for o in outs.iter().filter(|o| o["id"] != 2) {
-            assert_eq!(o["_judge"]["flag"], false, "{o}");
-        }
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("verdict");
+        let node = InferenceNode::new(Arc::from("judge"), stub::config(&url), &dir).unwrap();
+        let outs = node
+            .annotate_all(vec![
+                json!({"id": 1, "msg": "all good"}),
+                json!({"id": 2, "msg": "bad login"}),
+                json!({"id": 3, "msg": "also fine"}),
+            ])
+            .await;
+        // Every record comes back, in order, with the verdict under the node's name.
+        assert_eq!(outs.len(), 3);
+        assert_eq!(
+            outs.iter()
+                .map(|o| o["id"].as_i64().unwrap())
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(outs[1]["judge"]["flag"], true);
+        assert_eq!(outs[1]["judge"]["one_line"], "bad thing");
+        assert_eq!(outs[0]["judge"]["flag"], false);
+        assert_eq!(outs[2]["judge"]["flag"], false);
 
         let seen = seen.lock().await;
         assert_eq!(seen.len(), 3, "one request per record");
@@ -328,7 +434,6 @@ mod tests {
             let req: Value = serde_json::from_str(body).unwrap();
             assert_eq!(req["model"], "stub");
             assert_eq!(req["messages"][0]["role"], "system");
-            // The system prompt, as a string or as content parts.
             assert!(
                 req["messages"][0]["content"]
                     .to_string()
@@ -342,99 +447,79 @@ mod tests {
                 "extra is merged"
             );
             assert_eq!(req["max_tokens"], 50);
+            assert_eq!(
+                req["response_format"]["type"], "json_object",
+                "JSON mode without a schema"
+            );
+            assert!(
+                req.get("temperature").is_none(),
+                "temperature is sent only when set: {req}"
+            );
         }
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
-    async fn a_yes_no_node_records_the_word() {
-        let (url, seen) = stub_model().await;
-        let mut cfg = config(&url);
-        cfg.answer = Answer::YesNo;
-        let (writes, _) = run_pipeline(
-            cfg,
-            "Should someone look? answer yes or no.\n",
-            &[
-                r#"{"id": 1, "msg": "all good"}"#,
-                r#"{"id": 2, "msg": "bad login"}"#,
-                r#"{"id": 3, "msg": "also fine"}"#,
-            ],
+    async fn a_schema_is_sent_as_the_response_format() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("schema");
+        std::fs::write(
+            dir.join("verdict.json"),
+            r#"{"title": "Verdict", "type": "object", "properties": {"flag": {"type": "boolean"}}, "required": ["flag"], "additionalProperties": false}"#,
         )
-        .await;
-        // Every record goes on, carrying the word; a plugin drops the noes.
-        assert_eq!(writes.len(), 3, "{writes:?}");
-        for w in &writes {
-            let out: Value = serde_json::from_str(w.trim()).unwrap();
-            let want = if out["id"] == 2 { "yes" } else { "no" };
-            assert_eq!(out["_judge"]["answer"], want, "{out}");
-        }
-        assert_eq!(seen.lock().await.len(), 3, "every record was asked about");
+        .unwrap();
+        let mut cfg = stub::config(&url);
+        cfg.schema_file = Some("verdict.json".into());
+        cfg.temperature = Some(0.0);
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let out = node.annotate(json!({"id": 1, "msg": "bad"})).await;
+        assert_eq!(out["judge"]["flag"], true);
+
+        let seen = seen.lock().await;
+        let req: Value = serde_json::from_str(&seen[0]).unwrap();
+        assert_eq!(req["response_format"]["type"], "json_schema", "{req}");
+        assert_eq!(req["response_format"]["json_schema"]["name"], "Verdict");
+        assert_eq!(
+            req["response_format"]["json_schema"]["schema"]["properties"]["flag"]["type"],
+            "boolean"
+        );
+        assert_eq!(req["temperature"], 0.0);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// The router counts a record from dispatch until its node has forwarded
-    /// it; shutdown waits for that count to reach zero before closing anything.
     #[tokio::test]
-    async fn records_count_as_in_flight_until_forwarded() {
-        let (url, _seen) = stub_model().await;
-        let dir =
-            std::env::temp_dir().join(format!("tangent-inference-inflight-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("judge.md"), "Judge.").unwrap();
-
-        let sink = Arc::new(RecordingSink::default());
-        let sink_name: Arc<str> = Arc::from("out");
-        let sink_manager = Arc::new(SinkManager::for_test(
-            vec![(sink_name.clone(), sink.clone() as Arc<dyn Sink>)],
-            1,
-        ));
-        let name: Arc<str> = Arc::from("judge");
-        let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
-        outs.insert(
-            NodeRef::Inference { name: name.clone() },
-            vec![NodeRef::Sink {
-                name: sink_name,
-                key_prefix: None,
-            }],
+    async fn a_reply_that_is_not_json_is_the_error() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("prose");
+        let node = InferenceNode::new(Arc::from("judge"), stub::config(&url), &dir).unwrap();
+        let out = node.annotate(json!({"id": 7, "msg": "prose please"})).await;
+        assert_eq!(out["id"], 7);
+        let err = out["judge"]["error"].as_str().unwrap();
+        assert!(
+            err.contains("not JSON") && err.contains("Looks fine"),
+            "{err}"
         );
-        let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
-        let mut cfgs = BTreeMap::new();
-        cfgs.insert(name.clone(), config(&url));
-        let pm = Arc::new(InferenceNodes::new(&cfgs, &dir, Arc::clone(&router)).unwrap());
-        router.set_inference(&pm);
+        assert_eq!(
+            seen.lock().await.len(),
+            1,
+            "a reply that came back is not retried"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
-        for r in [r#"{"n":1}"#, r#"{"n":2}"#, r#"{"n":3}"#] {
-            pm.dispatch(
-                &name,
-                Record {
-                    payload: Payload::Raw(BytesMut::from(format!("{r}\n").as_str())),
-                    ack: None,
-                    to: None,
-                },
-            )
-            .await
-            .unwrap();
-        }
-        // The node has not had a turn yet on this single-threaded runtime, so
-        // all three are still counted.
-        assert_eq!(router.in_flight(), 3);
-
-        Arc::try_unwrap(pm).ok().expect("manager refs").join().await;
-        assert_eq!(router.in_flight(), 0);
-        drop(router);
-        Arc::try_unwrap(sink_manager)
-            .ok()
-            .expect("sink manager refs")
-            .join()
-            .await
-            .unwrap();
-        let lines: usize = sink
-            .writes
-            .lock()
-            .await
-            .iter()
-            .map(|w| w.lines().count())
-            .sum();
-        assert_eq!(lines, 3);
+    #[tokio::test]
+    async fn a_request_that_got_no_reply_is_retried() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("flaky");
+        let mut cfg = stub::config(&url);
+        cfg.retries = 2;
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        // Two 500s, then the verdict: three requests, one answer.
+        let out = node
+            .annotate(json!({"id": 3, "msg": "flaky bad link"}))
+            .await;
+        assert_eq!(out["judge"]["flag"], true, "{out}");
+        assert_eq!(seen.lock().await.len(), 3);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -442,15 +527,28 @@ mod tests {
     async fn an_unreachable_model_leaves_an_error_on_the_record() {
         // Nothing listens on port 1. The record still goes on, with the error
         // where the verdict would be, so nothing is lost silently.
-        let dead = "http://127.0.0.1:1/v1";
-        let (writes, _) =
-            run_pipeline(config(dead), "You are a test judge.\n", &[r#"{"id": 9}"#]).await;
-        assert_eq!(writes.len(), 1, "{writes:?}");
-        let out: Value = serde_json::from_str(writes[0].trim()).unwrap();
+        let dir = stub::dir("dead");
+        let node = InferenceNode::new(
+            Arc::from("judge"),
+            stub::config("http://127.0.0.1:1/v1"),
+            &dir,
+        )
+        .unwrap();
+        let out = node.annotate(json!({"id": 9})).await;
         assert_eq!(out["id"], 9);
-        assert!(
-            !out["_judge"]["error"].as_str().unwrap().is_empty(),
-            "{out}"
-        );
+        assert!(!out["judge"]["error"].as_str().unwrap().is_empty(), "{out}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_prompt_file_that_is_missing_is_an_error_at_startup() {
+        let dir = stub::dir("missing");
+        let mut cfg = stub::config("http://127.0.0.1:1/v1");
+        cfg.prompt_file = "nope.md".into();
+        let err = InferenceNode::new(Arc::from("judge"), cfg, &dir)
+            .err()
+            .unwrap();
+        assert!(format!("{err:#}").contains("nope.md"), "{err:#}");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -8,14 +8,13 @@ use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    inference::InferenceNodes, router::Router, sinks::manager::SinkManager, sources, state,
-    wasm::engine::WasmEngine, worker::WorkerPool,
+    router::Router, sinks::manager::SinkManager, sources, state, wasm::engine::WasmEngine,
+    worker::WorkerPool,
 };
 
 pub struct DagRuntime {
     pub router: Arc<Router>,
     pool: Arc<WorkerPool>,
-    inference: Arc<InferenceNodes>,
     sink_manager: Arc<SinkManager>,
     consumer_handles: Vec<tokio::task::JoinHandle<()>>,
 }
@@ -87,22 +86,18 @@ impl DagRuntime {
 
         let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
 
-        let inference = Arc::new(InferenceNodes::new(
-            &cfg.inference,
-            config_dir,
-            Arc::clone(&router),
-        )?);
-        router.set_inference(&inference);
-
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
-        let sources = cfg.sources;
 
+        // Every worker hosts every plugin and every inference node, and walks
+        // the DAG for the records it is handed.
         let pool = Arc::new(
             WorkerPool::new(
                 workers,
                 engines,
                 components,
+                &cfg.inference,
+                config_dir,
                 batch_size,
                 batch_age,
                 Arc::clone(&router),
@@ -114,12 +109,11 @@ impl DagRuntime {
         router.set_pool(&pool);
 
         let consumer_handles =
-            spawn_consumers(sources, batch_size, router.clone(), shutdown.clone());
+            spawn_consumers(cfg.sources, batch_size, router.clone(), shutdown.clone());
 
         Ok(Self {
             router,
             pool,
-            inference,
             sink_manager,
             consumer_handles,
         })
@@ -129,7 +123,6 @@ impl DagRuntime {
         let Self {
             router,
             pool,
-            inference,
             sink_manager,
             consumer_handles,
         } = self;
@@ -153,11 +146,10 @@ impl DagRuntime {
             }
         }
 
-        // Nothing new comes in now, but records still move between workers
-        // and inference nodes (a plugin may feed a model, a model a plugin),
-        // so neither can close before the other is done. Wait for the DAG to
-        // go quiet, then take both down.
-        tracing::info!("draining workers and inference nodes...");
+        // Nothing new comes in now, but records already handed to a worker
+        // are still on their way through the DAG, a model call included.
+        // Wait for the DAG to go quiet, then take the workers down.
+        tracing::info!("draining workers...");
         let quiet = timeout(worker_timeout, async {
             while router.in_flight() > 0 {
                 tokio::time::sleep(Duration::from_millis(5)).await;
@@ -179,19 +171,6 @@ impl DagRuntime {
             }
         } else {
             tracing::warn!("WorkerPool still has refs; cannot consume for join()");
-        }
-
-        tracing::info!("waiting on inference nodes to shutdown...");
-        match Arc::try_unwrap(inference) {
-            Ok(owned) => {
-                if let Err(e) = timeout(worker_timeout, owned.join()).await {
-                    tracing::warn!(
-                        ?e,
-                        "inference shutdown timeout exceeded. Records may be dropped."
-                    );
-                }
-            }
-            Err(_) => tracing::warn!("InferenceNodes still has refs; cannot consume for join()"),
         }
 
         tracing::info!("waiting on sink manager to shutdown...");
@@ -390,7 +369,6 @@ mod tests {
         let runtime = DagRuntime {
             router,
             pool: worker_pool,
-            inference: Arc::new(InferenceNodes::empty()),
             sink_manager: Arc::clone(&sink_manager),
             consumer_handles: vec![],
         };

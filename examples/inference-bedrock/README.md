@@ -13,7 +13,7 @@ inference:
   judge:
     backend: bedrock
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
-    region: us-west-2
+    aws: { region: us-west-2 }
     prompt_file: judge.md
     concurrency: 8
     timeout_ms: 30000
@@ -26,7 +26,7 @@ plugins:
 ## Credentials
 
 Anything the AWS SDK accepts. On a laptop, `aws sso login --profile <p>` and
-either `profile: <p>` in the config or `AWS_PROFILE=<p>` in the environment; in
+either `aws: { profile: <p> }` in the config or `AWS_PROFILE=<p>` in the environment; in
 ECS or EC2, the task or instance role. Two things that bite:
 
 - `AWS_BEARER_TOKEN_BEDROCK` in the environment takes precedence over SigV4 for
