@@ -165,8 +165,9 @@ fn parse_frames(cfg: Option<&PartitionConfig>, frames: Frames) -> Views {
 /// A worker hosts every plugin and every inference node, and walks the DAG
 /// for each batch it is handed: a record enters at its source and goes to
 /// each of the node's outputs in turn, a plugin's or a model's output being
-/// the next node's input, until the sinks. Records between a source and a
-/// sink never leave the worker, so a partition's records stay in order.
+/// the next node's input, until the sinks. A record leaves the worker only
+/// when its partition first resolves to another worker mid-walk (a plugin
+/// set the key); otherwise a partition's records stay here, in order.
 pub struct Worker {
     id: usize,
     rx: mpsc::Receiver<Record>,
@@ -180,6 +181,12 @@ pub struct Worker {
     partition: Option<Arc<PartitionConfig>>,
     /// Records anywhere between a source and a sink, shared with the router.
     in_flight: Arc<AtomicUsize>,
+    /// Records another worker handed this one mid-walk: their partition
+    /// resolved there and belongs here. Unbounded, so a worker never blocks
+    /// on a hand-off and two workers cannot wait on each other.
+    handoff_rx: mpsc::UnboundedReceiver<Record>,
+    /// Every worker's hand-off queue, by worker index.
+    handoffs: Vec<mpsc::UnboundedSender<Record>>,
 }
 
 /// A record and the partition it resolves to now, from its own fields;
@@ -216,6 +223,11 @@ impl Worker {
                 maybe = self.rx.recv() => match maybe {
                     Some(rec) => Next::Record(rec),
                     None => Next::Closed,
+                },
+                // Never None: this worker holds a sender to its own queue.
+                maybe = self.handoff_rx.recv() => match maybe {
+                    Some(rec) => Next::Record(rec),
+                    None => Next::Tick,
                 },
                 () = &mut sleeper => Next::Tick,
             };
@@ -273,6 +285,32 @@ impl Worker {
         Ok(())
     }
 
+    /// Of a node's output records, those this worker goes on with. The
+    /// partition key may be set by a plugin, so a record's partition can
+    /// first resolve mid-walk, on a worker that does not own it; such a
+    /// record is handed to its owner, which continues the walk from `node`.
+    fn keep_local(
+        &self,
+        node: &NodeRef,
+        out: Views,
+        handoffs: &mut Vec<(NodeRef, JsonLogView, Arc<str>)>,
+    ) -> Views {
+        let workers = self.handoffs.len();
+        if workers <= 1 {
+            return out;
+        }
+        out.into_iter()
+            .filter_map(|(lv, part)| {
+                if !part.is_empty() && worker_for(&part, workers) != self.id {
+                    handoffs.push((node.clone(), lv, part));
+                    None
+                } else {
+                    Some((lv, part))
+                }
+            })
+            .collect()
+    }
+
     /// A batch through the DAG. Each node's records go to each of its
     /// outputs: a plugin or a model turns them into the next node's records,
     /// a sink's share is collected and delivered when the walk is done, so
@@ -317,6 +355,7 @@ impl Worker {
 
         let router = Arc::clone(&self.router);
         let mut deliveries: Vec<Delivery> = Vec::new();
+        let mut handoffs: Vec<(NodeRef, JsonLogView, Arc<str>)> = Vec::new();
         while let Some((node, hop)) = queue.pop_front() {
             let outs = router.outs(&node);
             let sinks: Vec<(Arc<str>, Option<Arc<str>>)> = outs
@@ -355,11 +394,13 @@ impl Worker {
                 deliver(&mut deliveries, sinks, frame);
             }
 
-            // A plugin or a model needs the records: parse now.
+            // A plugin or a model needs the records: parse now, and a record
+            // whose partition belongs to another worker goes there instead.
             let views = match hop {
                 Hop::Views(views) => views,
                 Hop::Frames(frames) => parse_frames(self.partition.as_deref(), frames),
             };
+            let views = self.keep_local(&node, views, &mut handoffs);
             if views.is_empty() {
                 continue;
             }
@@ -377,19 +418,36 @@ impl Worker {
             }
         }
 
-        // The batch's acks cover every sink delivery.
+        // The batch's acks cover every sink delivery and every record handed
+        // to another worker, whose own walk acks it in turn.
         let upstream = std::mem::take(acks);
-        if deliveries.is_empty() {
+        let outstanding = deliveries.len() + handoffs.len();
+        if outstanding == 0 {
             for a in upstream {
                 let _ = a.ack().await;
             }
         } else {
-            let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(upstream, deliveries.len()));
+            let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(upstream, outstanding));
             for (name, key_prefix, frame) in deliveries {
                 router
                     .sinks()
                     .enqueue(name, key_prefix, frame, vec![Arc::clone(&shared)])
                     .await?;
+            }
+            for (from, view, partition) in handoffs {
+                let owner = worker_for(&partition, self.handoffs.len());
+                // Counted until the owner's walk is done with it.
+                self.in_flight.fetch_add(1, Ordering::AcqRel);
+                let rec = Record {
+                    payload: Payload::Parsed { view, partition },
+                    ack: Some(Arc::clone(&shared)),
+                    from,
+                };
+                if self.handoffs[owner].send(rec).is_err() {
+                    self.in_flight.fetch_sub(1, Ordering::AcqRel);
+                    tracing::warn!(worker = owner, "worker is gone; record dropped");
+                    let _ = shared.ack().await;
+                }
             }
         }
 
@@ -537,6 +595,14 @@ impl WorkerPool {
         let partition = partition.map(Arc::new);
         let in_flight = router.in_flight_counter();
 
+        let mut handoff_tx = Vec::with_capacity(size);
+        let mut handoff_rx = VecDeque::with_capacity(size);
+        for _ in 0..size {
+            let (tx, rx) = mpsc::unbounded_channel::<Record>();
+            handoff_tx.push(tx);
+            handoff_rx.push_back(rx);
+        }
+
         let ch_capacity = 4096;
         for i in 0..size {
             let (tx, rx) = mpsc::channel::<Record>(ch_capacity);
@@ -582,6 +648,10 @@ impl WorkerPool {
                 router: Arc::clone(&router),
                 partition: partition.clone(),
                 in_flight: Arc::clone(&in_flight),
+                handoff_rx: handoff_rx
+                    .pop_front()
+                    .expect("one hand-off queue per worker"),
+                handoffs: handoff_tx.clone(),
             };
             let h = tokio::spawn(async move {
                 if let Err(e) = worker.run().await {
@@ -720,7 +790,9 @@ mod tests {
     use super::*;
     use crate::inference::stub;
     use crate::sinks::manager::{Sink, SinkManager, SinkWrite};
+    use crate::wasm::engine::WasmEngine;
     use serde_json::Value;
+    use tangent_shared::runtime::StateConfig;
     use tokio::sync::Mutex;
 
     #[test]
@@ -803,6 +875,7 @@ mod tests {
             InferenceNode::new(judge.clone(), stub::config(&url), &dir).unwrap(),
         );
         let (tx, rx) = mpsc::channel(16);
+        let handoff = mpsc::unbounded_channel();
         let worker = Worker {
             id: 0,
             rx,
@@ -815,6 +888,8 @@ mod tests {
             router: Arc::clone(&router),
             partition: None,
             in_flight: Arc::clone(&in_flight),
+            handoff_rx: handoff.1,
+            handoffs: vec![handoff.0],
         };
         let handle = tokio::spawn(worker.run());
 
@@ -867,6 +942,117 @@ mod tests {
             ack.0.load(Ordering::SeqCst),
             3,
             "every record acked once the sink had it"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Two workers, and a partition key the model sets: a record's partition
+    /// resolves after the judge, on whichever worker took it from the source,
+    /// and the record is handed to the worker that owns the partition. Every
+    /// record still reaches the sink once, and the source's ack fires once,
+    /// when all of them are through.
+    #[tokio::test]
+    async fn a_record_whose_partition_resolves_mid_walk_goes_to_its_owner() {
+        let (url, _seen) = stub::model().await;
+        let dir = stub::dir("handoff");
+        let source = NodeRef::Source {
+            name: Arc::from("events"),
+        };
+        let judge: Arc<str> = Arc::from("judge");
+        let sink_name: Arc<str> = Arc::from("out");
+        let sink = Arc::new(RecordingSink::default());
+        let sink_manager = Arc::new(SinkManager::for_test(
+            vec![(sink_name.clone(), sink.clone() as Arc<dyn Sink>)],
+            1,
+        ));
+        let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
+        outs.insert(
+            source.clone(),
+            vec![NodeRef::Inference {
+                name: judge.clone(),
+            }],
+        );
+        outs.insert(
+            NodeRef::Inference {
+                name: judge.clone(),
+            },
+            vec![NodeRef::Sink {
+                name: sink_name,
+                key_prefix: None,
+            }],
+        );
+        let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
+        let store: Arc<dyn crate::state::StateStore> =
+            Arc::new(crate::state::lru::LruStore::new(StateConfig::default()).unwrap());
+        let engines = (0..2)
+            .map(|_| WasmEngine::new(Arc::clone(&store), true).unwrap())
+            .collect();
+        let mut inference = BTreeMap::new();
+        inference.insert(judge.clone(), stub::config(&url));
+        let pool = Arc::new(
+            WorkerPool::new(
+                2,
+                engines,
+                vec![Vec::new(), Vec::new()],
+                &inference,
+                &dir,
+                1 << 20,
+                Duration::from_millis(20),
+                Arc::clone(&router),
+                Some(PartitionConfig {
+                    key: vec!["judge.flag".into()],
+                    separator: "|".into(),
+                }),
+            )
+            .await
+            .unwrap(),
+        );
+        router.set_pool(&pool);
+
+        let ack = Arc::new(CountingAck::default());
+        let frames: Vec<BytesMut> = (1..=6)
+            .map(|i| {
+                let msg = if i % 2 == 0 { "bad" } else { "fine" };
+                BytesMut::from(format!("{{\"id\":{i},\"msg\":\"{msg}\"}}\n").as_str())
+            })
+            .collect();
+        router
+            .forward(&source, frames, vec![ack.clone() as Arc<dyn Ack>])
+            .await
+            .unwrap();
+        // The walks, hand-offs included, are the in-flight span.
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while router.in_flight() > 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the DAG goes quiet");
+        drop(router);
+        Arc::try_unwrap(pool).ok().expect("pool refs").join().await;
+        Arc::try_unwrap(sink_manager)
+            .ok()
+            .expect("sink manager refs")
+            .join()
+            .await
+            .unwrap();
+
+        let writes = sink.writes.lock().await.clone();
+        let mut ids: Vec<i64> = writes
+            .iter()
+            .flat_map(|w| w.lines())
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .map(|v| {
+                assert!(v["judge"]["flag"].is_boolean(), "{v}");
+                v["id"].as_i64().unwrap()
+            })
+            .collect();
+        ids.sort_unstable();
+        assert_eq!(ids, [1, 2, 3, 4, 5, 6], "every record once");
+        assert_eq!(
+            ack.0.load(Ordering::SeqCst),
+            1,
+            "the source's ack fires once, when all six are through"
         );
         let _ = std::fs::remove_dir_all(dir);
     }
