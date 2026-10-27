@@ -1,0 +1,13 @@
+id: data/gmail-forwarding-rule
+title: "Finance user's mailbox starts forwarding to an outside Gmail address"
+category: data
+priority: P1
+scope: actor            # the window that reveals it
+cadence: single
+alone_innocent: false   # does each line look fine on its own?
+sources: [google_workspace]
+events: 1
+expected:
+  flag: true
+  one_line: "cfo@acme.io's mail is now forwarded to a gmail.com address"
+  check_first: classic BEC; check the session that set it

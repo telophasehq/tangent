@@ -1,0 +1,13 @@
+id: identity/admin-login-new-asn
+title: Admin console login from a hosting-provider ASN in a new country
+category: identity
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [okta]
+events: 5
+expected:
+  flag: true
+  one_line: Okta admin alice signed in from a Frankfurt hosting-provider IP after years of Comcast/San Francisco
+  check_first: whether alice is travelling; the API token created minutes later

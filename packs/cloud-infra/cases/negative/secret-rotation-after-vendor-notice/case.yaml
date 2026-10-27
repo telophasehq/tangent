@@ -1,0 +1,13 @@
+id: negative/secret-rotation-after-vendor-notice
+title: "Admins rotate keys the morning after a vendor's breach notice"
+category: negative
+priority: P1
+scope: org            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [cloudtrail, app]
+events: 10
+expected:
+  flag: false
+  one_line: admin rotated three access keys and two API keys from the office in twenty minutes, deleting the old ones
+  check_first: ""

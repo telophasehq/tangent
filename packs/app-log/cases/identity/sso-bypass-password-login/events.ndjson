@@ -1,0 +1,2 @@
+{"ts":"2026-10-10T13:00:00Z","source":"app","event":"org.settings.changed","actor":"admin@acme.io","ip":"73.162.14.9","org":"acme","setting":"sso_enforced","value":true}
+{"ts":"2026-10-20T13:00:00Z","source":"app","event":"auth.login","actor":"carol@acme.io","ip":"91.108.4.12","org":"acme","method":"password","mfa":false,"result":"success"}

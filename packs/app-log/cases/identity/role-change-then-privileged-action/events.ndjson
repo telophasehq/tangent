@@ -1,0 +1,2 @@
+{"ts":"2026-10-22T02:13:00Z","source":"app","event":"member.role.changed","actor":"dave@acme.io","ip":"73.162.14.9","org":"acme","target":"carol@acme.io","from_role":"viewer","to_role":"admin"}
+{"ts":"2026-10-22T02:19:00Z","source":"app","event":"org.export.started","actor":"carol@acme.io","ip":"91.108.4.12","org":"acme","scope":"all_data"}

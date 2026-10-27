@@ -1,0 +1,13 @@
+id: supply-chain/trojan-dependency-rat
+title: A hijacked maintainer account publishes axios with a new dependency whose postinstall drops a RAT (March 2026)
+category: supply-chain
+priority: P1
+scope: plan            # the window that reveals it
+cadence: run-completion
+alone_innocent: true   # does each line look fine on its own?
+sources: [gha_ci, runner_egress, github_audit]
+events: 14
+expected:
+  flag: true
+  one_line: "npm ci pulled axios 1.14.1 with a dependency it never had, plain-crypto-js, whose postinstall ran; the runner beaconed to an unknown host every minute, and dev-sam's token cloned six private repos from Finland"
+  check_first: "the lockfile diff that added plain-crypto-js; every laptop that installed it; rotate dev-sam's tokens"

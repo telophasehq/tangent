@@ -8,3 +8,4 @@ __pycache__/
 **/.test.yaml
 **/plugins/
 state.sqlite*
+src/bindings.rs

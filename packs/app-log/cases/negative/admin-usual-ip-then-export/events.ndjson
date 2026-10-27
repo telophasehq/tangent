@@ -1,0 +1,3 @@
+{"ts":"2026-09-20T13:00:00Z","source":"app","event":"org.export.started","actor":"alice@acme.io","ip":"73.162.14.9","org":"acme","scope":"compliance_report"}
+{"ts":"2026-10-20T13:00:00Z","source":"app","event":"auth.login","actor":"alice@acme.io","ip":"73.162.14.9","org":"acme","method":"sso","mfa":true,"result":"success"}
+{"ts":"2026-10-20T13:04:00Z","source":"app","event":"org.export.started","actor":"alice@acme.io","ip":"73.162.14.9","org":"acme","scope":"compliance_report"}

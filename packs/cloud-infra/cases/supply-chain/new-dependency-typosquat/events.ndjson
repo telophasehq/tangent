@@ -1,0 +1,2 @@
+{"ts":"2026-10-20T13:00:00Z","source":"github_audit","@timestamp":"2026-10-20T13:00:00Z","action":"pull_request.create","actor":"dev-sam","org":"acme","actor_ip":"73.162.14.9","actor_location":{"country_code":"US"},"programmatic_access_type":"personal access token","repo":"acme/web","title":"deps: add lodahs for debounce","files_changed":["package.json","package-lock.json"]}
+{"ts":"2026-10-20T13:02:00Z","source":"gha_ci","repo":"acme/web","run_id":44201,"job":"build","step":"npm ci","line":"added 1 package: lodahs@1.0.1 (published 2 days ago, 1 maintainer)"}

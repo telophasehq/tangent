@@ -1,0 +1,5 @@
+{"ts":"2026-10-20T13:00:00Z","source":"gha_ci","repo":"acme/api","run_id":61075,"job":"build","step":"Run aquasecurity/trivy-action@0.28.0","line":"Downloading action archive"}
+{"ts":"2026-10-20T13:00:06Z","source":"runner_egress","repo":"acme/api","run_id":61075,"dst_host":"github.com","dst_port":443,"bytes_out":300,"http":{"method":"GET","path":"/aquasecurity/trivy-action/archive/refs/tags/0.28.0.tar.gz"}}
+{"ts":"2026-10-20T13:00:12Z","source":"gha_ci","repo":"acme/api","run_id":61075,"job":"build","step":"Run aquasecurity/trivy-action@0.28.0","line":"Trivy DB updated"}
+{"ts":"2026-10-20T13:00:12Z","source":"runner_egress","repo":"acme/api","run_id":61075,"dst_host":"ghcr.io","dst_port":443,"bytes_out":600,"http":{"method":"GET","path":"/v2/aquasecurity/trivy-db/manifests/2"}}
+{"ts":"2026-10-20T13:00:30Z","source":"gha_ci","repo":"acme/api","run_id":61075,"job":"build","step":"Run aquasecurity/trivy-action@0.28.0","line":"2 vulnerabilities found (LOW)"}

@@ -1,0 +1,13 @@
+id: supply-chain/action-prints-runner-memory
+title: "A popular Action's tags are moved to a commit that prints the runner's memory, secrets included, into the job log (tj-actions/changed-files, March 2025)"
+category: supply-chain
+priority: P1
+scope: plan            # the window that reveals it
+cadence: run-completion
+alone_innocent: true   # does each line look fine on its own?
+sources: [gha_ci, cloudtrail]
+events: 6
+expected:
+  flag: true
+  one_line: "the changed-files step printed a 6 KB double-base64 blob into a public repo's job log; the deploy key in it was used from Finland 19 minutes later"
+  check_first: "the job log; rotate every secret that workflow had; the action's tag against its commit"

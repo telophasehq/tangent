@@ -1,0 +1,13 @@
+id: supply-chain/preinstall-worm-publishes-credentials-as-repos
+title: "Shai-Hulud, second wave: a preinstall fetches Bun, hunts credentials and publishes them as repos with the runner's token (Nov 2025; again with valid provenance, Aug 2026)"
+category: supply-chain
+priority: P1
+scope: plan            # the window that reveals it
+cadence: run-completion
+alone_innocent: true   # does each line look fine on its own?
+sources: [gha_ci, runner_egress, github_audit]
+events: 10
+expected:
+  flag: true
+  one_line: "a preinstall in a fresh dependency version installed Bun and ran bun_environment.js; dev-sam's token then created three repos described 'Sha1-Hulud: The Second Coming' from the runner"
+  check_first: the dependency version (its provenance was valid and did not help); the token on the runner; the three repos and what they hold

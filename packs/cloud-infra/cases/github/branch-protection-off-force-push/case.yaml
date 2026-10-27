@@ -1,0 +1,13 @@
+id: github/branch-protection-off-force-push
+title: Branch protection removed, main force-pushed, protection restored
+category: supply-chain
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 5m
+alone_innocent: true   # does each line look fine on its own?
+sources: [github_audit]
+events: 3
+expected:
+  flag: true
+  one_line: eve removed protection on main, force-pushed, and put protection back within two minutes
+  check_first: what the force-push replaced; whether eve did it

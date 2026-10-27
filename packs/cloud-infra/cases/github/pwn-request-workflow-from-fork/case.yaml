@@ -1,0 +1,13 @@
+id: github/pwn-request-workflow-from-fork
+title: A PR from a fork edits a workflow that runs with secrets
+category: supply-chain
+priority: P2
+scope: org            # the window that reveals it
+cadence: single
+alone_innocent: false   # does each line look fine on its own?
+sources: [github_audit]
+events: 2
+expected:
+  flag: true
+  one_line: "a fork PR changed ci.yml to pull_request_target and the run got the repo's secrets"
+  check_first: the workflow diff; cancel the run and rotate what it could read

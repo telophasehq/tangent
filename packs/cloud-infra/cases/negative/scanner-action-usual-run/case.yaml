@@ -1,0 +1,13 @@
+id: negative/scanner-action-usual-run
+title: The image scan step runs as it does on every build
+category: negative
+priority: P1
+scope: org            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [gha_ci, runner_egress]
+events: 5
+expected:
+  flag: false
+  one_line: trivy-action downloaded its database from ghcr.io and scanned the image
+  check_first: ""

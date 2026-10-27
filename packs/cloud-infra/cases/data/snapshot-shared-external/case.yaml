@@ -1,0 +1,13 @@
+id: data/snapshot-shared-external
+title: An RDS snapshot is shared with another AWS account
+category: data
+priority: P1
+scope: org            # the window that reveals it
+cadence: single
+alone_innocent: false   # does each line look fine on its own?
+sources: [cloudtrail]
+events: 1
+expected:
+  flag: true
+  one_line: the prod-db snapshot was shared with account 999988887777
+  check_first: whether that account is ours; unshare

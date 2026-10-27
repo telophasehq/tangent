@@ -1,0 +1,13 @@
+id: negative/repo-made-public-as-planned
+title: An admin makes the docs repo public, as the README it pushed first announces
+category: negative
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [github_audit]
+events: 2
+expected:
+  flag: false
+  one_line: "grace pushed 'going public' to docs and ten minutes later made that one repo public, from the office"
+  check_first: ""

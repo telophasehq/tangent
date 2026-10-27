@@ -38,8 +38,12 @@ pub async fn run(opts: TestOptions) -> Result<()> {
         .unwrap_or_else(|| Path::new("."))
         .canonicalize()?;
 
-    let mut rt = RuntimeOptions::default();
-    rt.once = true;
+    // A test run exports no metrics: there is nothing to scrape, and the
+    // second test in one process could not bind the port the first still holds.
+    let rt = RuntimeOptions {
+        prometheus_bind: None,
+        once: true,
+    };
 
     let mut plugins_to_test = Vec::<(Arc<str>, PluginConfig)>::new();
 
@@ -100,7 +104,10 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                     compression: Compression::None,
                     encoding: Encoding::NDJSON,
                     object_max_bytes: tangent_shared::sinks::common::object_max_bytes(),
-                    in_flight_limit: tangent_shared::sinks::common::in_flight_limit(),
+                    // One write at a time: a fixture is compared line by line,
+                    // so the output's batches must land in the order they
+                    // were produced.
+                    in_flight_limit: 1,
                     default: true,
                 },
             };

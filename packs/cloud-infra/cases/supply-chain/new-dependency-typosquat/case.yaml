@@ -1,0 +1,13 @@
+id: supply-chain/new-dependency-typosquat
+title: A PR adds a two-day-old package whose name is one letter off a popular one
+category: supply-chain
+priority: P2
+scope: org            # the window that reveals it
+cadence: single
+alone_innocent: false   # does each line look fine on its own?
+sources: [github_audit, gha_ci]
+events: 2
+expected:
+  flag: true
+  one_line: "web added 'lodahs' (not lodash), a package published two days ago"
+  check_first: "the diff and the package's publisher"

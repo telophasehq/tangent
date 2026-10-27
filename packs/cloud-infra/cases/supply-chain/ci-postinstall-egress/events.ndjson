@@ -1,0 +1,6 @@
+{"ts":"2026-10-20T13:00:00Z","source":"gha_ci","repo":"acme/web","run_id":44192,"job":"build","step":"npm ci","line":"added 1203 packages in 41s"}
+{"ts":"2026-10-20T13:00:42Z","source":"gha_ci","repo":"acme/web","run_id":44192,"job":"build","step":"npm ci","line":"> @ctrl/tinycolor@4.1.2 postinstall"}
+{"ts":"2026-10-20T13:00:42Z","source":"gha_ci","repo":"acme/web","run_id":44192,"job":"build","step":"npm ci","line":"> node bundle.js"}
+{"ts":"2026-10-20T13:00:48Z","source":"runner_egress","repo":"acme/web","run_id":44192,"dst_host":"api.github.com","dst_port":443,"bytes_out":800,"http":{"method":"POST","path":"/user/repos"}}
+{"ts":"2026-10-20T13:00:54Z","source":"runner_egress","repo":"acme/web","run_id":44192,"dst_host":"webhook.site","dst_port":443,"bytes_out":49152,"http":{"method":"POST","path":"/bb8ca5f6-4175-45d2-b042-fc9ebb8170b7"}}
+{"ts":"2026-10-20T13:01:30Z","source":"gha_ci","repo":"acme/web","run_id":44192,"job":"build","step":"npm run build","line":"build complete in 38s"}

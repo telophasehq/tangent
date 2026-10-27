@@ -1,0 +1,13 @@
+id: identity/role-change-then-privileged-action
+title: A member is promoted to admin at night and exports the org minutes later
+category: identity
+priority: P2
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [app]
+events: 2
+expected:
+  flag: true
+  one_line: "carol was made admin at 02:13 by dave and started a full org export at 02:19"
+  check_first: whether dave made that change; what the export contained

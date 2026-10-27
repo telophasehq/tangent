@@ -1,0 +1,13 @@
+id: negative/admin-usual-ip-then-export
+title: "An admin at the usual IP exports their own org's report"
+category: negative
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [app]
+events: 3
+expected:
+  flag: false
+  one_line: alice, from the office, exported the monthly compliance report as she does each month
+  check_first: ""

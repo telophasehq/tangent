@@ -1,0 +1,13 @@
+id: cloud/iam-key-create-attach-star-then-use
+title: A new IAM user gets an access key and AdministratorAccess, then reads buckets from a new IP
+category: cloud
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [cloudtrail]
+events: 5
+expected:
+  flag: true
+  one_line: svc-backup2 was created with AdministratorAccess and its new key listed and read S3 from a Hetzner IP
+  check_first: who ran the CreateUser; disable the key

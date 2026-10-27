@@ -1,0 +1,13 @@
+id: negative/oncall-3am-login
+title: The on-call engineer signs in at 3 a.m. from home, as every time they are paged
+category: negative
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [okta, app]
+events: 5
+expected:
+  flag: false
+  one_line: "on-call login at 03:12 from the same home IP as always, then the usual dashboards"
+  check_first: ""

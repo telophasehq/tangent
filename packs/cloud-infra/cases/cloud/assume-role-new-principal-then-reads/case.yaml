@@ -1,0 +1,13 @@
+id: cloud/assume-role-new-principal-then-reads
+title: An external account assumes the read-only role and reads customer exports
+category: cloud
+priority: P2
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [cloudtrail]
+events: 21
+expected:
+  flag: true
+  one_line: account 999988887777 assumed prod-readonly for the first time and read 20 customer export objects
+  check_first: whether that account is a known vendor; the trust policy

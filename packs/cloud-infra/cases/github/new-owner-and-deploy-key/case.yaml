@@ -1,0 +1,13 @@
+id: github/new-owner-and-deploy-key
+title: A contractor becomes org owner and adds a read-write deploy key
+category: supply-chain
+priority: P2
+scope: org            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [github_audit]
+events: 2
+expected:
+  flag: true
+  one_line: contractor-x was made org owner and added a read-write deploy key to payments-api
+  check_first: who granted owner; remove the key
