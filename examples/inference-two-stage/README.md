@@ -1,12 +1,14 @@
 # inference-two-stage
 
 The same `inference` node twice. A small model on this machine answers **one
-word** about every record; only the yeses reach a stronger model, which writes
-the full verdict. Different model, different prompt, different output — one
-node, configured twice.
+word** about every record; a plugin keeps the yeses; a stronger model writes the
+full verdict on those; a plugin keeps what it flagged. Different model,
+different prompt, different output — one node, configured twice, and the
+decisions in between are plugins.
 
 ```
-events ──▶ first_pass (local, answer: yes_no) ──▶ verdict (hosted, answer: json) ──▶ flagged.ndjson
+events ──▶ first_pass (answer: yes_no) ──▶ keep_yes ──▶ judge (answer: json) ──▶ flagged ──▶ flagged.ndjson
+              adds _first_pass              plugin       adds _judge               plugin
 ```
 
 ```yaml
@@ -16,27 +18,35 @@ inference:
     url: http://localhost:8080/v1
     model: mlx-community/GLM-4.7-Flash-4bit
     prompt_file: first_pass.md
-    answer: yes_no                  # one word: yes forwards, no drops, anything else is an error
+    answer: yes_no                  # one word, landing as _first_pass.answer
     concurrency: 8
     max_tokens: 8
     extra: { chat_template_kwargs: { enable_thinking: false } }
-  verdict:
+  judge:
     backend: bedrock
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     region: us-west-2
-    prompt_file: verdict.md
-    forward_if: flag
+    prompt_file: judge.md           # the full verdict, landing as _judge
     concurrency: 8
+plugins:
+  keep_yes: { module_type: rust, path: keep_yes }
+  flagged:  { module_type: rust, path: ../inference-local/flagged }
 ```
 
+An inference node adds its reply to the record and forwards everything. What
+goes on is a plugin's call, and a plugin's `probe()` is that filter:
+[keep_yes](keep_yes/src/lib.rs) selects `_first_pass.answer == "yes"` (and
+records the first pass could not answer), [flagged](../inference-local/flagged/src/lib.rs)
+selects `_judge.flag == true` (and records the judge could not read). Both pass
+records through unchanged. A record only reaches the plugin its DAG edge names:
+the judge's output goes to `flagged`, and `keep_yes` never sees it again even
+though its `_first_pass.answer` still says yes.
+
 `answer` is the only difference in kind between the two nodes. With `yes_no`,
-[first_pass.md](first_pass.md) asks for one word; the node reads the first word
-of the reply (`Yes.`, `**no**`, a `<think>` block first — all fine) and forwards
-on yes. Anything that is neither yes nor no is a failure handled by `on_error`
-(pass by default, so an odd reply reaches the second node rather than
-vanishing). With `json`, the second node's object is merged into the record (under
-`_verdict`, the node's name) and `forward_if: flag` decides what reaches the
-sink.
+[first_pass.md](first_pass.md) asks for one word and the node reads the first
+word of the reply (`Yes.`, `**no**`, a `<think>` block first — all fine);
+anything that is neither yes nor no lands as `{"error": ...}`. With `json`, the
+model's object lands as is.
 
 ## Why one word first, measured
 
@@ -62,19 +72,20 @@ events, GLM dropped 11 of 27 real cases that it caught when writing JSON; the
 reasons are in the sentry repo's `cases/RESULTS.md`.
 
 The second node only pays for the yeses: here it confirmed the `transfer.sh`
-upload and the admin key from a new country and never saw the other four
-events. Any backend works for it — the hosted model here is just the one that
-was measured at 100% on the corpus.
+upload and the admin key from a new country and never saw the other events.
+Any backend works for it — the hosted model here is the one that was measured
+at 100% on the corpus.
 
 ## Run
 
 ```bash
 mlx_lm.server --model mlx-community/GLM-4.7-Flash-4bit --port 8080   # or any OpenAI-compatible local server
 aws sso login --profile <your-profile>                                # or any AWS credential source, for the second node
+tangent plugin compile --config tangent.yaml
 tangent run --config tangent.yaml
 ```
 
 ```bash
 nc localhost 9000 < events.ndjson
-cat flagged.ndjson      # each record carries _first_pass.answer and _verdict.{flag,one_line,why}
+cat flagged.ndjson      # each record carries _first_pass.answer and _judge.{flag,one_line,why}
 ```

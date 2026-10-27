@@ -7,6 +7,7 @@ use ahash::AHashMap as HashMap;
 use anyhow::{anyhow, bail, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tangent_shared::inference::InferenceConfig;
 use tokio::sync::mpsc;
@@ -22,6 +23,9 @@ const CHANNEL_CAPACITY: usize = 4096;
 pub struct InferenceNodes {
     senders: HashMap<Arc<str>, mpsc::Sender<Record>>,
     handles: Vec<JoinHandle<()>>,
+    /// The router's count of records in the DAG; a record is counted from
+    /// dispatch until its node has forwarded it.
+    in_flight: Arc<AtomicUsize>,
 }
 
 impl InferenceNodes {
@@ -32,30 +36,37 @@ impl InferenceNodes {
     ) -> Result<Self> {
         let mut senders = HashMap::with_capacity(cfgs.len());
         let mut handles = Vec::with_capacity(cfgs.len());
+        let in_flight = router.in_flight_counter();
         for (name, cfg) in cfgs {
             let (tx, rx) = mpsc::channel::<Record>(CHANNEL_CAPACITY);
             senders.insert(Arc::clone(name), tx);
-            let (name, cfg, dir, router) = (
+            let (name, cfg, dir, router, in_flight) = (
                 Arc::clone(name),
                 cfg.clone(),
                 config_dir.to_path_buf(),
                 Arc::clone(&router),
+                Arc::clone(&in_flight),
             );
             handles.push(tokio::spawn(async move {
                 let label = Arc::clone(&name);
-                let res = node::run(name, cfg, &dir, rx, router).await;
+                let res = node::run(name, cfg, &dir, rx, router, in_flight).await;
                 if let Err(e) = res {
                     tracing::error!(node = %label, "inference node exited: {e:#}");
                 }
             }));
         }
-        Ok(Self { senders, handles })
+        Ok(Self {
+            senders,
+            handles,
+            in_flight,
+        })
     }
 
     pub fn empty() -> Self {
         Self {
             senders: HashMap::default(),
             handles: Vec::new(),
+            in_flight: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -63,14 +74,20 @@ impl InferenceNodes {
         let Some(tx) = self.senders.get(name) else {
             bail!("unknown inference node: {name}");
         };
-        tx.send(rec)
-            .await
-            .map_err(|_| anyhow!("inference node {name} is no longer running"))
+        self.in_flight.fetch_add(1, Ordering::AcqRel);
+        tx.send(rec).await.map_err(|_| {
+            self.in_flight.fetch_sub(1, Ordering::AcqRel);
+            anyhow!("inference node {name} is no longer running")
+        })
     }
 
     /// Close the inputs and wait for every node to finish what it has.
     pub async fn join(self) {
-        let Self { senders, handles } = self;
+        let Self {
+            senders,
+            handles,
+            in_flight: _,
+        } = self;
         drop(senders);
         for h in handles {
             if let Err(e) = h.await {
@@ -109,7 +126,7 @@ mod tests {
     use bytes::BytesMut;
     use serde_json::{json, Map, Value};
     use tangent_shared::dag::NodeRef;
-    use tangent_shared::inference::{Answer, Backend, InferenceConfig, OnError};
+    use tangent_shared::inference::{Answer, Backend, InferenceConfig};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::Mutex;
 
@@ -193,7 +210,7 @@ mod tests {
         (url, seen)
     }
 
-    fn config(url: &str, on_error: OnError) -> InferenceConfig {
+    fn config(url: &str) -> InferenceConfig {
         let mut extra = Map::new();
         extra.insert(
             "chat_template_kwargs".into(),
@@ -209,14 +226,12 @@ mod tests {
             answer: Answer::Json,
             fields: Vec::new(),
             output: None,
-            forward_if: Some("flag".into()),
             concurrency: 2,
             timeout_ms: 5_000,
             max_tokens: 50,
             temperature: 0.0,
             extra,
             api_key: None,
-            on_error,
         }
     }
 
@@ -229,7 +244,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "tangent-inference-{}-{}",
             std::process::id(),
-            cfg.on_error as u8 + 2 * cfg.answer as u8
+            cfg.answer as u8
         ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -262,6 +277,7 @@ mod tests {
                 Record {
                     payload: Payload::Raw(BytesMut::from(format!("{r}\n").as_str())),
                     ack: None,
+                    to: None,
                 },
             )
             .await
@@ -281,10 +297,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn forwards_only_what_the_model_flags() {
+    async fn annotates_every_record_with_the_verdict() {
         let (url, seen) = stub_model().await;
         let (writes, _) = run_pipeline(
-            config(&url, OnError::Pass),
+            config(&url),
             "You are a test judge.\n",
             &[
                 r#"{"id": 1, "msg": "all good"}"#,
@@ -293,11 +309,18 @@ mod tests {
             ],
         )
         .await;
-        assert_eq!(writes.len(), 1, "{writes:?}");
-        let out: Value = serde_json::from_str(writes[0].trim()).unwrap();
-        assert_eq!(out["id"], 2);
-        assert_eq!(out["_judge"]["flag"], true);
-        assert_eq!(out["_judge"]["one_line"], "bad thing");
+        // Every record goes on; the verdict rides along under `_judge`.
+        assert_eq!(writes.len(), 3, "{writes:?}");
+        let outs: Vec<Value> = writes
+            .iter()
+            .map(|w| serde_json::from_str(w.trim()).unwrap())
+            .collect();
+        let bad = outs.iter().find(|o| o["id"] == 2).expect("record 2");
+        assert_eq!(bad["_judge"]["flag"], true);
+        assert_eq!(bad["_judge"]["one_line"], "bad thing");
+        for o in outs.iter().filter(|o| o["id"] != 2) {
+            assert_eq!(o["_judge"]["flag"], false, "{o}");
+        }
 
         let seen = seen.lock().await;
         assert_eq!(seen.len(), 3, "one request per record");
@@ -323,11 +346,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_yes_no_filter_forwards_only_the_yeses() {
+    async fn a_yes_no_node_records_the_word() {
         let (url, seen) = stub_model().await;
-        let mut cfg = config(&url, OnError::Pass);
+        let mut cfg = config(&url);
         cfg.answer = Answer::YesNo;
-        cfg.forward_if = None;
         let (writes, _) = run_pipeline(
             cfg,
             "Should someone look? answer yes or no.\n",
@@ -338,23 +360,91 @@ mod tests {
             ],
         )
         .await;
-        assert_eq!(writes.len(), 1, "{writes:?}");
-        let out: Value = serde_json::from_str(writes[0].trim()).unwrap();
-        assert_eq!(out["id"], 2);
-        assert_eq!(out["_judge"]["answer"], "yes");
+        // Every record goes on, carrying the word; a plugin drops the noes.
+        assert_eq!(writes.len(), 3, "{writes:?}");
+        for w in &writes {
+            let out: Value = serde_json::from_str(w.trim()).unwrap();
+            let want = if out["id"] == 2 { "yes" } else { "no" };
+            assert_eq!(out["_judge"]["answer"], want, "{out}");
+        }
         assert_eq!(seen.lock().await.len(), 3, "every record was asked about");
     }
 
+    /// The router counts a record from dispatch until its node has forwarded
+    /// it; shutdown waits for that count to reach zero before closing anything.
     #[tokio::test]
-    async fn an_unreachable_model_passes_or_drops_as_configured() {
-        // Nothing listens on port 1.
+    async fn records_count_as_in_flight_until_forwarded() {
+        let (url, _seen) = stub_model().await;
+        let dir =
+            std::env::temp_dir().join(format!("tangent-inference-inflight-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("judge.md"), "Judge.").unwrap();
+
+        let sink = Arc::new(RecordingSink::default());
+        let sink_name: Arc<str> = Arc::from("out");
+        let sink_manager = Arc::new(SinkManager::for_test(
+            vec![(sink_name.clone(), sink.clone() as Arc<dyn Sink>)],
+            1,
+        ));
+        let name: Arc<str> = Arc::from("judge");
+        let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
+        outs.insert(
+            NodeRef::Inference { name: name.clone() },
+            vec![NodeRef::Sink {
+                name: sink_name,
+                key_prefix: None,
+            }],
+        );
+        let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
+        let mut cfgs = BTreeMap::new();
+        cfgs.insert(name.clone(), config(&url));
+        let pm = Arc::new(InferenceNodes::new(&cfgs, &dir, Arc::clone(&router)).unwrap());
+        router.set_inference(&pm);
+
+        for r in [r#"{"n":1}"#, r#"{"n":2}"#, r#"{"n":3}"#] {
+            pm.dispatch(
+                &name,
+                Record {
+                    payload: Payload::Raw(BytesMut::from(format!("{r}\n").as_str())),
+                    ack: None,
+                    to: None,
+                },
+            )
+            .await
+            .unwrap();
+        }
+        // The node has not had a turn yet on this single-threaded runtime, so
+        // all three are still counted.
+        assert_eq!(router.in_flight(), 3);
+
+        Arc::try_unwrap(pm).ok().expect("manager refs").join().await;
+        assert_eq!(router.in_flight(), 0);
+        drop(router);
+        Arc::try_unwrap(sink_manager)
+            .ok()
+            .expect("sink manager refs")
+            .join()
+            .await
+            .unwrap();
+        let lines: usize = sink
+            .writes
+            .lock()
+            .await
+            .iter()
+            .map(|w| w.lines().count())
+            .sum();
+        assert_eq!(lines, 3);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_model_leaves_an_error_on_the_record() {
+        // Nothing listens on port 1. The record still goes on, with the error
+        // where the verdict would be, so nothing is lost silently.
         let dead = "http://127.0.0.1:1/v1";
-        let (writes, _) = run_pipeline(
-            config(dead, OnError::Pass),
-            "You are a test judge.\n",
-            &[r#"{"id": 9}"#],
-        )
-        .await;
+        let (writes, _) =
+            run_pipeline(config(dead), "You are a test judge.\n", &[r#"{"id": 9}"#]).await;
         assert_eq!(writes.len(), 1, "{writes:?}");
         let out: Value = serde_json::from_str(writes[0].trim()).unwrap();
         assert_eq!(out["id"], 9);
@@ -362,13 +452,5 @@ mod tests {
             !out["_judge"]["error"].as_str().unwrap().is_empty(),
             "{out}"
         );
-
-        let (writes, _) = run_pipeline(
-            config(dead, OnError::Drop),
-            "You are a test judge.\n",
-            &[r#"{"id": 9}"#],
-        )
-        .await;
-        assert!(writes.is_empty(), "{writes:?}");
     }
 }

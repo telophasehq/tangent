@@ -1,11 +1,13 @@
-# Claude on Amazon Bedrock reads every record; only what it flags goes on.
+# Claude on Amazon Bedrock reads every record; a plugin keeps what it flagged.
 #
 #   aws sso login --profile <your-profile>      (or any AWS credential source)
+#   tangent plugin compile --config tangent.yaml
 #   tangent run --config tangent.yaml
 #   nc localhost 9000 < events.ndjson
 #   cat flagged.ndjson
 runtime:
   workers: 1
+  plugins_path: plugins/
 
 sources:
   events:
@@ -18,10 +20,14 @@ inference:
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     region: us-west-2
     # profile: prod                 # an AWS profile; the default chain when unset
-    prompt_file: judge.md
-    forward_if: flag
+    prompt_file: judge.md           # the reply lands on the record as _judge
     concurrency: 8                  # a hosted model takes many requests at once
     timeout_ms: 30000               # a hung request must not hold a slot for long
+
+plugins:
+  flagged:                          # the same plugin as inference-local: keeps _judge.flag == true
+    module_type: rust
+    path: ../inference-local/flagged
 
 sinks:
   flagged:
@@ -34,4 +40,6 @@ dag:
   - from: { kind: source, name: events }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
+    to: [{ kind: plugin, name: flagged }]
+  - from: { kind: plugin, name: flagged }
     to: [{ kind: sink, name: flagged }]

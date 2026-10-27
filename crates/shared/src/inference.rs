@@ -4,7 +4,9 @@ use std::path::PathBuf;
 
 /// Ask a model about each record. The node sends `prompt_file` as the system
 /// message and the record (or the listed `fields`) as the user message, and
-/// adds the JSON object the model replies with to the record under `output`.
+/// adds the reply to the record under `output` (`_<node name>` by default).
+/// It adds and forwards; it never drops. What happens next is a plugin's call:
+/// a plugin whose `probe` selects on `_<node name>.flag` is that filter.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct InferenceConfig {
     /// Where the model is served.
@@ -39,23 +41,18 @@ pub struct InferenceConfig {
     #[serde(default)]
     pub fields: Vec<String>,
 
-    /// Field of the record the model's reply lands in; `_<node name>` when
-    /// unset (the underscore marks what the pipeline added).
+    /// Field of the record the reply lands in; `_<node name>` when unset (the
+    /// underscore marks what the pipeline added). A failure lands in the same
+    /// field as `{"error": ...}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
-
-    /// Forward a record only when this field of the reply is true (for
-    /// example `flag`); the rest are dropped. A reply without the field is
-    /// treated like a failed request (see `on_error`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub forward_if: Option<String>,
 
     /// Requests in flight at once.
     #[serde(default = "default_concurrency")]
     pub concurrency: usize,
 
-    /// A request past this is a failure (see `on_error`); it also frees the
-    /// concurrency slot it held. 30 s by default; a local model may need more.
+    /// A request past this is a failure; it also frees the concurrency slot it
+    /// held. 30 s by default; a local model may need more.
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
 
@@ -74,11 +71,6 @@ pub struct InferenceConfig {
     /// Bearer token for the `openai` backend, e.g. "${OPENAI_API_KEY}".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
-
-    /// What happens to a record when the model cannot be asked, or replies
-    /// without the `forward_if` field.
-    #[serde(default)]
-    pub on_error: OnError,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]
@@ -95,25 +87,13 @@ pub enum Backend {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Answer {
-    /// A JSON object, merged into the record under `output`; `forward_if`
-    /// names the field that lets a record through.
+    /// A JSON object, merged into the record under `output`.
     #[default]
     Json,
-    /// One word: `yes` forwards the record, `no` drops it, anything else is a
-    /// failure (see `on_error`). The word lands under `output` as
-    /// `{"answer": ...}`. Cheap enough to read a whole stream: a first pass
-    /// in front of a slower model.
+    /// One word, yes or no, landing under `output` as `{"answer": ...}`;
+    /// anything else is a failure. Cheap enough to read a whole stream: a
+    /// first pass in front of a slower model, with a plugin dropping the noes.
     YesNo,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum OnError {
-    /// Forward the record with `{"error": ...}` under `output`.
-    #[default]
-    Pass,
-    /// Drop the record.
-    Drop,
 }
 
 fn default_url() -> String {

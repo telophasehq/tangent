@@ -1,11 +1,12 @@
 # inference-bedrock
 
-Claude on Amazon Bedrock reads every record; only what it flags goes on.
+Claude on Amazon Bedrock reads every record; a plugin keeps what it flagged.
 
 Same pipeline as [../inference-local](../inference-local), with the `bedrock`
-backend: the `inference` node calls the Converse API with the AWS
-credential chain (environment, profile, SSO, instance or task role), so there is
-no key to configure.
+backend: the `judge` node calls the Converse API with the AWS credential chain
+(environment, profile, SSO, instance or task role), so there is no key to
+configure. The filter is the same [flagged](../inference-local/flagged/src/lib.rs)
+plugin, referenced by path.
 
 ```yaml
 inference:
@@ -14,9 +15,12 @@ inference:
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     region: us-west-2
     prompt_file: judge.md
-    forward_if: flag
     concurrency: 8
     timeout_ms: 30000
+plugins:
+  flagged:
+    module_type: rust
+    path: ../inference-local/flagged
 ```
 
 ## Credentials
@@ -35,6 +39,7 @@ ECS or EC2, the task or instance role. Two things that bite:
 ## Run
 
 ```bash
+tangent plugin compile --config tangent.yaml
 tangent run --config tangent.yaml
 ```
 
@@ -62,4 +67,4 @@ events/s. Trim what the model sees with `fields:` to raise that. All 300 runs
 flagged exactly the two intended event types and nothing else.
 
 At 21 events/s Haiku costs about $0.03 per second, which is why a judge like this
-sits behind a novelty filter rather than reading a raw stream.
+sits behind a cheaper first pass rather than reading a raw stream.

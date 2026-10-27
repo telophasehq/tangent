@@ -1,12 +1,20 @@
 # inference-local
 
-A model on this machine reads every record; only what it flags goes on.
+A model on this machine reads every record; a plugin keeps what it flagged.
 Nothing leaves the box.
 
-`tangent.yaml` has no plugins. Records go from a TCP source to an `inference`
-node, which sends each one to a local OpenAI-compatible server with
-[judge.md](judge.md) as the system prompt, adds the model's JSON reply to the
-record under `_judge` (the node's name, underscored), and forwards the record only when `_judge.flag` is true.
+```
+events ──▶ judge (inference: adds _judge) ──▶ flagged (plugin: keeps _judge.flag) ──▶ flagged.ndjson
+```
+
+The `judge` node sends each record to a local OpenAI-compatible server with
+[judge.md](judge.md) as the system prompt and adds the model's JSON reply to
+the record as `_judge` (the node's name, underscored). That is all an
+inference node does: it adds and forwards, it never drops. The
+[flagged](flagged/src/lib.rs) plugin is the filter — its `probe()` selects
+records with `_judge.flag == true`, or with `_judge.error` (the judge could not
+read the reply, so a person should), and its body passes them through
+unchanged.
 
 ```yaml
 inference:
@@ -15,11 +23,14 @@ inference:
     url: http://localhost:8080/v1
     model: mlx-community/GLM-4.7-Flash-4bit
     prompt_file: judge.md
-    forward_if: flag
     concurrency: 8
     max_tokens: 300
     extra:
       chat_template_kwargs: { enable_thinking: false }
+plugins:
+  flagged:
+    module_type: rust
+    path: flagged
 ```
 
 ## A model on your machine
@@ -47,11 +58,14 @@ decodes, and on an M4 Max eight in flight finish about four times faster than
 one at a time (llama-server needs `--parallel 8` for the same; Ollama,
 `OLLAMA_NUM_PARALLEL`). `max_tokens: 300` bounds the occasional runaway reply,
 which otherwise runs to the cap and costs half a minute. See
-[../inference-bedrock](../inference-bedrock) for the same node on a hosted model.
+[../inference-bedrock](../inference-bedrock) for the same pipeline on a hosted
+model and [../inference-two-stage](../inference-two-stage) for two models in a
+row.
 
 ## Run
 
 ```bash
+tangent plugin compile --config tangent.yaml    # builds flagged/ into plugins/
 tangent run --config tangent.yaml
 ```
 
@@ -66,10 +80,10 @@ cat flagged.ndjson
 48 KB to `transfer.sh` and the admin API key used from a new country come out in
 `flagged.ndjson`, each with the model's one-line summary and reasoning; the
 scanner probe, the deploy and the finished step pass quietly. A small model may
-also flag Okta's 429 rate limit, which is what the prompt's "do not flag" list
-is there to tune. With thinking off, GLM-4.7-Flash takes about 0.9 s per
+also flag Okta's 429 rate limit or a routine step on some runs, which is what
+the prompt's "do not flag" list is there to tune. With thinking off, GLM-4.7-Flash takes about 0.9 s per
 verdict on an M4 Max, and with eight in flight the pipeline does 3-4 events/s.
 
-When the model cannot be reached, records are forwarded with
-`{"error": ...}` under `_judge` (`on_error: pass`, the default), so nothing is
-lost silently; `on_error: drop` drops them instead.
+When the model cannot be reached or its reply cannot be read, the record still
+goes on with `{"error": ...}` as `_judge`; the plugin keeps those too, so
+nothing is lost silently.

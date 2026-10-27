@@ -59,6 +59,22 @@ impl Payload {
 pub struct Record {
     pub payload: Payload,
     pub ack: Option<Arc<dyn Ack>>,
+    /// The plugin this record is for: the edge that sent it here. Every
+    /// worker hosts every plugin, so without this a record would run through
+    /// any plugin whose probe matched, whatever the DAG says — and a chain
+    /// like plugin → model → plugin would feed the first plugin its own
+    /// output again. None (tests) means any plugin.
+    pub to: Option<Arc<str>>,
+}
+
+/// Takes `n` records off the DAG's in-flight count when dropped: after the
+/// batch has been forwarded, or lost to an error.
+struct Done<'a>(&'a AtomicUsize, usize);
+
+impl Drop for Done<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(self.1, Ordering::AcqRel);
+    }
 }
 
 /// The worker that owns a partition: a stable function of the key, so one
@@ -79,11 +95,13 @@ pub struct Worker {
     /// With a partition key configured, a batch is handed to each plugin one
     /// partition at a time, so the guest's state is scoped to that partition.
     partition: Option<Arc<PartitionConfig>>,
+    /// Records anywhere between a source and a sink, shared with the router.
+    in_flight: Arc<AtomicUsize>,
 }
 
 impl Worker {
     pub async fn run(mut self) -> Result<()> {
-        let mut batch = Vec::<Payload>::new();
+        let mut batch = Vec::<Record>::new();
         let mut acks: Vec<Arc<dyn Ack>> = Vec::with_capacity(1024);
         let mut total_size = 0usize;
 
@@ -101,7 +119,7 @@ impl Worker {
                             }
                             break;
                         }
-                        Some(rec) => {
+                        Some(mut rec) => {
                             if batch.is_empty() {
                                 deadline = TokioInstant::now() + self.batch_max_age;
                                 sleeper.as_mut().reset(deadline);
@@ -116,15 +134,15 @@ impl Worker {
                             }
 
                             if payload_len > self.batch_max_size && batch.is_empty() {
-                                let mut single = vec![rec.payload];
-                                let mut single_ack = rec.ack.as_slice().to_owned();
+                                let mut single_ack: Vec<Arc<dyn Ack>> = rec.ack.take().into_iter().collect();
+                                let mut single = vec![rec];
                                 self.flush_batch(&mut single, &mut single_ack, &mut total_size).await?;
                                 deadline = TokioInstant::now() + self.batch_max_age;
                                 sleeper.as_mut().reset(deadline);
                             } else {
                                 total_size += payload_len;
-                                batch.push(rec.payload);
-                                if let Some(a) = rec.ack { acks.push(a); }
+                                if let Some(a) = rec.ack.take() { acks.push(a); }
+                                batch.push(rec);
                             }
                         }
                     }
@@ -144,7 +162,7 @@ impl Worker {
 
     pub async fn flush_batch(
         &mut self,
-        batch: &mut Vec<Payload>,
+        batch: &mut Vec<Record>,
         acks: &mut Vec<Arc<dyn Ack>>,
         total_size: &mut usize,
     ) -> Result<()> {
@@ -152,6 +170,7 @@ impl Worker {
             tracing::warn!("flushed empty batch");
             return Ok(());
         }
+        let _done = Done(&self.in_flight, batch.len());
 
         // One guest call per (plugin, partition): the plugin sees records of
         // one partition at a time, and its state calls land in that partition.
@@ -166,9 +185,9 @@ impl Worker {
         let unpartitioned: Arc<str> = Arc::from("");
         let mut groups: Vec<Group> = Vec::new();
         let mut group_of: HashMap<(usize, Arc<str>), usize> = HashMap::default();
-        for p in batch.drain(..) {
-            let sz = p.size();
-            let (lv, part) = match p {
+        for Record { payload, to, .. } in batch.drain(..) {
+            let sz = payload.size();
+            let (lv, part) = match payload {
                 Payload::Parsed { view, partition } => (view, partition),
                 Payload::Raw(b) => {
                     let lv = JsonLogView::from_bytes(b)?;
@@ -182,6 +201,9 @@ impl Worker {
             };
             let mut matched = false;
             for (idx, m) in self.mappers.mappers.iter_mut().enumerate() {
+                if to.as_ref().is_some_and(|t| *t != m.cfg_name) {
+                    continue;
+                }
                 if m.selectors.iter().any(|s| eval_selector(s, &lv)) {
                     let g = *group_of.entry((idx, Arc::clone(&part))).or_insert_with(|| {
                         groups.push(Group {
@@ -295,6 +317,7 @@ pub struct WorkerPool {
     rr: AtomicUsize,
     handles: Vec<JoinHandle<()>>,
     partition: Option<Arc<PartitionConfig>>,
+    in_flight: Arc<AtomicUsize>,
 }
 
 impl WorkerPool {
@@ -310,6 +333,7 @@ impl WorkerPool {
         let mut senders = Vec::with_capacity(size);
         let mut handles = Vec::with_capacity(size);
         let partition = partition.map(Arc::new);
+        let in_flight = router.in_flight_counter();
 
         let ch_capacity = 4096;
         for i in 0..size {
@@ -346,6 +370,7 @@ impl WorkerPool {
                 batch_max_age,
                 router: Arc::clone(&router),
                 partition: partition.clone(),
+                in_flight: Arc::clone(&in_flight),
             };
             let h = tokio::spawn(async move {
                 if let Err(e) = worker.run().await {
@@ -360,6 +385,7 @@ impl WorkerPool {
             rr: AtomicUsize::new(0),
             handles,
             partition,
+            in_flight,
         })
     }
 
@@ -416,10 +442,13 @@ impl WorkerPool {
                 return Ok(());
             }
         };
+        // Counted from here until a worker has forwarded it (`Done`).
+        self.in_flight.fetch_add(1, Ordering::AcqRel);
         if let Some(idx) = pinned {
             // Pinned records wait for their worker rather than spilling to a
             // neighbor: that is what keeps a partition on one guest.
             if self.senders[idx].send(job).await.is_err() {
+                self.in_flight.fetch_sub(1, Ordering::AcqRel);
                 anyhow::bail!("worker {idx} unavailable")
             }
             return Ok(());
@@ -438,6 +467,7 @@ impl WorkerPool {
 
         let idx = start;
         if let Err(_e) = self.senders[idx].send(job).await {
+            self.in_flight.fetch_sub(1, Ordering::AcqRel);
             tracing::warn!("all workers unavailable; dropping job");
             anyhow::bail!("all workers unavailable")
         }
@@ -451,6 +481,7 @@ impl WorkerPool {
             rr: _,
             mut handles,
             partition: _,
+            in_flight: _,
         } = self;
         drop(senders);
 
@@ -468,6 +499,7 @@ impl WorkerPool {
             rr: AtomicUsize::new(0),
             handles,
             partition: None,
+            in_flight: Arc::new(AtomicUsize::new(0)),
         }
     }
 }

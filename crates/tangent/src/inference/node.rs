@@ -1,10 +1,10 @@
 //! Ask a model about each record. The model is reached through rig: any
 //! OpenAI-compatible chat endpoint, or Amazon Bedrock's Converse API. The
 //! system prompt is a file; the user message is the record (or selected
-//! fields) as pretty JSON; the JSON object in the reply is added to the
-//! record. Requests run with bounded concurrency off the hot path. A failure,
-//! or a reply without the `forward_if` field, passes the record through with
-//! an error note or drops it, as configured; nothing is lost silently.
+//! fields) as pretty JSON; the reply is added to the record under `_<name>`.
+//! Requests run with bounded concurrency off the hot path. The node adds and
+//! forwards, never drops: a failure lands as `{"error": ...}` in the same
+//! field, and a plugin downstream decides what goes on.
 
 use anyhow::{anyhow, bail, Context, Result};
 use bytes::BytesMut;
@@ -18,10 +18,11 @@ use rig_core::providers::openai::{OpenAIConfig, Route};
 use rig_core::DynModel;
 use serde_json::{json, Map, Value};
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tangent_shared::dag::NodeRef;
-use tangent_shared::inference::{Answer, Backend, InferenceConfig, OnError};
+use tangent_shared::inference::{Answer, Backend, InferenceConfig};
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinSet;
 
@@ -80,7 +81,7 @@ impl Ctx {
         serde_json::to_string_pretty(&Value::Object(m)).unwrap_or_default()
     }
 
-    async fn ask(&self, user: String) -> Result<(Value, bool)> {
+    async fn ask(&self, user: String) -> Result<Value> {
         let mut request = CompletionRequest::new(user)
             .preamble(self.prompt.clone())
             .temperature(self.cfg.temperature)
@@ -113,73 +114,71 @@ impl Ctx {
             );
         }
         match self.cfg.answer {
-            Answer::Json => {
-                let parsed = parse_reply(&text);
-                if let Some(path) = &self.cfg.forward_if {
-                    if lookup(&parsed, path).is_none() {
-                        bail!("reply has no {path:?}: {}", head(&text, 200));
-                    }
-                }
-                let forward = self.forwards(&parsed);
-                Ok((parsed, forward))
-            }
-            Answer::YesNo => {
-                let Some(yes) = yes_no(&text) else {
-                    bail!("reply is not yes or no: {}", head(&text, 80));
-                };
-                Ok((json!({"answer": if yes { "yes" } else { "no" }}), yes))
-            }
+            Answer::Json => Ok(parse_reply(&text)),
+            Answer::YesNo => match yes_no(&text) {
+                Some(yes) => Ok(json!({"answer": if yes { "yes" } else { "no" }})),
+                None => bail!("reply is not yes or no: {}", head(&text, 80)),
+            },
         }
     }
 
-    /// Does this reply let the record through?
-    fn forwards(&self, reply: &Value) -> bool {
-        match &self.cfg.forward_if {
-            None => true,
-            Some(path) => lookup(reply, path).is_some_and(truthy),
-        }
+    /// One record through the model: the reply, or the error, added under
+    /// `output`.
+    async fn annotate(&self, v: Value) -> Result<BytesMut> {
+        let start = Instant::now();
+        let reply = match self.ask(self.user_message(&v)).await {
+            Ok(reply) => reply,
+            Err(e) => {
+                tracing::warn!(node = %self.name, "inference failed: {e:#}");
+                json!({"error": format!("{e:#}")})
+            }
+        };
+        tracing::debug!(
+            node = %self.name,
+            ms = start.elapsed().as_millis() as u64,
+            "inference"
+        );
+        let mut obj = match v {
+            Value::Object(m) => m,
+            other => {
+                let mut m = Map::new();
+                m.insert("value".into(), other);
+                m
+            }
+        };
+        obj.insert(self.output.clone(), reply);
+        let mut bytes = serde_json::to_vec(&Value::Object(obj))?;
+        bytes.push(b'\n');
+        Ok(BytesMut::from(&bytes[..]))
     }
 
-    async fn handle(&self, rec: Record) -> Result<()> {
-        let mut out: Vec<BytesMut> = Vec::new();
+    /// A frame through the model. A frame from a plugin holds a whole batch,
+    /// so every line is in flight at once, each under one of the node's
+    /// `concurrency` permits, and the frame goes on as one unit when the last
+    /// reply is in.
+    async fn handle(&self, rec: Record, sem: Arc<Semaphore>) -> Result<()> {
         let payload = rec.payload.into_bytes();
+        let mut records = Vec::new();
         for line in lines(&payload) {
-            let Ok(v) = serde_json::from_slice::<Value>(line) else {
-                tracing::warn!(node = %self.name, "record is not JSON; dropping");
-                continue;
-            };
-            let start = Instant::now();
-            let (reply, forward) = match self.ask(self.user_message(&v)).await {
-                Ok(decided) => decided,
-                Err(e) => {
-                    tracing::warn!(node = %self.name, "inference failed: {e:#}");
-                    match self.cfg.on_error {
-                        OnError::Drop => continue,
-                        OnError::Pass => (json!({"error": format!("{e:#}")}), true),
-                    }
-                }
-            };
-            tracing::debug!(
-                node = %self.name,
-                ms = start.elapsed().as_millis() as u64,
-                forward,
-                "inference"
-            );
-            if !forward {
-                continue;
+            match serde_json::from_slice::<Value>(line) {
+                Ok(v) => records.push(v),
+                Err(_) => tracing::warn!(node = %self.name, "record is not JSON; dropping"),
             }
-            let mut obj = match v {
-                Value::Object(m) => m,
-                other => {
-                    let mut m = Map::new();
-                    m.insert("value".into(), other);
-                    m
-                }
-            };
-            obj.insert(self.output.clone(), reply);
-            let mut bytes = serde_json::to_vec(&Value::Object(obj))?;
-            bytes.push(b'\n');
-            out.push(BytesMut::from(&bytes[..]));
+        }
+        let replies = futures::future::join_all(records.into_iter().map(|v| {
+            let sem = Arc::clone(&sem);
+            async move {
+                let _permit = sem
+                    .acquire_owned()
+                    .await
+                    .map_err(|_| anyhow!("inference node closed"))?;
+                self.annotate(v).await
+            }
+        }))
+        .await;
+        let mut out: Vec<BytesMut> = Vec::with_capacity(replies.len());
+        for r in replies {
+            out.push(r?);
         }
         if out.is_empty() {
             if let Some(a) = rec.ack {
@@ -191,20 +190,6 @@ impl Ctx {
                 .await?;
         }
         Ok(())
-    }
-}
-
-fn truthy(v: &Value) -> bool {
-    match v {
-        Value::Bool(b) => *b,
-        Value::String(s) => matches!(
-            s.trim().to_ascii_lowercase().as_str(),
-            "true" | "yes" | "y" | "1"
-        ),
-        Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
-        Value::Null => false,
-        Value::Array(a) => !a.is_empty(),
-        Value::Object(o) => !o.is_empty(),
     }
 }
 
@@ -317,6 +302,7 @@ pub async fn run(
     config_dir: &Path,
     mut rx: mpsc::Receiver<Record>,
     router: Arc<Router>,
+    in_flight: Arc<AtomicUsize>,
 ) -> Result<()> {
     let prompt_path = if cfg.prompt_file.is_absolute() {
         cfg.prompt_file.clone()
@@ -346,26 +332,25 @@ pub async fn run(
         node = %ctx.name,
         backend = ?ctx.cfg.backend,
         model = %ctx.cfg.model,
-        forward_if = ctx.cfg.forward_if.as_deref().unwrap_or("-"),
         "inference ready"
     );
 
     let sem = Arc::new(Semaphore::new(concurrency));
     let mut js: JoinSet<()> = JoinSet::new();
     while let Some(rec) = rx.recv().await {
-        // Reap finished requests without blocking on them.
+        // Reap finished frames without blocking on them.
         while let Some(Some(res)) = js.join_next().now_or_never() {
             if let Err(e) = res {
                 tracing::warn!(node = %ctx.name, "inference task failed: {e}");
             }
         }
-        let permit = sem.clone().acquire_owned().await?;
-        let ctx = Arc::clone(&ctx);
+        let (ctx, sem, in_flight) = (Arc::clone(&ctx), Arc::clone(&sem), Arc::clone(&in_flight));
         js.spawn(async move {
-            let _permit = permit;
-            if let Err(e) = ctx.handle(rec).await {
+            if let Err(e) = ctx.handle(rec, sem).await {
                 tracing::warn!(node = %ctx.name, "forwarding failed: {e:#}");
             }
+            // Forwarded (or lost): no longer in the DAG on this node's account.
+            in_flight.fetch_sub(1, Ordering::AcqRel);
         });
     }
     // Input closed: finish what is in flight before the sinks shut down.
@@ -434,29 +419,6 @@ mod tests {
         }
         for neither in ["maybe", "", "{\"flag\": true}", "yesterday"] {
             assert_eq!(yes_no(neither), None, "{neither:?}");
-        }
-    }
-
-    #[test]
-    fn truthiness_follows_what_models_actually_write() {
-        for yes in [
-            json!(true),
-            json!("yes"),
-            json!("True"),
-            json!(1),
-            json!({"a": 1}),
-        ] {
-            assert!(truthy(&yes), "{yes}");
-        }
-        for no in [
-            json!(false),
-            json!("no"),
-            json!(0),
-            json!(null),
-            json!([]),
-            json!(""),
-        ] {
-            assert!(!truthy(&no), "{no}");
         }
     }
 }

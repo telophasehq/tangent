@@ -349,9 +349,11 @@ impl JsonLogView {
 
 impl log::HostLogview for HostEngine {
     fn log(&mut self, h: Resource<JsonLogView>) -> String {
+        // Serialized again rather than the input bytes: parsing de-escaped
+        // strings in place, so the buffer is not JSON any more once a value
+        // held a quote or a backslash.
         let v: &JsonLogView = self.table.get(&h).unwrap();
-
-        String::from_utf8(v.0._raw.to_vec()).expect("json should be valid")
+        v.to_json()
     }
 
     fn has(&mut self, h: Resource<JsonLogView>, path: String) -> bool {

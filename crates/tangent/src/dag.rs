@@ -153,10 +153,26 @@ impl DagRuntime {
             }
         }
 
-        tracing::info!("waiting on workers to shutdown...");
-
+        // Nothing new comes in now, but records still move between workers
+        // and inference nodes (a plugin may feed a model, a model a plugin),
+        // so neither can close before the other is done. Wait for the DAG to
+        // go quiet, then take both down.
+        tracing::info!("draining workers and inference nodes...");
+        let quiet = timeout(worker_timeout, async {
+            while router.in_flight() > 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        if quiet.is_err() {
+            tracing::warn!(
+                in_flight = router.in_flight(),
+                "drain timeout exceeded. Records may be dropped."
+            );
+        }
         drop(router);
 
+        tracing::info!("waiting on workers to shutdown...");
         if let Ok(pool_owned) = Arc::try_unwrap(pool) {
             if let Err(e) = timeout(worker_timeout, pool_owned.join()).await {
                 tracing::warn!(?e, "pool shutdown timeout exceeded. Logs may be dropped.");
@@ -165,8 +181,6 @@ impl DagRuntime {
             tracing::warn!("WorkerPool still has refs; cannot consume for join()");
         }
 
-        // Inference nodes come after the workers (plugins may feed them) and
-        // forward into the sinks, so they finish before the sinks do.
         tracing::info!("waiting on inference nodes to shutdown...");
         match Arc::try_unwrap(inference) {
             Ok(owned) => {

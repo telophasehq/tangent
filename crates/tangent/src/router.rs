@@ -47,6 +47,10 @@ pub struct Router {
     pool: OnceCell<Weak<WorkerPool>>,
     inference: OnceCell<Weak<InferenceNodes>>,
     sink_manager: Arc<SinkManager>,
+    /// Records handed to a worker or an inference node and not yet forwarded
+    /// on. One count for both, so zero means the DAG is quiet: a record
+    /// leaving a model for a plugin is counted in before it is counted out.
+    in_flight: Arc<AtomicUsize>,
 }
 
 impl Router {
@@ -56,7 +60,17 @@ impl Router {
             pool: OnceCell::new(),
             inference: OnceCell::new(),
             sink_manager,
+            in_flight: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    /// Records between a source and a sink right now.
+    pub fn in_flight(&self) -> usize {
+        self.in_flight.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn in_flight_counter(&self) -> Arc<AtomicUsize> {
+        Arc::clone(&self.in_flight)
     }
 
     pub fn set_pool(&self, pool: &Arc<WorkerPool>) {
@@ -122,11 +136,12 @@ impl Router {
             let to = &tos[0];
             for frame in frames.drain(..) {
                 match to {
-                    NodeRef::Plugin { .. } => {
+                    NodeRef::Plugin { name } => {
                         let pool = pool.as_ref().expect("pool must be set for plugin edges");
                         let rec = Record {
                             payload: Payload::Raw(frame),
                             ack: Some(shared.clone()),
+                            to: Some(Arc::clone(name)),
                         };
                         pool.dispatch(rec).await?;
                     }
@@ -137,6 +152,7 @@ impl Router {
                         let rec = Record {
                             payload: Payload::Raw(frame),
                             ack: Some(shared.clone()),
+                            to: None,
                         };
                         pm.dispatch(name, rec).await?;
                     }
@@ -161,11 +177,12 @@ impl Router {
         for frame in frames.drain(..) {
             for to in tos {
                 match to {
-                    NodeRef::Plugin { .. } => {
+                    NodeRef::Plugin { name } => {
                         if let Some(ref pool) = pool {
                             let rec = Record {
                                 payload: Payload::Raw(frame.clone()),
                                 ack: Some(shared.clone()),
+                                to: Some(Arc::clone(name)),
                             };
                             pool.dispatch(rec).await?;
                         } else {
@@ -177,6 +194,7 @@ impl Router {
                             let rec = Record {
                                 payload: Payload::Raw(frame.clone()),
                                 ack: Some(shared.clone()),
+                                to: None,
                             };
                             pm.dispatch(name, rec).await?;
                         }

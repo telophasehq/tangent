@@ -1,5 +1,6 @@
-# A model on this machine reads every record; only what it flags goes on.
+# A model on this machine reads every record; a plugin keeps what it flagged.
 #
+#   tangent plugin compile --config tangent.yaml
 #   tangent run --config tangent.yaml
 #   nc localhost 9000 < events.ndjson
 #   cat flagged.ndjson
@@ -10,6 +11,7 @@
 #   ollama serve   (then: model: gpt-oss:20b, url: http://localhost:11434/v1)
 runtime:
   workers: 1
+  plugins_path: plugins/
 
 sources:
   events:
@@ -21,14 +23,18 @@ inference:
     backend: openai                 # the protocol, not the vendor
     url: http://localhost:8080/v1
     model: mlx-community/GLM-4.7-Flash-4bit
-    prompt_file: judge.md
-    forward_if: flag                # only records the model flags go on
+    prompt_file: judge.md           # the reply lands on the record as _judge
     concurrency: 8                  # mlx_lm.server batches decodes: ~4x over one at a time on an M4 Max
     max_tokens: 300                 # a verdict is ~50 tokens; this bounds a runaway reply at a few seconds
     timeout_ms: 120000              # a small local model may think for a while
     extra:
       chat_template_kwargs:
         enable_thinking: false      # mlx_lm and llama-server: answer in seconds, not minutes
+
+plugins:
+  flagged:                          # keeps _judge.flag == true, and records the judge could not read
+    module_type: rust
+    path: flagged
 
 sinks:
   flagged:
@@ -41,4 +47,6 @@ dag:
   - from: { kind: source, name: events }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
+    to: [{ kind: plugin, name: flagged }]
+  - from: { kind: plugin, name: flagged }
     to: [{ kind: sink, name: flagged }]
