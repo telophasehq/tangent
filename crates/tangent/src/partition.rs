@@ -9,7 +9,7 @@ use tangent_shared::runtime::PartitionConfig;
 use crate::wasm::host::tangent::logs::log::Scalar;
 use crate::wasm::host::JsonLogView;
 
-fn scalar_text(s: Scalar) -> String {
+pub(crate) fn scalar_text(s: Scalar) -> String {
     match s {
         Scalar::Str(s) => s,
         Scalar::Int(i) => i.to_string(),
@@ -32,6 +32,27 @@ pub fn key_of_view(view: &JsonLogView, cfg: &PartitionConfig) -> Option<Arc<str>
         })
         .collect();
     join(parts, &cfg.separator)
+}
+
+/// A record's own time as epoch milliseconds, from `field`: RFC 3339, or
+/// epoch seconds or milliseconds. None without the field or when unreadable.
+pub fn time_of(view: &JsonLogView, field: Option<&str>) -> Option<i64> {
+    match view.lookup(field?).and_then(JsonLogView::to_scalar)? {
+        Scalar::Str(s) => chrono::DateTime::parse_from_rfc3339(s.trim())
+            .ok()
+            .map(|t| t.timestamp_millis()),
+        Scalar::Int(i) => Some(if i.abs() > 100_000_000_000 {
+            i
+        } else {
+            i * 1000
+        }),
+        Scalar::Float(f) => Some(if f.abs() > 1e11 {
+            f as i64
+        } else {
+            (f * 1000.0) as i64
+        }),
+        _ => None,
+    }
 }
 
 /// The same, for an already-parsed `serde_json` record.
@@ -71,10 +92,27 @@ mod tests {
     use super::*;
     use bytes::BytesMut;
 
+    #[test]
+    fn record_time() {
+        let v = JsonLogView::from_bytes(
+            r#"{"ts":"2026-10-20T13:00:00Z","epoch":1792501200,"ms":1792501200000,"bad":"noon"}"#
+                .into(),
+        )
+        .unwrap();
+        assert_eq!(time_of(&v, Some("ts")), Some(1_792_501_200_000));
+        assert_eq!(time_of(&v, Some("epoch")), Some(1_792_501_200_000));
+        assert_eq!(time_of(&v, Some("ms")), Some(1_792_501_200_000));
+        assert_eq!(time_of(&v, Some("bad")), None);
+        assert_eq!(time_of(&v, Some("missing")), None);
+        assert_eq!(time_of(&v, None), None);
+    }
+
     fn cfg(keys: &[&str]) -> PartitionConfig {
         PartitionConfig {
             key: keys.iter().map(|s| s.to_string()).collect(),
             separator: "|".into(),
+            retain_ms: None,
+            time: None,
         }
     }
 

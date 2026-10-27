@@ -21,6 +21,7 @@ use wasmtime::component::{Component, Resource};
 
 use crate::inference::{lines, InferenceNode};
 use crate::router::{RefCountAck, Router};
+use crate::state::{StateStore, StateValue, PLUGIN_NS};
 use crate::wasm::host::JsonLogView;
 use crate::{
     partition,
@@ -145,23 +146,6 @@ fn deliver(
     }
 }
 
-/// The frames' records, each under the partition its own fields give it
-/// now, or the partition it came out of when it has no key.
-fn parse_frames(cfg: Option<&PartitionConfig>, frames: Frames) -> Views {
-    let mut views = Views::new();
-    for (part, frame) in frames {
-        for line in lines(&frame) {
-            let mut b = BytesMut::with_capacity(line.len());
-            b.extend_from_slice(line);
-            match JsonLogView::from_bytes(b) {
-                Ok(lv) => views.push(placed(cfg, lv, &part)),
-                Err(e) => tracing::warn!(error = %e, "node output is not JSON; dropping"),
-            }
-        }
-    }
-    views
-}
-
 /// A worker hosts every plugin and every inference node, and walks the DAG
 /// for each batch it is handed: a record enters at its source and goes to
 /// each of the node's outputs in turn, a plugin's or a model's output being
@@ -187,6 +171,10 @@ pub struct Worker {
     handoff_rx: mpsc::UnboundedReceiver<Record>,
     /// Every worker's hand-off queue, by worker index.
     handoffs: Vec<mpsc::UnboundedSender<Record>>,
+    /// Where retained records go (`partition.retain_ms`).
+    store: Arc<dyn StateStore>,
+    /// Breaks ties between records of the same millisecond in retained keys.
+    seq: u32,
 }
 
 /// A record and the partition it resolves to now, from its own fields;
@@ -203,6 +191,74 @@ fn placed(
 }
 
 impl Worker {
+    /// Whether records are kept (`partition.retain_ms`).
+    fn retaining(&self) -> bool {
+        self.partition
+            .as_ref()
+            .is_some_and(|p| p.retain_ms.is_some())
+    }
+
+    /// Store a record under its partition as `ev:<time>:<seq>` with the
+    /// retention TTL: the partition's history is a key range plugins read
+    /// with `scan`, and nothing is ever read back to be rewritten.
+    async fn retain(&mut self, lv: &JsonLogView, part: &str) -> Result<()> {
+        let cfg = Arc::clone(
+            self.partition
+                .as_ref()
+                .expect("retain needs a partition config"),
+        );
+        let retain_ms = cfg.retain_ms.expect("retain needs retain_ms");
+        let ts = partition::time_of(lv, cfg.time.as_deref())
+            .unwrap_or_else(|| crate::state::now_ms() as i64);
+        self.seq = self.seq.wrapping_add(1) % 1_000_000;
+        self.store
+            .set(
+                PLUGIN_NS,
+                part,
+                &format!("ev:{ts:013}:{:06}", self.seq),
+                &StateValue::Str(lv.to_json()),
+                Some(retain_ms),
+            )
+            .await
+    }
+
+    /// The frames' records, each under the partition its own fields give it
+    /// now, or the partition it came out of when it has no key. A record
+    /// that enters its partition here (the frame it is in had none) is
+    /// retained, unless it belongs to another worker, which retains it when
+    /// it arrives.
+    async fn parse(&mut self, frames: &Frames) -> Result<Views> {
+        let cfg = self.partition.clone();
+        let retaining = self.retaining();
+        let workers = self.handoffs.len();
+        let mut views = Views::new();
+        for (part, frame) in frames {
+            for line in lines(frame) {
+                let mut b = BytesMut::with_capacity(line.len());
+                b.extend_from_slice(line);
+                let lv = match JsonLogView::from_bytes(b) {
+                    Ok(lv) => lv,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "node output is not JSON; dropping");
+                        continue;
+                    }
+                };
+                let (lv, now) = placed(cfg.as_deref(), lv, part);
+                if retaining
+                    && part.is_empty()
+                    && !now.is_empty()
+                    && worker_for(&now, workers) == self.id
+                {
+                    if let Err(e) = self.retain(&lv, &now).await {
+                        tracing::warn!(error = %e, partition = %now, "retaining record failed");
+                    }
+                }
+                views.push((lv, now));
+            }
+        }
+        Ok(views)
+    }
+
     pub async fn run(mut self) -> Result<()> {
         let mut batch = Vec::<Record>::new();
         let mut acks: Vec<Arc<dyn Ack>> = Vec::with_capacity(1024);
@@ -343,6 +399,15 @@ impl Worker {
                     (lv, part)
                 }
             };
+            // Retention: a record that arrives in its partition (pinned at
+            // the source, or handed over by another worker) is stored under
+            // it, keyed by its time, with the index beside it. One without a
+            // partition yet is stored when a node gives it one.
+            if !part.is_empty() && self.retaining() {
+                if let Err(e) = self.retain(&lv, &part).await {
+                    tracing::warn!(error = %e, partition = %part, "retaining record failed");
+                }
+            }
             match entries.iter_mut().find(|(node, _)| *node == from) {
                 Some((_, views)) => views.push((lv, part)),
                 None => entries.push((from, vec![(lv, part)])),
@@ -356,6 +421,7 @@ impl Worker {
         let router = Arc::clone(&self.router);
         let mut deliveries: Vec<Delivery> = Vec::new();
         let mut handoffs: Vec<(NodeRef, JsonLogView, Arc<str>)> = Vec::new();
+        let retaining = self.retaining();
         while let Some((node, hop)) = queue.pop_front() {
             let outs = router.outs(&node);
             let sinks: Vec<(Arc<str>, Option<Arc<str>>)> = outs
@@ -375,14 +441,24 @@ impl Worker {
                 tracing::warn!(from = ?node, to = ?bad, "a source is not an output; dropping");
             }
 
-            // Sinks take the node's output as it is: no parse, one copy at most.
+            // Sinks take the node's output as it is: no parse, one copy at
+            // most. Parsed anyway when records are retained and some may have
+            // just entered their partition (their frame had none).
             if nodes.is_empty() {
-                if !sinks.is_empty() {
-                    let frame = match hop {
-                        Hop::Frames(frames) => join_frames(frames),
-                        Hop::Views(views) => frame_of(&views),
-                    };
-                    deliver(&mut deliveries, sinks, frame);
+                match hop {
+                    Hop::Frames(frames) => {
+                        if retaining && frames.iter().any(|(p, _)| p.is_empty()) {
+                            self.parse(&frames).await?;
+                        }
+                        if !sinks.is_empty() {
+                            deliver(&mut deliveries, sinks, join_frames(frames));
+                        }
+                    }
+                    Hop::Views(views) => {
+                        if !sinks.is_empty() {
+                            deliver(&mut deliveries, sinks, frame_of(&views));
+                        }
+                    }
                 }
                 continue;
             }
@@ -398,7 +474,7 @@ impl Worker {
             // whose partition belongs to another worker goes there instead.
             let views = match hop {
                 Hop::Views(views) => views,
-                Hop::Frames(frames) => parse_frames(self.partition.as_deref(), frames),
+                Hop::Frames(frames) => self.parse(&frames).await?,
             };
             let views = self.keep_local(&node, views, &mut handoffs);
             if views.is_empty() {
@@ -589,6 +665,7 @@ impl WorkerPool {
         batch_max_age: Duration,
         router: Arc<Router>,
         partition: Option<PartitionConfig>,
+        store: Arc<dyn StateStore>,
     ) -> anyhow::Result<Self> {
         let mut senders = Vec::with_capacity(size);
         let mut handles = Vec::with_capacity(size);
@@ -652,6 +729,8 @@ impl WorkerPool {
                     .pop_front()
                     .expect("one hand-off queue per worker"),
                 handoffs: handoff_tx.clone(),
+                store: Arc::clone(&store),
+                seq: 0,
             };
             let h = tokio::spawn(async move {
                 if let Err(e) = worker.run().await {
@@ -890,6 +969,8 @@ mod tests {
             in_flight: Arc::clone(&in_flight),
             handoff_rx: handoff.1,
             handoffs: vec![handoff.0],
+            store: Arc::new(crate::state::lru::LruStore::new(StateConfig::default()).unwrap()),
+            seq: 0,
         };
         let handle = tokio::spawn(worker.run());
 
@@ -1002,7 +1083,10 @@ mod tests {
                 Some(PartitionConfig {
                     key: vec!["judge.flag".into()],
                     separator: "|".into(),
+                    retain_ms: None,
+                    time: None,
                 }),
+                Arc::clone(&store),
             )
             .await
             .unwrap(),

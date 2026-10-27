@@ -57,6 +57,18 @@ pub struct PartitionConfig {
 
     #[serde(default = "default_separator")]
     pub separator: String,
+
+    /// Keep every partitioned record in the state store, under its partition
+    /// in the plugins' namespace, as `ev:<epoch ms, 13 digits>:<seq>` with
+    /// this TTL (5d = 432000000). A partition's history is then a key range
+    /// plugins read with `scan`. Unset: records are not kept.
+    #[serde(default)]
+    pub retain_ms: Option<u64>,
+
+    /// The field holding a record's own time (RFC 3339 or epoch seconds or
+    /// milliseconds), which keys its retained row. Arrival time without it.
+    #[serde(default)]
+    pub time: Option<String>,
 }
 
 fn default_separator() -> String {
