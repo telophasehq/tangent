@@ -14,7 +14,6 @@ inference:
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     region: us-west-2
     prompt_file: judge.md
-    output: _judge
     forward_if: flag
     concurrency: 8
     timeout_ms: 30000

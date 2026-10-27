@@ -208,7 +208,7 @@ mod tests {
             prompt_file: "judge.md".into(),
             answer: Answer::Json,
             fields: Vec::new(),
-            output: "_judge".into(),
+            output: None,
             forward_if: Some("flag".into()),
             concurrency: 2,
             timeout_ms: 5_000,

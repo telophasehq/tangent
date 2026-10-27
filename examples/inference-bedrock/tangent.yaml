@@ -19,7 +19,6 @@ inference:
     region: us-west-2
     # profile: prod                 # an AWS profile; the default chain when unset
     prompt_file: judge.md
-    output: _judge
     forward_if: flag
     concurrency: 8                  # a hosted model takes many requests at once
     timeout_ms: 30000               # a hung request must not hold a slot for long

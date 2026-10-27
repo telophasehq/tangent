@@ -6,7 +6,7 @@ Nothing leaves the box.
 `tangent.yaml` has no plugins. Records go from a TCP source to an `inference`
 node, which sends each one to a local OpenAI-compatible server with
 [judge.md](judge.md) as the system prompt, adds the model's JSON reply to the
-record under `_judge`, and forwards the record only when `_judge.flag` is true.
+record under `_judge` (the node's name, underscored), and forwards the record only when `_judge.flag` is true.
 
 ```yaml
 inference:
@@ -15,7 +15,6 @@ inference:
     url: http://localhost:8080/v1
     model: mlx-community/GLM-4.7-Flash-4bit
     prompt_file: judge.md
-    output: _judge
     forward_if: flag
     concurrency: 8
     max_tokens: 300

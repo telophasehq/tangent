@@ -85,14 +85,13 @@ inference:
     url: http://localhost:8080/v1          # any OpenAI-compatible chat endpoint
     model: mlx-community/GLM-4.7-Flash-4bit
     prompt_file: judge.md                  # the system message
-    output: _judge                         # the model's JSON reply lands here
-    forward_if: flag                       # pass only records the model flags
+    forward_if: flag                       # pass only records the model flags; the reply lands in _judge
     extra: { chat_template_kwargs: { enable_thinking: false } }
 ```
 
 The model is reached through [rig](https://github.com/0xPlaygrounds/rig): `backend: openai` (the default) for any OpenAI-compatible chat endpoint such as OpenAI, mlx_lm.server, llama-server, vLLM or Bedrock's OpenAI endpoint, and `backend: bedrock` for Amazon Bedrock's Converse API with the AWS credential chain (`region`, `profile`).
 
-The record (or its `fields`) is the user message. `answer` picks the output. `json` (the default): the model's JSON object lands on the record under `output`, and `forward_if` names the field that lets a record through (a reply without it counts as a failure). `yes_no`: the model answers one word; yes forwards the record, no drops it, anything else is a failure. Same node either way; a small local model answering one word reads about six times more records per second than one writing JSON, which is what makes it a cheap first pass in front of a bigger model ([examples/inference-two-stage](/examples/inference-two-stage)). `on_error: pass` (the default) forwards a failed record with `{"error": ...}` under `output` so nothing is lost silently; `on_error: drop` drops it. `concurrency` bounds requests in flight (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
+The record (or its `fields`) is the user message. `answer` picks the output. `json` (the default): the model's JSON object lands on the record under `_<node name>` (`output:` to change that), and `forward_if` names the field that lets a record through (a reply without it counts as a failure). `yes_no`: the model answers one word; yes forwards the record, no drops it, anything else is a failure. Same node either way; a small local model answering one word reads about six times more records per second than one writing JSON, which is what makes it a cheap first pass in front of a bigger model ([examples/inference-two-stage](/examples/inference-two-stage)). `on_error: pass` (the default) forwards a failed record with `{"error": ...}` in that same field so nothing is lost silently; `on_error: drop` drops it. `concurrency` bounds requests in flight (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
 
 ## Benchmarks
 Benchmarks show end-to-end throughput with simple log transformation plugins implemented in [Rust](/examples/rust/src/lib.rs), [Go](/examples/golang/main.go), and [Python](/examples/python/mapper.py). Each plugin is compiled to WASM and run inside Tangent.

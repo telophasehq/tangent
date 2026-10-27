@@ -31,6 +31,8 @@ use crate::worker::Record;
 
 struct Ctx {
     name: Arc<str>,
+    /// Where the reply lands on the record.
+    output: String,
     from: NodeRef,
     cfg: InferenceConfig,
     prompt: String,
@@ -174,7 +176,7 @@ impl Ctx {
                     m
                 }
             };
-            obj.insert(self.cfg.output.clone(), reply);
+            obj.insert(self.output.clone(), reply);
             let mut bytes = serde_json::to_vec(&Value::Object(obj))?;
             bytes.push(b'\n');
             out.push(BytesMut::from(&bytes[..]));
@@ -328,11 +330,13 @@ pub async fn run(
     }
     let model = model(&cfg)?;
     let concurrency = cfg.concurrency.max(1);
+    let output = cfg.output.clone().unwrap_or_else(|| format!("_{name}"));
     let ctx = Arc::new(Ctx {
         from: NodeRef::Inference {
             name: Arc::clone(&name),
         },
         name,
+        output,
         cfg,
         prompt,
         model,

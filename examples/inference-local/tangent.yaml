@@ -22,7 +22,6 @@ inference:
     url: http://localhost:8080/v1
     model: mlx-community/GLM-4.7-Flash-4bit
     prompt_file: judge.md
-    output: _judge                  # the model's reply lands here
     forward_if: flag                # only records the model flags go on
     concurrency: 8                  # mlx_lm.server batches decodes: ~4x over one at a time on an M4 Max
     max_tokens: 300                 # a verdict is ~50 tokens; this bounds a runaway reply at a few seconds

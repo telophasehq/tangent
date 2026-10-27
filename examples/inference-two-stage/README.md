@@ -17,7 +17,6 @@ inference:
     model: mlx-community/GLM-4.7-Flash-4bit
     prompt_file: first_pass.md
     answer: yes_no                  # one word: yes forwards, no drops, anything else is an error
-    output: _first_pass
     concurrency: 8
     max_tokens: 8
     extra: { chat_template_kwargs: { enable_thinking: false } }
@@ -26,7 +25,6 @@ inference:
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     region: us-west-2
     prompt_file: verdict.md
-    output: _verdict                # {"flag", "one_line", "why"} lands here
     forward_if: flag
     concurrency: 8
 ```
@@ -36,8 +34,9 @@ inference:
 of the reply (`Yes.`, `**no**`, a `<think>` block first — all fine) and forwards
 on yes. Anything that is neither yes nor no is a failure handled by `on_error`
 (pass by default, so an odd reply reaches the second node rather than
-vanishing). With `json`, the second node's object is merged into the record and
-`forward_if: flag` decides what reaches the sink.
+vanishing). With `json`, the second node's object is merged into the record (under
+`_verdict`, the node's name) and `forward_if: flag` decides what reaches the
+sink.
 
 ## Why one word first, measured
 

@@ -22,7 +22,6 @@ inference:
     model: mlx-community/GLM-4.7-Flash-4bit
     prompt_file: first_pass.md
     answer: yes_no                  # one word: yes forwards, no drops, anything else is an error
-    output: _first_pass             # {"answer": "yes"} on the records that go on
     concurrency: 8
     max_tokens: 8                   # the answer is one token; a reasoning model would need ~100
     extra:
@@ -34,7 +33,6 @@ inference:
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     region: us-west-2
     prompt_file: verdict.md
-    output: _verdict
     forward_if: flag                # the second model can still say no
     concurrency: 8
     timeout_ms: 30000

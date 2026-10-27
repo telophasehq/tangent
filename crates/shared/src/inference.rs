@@ -39,9 +39,10 @@ pub struct InferenceConfig {
     #[serde(default)]
     pub fields: Vec<String>,
 
-    /// Name of the object added to the record with the model's reply.
-    #[serde(default = "default_output")]
-    pub output: String,
+    /// Field of the record the model's reply lands in; `_<node name>` when
+    /// unset (the underscore marks what the pipeline added).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
 
     /// Forward a record only when this field of the reply is true (for
     /// example `flag`); the rest are dropped. A reply without the field is
@@ -117,9 +118,6 @@ pub enum OnError {
 
 fn default_url() -> String {
     "http://localhost:8080/v1".into()
-}
-fn default_output() -> String {
-    "_inference".into()
 }
 const fn default_concurrency() -> usize {
     1
