@@ -46,6 +46,14 @@ impl Payload {
             Payload::Parsed { view, .. } => view.byte_len(),
         }
     }
+
+    /// The record as bytes, serialized again if it was parsed.
+    pub fn into_bytes(self) -> BytesMut {
+        match self {
+            Payload::Raw(b) => b,
+            Payload::Parsed { view, .. } => BytesMut::from(view.to_json().as_bytes()),
+        }
+    }
 }
 
 pub struct Record {

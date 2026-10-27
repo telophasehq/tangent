@@ -10,6 +10,7 @@ use reqwest::Client;
 use serde_json::Value as JSONValue;
 use simd_json::base::ValueAsScalar;
 use simd_json::derived::{TypedArrayValue, TypedScalarValue};
+use simd_json::prelude::Writable;
 use simd_json::prelude::{ValueAsArray, ValueAsObject, ValueObjectAccess};
 use simd_json::{BorrowedValue, StaticNode};
 use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
@@ -298,6 +299,11 @@ impl JsonLogView {
     /// Size of the record this view was parsed from.
     pub fn byte_len(&self) -> usize {
         self.0._raw.len()
+    }
+
+    /// The record as JSON text again.
+    pub fn to_json(&self) -> String {
+        self.0.doc.encode()
     }
 
     pub fn lookup<'a>(&'a self, path: &str) -> Option<&'a BorrowedValue<'a>> {

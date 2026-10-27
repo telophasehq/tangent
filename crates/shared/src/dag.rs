@@ -11,6 +11,10 @@ pub enum NodeRef {
     Plugin {
         name: Arc<str>,
     },
+    /// A native node implemented in the runtime (see `processors`).
+    Processor {
+        name: Arc<str>,
+    },
     Sink {
         name: Arc<str>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
