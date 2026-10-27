@@ -28,39 +28,31 @@ impl Mappers {
         components: &Vec<(Arc<str>, Component)>,
     ) -> anyhow::Result<Self> {
         let mut mappers = Vec::with_capacity(components.len());
+
         for (name, component) in components {
-            mappers.push(Self::load_one(engine, name, component).await?);
+            let mut store = engine.make_store(name)?;
+
+            let proc = engine.make_processor(&mut store, component).await?;
+            let guest = proc.tangent_logs_mapper();
+
+            let meta = guest.call_metadata(&mut store).await?;
+            let sels: Vec<Selector> = guest.call_probe(&mut store).await?;
+
+            let selectors: Vec<CompiledSelector> = sels
+                .iter()
+                .map(compile_selector)
+                .collect::<anyhow::Result<_>>()?;
+
+            mappers.push(MapperCtx {
+                cfg_name: Arc::clone(name),
+                name: meta.name,
+                version: meta.version,
+                store,
+                proc,
+                selectors,
+            });
         }
+
         Ok(Self { mappers })
-    }
-
-    /// A fresh instance of one plugin: its own store, its metadata and probe
-    /// read once. Also how a plugin that trapped is replaced.
-    pub async fn load_one(
-        engine: &WasmEngine,
-        name: &Arc<str>,
-        component: &Component,
-    ) -> anyhow::Result<MapperCtx> {
-        let mut store = engine.make_store(name)?;
-
-        let proc = engine.make_processor(&mut store, component).await?;
-        let guest = proc.tangent_logs_mapper();
-
-        let meta = guest.call_metadata(&mut store).await?;
-        let sels: Vec<Selector> = guest.call_probe(&mut store).await?;
-
-        let selectors: Vec<CompiledSelector> = sels
-            .iter()
-            .map(compile_selector)
-            .collect::<anyhow::Result<_>>()?;
-
-        Ok(MapperCtx {
-            cfg_name: Arc::clone(name),
-            name: meta.name,
-            version: meta.version,
-            store,
-            proc,
-            selectors,
-        })
     }
 }

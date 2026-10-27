@@ -1,8 +1,13 @@
+pub mod cloudtrail;
 pub mod decoding;
 pub mod file;
+pub mod github_audit;
 pub mod github_webhook;
+pub mod google_workspace;
 pub mod msk;
 pub mod npm_registry;
+pub mod okta;
+pub mod poll;
 pub mod socket;
 pub mod sqs;
 pub mod tcp;

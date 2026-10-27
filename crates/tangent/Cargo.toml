@@ -46,6 +46,8 @@ aws-config = "1.8.6"
 async-trait = "0.1.89"
 aws-smithy-types = { version = "1.3.2", features = ["byte-stream-poll-next"] }
 aws-sdk-s3 = "1.106.0"
+aws-sdk-cloudtrail = "1.128.0"
+jsonwebtoken = { version = "11.1.0", features = ["rust_crypto"] }
 memchr = "2.7.6"
 futures-util = { version = "0.3.31", features = ["sink"] }
 ulid = "1.2.1"
@@ -73,7 +75,7 @@ arrow-ipc = "57.0.0"
 tikv-jemallocator = { version = "0.6.1", features = ["profiling"] }
 tikv-jemalloc-ctl = {version = "0.6.1", features = ["stats", "profiling"], optional=true}
 libc = {version = "0.2.177", optional=true}
-reqwest = "0.12.24"
+reqwest = { version = "0.12.24", features = ["json"] }
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 fs2 = "0.4.3"
 once_cell = "1.21.3"
