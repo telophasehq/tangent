@@ -54,8 +54,8 @@ eight in flight, on an M4 Max with mlx_lm.server:
 With thinking off and one output token, a one-word answer costs only the prompt
 pass, so GLM reads six times more records per second than when it writes JSON —
 and on single records it is also more accurate that way. gpt-oss-20b is the
-opposite: a precise `json` judge (`reasoning_effort: low`) and a poor one-word
-answerer, and it needs `max_tokens` large enough for the reasoning that precedes
+opposite: precise with `json` (`reasoning_effort: low`) and poor with one
+word, and it needs `max_tokens` large enough for the reasoning that precedes
 the word (about 100), where GLM with thinking off needs 8.
 
 One word is a per-record trick. Asked for one word about a whole *window* of
