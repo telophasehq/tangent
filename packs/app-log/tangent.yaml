@@ -41,37 +41,20 @@ plugins:
       scopes: { actor: _norm.actor, org: _norm.org }
       spans: { actor: 24h, org: 1h }
       max_events: 20
-  look:
-    module_type: rust
-    path: ../cloud-infra/look
   flagged:
     module_type: rust
     path: ../../examples/inference-local/flagged
 
 inference:
-  screen:
-    backend: openai
-    url: ${JUDGE_URL}
-    model: ${JUDGE_MODEL}
-    api_key: ${JUDGE_API_KEY}
-    prompt_file: ../cloud-infra/screen.md
-    schema_file: ../cloud-infra/screen.schema.json
-    fields: [ts, source, _norm, _facts, _window, outcome, displayMessage, errorCode, events, tool, path, destination, message, plan_id, step_id]   # who, what, where, the facts, the history; the judge sees the whole record
-    batch: 16                  # records per request; the model answers them together
-    batch_bytes: 24000          # a local model's comfortable prompt; raise it for a hosted one
-    max_tokens: 48                # per record; {"look": true} with room for the model's formatting
-    timeout_ms: 60000
-    concurrency: 2
-    extra:
-      chat_template_kwargs:
-        enable_thinking: false
   judge:
     backend: openai
     url: ${JUDGE_URL}
     model: ${JUDGE_MODEL}
     api_key: ${JUDGE_API_KEY}
     prompt_file: ../cloud-infra/judge.md
-    max_tokens: 600
+    batch: 16                   # records per request, as many as fit batch_bytes; the model judges them together
+    batch_bytes: 16000          # one local model's comfortable prompt; raise it for a hosted model
+    max_tokens: 200             # per record; a batch may say batch times as much
     timeout_ms: 90000
     concurrency: 4
     extra:
@@ -100,10 +83,6 @@ dag:
   - from: { kind: plugin, name: facts }
     to: [{ kind: plugin, name: window }]
   - from: { kind: plugin, name: window }
-    to: [{ kind: inference, name: screen }]
-  - from: { kind: inference, name: screen }
-    to: [{ kind: plugin, name: look }]
-  - from: { kind: plugin, name: look }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
     to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]

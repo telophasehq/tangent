@@ -1,6 +1,6 @@
-# cloud-infra: your own infrastructure's logs. A small model reads every record
-# in its context and marks what a larger one should judge; a person reads the
-# verdicts. No rule decides anything.
+# cloud-infra: your own infrastructure's logs. A model reads every record, in
+# batches, each in its context, and writes a verdict; a person reads the ones
+# it flagged. No rule decides anything.
 #
 #   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
 #   make test       the cases in cases/ through norm, facts and window; no model needed
@@ -80,37 +80,20 @@ plugins:
     tests:
       - input: tests/window/input.json
         expected: tests/window/expected.json
-  look:                         # keeps what the screen marked, and what it could not read
-    module_type: rust
-    path: look
   flagged:                      # keeps what the judge flagged, and what it could not read
     module_type: rust
     path: ../../examples/inference-local/flagged
 
 inference:
-  screen:                       # every record, with its facts and history: worth the judge's time, or not
-    backend: openai             # any OpenAI-compatible endpoint; see the Makefile for the defaults
-    url: ${JUDGE_URL}
-    model: ${JUDGE_MODEL}
-    api_key: ${JUDGE_API_KEY}
-    prompt_file: screen.md
-    schema_file: screen.schema.json
-    fields: [ts, source, _norm, _facts, _window, outcome, displayMessage, errorCode, events, tool, path, destination, message, plan_id, step_id]   # who, what, where, the facts, the history; the judge sees the whole record
-    batch: 16                  # records per request; the model answers them together
-    batch_bytes: 24000          # a local model's comfortable prompt; raise it for a hosted one
-    max_tokens: 48                # per record; {"look": true} with room for the model's formatting
-    timeout_ms: 60000
-    concurrency: 2
-    extra:
-      chat_template_kwargs:
-        enable_thinking: false
-  judge:                        # what the screen passed: the verdict a person reads
+  judge:                        # every record, with its facts and history: the verdict a person reads
     backend: openai
     url: ${JUDGE_URL}
     model: ${JUDGE_MODEL}
     api_key: ${JUDGE_API_KEY}
     prompt_file: judge.md
-    max_tokens: 600
+    batch: 16                   # records per request, as many as fit batch_bytes; the model judges them together
+    batch_bytes: 16000          # one local model's comfortable prompt; raise it for a hosted model
+    max_tokens: 200             # per record; a batch may say batch times as much
     timeout_ms: 90000
     concurrency: 4
     extra:
@@ -147,10 +130,6 @@ dag:
   - from: { kind: plugin, name: facts }
     to: [{ kind: plugin, name: window }]
   - from: { kind: plugin, name: window }
-    to: [{ kind: inference, name: screen }]
-  - from: { kind: inference, name: screen }
-    to: [{ kind: plugin, name: look }]
-  - from: { kind: plugin, name: look }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
     to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]

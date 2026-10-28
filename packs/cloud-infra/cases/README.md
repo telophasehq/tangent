@@ -43,7 +43,7 @@ Most positives are sequences of lines innocent on their own
 and an export, a workflow push and a runner registration, a secret read and a
 POST. That is why the judge reads windows per actor and per org, not lines.
 A few are single lines (root login, CloudTrail stopped, a bucket made public,
-MFA off); the screen reads those like any other, with the profile's `watch`
+MFA off); the judge reads those like any other, with the profile's `watch`
 and `root` facts beside them.
 
 The negatives are what looks alarming and is not: Dependabot's weekly batch,

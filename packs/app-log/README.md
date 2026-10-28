@@ -4,10 +4,10 @@ Your product's logs, judged per customer. The same pipeline as
 [cloud-infra](../cloud-infra), partitioned differently: an application's audit
 log and an AI agent's logs carry a customer's tenant id, and that is the
 partition. Each customer gets their own history, their own window, their own
-screen and judge.
+judge.
 
 ```
-app audit log, agent logs ──▶ norm ──▶ enrich ──▶ facts ──▶ window ──▶ screen ──▶ judge ──▶ alerts.ndjson
+app audit log, agent logs ──▶ norm ──▶ enrich ──▶ facts ──▶ window ──▶ judge ──▶ alerts.ndjson
                                  (partition = the customer's tenant id)
 ```
 

@@ -1,21 +1,21 @@
 # cloud-infra
 
-Your own infrastructure's logs, every record read by a small model in its
-context, the ones it marks judged by a larger one, the verdicts read by a person. Install, point your logs at it, fill in one file about
+Your own infrastructure's logs, every record read by a model in its context,
+in batches; a person reads what it flags. Install, point your logs at it, fill in one file about
 your company, run.
 
 ```
-CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ facts ──▶ window ──▶ screen ──▶ judge ──▶ alerts.ndjson
+CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ facts ──▶ window ──▶ judge ──▶ alerts.ndjson
 ```
 
 - **norm** puts every source's shape into one: `_norm.{actor, org, kind, ip, country, dest, target}`.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
 - **window** attaches the actor's last day and the org's last hour, one line per event, read back from the runtime's retained rows.
-- **screen** is the first model call, on every record: with its facts and history, is this worth the judge's time? It answers `{"look": true|false}` and errs on the side of yes. **look** keeps what it marked. No rule decides what a model reads; the profile is context, not a rulebook.
-- **judge** is any OpenAI-compatible model with [judge.md](judge.md) as its brief. It adds a verdict; **flagged** keeps the ones a person should see.
+- **judge** reads every record, in batches of as many as fit a request, each with its facts and history, and writes a verdict per record: `flag`, `one_line`, `check_first`. No rule decides what the model reads; the profile is context, not a rulebook.
+- The judge is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see.
 
-On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the screen's pass rate and the judge's recall are in [RESULTS](#what-it-catches).
+On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the judge's recall and false-positive rate are in [RESULTS](#what-it-catches).
 
 ## Install and run
 
@@ -78,7 +78,7 @@ Measured with a local 30B model as judge over the cases and 38 days of synthetic
 tangent.yaml          the pipeline
 profile/profile.yaml  your company (edit this)
 judge.md              the model's brief
-norm/ facts/ window/ look/   the plugins, Rust, compiled to WASM by make setup
+norm/ facts/ window/   the plugins, Rust, compiled to WASM by make setup
 cases/                the sequences, one directory each: case.yaml + events.ndjson
 tests/                fixtures for make test
 ```

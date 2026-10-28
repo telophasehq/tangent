@@ -60,7 +60,7 @@ sensitive:                       # buckets, repos, tables a person should hear a
   - prod-db
 
 # Kinds a person wants seen every time, however usual. A fact for the models,
-# not a rule: the screen still decides.
+# not a rule: the judge still decides.
 watch:
   - StopLogging                        # CloudTrail
   - DeleteTrail
