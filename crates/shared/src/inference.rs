@@ -63,6 +63,15 @@ pub struct InferenceConfig {
     #[serde(default = "default_batch_bytes")]
     pub batch_bytes: usize,
 
+    /// Fields that are context for a request, not part of a record: a
+    /// window of history, say. Each holds views keyed by scope (`actor`,
+    /// `org`), each view with a `key` naming whose it is. Before a request
+    /// they are lifted off the records, one view per scope and key (the
+    /// latest, which covers the earlier), and written once ahead of the
+    /// records; afterwards they are gone from the records. `[_window]`.
+    #[serde(default)]
+    pub context: Vec<String>,
+
     /// Requests in flight at once, per worker: the model sees at most
     /// `runtime.workers` times this from one node.
     #[serde(default = "default_concurrency")]

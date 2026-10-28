@@ -133,7 +133,13 @@ impl InferenceNode {
     /// node's name.
     pub async fn annotate(&self, v: Value) -> Value {
         let start = Instant::now();
-        let reply = match self.ask(self.user_message(&v), None).await {
+        let (context, mut records) = self.lift_context(vec![v]);
+        let v = records.pop().expect("one record");
+        let user = match context {
+            Some(c) => format!("{c}\n\nThe record:\n{}", self.user_message(&v)),
+            None => self.user_message(&v),
+        };
+        let reply = match self.ask(user, None).await {
             Ok(reply) => reply,
             Err(e) => {
                 tracing::warn!(node = %self.name, "inference failed: {e:#}");
@@ -157,12 +163,18 @@ impl InferenceNode {
     async fn annotate_batch(&self, records: Vec<Value>) -> Vec<Value> {
         let n = records.len();
         let start = Instant::now();
-        let user = records
+        let originals = records.clone();
+        let (context, records) = self.lift_context(records);
+        let lines = records
             .iter()
             .enumerate()
             .map(|(k, v)| self.batch_line(k, v))
             .collect::<Vec<_>>()
             .join("\n");
+        let user = match context {
+            Some(c) => format!("{c}\n\nThe records:\n{lines}"),
+            None => lines,
+        };
         let answers = match self.ask(user, Some(n)).await {
             Ok(reply) => spread(reply, n),
             Err(e) if n > 1 && !e.to_string().contains("no reply within") => {
@@ -171,7 +183,7 @@ impl InferenceNode {
                     records = n,
                     "batched reply unreadable, asking again as two halves: {e:#}"
                 );
-                let mut records = records;
+                let mut records = originals;
                 let tail = records.split_off(n / 2);
                 let mut out = Box::pin(self.annotate_batch(records)).await;
                 out.extend(Box::pin(self.annotate_batch(tail)).await);
@@ -195,6 +207,58 @@ impl InferenceNode {
             .collect()
     }
 
+    /// The context fields lifted off the records: one view per scope and
+    /// key across the batch, the latest kept, as lines for the top of the
+    /// request; and the records without those fields, which is also how
+    /// they go on afterwards.
+    fn lift_context(&self, records: Vec<Value>) -> (Option<String>, Vec<Value>) {
+        if self.cfg.context.is_empty() {
+            return (None, records);
+        }
+        // (field, scope, key) -> the view with the latest `to`.
+        let mut views: Vec<((String, String, String), Value)> = Vec::new();
+        let mut stripped = Vec::with_capacity(records.len());
+        for mut v in records {
+            for field in &self.cfg.context {
+                let Some(taken) = remove_path(&mut v, field) else { continue };
+                let Value::Object(scopes) = taken else { continue };
+                for (scope, view) in scopes {
+                    let key = view
+                        .get("key")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    let id = (field.clone(), scope.clone(), key);
+                    let to = |x: &Value| x.get("to").and_then(Value::as_str).unwrap_or("").to_string();
+                    match views.iter_mut().find(|(i, _)| *i == id) {
+                        Some((_, have)) if to(have) >= to(&view) => {}
+                        Some((_, have)) => *have = view,
+                        None => views.push((id, view)),
+                    }
+                }
+            }
+            stripped.push(v);
+        }
+        if views.is_empty() {
+            return (None, stripped);
+        }
+        let mut lines = vec![
+            "Context, one JSON object per line: the history each record's actor and org had at the time, \
+             `scope` and `key` saying whose (a record's `_norm.actor` and `_norm.org` name them), `recent` oldest first:"
+                .to_string(),
+        ];
+        for ((field, scope, _), view) in views {
+            let mut m = Map::new();
+            m.insert("context".into(), json!(field));
+            m.insert("scope".into(), json!(scope));
+            if let Value::Object(fields) = view {
+                m.extend(fields);
+            }
+            lines.push(serde_json::to_string(&Value::Object(m)).unwrap_or_default());
+        }
+        (Some(lines.join("\n")), stripped)
+    }
+
     /// Records in request-sized runs: at most `batch` of them and about
     /// `batch_bytes` of JSON each; a record larger than that goes alone.
     fn chunks(&self, records: Vec<Value>) -> Vec<Vec<Value>> {
@@ -203,7 +267,11 @@ impl InferenceNode {
         let mut cur: Vec<Value> = Vec::new();
         let mut bytes = 0usize;
         for v in records {
-            let size = self.view(&v).to_string().len();
+            let mut bare = v.clone();
+            for field in &self.cfg.context {
+                remove_path(&mut bare, field);
+            }
+            let size = self.view(&bare).to_string().len();
             if !cur.is_empty() && (cur.len() >= max_n || bytes + size > max_bytes) {
                 out.push(std::mem::take(&mut cur));
                 bytes = 0;
@@ -448,6 +516,21 @@ fn head(s: &str, n: usize) -> String {
     t
 }
 
+/// Take a field out of a record by its path ("a.b.c" or a top-level key).
+fn remove_path(v: &mut Value, path: &str) -> Option<Value> {
+    if let Some(obj) = v.as_object_mut() {
+        if obj.contains_key(path) {
+            return obj.remove(path);
+        }
+    }
+    let (parent, last) = path.rsplit_once('.')?;
+    let mut cur = v;
+    for seg in parent.split('.') {
+        cur = cur.get_mut(seg)?;
+    }
+    cur.as_object_mut()?.remove(last)
+}
+
 /// Dot-path lookup into a JSON value: "a.b.c".
 pub fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
     if let Some(direct) = v.get(path) {
@@ -555,7 +638,12 @@ pub(crate) mod stub {
                         // One answer per line of the user message; "short"
                         // anywhere in the batch drops the last answer.
                         let user = text_of(&req["messages"][1]["content"]);
-                        let mut answers: Vec<_> = user.lines().map(verdict).collect();
+                        // Only the record lines; context lines and headers are not records.
+                        let mut answers: Vec<_> = user
+                            .lines()
+                            .filter(|l| l.starts_with("{\"i\":"))
+                            .map(verdict)
+                            .collect();
                         if user.contains("short") {
                             answers.pop();
                         }
@@ -599,6 +687,7 @@ pub(crate) mod stub {
             fields: Vec::new(),
             batch: 1,
             batch_bytes: 32_768,
+            context: Vec::new(),
             concurrency: 2,
             timeout_ms: 5_000,
             retries: 0,
@@ -830,6 +919,46 @@ mod tests {
         assert_eq!(outs.len(), 4);
         assert!(outs.iter().all(|o| o["judge"]["flag"] == true), "every record got its answer: {outs:?}");
         assert_eq!(seen.lock().await.len(), 3, "one failed request, then one per half");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn context_fields_are_written_once_and_dropped_from_the_records() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("context");
+        let mut cfg = stub::config(&url);
+        cfg.batch = 8;
+        cfg.context = vec!["_window".into()];
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let w = |actor: &str, to: &str| json!({
+            "actor": {"key": actor, "to": to, "recent": [{"kind": "login"}]},
+            "org": {"key": "acme", "to": to, "recent": [{"kind": "push"}]}
+        });
+        let outs = node
+            .annotate_all(vec![
+                json!({"id": 1, "_norm": {"actor": "a", "org": "acme"}, "_window": w("a", "2026-10-28T00:01:00Z")}),
+                json!({"id": 2, "_norm": {"actor": "b", "org": "acme"}, "_window": w("b", "2026-10-28T00:02:00Z")}),
+                json!({"id": 3, "_norm": {"actor": "a", "org": "acme"}, "_window": w("a", "2026-10-28T00:03:00Z"), "msg": "bad"}),
+            ])
+            .await;
+        assert_eq!(outs.len(), 3);
+        assert!(outs.iter().all(|o| o.get("_window").is_none()), "the context is gone afterwards: {outs:?}");
+        assert_eq!(outs[2]["judge"]["flag"], true, "answers still land: {outs:?}");
+        let seen = seen.lock().await;
+        assert_eq!(seen.len(), 1);
+        let req: Value = serde_json::from_str(&seen[0]).unwrap();
+        let user = match &req["messages"][1]["content"] {
+            Value::String(s) => s.clone(),
+            other => other[0]["text"].as_str().unwrap_or_default().to_string(),
+        };
+        let context_lines: Vec<&str> = user.lines().filter(|l| l.starts_with("{\"context\"")).collect();
+        assert_eq!(context_lines.len(), 3, "a, b and acme once each: {user}");
+        let a: Value = serde_json::from_str(context_lines.iter().find(|l| l.contains("\"key\":\"a\"")).unwrap()).unwrap();
+        assert_eq!(a["to"], "2026-10-28T00:03:00Z", "the latest view for a scope wins");
+        let record_lines: Vec<&str> = user.lines().filter(|l| l.starts_with("{\"i\":")).collect();
+        assert_eq!(record_lines.len(), 3);
+        assert!(record_lines.iter().all(|l| !l.contains("_window")), "records carry no window: {user}");
+        assert!(user.contains("The records:"));
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -122,6 +122,7 @@ inference:
     schema_file: judge.schema.json      # the shape, enforced by the backend where it can
     batch: 16                   # records per request, as many as fit batch_bytes; the model judges them together
     batch_bytes: 16000          # one local model's comfortable prompt; raise it for a hosted model
+    context: [_window]         # history is the request's, not the record's: written once, then dropped
     max_tokens: 200             # per record; a batch may say batch times as much
     timeout_ms: 90000
     concurrency: 4

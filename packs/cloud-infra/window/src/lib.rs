@@ -285,6 +285,7 @@ fn annotate(cfg: &Cfg, mut rec: Value) -> Result<Value, String> {
         recent.reverse();
 
         let mut w = Map::new();
+        w.insert("key".into(), json!(key));
         w.insert("from".into(), json!(iso(since)));
         w.insert("to".into(), json!(iso(ts)));
         w.insert("span".into(), json!(human(span_ms)));
