@@ -1,5 +1,5 @@
 use ahash::AHashMap as HashMap;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use std::collections::{BTreeMap, VecDeque};
@@ -27,7 +27,10 @@ use crate::{
     partition,
     wasm::{self, mapper::Mappers, probe::eval_selector},
 };
-use crate::{CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, GUEST_BYTES_TOTAL, GUEST_LATENCY};
+use crate::{
+    CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, GUEST_BYTES_TOTAL, GUEST_LATENCY,
+    PLUGIN_TRAPS_TOTAL,
+};
 
 #[async_trait]
 pub trait Ack: Send + Sync {
@@ -156,6 +159,10 @@ pub struct Worker {
     id: usize,
     rx: mpsc::Receiver<Record>,
     mappers: Mappers,
+    /// What the plugins were instantiated from, to instantiate one again
+    /// after it traps.
+    engine: wasm::engine::WasmEngine,
+    components: Vec<(Arc<str>, Component)>,
     inference: HashMap<Arc<str>, InferenceNode>,
     batch_max_size: usize,
     batch_max_age: Duration,
@@ -590,9 +597,32 @@ impl Worker {
             GUEST_BYTES_TOTAL.inc_by(bytes as u64);
 
             let frame = match res {
-                Err(host_err) => {
-                    tracing::error!(error = ?host_err, mapper = %m.name, "host error in process_log");
-                    return Err(host_err);
+                Err(trap) => {
+                    // The guest trapped (a panic, an out-of-bounds access, a
+                    // host failure under it). Its memory is not to be trusted
+                    // any more, so it is instantiated again from the component
+                    // and this batch is skipped; the worker goes on. Without
+                    // this one bad record took the worker down for good.
+                    tracing::error!(
+                        error = ?trap,
+                        mapper = %m.name,
+                        partition = %part,
+                        records = owned.len(),
+                        "plugin trapped; reinstantiating it and skipping the batch"
+                    );
+                    PLUGIN_TRAPS_TOTAL
+                        .with_label_values(&[m.cfg_name.as_ref()])
+                        .inc();
+                    let component = self
+                        .components
+                        .iter()
+                        .find(|(n, _)| *n == *name)
+                        .map(|(_, c)| c)
+                        .ok_or_else(|| anyhow::anyhow!("no component for plugin {name}"))?;
+                    self.mappers.mappers[idx] = Mappers::load_one(&self.engine, name, component)
+                        .await
+                        .with_context(|| format!("reinstantiating plugin {name} after a trap"))?;
+                    continue;
                 }
                 Ok(Ok(frame)) => frame,
                 Ok(Err(guest_err)) => {
@@ -681,11 +711,11 @@ impl WorkerPool {
         }
 
         let ch_capacity = 4096;
-        for i in 0..size {
+        for (i, (engine, comps)) in engines.into_iter().zip(components).enumerate() {
             let (tx, rx) = mpsc::channel::<Record>(ch_capacity);
             senders.push(tx);
 
-            let mut mappers = Mappers::load_all(&engines[i], &components[i]).await?;
+            let mut mappers = Mappers::load_all(&engine, &comps).await?;
             if let Some(first) = mappers.mappers.first_mut() {
                 let start = Instant::now();
                 match first
@@ -719,6 +749,8 @@ impl WorkerPool {
                 id: i,
                 rx,
                 mappers,
+                engine,
+                components: comps,
                 inference: nodes,
                 batch_max_size,
                 batch_max_age,
@@ -955,12 +987,16 @@ mod tests {
         );
         let (tx, rx) = mpsc::channel(16);
         let handoff = mpsc::unbounded_channel();
+        let store: Arc<dyn StateStore> =
+            Arc::new(crate::state::lru::LruStore::new(StateConfig::default()).unwrap());
         let worker = Worker {
             id: 0,
             rx,
             mappers: Mappers {
                 mappers: Vec::new(),
             },
+            engine: WasmEngine::new(Arc::clone(&store), true).unwrap(),
+            components: Vec::new(),
             inference,
             batch_max_size: 1 << 20,
             batch_max_age: Duration::from_millis(20),
@@ -969,7 +1005,7 @@ mod tests {
             in_flight: Arc::clone(&in_flight),
             handoff_rx: handoff.1,
             handoffs: vec![handoff.0],
-            store: Arc::new(crate::state::lru::LruStore::new(StateConfig::default()).unwrap()),
+            store,
             seq: 0,
         };
         let handle = tokio::spawn(worker.run());

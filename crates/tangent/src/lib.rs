@@ -5,8 +5,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use prometheus::{
-    register_histogram_vec, register_int_counter, register_int_gauge, HistogramVec, IntCounter,
-    IntGauge,
+    register_histogram_vec, register_int_counter, register_int_counter_vec, register_int_gauge,
+    HistogramVec, IntCounter, IntCounterVec, IntGauge,
 };
 
 use tangent_shared::Config;
@@ -50,6 +50,12 @@ lazy_static::lazy_static! {
     pub static ref GUEST_BYTES_TOTAL: IntCounter =
         register_int_counter!("tangent_guest_bytes_total", "Bytes fed to WASM guest").unwrap();
 
+    pub static ref PLUGIN_TRAPS_TOTAL: IntCounterVec = register_int_counter_vec!(
+        "tangent_plugin_traps_total",
+        "Plugin instances that trapped (panicked) and were instantiated again",
+        &["plugin"]
+    ).unwrap();
+
     pub static ref CONSUMER_BYTES_TOTAL: IntCounter =
         register_int_counter!("tangent_consumer_bytes_total", "Bytes consumed (raw input)").unwrap();
 
@@ -84,9 +90,17 @@ lazy_static::lazy_static! {
 pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     let cfg = Config::from_file(config_path)?;
 
+    // Metrics are worth having, not worth dying for: a second tangent on the
+    // box, or anything else on the port, must not keep this one from running.
     let _exporter_guard = opts
         .prometheus_bind
-        .map(|addr| prometheus_exporter::start(addr).expect("failed to start prometheus exporter"));
+        .and_then(|addr| match prometheus_exporter::start(addr) {
+            Ok(guard) => Some(guard),
+            Err(e) => {
+                tracing::warn!(%addr, "metrics exporter not started: {e}");
+                None
+            }
+        });
 
     if cfg.sources.is_empty() {
         bail!("At least one source is required.");
