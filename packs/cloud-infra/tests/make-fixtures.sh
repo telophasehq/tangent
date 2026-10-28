@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regenerates tests/*/{input,expected}.json from a handful of cases by running
-# each stage once: raw events → norm → enrich → gate → window. Run after a
+# each stage once: raw events → norm → enrich → facts → window. Run after a
 # plugin changes, read the diff, commit it if it is what you meant.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -46,8 +46,8 @@ print(f'  {sys.argv[2]}: {len(rows)} records')
 }
 
 stage norm   tests/norm/input.json     tests/norm/expected.json
-stage enrich tests/norm/expected.json  tests/gate/input.json
-stage gate   tests/gate/input.json     tests/gate/expected.json
-cp tests/gate/expected.json tests/window/input.json
+stage enrich tests/norm/expected.json  tests/facts/input.json
+stage facts  tests/facts/input.json    tests/facts/expected.json
+cp tests/facts/expected.json tests/window/input.json
 stage window tests/window/input.json   tests/window/expected.json
 echo "fixtures written; now: make test"

@@ -1,0 +1,6 @@
+{
+  "type": "object",
+  "properties": { "look": { "type": "boolean" } },
+  "required": ["look"],
+  "additionalProperties": false
+}

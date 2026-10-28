@@ -211,17 +211,23 @@ fn text(v: &Value) -> Option<String> {
     }
 }
 
+/// What makes a record itself, as stored and as it comes back: its time and
+/// its normalized fields. Plugins add to a record after it is stored, so the
+/// bytes differ; these do not.
+fn identity(e: &Value) -> Vec<Option<String>> {
+    let mut id = vec![e.get("ts").and_then(text), e.get("source").and_then(text)];
+    for k in ["kind", "actor", "ip", "dest", "target"] {
+        id.push(lookup(e, &format!("_norm.{k}")).and_then(text));
+    }
+    id
+}
+
 fn annotate(cfg: &Cfg, mut rec: Value) -> Result<Value, String> {
     let ts = lookup(&rec, &cfg.time)
         .and_then(parse_ts)
         .unwrap_or_else(now_ms);
-    // The record as the runtime stored it: before anything was attached.
-    let mut bare = rec.clone();
-    if let Some(obj) = bare.as_object_mut() {
-        obj.remove("_gate");
-        obj.remove("_window");
-    }
-    let me = serde_json::to_string(&bare).map_err(|e| e.to_string())?;
+    // The record itself is in the store too; it is not its own history.
+    let me = identity(&rec);
 
     // The partition's rows over the longest span, once; every scope is a
     // view of them, each over its own span.
@@ -237,8 +243,11 @@ fn annotate(cfg: &Cfg, mut rec: Value) -> Result<Value, String> {
     let rows: Vec<(String, i64, Value)> = state::scan(&start, &end, 10000)?
         .into_iter()
         .filter_map(|(_, v)| match v {
-            Scalar::Str(s) if s != me => {
+            Scalar::Str(s) => {
                 let e: Value = serde_json::from_str(&s).ok()?;
+                if identity(&e) == me {
+                    return None;
+                }
                 let when = lookup(&e, &cfg.time).and_then(parse_ts).unwrap_or(0);
                 Some((s, when, e))
             }
@@ -350,7 +359,7 @@ impl Guest for Component {
     fn probe() -> Vec<Selector> {
         vec![Selector {
             any: Vec::new(),
-            all: vec![Pred::Has("_gate".to_string())],
+            all: vec![Pred::Has("_norm".to_string())],
             none: Vec::new(),
         }]
     }

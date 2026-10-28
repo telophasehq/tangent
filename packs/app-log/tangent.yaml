@@ -29,9 +29,9 @@ plugins:
     data: ../../examples/enrich/data
     config:
       fields: [_norm.ip]
-  gate:
+  facts:
     module_type: rust
-    path: ../cloud-infra/gate
+    path: ../cloud-infra/facts
     data: profile               # one profile for every customer, until profiles live in the customer's partition
   window:
     module_type: rust
@@ -41,11 +41,27 @@ plugins:
       scopes: { actor: _norm.actor, org: _norm.org }
       spans: { actor: 24h, org: 1h }
       max_events: 20
+  look:
+    module_type: rust
+    path: ../cloud-infra/look
   flagged:
     module_type: rust
     path: ../../examples/inference-local/flagged
 
 inference:
+  screen:
+    backend: openai
+    url: ${JUDGE_URL}
+    model: ${JUDGE_MODEL}
+    api_key: ${JUDGE_API_KEY}
+    prompt_file: ../cloud-infra/screen.md
+    schema_file: ../cloud-infra/screen.schema.json
+    max_tokens: 16
+    timeout_ms: 60000
+    concurrency: 4
+    extra:
+      chat_template_kwargs:
+        enable_thinking: false
   judge:
     backend: openai
     url: ${JUDGE_URL}
@@ -77,10 +93,14 @@ dag:
   - from: { kind: plugin, name: norm }
     to: [{ kind: plugin, name: enrich }]
   - from: { kind: plugin, name: enrich }
-    to: [{ kind: plugin, name: gate }]
-  - from: { kind: plugin, name: gate }
+    to: [{ kind: plugin, name: facts }]
+  - from: { kind: plugin, name: facts }
     to: [{ kind: plugin, name: window }]
   - from: { kind: plugin, name: window }
+    to: [{ kind: inference, name: screen }]
+  - from: { kind: inference, name: screen }
+    to: [{ kind: plugin, name: look }]
+  - from: { kind: plugin, name: look }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
     to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]

@@ -1,25 +1,21 @@
-//! Which records a model should read, decided from context, not statistics.
-//! Upstream plugins normalized the record (`_norm`) and decorated its address
-//! (`_ip`, from `examples/enrich`: country, ASN, hosting, Tor, VPN, ours). This
-//! plugin holds the org's profile from config (where its people are, who its
-//! members, services and keys are, which hosts its systems talk to, which
-//! assets are sensitive) and passes a record when:
-//!   - its kind is on the always-look list, or a hard rule names it (root
-//!     credentials, something opened to the world);
-//!   - its address is a Tor exit or a VPN; for a person, hosting or a country
-//!     the org is not in; for a service, anywhere but the org's cloud; for one
-//!     of the org's API keys, a network it does not call from;
-//!   - its principal is nobody the profile knows;
-//!   - it talks to a host the org's systems do not talk to;
-//!   - it touches an asset the profile marks sensitive.
-//! Each reason fires once per partition per hour of stream time. The reasons
-//! and the context they rest on land under `_gate`; everything else is dropped.
+//! What the org's profile and the address data say about a record, for the
+//! models downstream. Nothing is decided here and nothing is dropped: every
+//! record goes on with `_facts` attached. Upstream plugins normalized the
+//! record (`_norm`) and decorated its address (`_ip`, from `examples/enrich`:
+//! country, ASN, hosting, Tor, VPN, ours). This plugin holds the profile
+//! (where the people are, who the members, services and keys are, which hosts
+//! the systems talk to, which assets are sensitive, which kinds are watched)
+//! and writes what it knows:
+//!   - `principal`: `member`, `service`, `key`, or `unknown`;
+//!   - `ip`: the address as decorated; `key_known_network` for a key;
+//!   - `dest_known`, `sensitive_target`, `watch`, `root`, `world_open`;
+//!   - `notes`: the same, in sentences a model reads.
 //!
 //! The profile is `profile.yaml` in the plugin's data directory (`data:`),
-//! or the same keys under `plugins.gate.config`:
-//!   countries: [US]     cloud: aws
-//!   members: [...]      services: [...]      keys: {ak_1: [1.2.3.0/24]}
-//!   hosts: [...]        sensitive: [...]     ip: _norm.ip     # the field `enrich` decorated
+//! or the same keys under `plugins.facts.config`:
+//!   countries: [US]     cloud: aws       watch: [StopLogging, ...]
+//!   members: [...]      services: [...]  keys: {ak_1: [1.2.3.0/24]}
+//!   hosts: [...]        sensitive: [...] ip: _norm.ip     # the field `enrich` decorated
 
 wit_bindgen::generate!({
     path: ".tangent/wit",
@@ -35,55 +31,20 @@ use ipnet::IpNet;
 
 use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
 use serde_json::{json, Map, Value};
-use tangent::logs::log::{Logview, Scalar};
-use tangent::logs::{config, state};
+use tangent::logs::log::Logview;
+use tangent::logs::config;
 
 struct Component;
 
 export!(Component);
-
-const HOUR_MS: i64 = 3_600_000;
-
-/// Kinds a person looks at every time, however usual they are.
-const WATCH: &[&str] = &[
-    // CloudTrail
-    "StopLogging",
-    "DeleteTrail",
-    "PutBucketPolicy",
-    "PutBucketPublicAccessBlock",
-    "AuthorizeSecurityGroupIngress",
-    "ModifyDBSnapshotAttribute",
-    "CreateUser",
-    "CreateAccessKey",
-    "AttachUserPolicy",
-    // Okta
-    "user.mfa.factor.deactivate",
-    "system.api_token.create",
-    // GitHub audit log
-    "protected_branch.destroy",
-    "deploy_key.create",
-    "org.update_member",
-    "org.self_hosted_runner_register",
-    "repo.rename",
-    "repo.access",
-    "pull_request_target",
-    // Google Workspace
-    "EMAIL_FORWARDING_OUT_OF_DOMAIN",
-    // the app's own audit log
-    "member.role.changed",
-    "org.settings.changed",
-    "api_key.create",
-    "org.export.started",
-    // Hiro
-    "aws_api_call",
-    "step_failed",
-];
 
 /// Sources whose `_norm.actor` is a repository or nothing, not a principal.
 const NO_PRINCIPAL: &[&str] = &["hiro", "gha_ci", "runner_egress"];
 
 struct Profile {
     countries: BTreeSet<String>,
+    /// Kinds the org wants seen every time, however usual.
+    watch: BTreeSet<String>,
     members: BTreeSet<String>,
     services: BTreeSet<String>,
     /// The org's API keys and the networks each calls from (`keys: {ak_1: [1.2.3.0/24]}`;
@@ -151,7 +112,7 @@ fn profile_file() -> Option<Value> {
     match serde_yaml::from_str::<Value>(&text) {
         Ok(v) => Some(v),
         Err(e) => {
-            eprintln!("gate: profile.yaml: {e}");
+            eprintln!("facts: profile.yaml: {e}");
             None
         }
     }
@@ -168,6 +129,7 @@ fn profile() -> &'static Profile {
     P.get_or_init(|| match profile_file() {
         Some(f) => Profile {
             countries: strs(&f["countries"]),
+            watch: strs(&f["watch"]),
             members: strs(&f["members"]),
             services: strs(&f["services"]),
             keys: match &f["keys"] {
@@ -184,6 +146,7 @@ fn profile() -> &'static Profile {
         },
         None => Profile {
             countries: list_setting("countries"),
+            watch: list_setting("watch"),
             members: list_setting("members"),
             services: list_setting("services"),
             keys: keys_setting(),
@@ -271,9 +234,9 @@ fn principal(p: &Profile, actor: &str) -> &'static str {
     }
 }
 
-/// Why a model should read this record, if it should, and the context the
-/// reasons rest on.
-fn judge_worthy(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, String)>) {
+/// What the profile knows about this record, and the notes a model reads it
+/// with. The second element is (sentence, class); only the sentences go on.
+fn facts_of(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, String)>) {
     let mut facts = Map::new();
     let mut reasons: Vec<(String, String)> = Vec::new();
     let source = rec["source"].as_str().unwrap_or("");
@@ -282,14 +245,17 @@ fn judge_worthy(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, S
     let dest = lookup(rec, "_norm.dest").and_then(text);
     let target = lookup(rec, "_norm.target").and_then(text);
 
-    if WATCH.contains(&kind.as_str()) {
-        reasons.push((format!("watch {kind}"), format!("watch:{kind}")));
+    if p.watch.contains(&kind) {
+        facts.insert("watch".into(), json!(true));
+        reasons.push((format!("{kind} is a kind the org watches every time"), format!("watch:{kind}")));
     }
     if rec["userIdentity"]["type"].as_str() == Some("Root") {
-        reasons.push(("rule: AWS root credentials used".into(), "rule:root".into()));
+        facts.insert("root".into(), json!(true));
+        reasons.push(("AWS root credentials used".into(), "root".into()));
     }
     if rec["requestParameters"].to_string().contains("0.0.0.0/0") {
-        reasons.push(("rule: opened to 0.0.0.0/0".into(), "rule:world".into()));
+        facts.insert("world_open".into(), json!(true));
+        reasons.push(("opened to 0.0.0.0/0".into(), "world".into()));
     }
 
     // The principal: known to the profile, or nobody it knows.
@@ -407,8 +373,8 @@ fn judge_worthy(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, S
 impl Guest for Component {
     fn metadata() -> Meta {
         Meta {
-            name: "gate".to_string(),
-            version: "0.2.0".to_string(),
+            name: "facts".to_string(),
+            version: "0.1.0".to_string(),
         }
     }
 
@@ -425,25 +391,10 @@ impl Guest for Component {
         let mut out = Vec::new();
         for lv in input {
             let mut rec: Value = serde_json::from_str(&lv.log()).map_err(|e| e.to_string())?;
-            let ts = rec["ts"].as_str().and_then(parse_ts).unwrap_or(0);
-            let (facts, reasons) = judge_worthy(p, &rec);
-            let mut fresh = Vec::new();
-            for (text, class) in reasons {
-                // Once an hour of stream time: the key holds when it last fired.
-                let key = format!("gated:{class}");
-                let fired = match state::get(&key)? {
-                    Some(Scalar::Int(last)) => ts - last < HOUR_MS,
-                    _ => false,
-                };
-                if !fired {
-                    state::set(&key, &Scalar::Int(ts), None)?;
-                    fresh.push(text);
-                }
-            }
-            if fresh.is_empty() {
-                continue;
-            }
-            rec["_gate"] = json!({"reasons": fresh, "facts": facts});
+            let (mut facts, notes) = facts_of(p, &rec);
+            let notes: Vec<String> = notes.into_iter().map(|(text, _)| text).collect();
+            facts.insert("notes".into(), json!(notes));
+            rec["_facts"] = Value::Object(facts);
             out.extend(serde_json::to_vec(&rec).map_err(|e| e.to_string())?);
             out.push(b'\n');
         }

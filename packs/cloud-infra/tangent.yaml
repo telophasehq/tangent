@@ -1,12 +1,13 @@
-# cloud-infra: your own infrastructure's logs, read by a model only when context
-# says a person should look.
+# cloud-infra: your own infrastructure's logs. A small model reads every record
+# in its context and marks what a larger one should judge; a person reads the
+# verdicts. No rule decides anything.
 #
 #   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
-#   make test       the cases in cases/ through norm, gate and window; no model needed
+#   make test       the cases in cases/ through norm, facts and window; no model needed
 #   make run        the pipeline: reads CloudTrail, GitHub, Okta and Workspace for the credentials
 #                   you export (see the Makefile); anything else as NDJSON on :9400
 #
-# Edit profile/profile.yaml first: it is everything the gate knows about you.
+# Edit profile/profile.yaml first: it is everything the models know about you.
 runtime:
   workers: 2
   plugins_path: plugins/
@@ -61,13 +62,13 @@ plugins:
     config:
       fields: [_norm.ip]
       ours: [10.0.0.0/8]        # your own ranges: office, VPN, CI egress
-  gate:                         # the profile decides what the judge reads; once per reason per hour
+  facts:                        # what the profile knows about the record; nothing decided, nothing dropped
     module_type: rust
-    path: gate
+    path: facts
     data: profile
     tests:
-      - input: tests/gate/input.json
-        expected: tests/gate/expected.json
+      - input: tests/facts/input.json
+        expected: tests/facts/expected.json
   window:                       # the actor's last day and the org's last hour, from retained rows
     module_type: rust
     path: window
@@ -79,13 +80,29 @@ plugins:
     tests:
       - input: tests/window/input.json
         expected: tests/window/expected.json
+  look:                         # keeps what the screen marked, and what it could not read
+    module_type: rust
+    path: look
   flagged:                      # keeps what the judge flagged, and what it could not read
     module_type: rust
     path: ../../examples/inference-local/flagged
 
 inference:
-  judge:
+  screen:                       # every record, with its facts and history: worth the judge's time, or not
     backend: openai             # any OpenAI-compatible endpoint; see the Makefile for the defaults
+    url: ${JUDGE_URL}
+    model: ${JUDGE_MODEL}
+    api_key: ${JUDGE_API_KEY}
+    prompt_file: screen.md
+    schema_file: screen.schema.json
+    max_tokens: 16
+    timeout_ms: 60000
+    concurrency: 4
+    extra:
+      chat_template_kwargs:
+        enable_thinking: false
+  judge:                        # what the screen passed: the verdict a person reads
+    backend: openai
     url: ${JUDGE_URL}
     model: ${JUDGE_MODEL}
     api_key: ${JUDGE_API_KEY}
@@ -123,10 +140,14 @@ dag:
   - from: { kind: plugin, name: norm }
     to: [{ kind: plugin, name: enrich }]
   - from: { kind: plugin, name: enrich }
-    to: [{ kind: plugin, name: gate }]
-  - from: { kind: plugin, name: gate }
+    to: [{ kind: plugin, name: facts }]
+  - from: { kind: plugin, name: facts }
     to: [{ kind: plugin, name: window }]
   - from: { kind: plugin, name: window }
+    to: [{ kind: inference, name: screen }]
+  - from: { kind: inference, name: screen }
+    to: [{ kind: plugin, name: look }]
+  - from: { kind: plugin, name: look }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
     to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]

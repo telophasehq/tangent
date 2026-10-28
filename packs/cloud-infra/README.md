@@ -1,27 +1,28 @@
 # cloud-infra
 
-Your own infrastructure's logs, read by a model only when context says a
-person should look. Install, point your logs at it, fill in one file about
+Your own infrastructure's logs, every record read by a small model in its
+context, the ones it marks judged by a larger one, the verdicts read by a person. Install, point your logs at it, fill in one file about
 your company, run.
 
 ```
-CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ gate ──▶ window ──▶ judge ──▶ alerts.ndjson
+CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ facts ──▶ window ──▶ screen ──▶ judge ──▶ alerts.ndjson
 ```
 
 - **norm** puts every source's shape into one: `_norm.{actor, org, kind, ip, country, dest, target}`.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
-- **gate** decides, from your profile, which records a model reads: a kind on the always-look list, a hard rule (root credentials, something opened to the world), a person on hosting or abroad, a service outside your cloud, an API key off its networks, a principal you do not know, a host your systems do not talk to, a sensitive asset. Once per reason per hour. No statistics: nothing here counts, averages or learns.
-- **window** gives the judge the actor's last day and the org's last hour, read back from the runtime's retained rows.
+- **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
+- **window** attaches the actor's last day and the org's last hour, one line per event, read back from the runtime's retained rows.
+- **screen** is the first model call, on every record: with its facts and history, is this worth the judge's time? It answers `{"look": true|false}` and errs on the side of yes. **look** keeps what it marked. No rule decides what a model reads; the profile is context, not a rulebook.
 - **judge** is any OpenAI-compatible model with [judge.md](judge.md) as its brief. It adds a verdict; **flagged** keeps the ones a person should see.
 
-On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the gate sends the model about 0.4% of records; the model's recall on the cases is in [RESULTS](#what-it-catches).
+On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the screen's pass rate and the judge's recall are in [RESULTS](#what-it-catches).
 
 ## Install and run
 
 ```bash
 make setup          # Rust WASM toolchain; GeoLite2, cloud ranges, Tor exits into examples/enrich/data
 $EDITOR profile/profile.yaml
-make test           # the cases through norm, gate and window; no model needed
+make test           # the cases through norm, facts and window; no model needed
 make run            # listens on :9400 for NDJSON records
 ```
 
@@ -48,7 +49,7 @@ Anything else (CI logs, runner egress, a forwarder for a source not listed) is o
 
 ## The profile
 
-[profile/profile.yaml](profile/profile.yaml) is every fact about your company that no log carries, and it is the whole gate:
+[profile/profile.yaml](profile/profile.yaml) is every fact about your company that no log carries; the models read it as `_facts`:
 
 | key | what it is | what it decides |
 |---|---|---|
@@ -69,7 +70,7 @@ The file ships filled in for the fictional company the cases describe, so `make 
 
 Measured with a local 30B model as judge over the cases and 38 days of synthetic ordinary traffic: 0.4% of records reach the model, 38 of the 40 positives across both packs are flagged, 2 of 11 negatives, 3 ordinary records in 38 days. The two misses are a mass push by a personal access token (a member, a home address, nothing contextual about one push) and a typosquatted dependency (nothing about one PR is new). The negatives that flag are an admin's monthly export, which is on the always-look list, and a key rotation that the local model misreads.
 
-`make test` runs the cases through norm, gate and window and compares with [tests/](tests/); it needs no model and runs in CI.
+`make test` runs the cases through norm, facts and window and compares with [tests/](tests/); it needs no model and runs in CI.
 
 ## Files
 
@@ -77,7 +78,7 @@ Measured with a local 30B model as judge over the cases and 38 days of synthetic
 tangent.yaml          the pipeline
 profile/profile.yaml  your company (edit this)
 judge.md              the model's brief
-norm/ gate/ window/   the plugins, Rust, compiled to WASM by make setup
+norm/ facts/ window/ look/   the plugins, Rust, compiled to WASM by make setup
 cases/                the sequences, one directory each: case.yaml + events.ndjson
 tests/                fixtures for make test
 ```

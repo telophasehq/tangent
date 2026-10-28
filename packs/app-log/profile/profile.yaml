@@ -10,3 +10,32 @@ keys:
   ak_c4d: [54.240.197.233]
 hosts: [api.github.com, registry.npmjs.org, sts.amazonaws.com, vault.acme.internal, "*.acme.internal", api.anthropic.com, api.postmarkapp.com]
 sensitive: [acme-customer-exports, prod-db]
+
+# Kinds a person wants seen every time, however usual. A fact for the models,
+# not a rule: the screen still decides.
+watch:
+  - StopLogging                        # CloudTrail
+  - DeleteTrail
+  - PutBucketPolicy
+  - PutBucketPublicAccessBlock
+  - AuthorizeSecurityGroupIngress
+  - ModifyDBSnapshotAttribute
+  - CreateUser
+  - CreateAccessKey
+  - AttachUserPolicy
+  - user.mfa.factor.deactivate         # Okta
+  - system.api_token.create
+  - protected_branch.destroy           # GitHub audit log
+  - deploy_key.create
+  - org.update_member
+  - org.self_hosted_runner_register
+  - repo.rename
+  - repo.access
+  - pull_request_target
+  - EMAIL_FORWARDING_OUT_OF_DOMAIN     # Google Workspace
+  - member.role.changed                # the product's own audit log
+  - org.settings.changed
+  - api_key.create
+  - org.export.started
+  - aws_api_call                       # Hiro
+  - step_failed
