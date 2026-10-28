@@ -304,7 +304,9 @@ impl InferenceNode {
         Ok(value)
     }
 
-    /// One request: the reply's text, or why there is none.
+    /// One request: the reply's text, or why there is none. How the model
+    /// stopped (`stop`, `length`) is logged, since a reply cut short reads as
+    /// broken JSON and the reason matters.
     async fn call(&self, user: String, batch: Option<usize>) -> Result<String> {
         let reply = tokio::time::timeout(
             Duration::from_millis(self.cfg.timeout_ms),
@@ -329,6 +331,22 @@ impl InferenceNode {
                 "reply has no text (finish: {:?}; the model may have spent its budget thinking)",
                 reply.finish_reason()
             );
+        }
+        tracing::debug!(
+            node = %self.name,
+            finish = ?reply.finish_reason(),
+            chars = text.len(),
+            "reply"
+        );
+        if let Some(finish) = reply.finish_reason() {
+            if format!("{finish:?}").to_ascii_lowercase().contains("length") {
+                tracing::warn!(
+                    node = %self.name,
+                    chars = text.len(),
+                    "reply cut off at the token budget (max_tokens {} per record)",
+                    self.cfg.max_tokens
+                );
+            }
         }
         Ok(text)
     }

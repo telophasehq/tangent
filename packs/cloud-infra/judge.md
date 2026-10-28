@@ -19,4 +19,4 @@ Do not flag what the context itself explains: a deploy and its health checks, in
 Reply with only a JSON object, no prose before or after:
 {"flag": true or false,
  "one_line": what happened, specific, under 120 characters,
- "why": one or two sentences naming the events that decided it; when flagging, say what the engineer should check first}
+ "why": when flagging, one or two sentences naming the events that decided it and what the engineer should check first; when not flagging, a few words, nothing more}
