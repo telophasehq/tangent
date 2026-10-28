@@ -236,11 +236,13 @@ impl InferenceNode {
         let preamble = match batch {
             None => self.prompt.clone(),
             Some(n) => format!(
-                "{}\n\nThis request carries {n} records, one JSON object per line, each with its index `i` (0 to {}). \
-                 Reply with one JSON object, {{\"answers\": [...]}}, holding exactly {n} answers in the same order: \
-                 answers[k] is your answer for the record with i = k, shaped as described above, and nothing else.",
+                "{}\n\nThis request carries {n} records, one JSON object per line, each with its index `i` (0 to {last}). \
+                 Reply with one JSON object, {{\"answers\": [...]}}, holding exactly {n} answers, one per record in \
+                 the same order. Each answer starts with the record's index, {{\"i\": k, ...}}, then the fields described \
+                 above, and nothing else. Keep going through every record: the reply is not finished until the answer \
+                 with \"i\": {last} is written, then close the array and the object.",
                 self.prompt.trim_end(),
-                n.saturating_sub(1)
+                last = n.saturating_sub(1)
             ),
         };
         // `max_tokens` is per record: a batch of n may say n times as much.
