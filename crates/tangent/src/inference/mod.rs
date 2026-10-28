@@ -490,12 +490,26 @@ fn spread(reply: Value, n: usize) -> Vec<Value> {
         .collect()
 }
 
-/// `{"answers": [item, item, ...]}`, each `item`. The count is in the
-/// prompt, not the schema: backends that enforce schemas reject array
-/// bounds (Bedrock's structured output does), and a short reply is caught
-/// when the answers are spread over the records anyway.
+/// `{"answers": [item, item, ...]}`, each `item` plus its record's index
+/// `i`, so an answer says which record it is for and a skipped record
+/// costs only itself (by position, every answer after it would land on
+/// the wrong record). The count is in the prompt, not the schema: backends
+/// that enforce schemas reject array bounds (Bedrock's structured output
+/// does), and a short reply is caught when the answers are spread anyway.
 fn answers_schema(item: &schemars::Schema, _n: usize) -> schemars::Schema {
-    let item = serde_json::to_value(item).unwrap_or(Value::Null);
+    let mut item = serde_json::to_value(item).unwrap_or(Value::Null);
+    if let Some(obj) = item.as_object_mut() {
+        if let Some(props) = obj.get_mut("properties").and_then(Value::as_object_mut) {
+            props.insert("i".into(), json!({"type": "integer", "description": "the record's index"}));
+        }
+        match obj.get_mut("required").and_then(Value::as_array_mut) {
+            Some(req) if !req.iter().any(|r| r == "i") => req.push(json!("i")),
+            Some(_) => {}
+            None => {
+                obj.insert("required".into(), json!(["i"]));
+            }
+        }
+    }
     let wrapped = json!({
         "title": "Answers",
         "type": "object",
@@ -1006,6 +1020,9 @@ mod tests {
         assert_eq!(req["response_format"]["json_schema"]["name"], "Answers");
         assert_eq!(schema["properties"]["answers"]["items"]["properties"]["flag"]["type"], "boolean", "{schema}");
         assert!(schema["properties"]["answers"].get("minItems").is_none(), "no array bounds: backends reject them");
+        let item = &schema["properties"]["answers"]["items"];
+        assert_eq!(item["properties"]["i"]["type"], "integer", "each answer carries its record's index: {item}");
+        assert!(item["required"].as_array().unwrap().iter().any(|r| r == "i"), "{item}");
         let _ = std::fs::remove_dir_all(dir);
     }
 
