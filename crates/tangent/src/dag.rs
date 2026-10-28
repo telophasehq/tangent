@@ -103,6 +103,28 @@ impl DagRuntime {
 
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
+        // An inference node's `batch` is a record count the worker gathers
+        // towards, waiting `batch_age_ms` for it; the runtime's byte and age
+        // limits are floors, not the batch. The byte cap grows with the count
+        // so it only bounds memory.
+        let batch_records = cfg
+            .inference
+            .values()
+            .map(|n| n.batch.max(1))
+            .max()
+            .unwrap_or(1);
+        let (worker_batch_size, worker_batch_age) = if batch_records > 1 {
+            let wait = cfg
+                .inference
+                .values()
+                .filter(|n| n.batch > 1)
+                .map(|n| Duration::from_millis(n.batch_age_ms))
+                .max()
+                .unwrap_or(batch_age);
+            (batch_size.max(batch_records * 16 * 1024), batch_age.max(wait))
+        } else {
+            (batch_size, batch_age)
+        };
 
         // Every worker hosts every plugin and every inference node, and walks
         // the DAG for the records it is handed.
@@ -113,8 +135,9 @@ impl DagRuntime {
                 components,
                 &cfg.inference,
                 config_dir,
-                batch_size,
-                batch_age,
+                worker_batch_size,
+                worker_batch_age,
+                batch_records,
                 Arc::clone(&router),
                 cfg.runtime.partition.clone(),
                 Arc::clone(&store),

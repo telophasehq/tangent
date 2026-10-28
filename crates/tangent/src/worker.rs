@@ -166,6 +166,9 @@ pub struct Worker {
     inference: HashMap<Arc<str>, InferenceNode>,
     batch_max_size: usize,
     batch_max_age: Duration,
+    /// Records a batch gathers towards before it is judged; 1 when no
+    /// inference node batches.
+    batch_target_records: usize,
     router: Arc<Router>,
     /// With a partition key configured, a batch is handed to each plugin one
     /// partition at a time, so the guest's state is scoped to that partition.
@@ -340,6 +343,14 @@ impl Worker {
                             acks.push(a);
                         }
                         batch.push(rec);
+                        // A batch the size an inference node asked for does
+                        // not wait for the deadline.
+                        if self.batch_target_records > 1 && batch.len() >= self.batch_target_records {
+                            self.flush_batch(&mut batch, &mut acks, &mut total_size)
+                                .await?;
+                            deadline = TokioInstant::now() + self.batch_max_age;
+                            sleeper.as_mut().reset(deadline);
+                        }
                     }
                 }
             }
@@ -693,6 +704,7 @@ impl WorkerPool {
         config_dir: &Path,
         batch_max_size: usize,
         batch_max_age: Duration,
+        batch_target_records: usize,
         router: Arc<Router>,
         partition: Option<PartitionConfig>,
         store: Arc<dyn StateStore>,
@@ -754,6 +766,7 @@ impl WorkerPool {
                 inference: nodes,
                 batch_max_size,
                 batch_max_age,
+                batch_target_records,
                 router: Arc::clone(&router),
                 partition: partition.clone(),
                 in_flight: Arc::clone(&in_flight),
@@ -1000,6 +1013,7 @@ mod tests {
             inference,
             batch_max_size: 1 << 20,
             batch_max_age: Duration::from_millis(20),
+            batch_target_records: 1,
             router: Arc::clone(&router),
             partition: None,
             in_flight: Arc::clone(&in_flight),
@@ -1115,6 +1129,7 @@ mod tests {
                 &dir,
                 1 << 20,
                 Duration::from_millis(20),
+                1,
                 Arc::clone(&router),
                 Some(PartitionConfig {
                     key: vec!["judge.flag".into()],

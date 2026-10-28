@@ -701,6 +701,7 @@ pub(crate) mod stub {
             fields: Vec::new(),
             batch: 1,
             batch_bytes: 32_768,
+            batch_age_ms: 1_000,
             context: Vec::new(),
             concurrency: 2,
             timeout_ms: 5_000,
