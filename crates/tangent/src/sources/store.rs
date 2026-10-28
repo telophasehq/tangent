@@ -34,6 +34,14 @@ struct Rules {
     idle: i64,
     /// Nothing before this is judged, on a partition's first sight.
     since: Option<i64>,
+    /// When set, only buffers overlapping one of these are judged.
+    ranges: Vec<(i64, i64)>,
+}
+
+impl Rules {
+    fn wanted(&self, start: i64, end: i64) -> bool {
+        self.ranges.is_empty() || self.ranges.iter().any(|&(a, b)| start < b && a < end)
+    }
 }
 
 /// One partition, as the source knows it while running. `closed` and the
@@ -103,7 +111,16 @@ pub async fn run_consumer(
         ),
         None => None,
     };
-    let rules = Rules { span, late, idle, since };
+    let mut ranges = Vec::with_capacity(cfg.ranges.len());
+    for r in &cfg.ranges {
+        let at = |s: &str| {
+            chrono::DateTime::parse_from_rfc3339(s.trim())
+                .map(|t| t.timestamp_millis())
+                .map_err(|e| anyhow!("store source: range time {s:?}: {e}"))
+        };
+        ranges.push((at(&r.from)?, at(&r.to)?));
+    }
+    let rules = Rules { span, late, idle, since, ranges };
     let from = NodeRef::Source {
         name: Arc::clone(&name),
     };
@@ -202,9 +219,14 @@ async fn tick(
         }
 
         while state.next + rules.span <= due_end {
-            let Ok(permit) = Arc::clone(sem).try_acquire_owned() else { break };
             let start = state.next;
             let end = start + rules.span;
+            if !rules.wanted(start, end) {
+                state.next = end;
+                state.pending.insert(start, true);
+                continue;
+            }
+            let Ok(permit) = Arc::clone(sem).try_acquire_owned() else { break };
             state.next = end;
             // Recorded before the read, so a record stored from now on for
             // this window is marked late by the sink rather than lost.

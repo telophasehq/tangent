@@ -44,9 +44,21 @@ pub struct StoreSourceConfig {
     /// of one stretch, sets it.
     #[serde(default)]
     pub since: Option<String>,
+    /// Judge only the buffers that overlap one of these spans of time
+    /// (`{from, to}`, RFC 3339); the rest are passed over as if empty.
+    /// Judging one incident again after a change to the brief, or an
+    /// evaluation that needs a sample, sets it.
+    #[serde(default)]
+    pub ranges: Vec<TimeRange>,
     /// Buffers read and not yet done, across partitions.
     #[serde(default = "default_in_flight")]
     pub in_flight: usize,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TimeRange {
+    pub from: String,
+    pub to: String,
 }
 
 fn default_late() -> String {
