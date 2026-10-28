@@ -149,7 +149,11 @@ impl InferenceNode {
     }
 
     /// Several records through the model in one request: each gets its
-    /// answer, or the error, under the node's name, in the order given.
+    /// answer, or the error, under the node's name, in the order given. A
+    /// reply that cannot be read (a model that loops until its budget, or
+    /// stops partway) is not the records' fault: the batch is split in two
+    /// and each half asked again, down to single records, which fail on
+    /// their own terms.
     async fn annotate_batch(&self, records: Vec<Value>) -> Vec<Value> {
         let n = records.len();
         let start = Instant::now();
@@ -161,6 +165,18 @@ impl InferenceNode {
             .join("\n");
         let answers = match self.ask(user, Some(n)).await {
             Ok(reply) => spread(reply, n),
+            Err(e) if n > 1 && !e.to_string().contains("no reply within") => {
+                tracing::warn!(
+                    node = %self.name,
+                    records = n,
+                    "batched reply unreadable, asking again as two halves: {e:#}"
+                );
+                let mut records = records;
+                let tail = records.split_off(n / 2);
+                let mut out = Box::pin(self.annotate_batch(records)).await;
+                out.extend(Box::pin(self.annotate_batch(tail)).await);
+                return out;
+            }
             Err(e) => {
                 tracing::warn!(node = %self.name, records = n, "inference failed: {e:#}");
                 vec![json!({"error": format!("{e:#}")}); n]
@@ -527,6 +543,10 @@ pub(crate) mod stub {
                     let batched = text_of(&req["messages"][0]["content"]).contains("This request carries");
                     let content = if body.contains("prose") {
                         "Looks fine to me, nothing to flag.".to_string()
+                    } else if batched && text_of(&req["messages"][1]["content"]).matches("loop").count() >= 3 {
+                        // Three or more "loop" records in one batch: the
+                        // model degenerates, as small ones do.
+                        "{\"answers\": [{\"flag\": false, \"one_line\": \"a7a7a7a7a7a7a7a7".to_string()
                     } else if batched {
                         // One answer per line of the user message; "short"
                         // anywhere in the batch drops the last answer.
@@ -789,6 +809,23 @@ mod tests {
         assert_eq!(lines[0]["i"], 0);
         assert_eq!(lines[1]["i"], 1);
         assert_eq!(lines[1]["id"], 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_batched_reply_is_asked_again_in_halves() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("halves");
+        let mut cfg = stub::config(&url);
+        cfg.batch = 8;
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        // Four "loop" records in one batch degenerate; two per half do not.
+        let outs = node
+            .annotate_all((1..=4).map(|i| json!({"id": i, "msg": format!("loop {i} bad")})).collect())
+            .await;
+        assert_eq!(outs.len(), 4);
+        assert!(outs.iter().all(|o| o["judge"]["flag"] == true), "every record got its answer: {outs:?}");
+        assert_eq!(seen.lock().await.len(), 3, "one failed request, then one per half");
         let _ = std::fs::remove_dir_all(dir);
     }
 

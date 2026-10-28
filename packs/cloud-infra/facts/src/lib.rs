@@ -158,48 +158,7 @@ fn profile() -> &'static Profile {
     })
 }
 
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146097 + doe - 719468
-}
 
-/// `2026-10-20T13:00:00Z` (fractions and offsets allowed) as epoch ms.
-fn parse_ts(s: &str) -> Option<i64> {
-    let s = s.trim();
-    if let Ok(n) = s.parse::<f64>() {
-        return Some(if n.abs() > 1e11 { n as i64 } else { (n * 1000.0) as i64 });
-    }
-    let num = |a: usize, l: usize| s.get(a..a + l)?.parse::<i64>().ok();
-    let (y, mo, d) = (num(0, 4)?, num(5, 2)?, num(8, 2)?);
-    let (h, mi, se) = (num(11, 2)?, num(14, 2)?, num(17, 2)?);
-    let b = s.as_bytes();
-    let mut i = 19;
-    let mut ms = 0;
-    if b.get(i) == Some(&b'.') {
-        i += 1;
-        let start = i;
-        while i < b.len() && b[i].is_ascii_digit() {
-            i += 1;
-        }
-        let frac3: String = format!("{:0<3}", &s[start..i]).chars().take(3).collect();
-        ms = frac3.parse::<i64>().unwrap_or(0);
-    }
-    let offset = match b.get(i) {
-        None | Some(b'Z') | Some(b'z') => 0,
-        Some(sign @ (b'+' | b'-')) => {
-            let oh = num(i + 1, 2)?;
-            let om = num(i + 4, 2)?;
-            (oh * 3600 + om * 60) * if *sign == b'+' { 1 } else { -1 }
-        }
-        _ => return None,
-    };
-    Some((days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + se - offset) * 1000 + ms)
-}
 
 fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
     if let Some(direct) = v.get(path) {

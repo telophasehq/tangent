@@ -1,0 +1,27 @@
+[
+ {
+  "ts": "2026-10-20T13:00:00Z",
+  "source": "google_workspace",
+  "id": {
+   "time": "2026-10-20T13:00:00Z",
+   "applicationName": "user_accounts"
+  },
+  "actor": {
+   "email": "cfo@acme.io",
+   "callerType": "USER"
+  },
+  "ipAddress": "185.220.101.4",
+  "events": [
+   {
+    "type": "email_forwarding_change",
+    "name": "EMAIL_FORWARDING_OUT_OF_DOMAIN",
+    "parameters": [
+     {
+      "name": "email_forwarding_destination_address",
+      "value": "acme.finance.backup@gmail.com"
+     }
+    ]
+   }
+  ]
+ }
+]

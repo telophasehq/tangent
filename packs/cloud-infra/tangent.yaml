@@ -48,7 +48,35 @@ sources:
     bind_address: 0.0.0.0:9400
 
 plugins:
-  norm:                         # every source's shape into _norm.{actor, org, kind, ip, country, dest, target}
+  cloudtrail:                 # CloudTrail records: `_norm`, and the record trimmed to what it means
+    module_type: rust
+    path: providers/cloudtrail
+    data: profile
+    tests:
+      - input: tests/cloudtrail/input.json
+        expected: tests/cloudtrail/expected.json
+  github_audit:               # the org's audit log, the same way
+    module_type: rust
+    path: providers/github_audit
+    data: profile
+    tests:
+      - input: tests/github_audit/input.json
+        expected: tests/github_audit/expected.json
+  okta:                       # the System Log, Okta's risk signals kept
+    module_type: rust
+    path: providers/okta
+    data: profile
+    tests:
+      - input: tests/okta/input.json
+        expected: tests/okta/expected.json
+  google_workspace:           # Reports API activity, parameters flattened
+    module_type: rust
+    path: providers/google_workspace
+    data: profile
+    tests:
+      - input: tests/google_workspace/input.json
+        expected: tests/google_workspace/expected.json
+  norm:                         # anything else's shape into _norm.{actor, org, kind, ip, country, dest, target}
     module_type: rust
     path: norm
     data: profile
@@ -114,15 +142,23 @@ sinks:
 
 dag:
   - from: { kind: source, name: cloudtrail }
-    to: [{ kind: plugin, name: norm }]
+    to: [{ kind: plugin, name: cloudtrail }]
   - from: { kind: source, name: github_audit }
-    to: [{ kind: plugin, name: norm }]
+    to: [{ kind: plugin, name: github_audit }]
   - from: { kind: source, name: okta }
-    to: [{ kind: plugin, name: norm }]
+    to: [{ kind: plugin, name: okta }]
   - from: { kind: source, name: google_workspace }
-    to: [{ kind: plugin, name: norm }]
+    to: [{ kind: plugin, name: google_workspace }]
   - from: { kind: source, name: events }
     to: [{ kind: plugin, name: norm }]
+  - from: { kind: plugin, name: cloudtrail }
+    to: [{ kind: plugin, name: enrich }]
+  - from: { kind: plugin, name: github_audit }
+    to: [{ kind: plugin, name: enrich }]
+  - from: { kind: plugin, name: okta }
+    to: [{ kind: plugin, name: enrich }]
+  - from: { kind: plugin, name: google_workspace }
+    to: [{ kind: plugin, name: enrich }]
   - from: { kind: plugin, name: norm }
     to: [{ kind: plugin, name: enrich }]
   - from: { kind: plugin, name: enrich }

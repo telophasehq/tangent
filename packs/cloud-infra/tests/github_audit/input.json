@@ -1,0 +1,58 @@
+[
+ {
+  "ts": "2026-10-20T13:03:00Z",
+  "source": "github_audit",
+  "@timestamp": "2026-10-20T13:03:00Z",
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "org": "acme",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/payments-api"
+ },
+ {
+  "ts": "2026-10-20T13:03:18Z",
+  "source": "github_audit",
+  "@timestamp": "2026-10-20T13:03:18Z",
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "org": "acme",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/billing"
+ },
+ {
+  "ts": "2026-10-20T13:03:36Z",
+  "source": "github_audit",
+  "@timestamp": "2026-10-20T13:03:36Z",
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "org": "acme",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/infra"
+ },
+ {
+  "ts": "2026-10-20T13:03:54Z",
+  "source": "github_audit",
+  "@timestamp": "2026-10-20T13:03:54Z",
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "org": "acme",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/web"
+ }
+]

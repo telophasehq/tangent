@@ -1,8 +1,12 @@
 //! Normalizes the corpus' eight source shapes into `_norm`: the fields the
 //! window nodes key on (`actor`, `org`), count by (`kind`) and track for
-//! first sightings (`ip`, `country`, `dest`, `target`). The record itself is
-//! left as it came; `_norm` is added beside it. Which field means what for
-//! each source is code here. One thing is config: which sources are the
+//! first sightings (`ip`, `country`, `dest`, `target`), for the shapes that
+//! are not a provider's API: a product's audit log, an agent's logs, CI
+//! lines. The sources read straight from their APIs (CloudTrail, the GitHub
+//! audit log, Okta, Google Workspace) have a plugin each under `providers/`,
+//! which also trims the record; this one leaves the record as it came and
+//! adds `_norm` beside it. Which field means what for each source is code
+//! here. One thing is config: which sources are the
 //! company's own infrastructure. A product's logs carry a customer's tenant
 //! id, and that is their partition: one per customer. The company's own
 //! logs (its cloud accounts, its GitHub org, its identity provider, its CI)
@@ -100,90 +104,10 @@ fn org_of_repo(repo: &str) -> Option<String> {
     repo.split('/').next().map(str::to_string)
 }
 
-/// Who acted, as CloudTrail records it. An IAM user by name. A role session
-/// by the role, since the session name is new every time, except an SSO
-/// role, where the session name is the person. AWS acting for you (a
-/// service-linked role, or a service calling as itself) is nobody: there is
-/// no principal to know or not know. Another account assuming a role here is
-/// `account:<id>`.
-fn cloudtrail_actor(lv: &Logview) -> Option<String> {
-    let kind = get(lv, "userIdentity.type").unwrap_or_default();
-    match kind.as_str() {
-        "AssumedRole" => {
-            let Some(role) = get(lv, "userIdentity.sessionContext.sessionIssuer.userName") else {
-                // No session context (the corpus' shape): the name, else the ARN.
-                return get(lv, "userIdentity.userName").or_else(|| get(lv, "userIdentity.arn"));
-            };
-            let issuer = get(lv, "userIdentity.sessionContext.sessionIssuer.arn").unwrap_or_default();
-            if issuer.contains("/aws-service-role/") {
-                return None;
-            }
-            if role.starts_with("AWSReservedSSO_") {
-                let arn = get(lv, "userIdentity.arn").unwrap_or_default();
-                if let Some(session) = arn.rsplit('/').next().filter(|s| !s.is_empty()) {
-                    return Some(session.to_string());
-                }
-            }
-            Some(role)
-        }
-        "AWSService" => None,
-        "AWSAccount" => get(lv, "userIdentity.accountId").map(|a| format!("account:{a}")),
-        "Root" => get(lv, "userIdentity.userName").or_else(|| Some("root".to_string())),
-        "" if get(lv, "userIdentity.invokedBy").is_some() => None,
-        _ => get(lv, "userIdentity.userName").or_else(|| get(lv, "userIdentity.arn")),
-    }
-}
-
 fn norm(lv: &Logview) -> Norm {
     let source = get(lv, "source").unwrap_or_default();
     let mut n = Norm::default();
     match source.as_str() {
-        // Okta and Workspace have no org field: it is the company's own tenant.
-        "okta" => {
-            n.actor = get(lv, "actor.alternateId");
-            n.org = Some("acme".to_string());
-            n.kind = get(lv, "eventType");
-            n.ip = get(lv, "client.ipAddress");
-            n.country = get(lv, "client.geographicalContext.country");
-            n.target = get(lv, "target[0].displayName");
-        }
-        "github_audit" => {
-            n.actor = get(lv, "actor");
-            n.org = get(lv, "org");
-            n.kind = get(lv, "action");
-            n.ip = get(lv, "actor_ip");
-            n.country = get(lv, "actor_location.country_code");
-            n.target = get(lv, "repo");
-        }
-        "cloudtrail" => {
-            n.actor = cloudtrail_actor(lv);
-            n.org = get(lv, "userIdentity.accountId");
-            n.kind = get(lv, "eventName");
-            // The address is the caller's, except when the caller is an AWS
-            // service (`ecs.amazonaws.com`, `AWS Internal`: not an address) or
-            // the identity broker: a federated sign-in is recorded from IAM
-            // Identity Center's address, not the person's.
-            n.ip = get(lv, "sourceIPAddress").filter(|ip| {
-                !ip.ends_with(".amazonaws.com")
-                    && ip != "AWS Internal"
-                    && !matches!(
-                        n.kind.as_deref(),
-                        Some("AssumeRoleWithSAML" | "AssumeRoleWithWebIdentity")
-                    )
-            });
-            // The object acted on, when it has a stable name. Snapshot ids
-            // and the like are new every day and would read as first sightings.
-            n.target = get(lv, "requestParameters.bucketName")
-                .or_else(|| get(lv, "requestParameters.roleArn"))
-                .or_else(|| get(lv, "requestParameters.userName"))
-                .or_else(|| get(lv, "requestParameters.groupId"));
-        }
-        "google_workspace" => {
-            n.actor = get(lv, "actor.email");
-            n.org = Some("acme".to_string());
-            n.kind = get(lv, "events[0].name");
-            n.ip = get(lv, "ipAddress");
-        }
         "app" => {
             n.actor = get(lv, "actor");
             n.org = get(lv, "org");
@@ -244,10 +168,15 @@ impl Guest for Component {
     }
 
     fn probe() -> Vec<Selector> {
+        // Every record with a `source`, except the providers' own plugins'.
+        let providers = ["cloudtrail", "github_audit", "okta", "google_workspace"];
         vec![Selector {
             any: Vec::new(),
             all: vec![Pred::Has("source".to_string())],
-            none: Vec::new(),
+            none: providers
+                .iter()
+                .map(|p| Pred::Eq(("source".to_string(), Scalar::Str((*p).to_string()))))
+                .collect(),
         }]
     }
 

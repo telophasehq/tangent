@@ -1,0 +1,427 @@
+[
+ {
+  "_norm": {
+   "actor": "root",
+   "ip": "98.51.100.23",
+   "kind": "ConsoleLogin",
+   "org": "acme"
+  },
+  "additionalEventData": {
+   "MFAUsed": "No"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ConsoleLogin",
+  "eventSource": "signin.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:00Z",
+  "requestParameters": {},
+  "responseElements": {
+   "ConsoleLogin": "Success"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "98.51.100.23",
+  "ts": "2026-10-20T13:00:00Z",
+  "userAgent": "Mozilla/5.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:root",
+   "type": "Root",
+   "userName": "root"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "deploy-bot",
+   "ip": "65.108.22.91",
+   "kind": "StopLogging",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "StopLogging",
+  "eventSource": "cloudtrail.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:00Z",
+  "requestParameters": {
+   "name": "arn:aws:cloudtrail:us-west-2:111122223333:trail/org-trail"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "65.108.22.91",
+  "ts": "2026-10-20T13:00:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetCallerIdentity",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetCallerIdentity",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:00Z",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:00:00Z",
+  "userAgent": "aws-cli/2.22.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "ListBuckets",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListBuckets",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:30Z",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:00:30Z",
+  "userAgent": "aws-cli/2.22.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetObject",
+   "org": "acme",
+   "target": "acme-customer-exports"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:00Z",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-00.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetObject",
+   "org": "acme",
+   "target": "acme-customer-exports"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:12Z",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-01.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:12Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetObject",
+   "org": "acme",
+   "target": "acme-customer-exports"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:24Z",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-02.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:24Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetObject",
+   "org": "acme",
+   "target": "acme-customer-exports"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:36Z",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-03.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:36Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetObject",
+   "org": "acme",
+   "target": "acme-customer-exports"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:48Z",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-04.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:48Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetObject",
+   "org": "acme",
+   "target": "acme-customer-exports"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:02:00Z",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-05.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:02:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetObject",
+   "org": "acme",
+   "target": "acme-customer-exports"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:02:12Z",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-06.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:02:12Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetObject",
+   "org": "acme",
+   "target": "acme-customer-exports"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:02:24Z",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-07.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:02:24Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "deploy-bot",
+   "ip": "185.224.128.17",
+   "kind": "GetCallerIdentity",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetCallerIdentity",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:11:00Z",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:11:00Z",
+  "userAgent": "aws-sdk-go/1.44",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "deploy-bot",
+   "ip": "185.224.128.17",
+   "kind": "ListBuckets",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListBuckets",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:11:30Z",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:11:30Z",
+  "userAgent": "aws-sdk-go/1.44",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "deploy-bot",
+   "ip": "185.224.128.17",
+   "kind": "ListSecrets",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListSecrets",
+  "eventSource": "secretsmanager.amazonaws.com",
+  "eventTime": "2026-10-20T13:12:00Z",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:12:00Z",
+  "userAgent": "aws-sdk-go/1.44",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "deploy-bot",
+   "ip": "185.224.128.17",
+   "kind": "GetSecretValue",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetSecretValue",
+  "eventSource": "secretsmanager.amazonaws.com",
+  "eventTime": "2026-10-20T13:12:30Z",
+  "requestParameters": {
+   "secretId": "prod/db/master"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:12:30Z",
+  "userAgent": "aws-sdk-go/1.44",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  }
+ }
+]

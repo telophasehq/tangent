@@ -5,10 +5,14 @@ in batches; a person reads what it flags. Install, point your logs at it, fill i
 your company, run.
 
 ```
-CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ facts ──▶ window ──▶ judge ──▶ alerts.ndjson
+CloudTrail ──▶ cloudtrail ─┐
+GitHub audit log ──▶ github_audit ─┤
+Okta ──▶ okta ─┼──▶ enrich ──▶ facts ──▶ window ──▶ judge ──▶ alerts.ndjson
+Google Workspace ──▶ google_workspace ─┤
+CI, anything else (TCP) ──▶ norm ─┘
 ```
 
-- **norm** puts every source's shape into one: `_norm.{actor, org, kind, ip, country, dest, target}`.
+- **A plugin per provider** ([providers/](providers/)) reads its source's records: it puts the shape into `_norm.{actor, org, kind, ip, country, dest, target}` and trims the record to what it means, dropping the provider's ids, hashes, protocol details and bulk, so the judge and the retained history carry a record a reader would keep. **norm** does the `_norm` half for anything else arriving over TCP (CI lines, a product's logs) and leaves those records as they came.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
 - **window** attaches the actor's last day and the org's last hour, one line per event, read back from the runtime's retained rows.
@@ -70,7 +74,7 @@ The file ships filled in for the fictional company the cases describe, so `make 
 
 Measured with a local 30B model as judge over the cases and 38 days of synthetic ordinary traffic: 0.4% of records reach the model, 38 of the 40 positives across both packs are flagged, 2 of 11 negatives, 3 ordinary records in 38 days. The two misses are a mass push by a personal access token (a member, a home address, nothing contextual about one push) and a typosquatted dependency (nothing about one PR is new). The negatives that flag are an admin's monthly export, which is on the always-look list, and a key rotation that the local model misreads.
 
-`make test` runs the cases through norm, facts and window and compares with [tests/](tests/); it needs no model and runs in CI.
+`make test` runs the cases through each provider's plugin or norm, then facts and window, and compares with [tests/](tests/); it needs no model and runs in CI.
 
 ## Files
 
@@ -78,7 +82,7 @@ Measured with a local 30B model as judge over the cases and 38 days of synthetic
 tangent.yaml          the pipeline
 profile/profile.yaml  your company (edit this)
 judge.md              the model's brief
-norm/ facts/ window/   the plugins, Rust, compiled to WASM by make setup
+providers/ norm/ facts/ window/   the plugins, Rust, compiled to WASM by make setup; providers/common is what they share
 cases/                the sequences, one directory each: case.yaml + events.ndjson
 tests/                fixtures for make test
 ```

@@ -1,0 +1,197 @@
+[
+ {
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "country": "US",
+   "ip": "67.180.22.4",
+   "kind": "user.session.start",
+   "org": "acme"
+  },
+  "actor": {
+   "alternateId": "oncall-frank@acme.io",
+   "displayName": "Oncall-Frank",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "Oakland",
+    "country": "US"
+   },
+   "ipAddress": "67.180.22.4",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-14T03:05:00Z",
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-14T03:05:00Z"
+ },
+ {
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "country": "US",
+   "ip": "67.180.22.4",
+   "kind": "user.session.start",
+   "org": "acme"
+  },
+  "actor": {
+   "alternateId": "oncall-frank@acme.io",
+   "displayName": "Oncall-Frank",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "Oakland",
+    "country": "US"
+   },
+   "ipAddress": "67.180.22.4",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-18T02:48:00Z",
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-18T02:48:00Z"
+ },
+ {
+  "_norm": {
+   "actor": "bob@acme.io",
+   "country": "US",
+   "ip": "73.162.14.9",
+   "kind": "user.session.start",
+   "org": "acme"
+  },
+  "actor": {
+   "alternateId": "bob@acme.io",
+   "displayName": "Bob",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "San Francisco",
+    "country": "US"
+   },
+   "ipAddress": "73.162.14.9",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-20T13:00:00Z",
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-20T13:00:00Z"
+ },
+ {
+  "_norm": {
+   "actor": "bob@acme.io",
+   "country": "SG",
+   "ip": "103.6.150.77",
+   "kind": "user.session.start",
+   "org": "acme"
+  },
+  "actor": {
+   "alternateId": "bob@acme.io",
+   "displayName": "Bob",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "Singapore",
+    "country": "SG"
+   },
+   "ipAddress": "103.6.150.77",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-20T13:22:00Z",
+  "securityContext": {
+   "asNumber": 63949,
+   "asOrg": "Akamai Connected Cloud",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-20T13:22:00Z"
+ },
+ {
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "country": "US",
+   "ip": "67.180.22.4",
+   "kind": "user.session.start",
+   "org": "acme"
+  },
+  "actor": {
+   "alternateId": "oncall-frank@acme.io",
+   "displayName": "Oncall-Frank",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "Oakland",
+    "country": "US"
+   },
+   "ipAddress": "67.180.22.4",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-22T03:12:00Z",
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-22T03:12:00Z"
+ }
+]
