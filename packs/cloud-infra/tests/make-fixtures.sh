@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regenerates tests/*/{input,expected}.json from a handful of cases by running
-# each stage once: raw events → a provider's plugin or norm → enrich → facts → window. Run after a
+# each stage once: raw events → a provider's plugin or norm → enrich → facts. Run after a
 # plugin changes, read the diff, commit it if it is what you meant.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -64,6 +64,4 @@ json.dump(rows, open("tests/normalized.json", "w"), indent=1)
 PY
 stage enrich tests/normalized.json     tests/facts/input.json
 stage facts  tests/facts/input.json    tests/facts/expected.json
-cp tests/facts/expected.json tests/window/input.json
-stage window tests/window/input.json   tests/window/expected.json
 echo "fixtures written; now: make test"

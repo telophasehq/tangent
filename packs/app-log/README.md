@@ -7,7 +7,7 @@ partition. Each customer gets their own history, their own window, their own
 judge.
 
 ```
-app audit log, agent logs ──▶ norm ──▶ enrich ──▶ facts ──▶ window ──▶ judge ──▶ alerts.ndjson
+app audit log, agent logs ──▶ norm ──▶ enrich ──▶ facts ──▶ store ──▶ windows ──▶ judge ──▶ alerts.ndjson
                                  (partition = the customer's tenant id)
 ```
 

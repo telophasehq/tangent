@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Ask a model about each record. The node sends `prompt_file` as the system
@@ -70,14 +71,12 @@ pub struct InferenceConfig {
     #[serde(default = "default_batch_age_ms")]
     pub batch_age_ms: u64,
 
-    /// Fields that are context for a request, not part of a record: a
-    /// window of history, say. Each holds views keyed by scope (`actor`,
-    /// `org`), each view with a `key` naming whose it is. Before a request
-    /// they are lifted off the records, one view per scope and key (the
-    /// latest, which covers the earlier), and written once ahead of the
-    /// records; afterwards they are gone from the records. `[_window]`.
-    #[serde(default)]
-    pub context: Vec<String>,
+    /// History to read the records with: before a request, the node reads
+    /// the stored records that came before the request's earliest one, from
+    /// the request's partition, and writes them once ahead of the records,
+    /// one view per scope and key. Nothing is attached to the records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<ContextConfig>,
 
     /// Requests in flight at once, per worker: the model sees at most
     /// `runtime.workers` times this from one node.
@@ -110,6 +109,43 @@ pub struct InferenceConfig {
     /// `reasoning_effort: low` for gpt-oss. These win over what the node sets.
     #[serde(default)]
     pub extra: Map<String, Value>,
+}
+
+/// What history a request is read with, from a `store` sink's records.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ContextConfig {
+    /// Where the `store` sink keeps records.
+    #[serde(default = "crate::sinks::store::default_namespace")]
+    pub namespace: String,
+    /// A view per scope: the records whose `field` has the value one of the
+    /// request's records has, e.g. `{actor: _norm.actor, org: _norm.org}`.
+    pub scopes: BTreeMap<String, String>,
+    /// How far back each scope reads: `{actor: 24h, org: 1h}`.
+    pub spans: BTreeMap<String, String>,
+    /// Lines per view, the latest kept.
+    #[serde(default = "default_max_events")]
+    pub max_events: usize,
+    /// The whole context stops at about this many bytes; the busiest keys
+    /// come first.
+    #[serde(default = "default_context_bytes")]
+    pub max_bytes: usize,
+    /// The fields of a history line, as dotted paths; the whole record when
+    /// empty.
+    #[serde(default)]
+    pub fields: Vec<String>,
+    /// The field holding a record's own time.
+    #[serde(default = "default_time_field")]
+    pub time: String,
+}
+
+const fn default_max_events() -> usize {
+    20
+}
+const fn default_context_bytes() -> usize {
+    40_000
+}
+fn default_time_field() -> String {
+    "ts".into()
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]

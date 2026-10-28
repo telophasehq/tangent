@@ -502,7 +502,7 @@ impl Worker {
                 let out = match to {
                     NodeRef::Plugin { name } => self.run_plugin(name, &views).await?,
                     NodeRef::Inference { name } => {
-                        run_inference(&self.inference, name, &views).await?
+                        run_inference(&self.inference, name, &views, &self.store).await?
                     }
                     _ => unreachable!("sinks and sources were filtered out"),
                 };
@@ -664,15 +664,21 @@ async fn run_inference(
     nodes: &HashMap<Arc<str>, InferenceNode>,
     name: &Arc<str>,
     views: &Views,
+    store: &Arc<dyn StateStore>,
 ) -> Result<Frames> {
     let Some(node) = nodes.get(name) else {
         bail!("unknown inference node {name}");
     };
-    let records: Vec<serde_json::Value> = views
+    let records: Vec<(serde_json::Value, Arc<str>)> = views
         .iter()
-        .map(|(lv, _)| serde_json::from_str(&lv.to_json()).unwrap_or(serde_json::Value::Null))
+        .map(|(lv, part)| {
+            (
+                serde_json::from_str(&lv.to_json()).unwrap_or(serde_json::Value::Null),
+                Arc::clone(part),
+            )
+        })
         .collect();
-    let annotated = node.annotate_all(records).await;
+    let annotated = node.annotate_in(records, Some(Arc::clone(store))).await;
     // One frame per run of records from the same partition, in order.
     let mut out: Frames = Vec::new();
     for (v, (_, part)) in annotated.into_iter().zip(views) {

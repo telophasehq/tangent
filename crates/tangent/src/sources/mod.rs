@@ -10,4 +10,5 @@ pub mod okta;
 pub mod poll;
 pub mod socket;
 pub mod sqs;
+pub mod store;
 pub mod tcp;

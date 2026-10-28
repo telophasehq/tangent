@@ -3,7 +3,7 @@
 What the judge has to catch, and what it must leave alone, written down as
 event sequences before arguing about designs. Every design question (per
 record or per window, which model, which cadence) is measured against these.
-`make test` runs seven of them through norm, facts and window as fixtures;
+`make test` runs seven of them through the provider plugins, norm, enrich and facts as fixtures;
 the full set is replayed inside weeks of ordinary traffic for the numbers in
 the pack's README.
 
@@ -41,7 +41,7 @@ Every event also carries `ts`, so mixed sources order.
 Most positives are sequences of lines innocent on their own
 (`alone_innocent: true` in `case.yaml`): a login and a token, a role change
 and an export, a workflow push and a runner registration, a secret read and a
-POST. That is why the judge reads windows per actor and per org, not lines.
+POST. That is why the judge reads a window of the org's activity at a time, with each actor's day before it, not lines.
 A few are single lines (root login, CloudTrail stopped, a bucket made public,
 MFA off); the judge reads those like any other, with the profile's `watch`
 and `root` facts beside them.

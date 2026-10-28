@@ -20,6 +20,9 @@ pub enum SinkKind {
     File(file::FileConfig),
     #[serde(rename = "blackhole")]
     Blackhole(blackhole::BlackholeConfig),
+    /// The state store, per partition: what windows are read from.
+    #[serde(rename = "store")]
+    Store(super::store::StoreSinkConfig),
 }
 
 #[derive(Debug, Deserialize, Serialize)]

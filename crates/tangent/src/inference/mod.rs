@@ -22,8 +22,14 @@ use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tangent_shared::inference::{Backend, InferenceConfig};
+use std::collections::BTreeMap;
+use tangent_shared::inference::{Backend, ContextConfig, InferenceConfig};
+
+use crate::state::{StateStore, StateValue};
 use tokio::sync::Semaphore;
+
+/// Records judged together: one partition, one window.
+type GroupKey = (Arc<str>, String);
 
 pub struct InferenceNode {
     pub name: Arc<str>,
@@ -110,31 +116,89 @@ impl InferenceNode {
         })
     }
 
-    /// Every record through the model, under the node's permits: one request
-    /// per record, or per `batch` of them; the annotated records, in the
-    /// order given.
+    /// Every record through the model, under the node's permits; the
+    /// annotated records, in the order given. No partition, no context.
     pub async fn annotate_all(&self, records: Vec<Value>) -> Vec<Value> {
-        if self.cfg.batch <= 1 {
-            return futures::future::join_all(records.into_iter().map(|v| async move {
-                let _permit = self.sem.acquire().await.expect("semaphore is never closed");
-                self.annotate(v).await
-            }))
-            .await;
+        let part: Arc<str> = Arc::from("");
+        self.annotate_in(records.into_iter().map(|v| (v, Arc::clone(&part))).collect(), None)
+            .await
+    }
+
+    /// Records with their partitions through the model: grouped by
+    /// partition and by window (`_span.from`, when the records came from a
+    /// `store` source), each group in requests of `batch`, each request read
+    /// with the history before its earliest record when `context` is set and
+    /// a store is given. The annotated records, in the order given.
+    pub async fn annotate_in(
+        &self,
+        records: Vec<(Value, Arc<str>)>,
+        store: Option<Arc<dyn StateStore>>,
+    ) -> Vec<Value> {
+        let n = records.len();
+        let mut groups: Vec<(GroupKey, Vec<(usize, Value)>)> = Vec::new();
+        for (i, (v, part)) in records.into_iter().enumerate() {
+            let window = v
+                .get("_span")
+                .and_then(|s| s.get("from"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let key = (part, window);
+            match groups.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, g)) => g.push((i, v)),
+                None => groups.push((key, vec![(i, v)])),
+            }
         }
-        let answered = futures::future::join_all(self.chunks(records).into_iter().map(|chunk| async move {
-            let _permit = self.sem.acquire().await.expect("semaphore is never closed");
-            self.annotate_batch(chunk).await
+        let mut jobs: Vec<(Arc<str>, Vec<usize>, Vec<Value>)> = Vec::new();
+        for ((part, _), group) in groups {
+            let (ids, values): (Vec<usize>, Vec<Value>) = group.into_iter().unzip();
+            let chunks = if self.cfg.batch <= 1 {
+                values.into_iter().map(|v| vec![v]).collect()
+            } else {
+                self.chunks(values)
+            };
+            let mut at = 0;
+            for chunk in chunks {
+                let these = ids[at..at + chunk.len()].to_vec();
+                at += chunk.len();
+                jobs.push((Arc::clone(&part), these, chunk));
+            }
+        }
+        let done = futures::future::join_all(jobs.into_iter().map(|(part, ids, chunk)| {
+            let store = store.clone();
+            async move {
+                let _permit = self.sem.acquire().await.expect("semaphore is never closed");
+                let context = match &store {
+                    Some(st) => self.context_for(st, &part, &chunk).await,
+                    None => None,
+                };
+                let out = if self.cfg.batch <= 1 {
+                    let v = chunk.into_iter().next().expect("a chunk of one");
+                    vec![self.annotate_one(v, context).await]
+                } else {
+                    self.annotate_batch(chunk, context).await
+                };
+                (ids, out)
+            }
         }))
         .await;
-        answered.into_iter().flatten().collect()
+        let mut slots: Vec<Option<Value>> = (0..n).map(|_| None).collect();
+        for (ids, out) in done {
+            for (i, v) in ids.into_iter().zip(out) {
+                slots[i] = Some(v);
+            }
+        }
+        slots.into_iter().map(|s| s.unwrap_or(Value::Null)).collect()
     }
 
     /// One record through the model: the reply, or the error, added under the
     /// node's name.
     pub async fn annotate(&self, v: Value) -> Value {
+        self.annotate_one(v, None).await
+    }
+
+    async fn annotate_one(&self, v: Value, context: Option<String>) -> Value {
         let start = Instant::now();
-        let (context, mut records) = self.lift_context(vec![v]);
-        let v = records.pop().expect("one record");
         let user = match context {
             Some(c) => format!("{c}\n\nThe record:\n{}", self.user_message(&v)),
             None => self.user_message(&v),
@@ -158,35 +222,35 @@ impl InferenceNode {
     /// answer, or the error, under the node's name, in the order given. A
     /// reply that cannot be read (a model that loops until its budget, or
     /// stops partway) is not the records' fault: the batch is split in two
-    /// and each half asked again, down to single records, which fail on
-    /// their own terms.
-    async fn annotate_batch(&self, records: Vec<Value>) -> Vec<Value> {
+    /// and each half asked again with the same context, down to single
+    /// records, which fail on their own terms.
+    async fn annotate_batch(&self, records: Vec<Value>, context: Option<String>) -> Vec<Value> {
         let n = records.len();
         let start = Instant::now();
-        let originals = records.clone();
-        let (context, records) = self.lift_context(records);
         let lines = records
             .iter()
             .enumerate()
             .map(|(k, v)| self.batch_line(k, v))
             .collect::<Vec<_>>()
             .join("\n");
-        let user = match context {
+        let user = match &context {
             Some(c) => format!("{c}\n\nThe records:\n{lines}"),
             None => lines,
         };
         let answers = match self.ask(user, Some(n)).await {
             Ok(reply) => spread(reply, n),
-            Err(e) if n > 1 && !e.to_string().contains("no reply within") => {
+            // Only a reply that came back and cannot be read is the batch's
+            // fault; a request that failed outright fails the same in halves.
+            Err(e) if n > 1 && e.to_string().starts_with("reply ") => {
                 tracing::warn!(
                     node = %self.name,
                     records = n,
                     "batched reply unreadable, asking again as two halves: {e:#}"
                 );
-                let mut records = originals;
+                let mut records = records;
                 let tail = records.split_off(n / 2);
-                let mut out = Box::pin(self.annotate_batch(records)).await;
-                out.extend(Box::pin(self.annotate_batch(tail)).await);
+                let mut out = Box::pin(self.annotate_batch(records, context.clone())).await;
+                out.extend(Box::pin(self.annotate_batch(tail, context)).await);
                 return out;
             }
             Err(e) => {
@@ -207,56 +271,141 @@ impl InferenceNode {
             .collect()
     }
 
-    /// The context fields lifted off the records: one view per scope and
-    /// key across the batch, the latest kept, as lines for the top of the
-    /// request; and the records without those fields, which is also how
-    /// they go on afterwards.
-    fn lift_context(&self, records: Vec<Value>) -> (Option<String>, Vec<Value>) {
-        if self.cfg.context.is_empty() {
-            return (None, records);
+    /// The history a request is read with: the partition's stored records
+    /// before the request's earliest one, one view per scope and key (the
+    /// keys the request's records carry, busiest first), each line the
+    /// configured fields, the latest `max_events` of each view, a record
+    /// shown once across views. None without `context`, a time, or history.
+    async fn context_for(
+        &self,
+        store: &Arc<dyn StateStore>,
+        part: &str,
+        records: &[Value],
+    ) -> Option<String> {
+        let cfg = self.cfg.context.as_ref()?;
+        let before = records
+            .iter()
+            .filter_map(|v| crate::windows::time_of_value(v, &cfg.time))
+            .min()?;
+        let spans: BTreeMap<&str, i64> = cfg
+            .spans
+            .iter()
+            .filter_map(|(k, v)| Some((k.as_str(), crate::sources::poll::duration_ms(v)?)))
+            .collect();
+        let longest = spans.values().copied().max().unwrap_or(0);
+        if longest <= 0 {
+            return None;
         }
-        // (field, scope, key) -> the view with the latest `to`.
-        let mut views: Vec<((String, String, String), Value)> = Vec::new();
-        let mut stripped = Vec::with_capacity(records.len());
-        for mut v in records {
-            for field in &self.cfg.context {
-                let Some(taken) = remove_path(&mut v, field) else { continue };
-                let Value::Object(scopes) = taken else { continue };
-                for (scope, view) in scopes {
-                    let key = view
-                        .get("key")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
-                    let id = (field.clone(), scope.clone(), key);
-                    let to = |x: &Value| x.get("to").and_then(Value::as_str).unwrap_or("").to_string();
-                    match views.iter_mut().find(|(i, _)| *i == id) {
-                        Some((_, have)) if to(have) >= to(&view) => {}
-                        Some((_, have)) => *have = view,
-                        None => views.push((id, view)),
-                    }
+        let rows = match store
+            .range(
+                &cfg.namespace,
+                part,
+                &crate::windows::ev_bound(before - longest),
+                &crate::windows::ev_bound(before),
+                50_000,
+            )
+            .await
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::warn!(node = %self.name, "reading context: {e:#}");
+                return None;
+            }
+        };
+        let rows: Vec<(i64, String, Value)> = rows
+            .into_iter()
+            .filter_map(|e| {
+                let StateValue::Str(s) = e.value else { return None };
+                let v: Value = serde_json::from_str(&s).ok()?;
+                Some((crate::windows::ts_of_key(&e.key)?, e.key, v))
+            })
+            .collect();
+        if rows.is_empty() {
+            return None;
+        }
+        let text = |v: &Value| match v {
+            Value::String(s) => Some(s.clone()),
+            Value::Number(n) => Some(n.to_string()),
+            Value::Bool(b) => Some(b.to_string()),
+            _ => None,
+        };
+        let mut shown: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut lines = vec![format!(
+            "History before these records, one JSON object per line: `scope` and `key` say whose \
+             (a record's own fields name them: {}), `recent` is the latest {} of them, oldest first:",
+            cfg.scopes
+                .iter()
+                .map(|(scope, field)| format!("`{field}` for {scope}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            cfg.max_events
+        )];
+        let mut bytes = lines[0].len();
+        for (scope, field) in &cfg.scopes {
+            let Some(&span) = spans.get(scope.as_str()) else { continue };
+            // The keys this request's records carry, busiest first.
+            let mut keys: Vec<(String, usize)> = Vec::new();
+            for v in records {
+                let Some(k) = lookup(v, field).and_then(text) else { continue };
+                match keys.iter_mut().find(|(have, _)| *have == k) {
+                    Some((_, n)) => *n += 1,
+                    None => keys.push((k, 1)),
                 }
             }
-            stripped.push(v);
-        }
-        if views.is_empty() {
-            return (None, stripped);
-        }
-        let mut lines = vec![
-            "Context, one JSON object per line: the history each record's actor and org had at the time, \
-             `scope` and `key` saying whose (a record's `_norm.actor` and `_norm.org` name them), `recent` oldest first:"
-                .to_string(),
-        ];
-        for ((field, scope, _), view) in views {
-            let mut m = Map::new();
-            m.insert("context".into(), json!(field));
-            m.insert("scope".into(), json!(scope));
-            if let Value::Object(fields) = view {
-                m.extend(fields);
+            keys.sort_by_key(|k| std::cmp::Reverse(k.1));
+            for (key, _) in keys {
+                let mine: Vec<&(i64, String, Value)> = rows
+                    .iter()
+                    .filter(|(ts, _, v)| *ts >= before - span && lookup(v, field).and_then(text).as_deref() == Some(key.as_str()))
+                    .collect();
+                let events = mine.len();
+                let mut recent: Vec<Value> = Vec::new();
+                for (_, k, v) in mine.iter().rev() {
+                    if recent.len() >= cfg.max_events {
+                        break;
+                    }
+                    if shown.insert(k.as_str()) {
+                        recent.push(self.history_line(v, cfg));
+                    }
+                }
+                if recent.is_empty() && events == 0 {
+                    continue;
+                }
+                recent.reverse();
+                let line = json!({
+                    "scope": scope,
+                    "key": key,
+                    "from": crate::windows::iso(before - span),
+                    "to": crate::windows::iso(before),
+                    "events": events,
+                    "recent": recent,
+                })
+                .to_string();
+                if bytes + line.len() > cfg.max_bytes && lines.len() > 1 {
+                    break;
+                }
+                bytes += line.len();
+                lines.push(line);
             }
-            lines.push(serde_json::to_string(&Value::Object(m)).unwrap_or_default());
         }
-        (Some(lines.join("\n")), stripped)
+        (lines.len() > 1).then(|| lines.join("\n"))
+    }
+
+    /// A stored record as one line of history: the configured fields, or
+    /// all of it.
+    fn history_line(&self, v: &Value, cfg: &ContextConfig) -> Value {
+        if cfg.fields.is_empty() {
+            return v.clone();
+        }
+        let mut m = Map::new();
+        for f in &cfg.fields {
+            if let Some(x) = lookup(v, f) {
+                if !x.is_null() {
+                    m.insert(f.clone(), x.clone());
+                }
+            }
+        }
+        Value::Object(m)
     }
 
     /// Records in request-sized runs: at most `batch` of them and about
@@ -267,11 +416,7 @@ impl InferenceNode {
         let mut cur: Vec<Value> = Vec::new();
         let mut bytes = 0usize;
         for v in records {
-            let mut bare = v.clone();
-            for field in &self.cfg.context {
-                remove_path(&mut bare, field);
-            }
-            let size = self.view(&bare).to_string().len();
+            let size = self.view(&v).to_string().len();
             if !cur.is_empty() && (cur.len() >= max_n || bytes + size > max_bytes) {
                 out.push(std::mem::take(&mut cur));
                 bytes = 0;
@@ -530,21 +675,6 @@ fn head(s: &str, n: usize) -> String {
     t
 }
 
-/// Take a field out of a record by its path ("a.b.c" or a top-level key).
-fn remove_path(v: &mut Value, path: &str) -> Option<Value> {
-    if let Some(obj) = v.as_object_mut() {
-        if obj.contains_key(path) {
-            return obj.remove(path);
-        }
-    }
-    let (parent, last) = path.rsplit_once('.')?;
-    let mut cur = v;
-    for seg in parent.split('.') {
-        cur = cur.get_mut(seg)?;
-    }
-    cur.as_object_mut()?.remove(last)
-}
-
 /// Dot-path lookup into a JSON value: "a.b.c".
 pub fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
     if let Some(direct) = v.get(path) {
@@ -702,7 +832,7 @@ pub(crate) mod stub {
             batch: 1,
             batch_bytes: 32_768,
             batch_age_ms: 1_000,
-            context: Vec::new(),
+            context: None,
             concurrency: 2,
             timeout_ms: 5_000,
             retries: 0,
@@ -938,27 +1068,61 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn context_fields_are_written_once_and_dropped_from_the_records() {
+    async fn a_request_is_read_with_the_history_before_it_from_the_store() {
+        use crate::state::lru::LruStore;
+        use tangent_shared::runtime::StateConfig;
         let (url, seen) = stub::model().await;
         let dir = stub::dir("context");
+        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
+        // History in the partition: two of a's, one of b's, one of another
+        // org member's, and one after the request's records (not history).
+        let t0 = 1_793_106_000_000i64; // 2026-10-27T13:00:00Z
+        for (i, (ts, actor, kind)) in [
+            (t0 - 3_600_000, "a", "login"),
+            (t0 - 600_000, "a", "token.create"),
+            (t0 - 300_000, "b", "push"),
+            (t0 - 60_000, "c", "export"),
+            (t0 + 600_000, "a", "later"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let row = json!({"ts": crate::windows::iso(ts), "_norm": {"actor": actor, "org": "acme", "kind": kind}, "noise": "x"});
+            store
+                .set("events", "acme", &crate::windows::ev_key(ts, &format!("{i:02}")), &StateValue::Str(row.to_string()), Some(0))
+                .await
+                .unwrap();
+        }
         let mut cfg = stub::config(&url);
         cfg.batch = 8;
-        cfg.context = vec!["_window".into()];
-        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
-        let w = |actor: &str, to: &str| json!({
-            "actor": {"key": actor, "to": to, "recent": [{"kind": "login"}]},
-            "org": {"key": "acme", "to": to, "recent": [{"kind": "push"}]}
+        let mut scopes = BTreeMap::new();
+        scopes.insert("actor".to_string(), "_norm.actor".to_string());
+        scopes.insert("org".to_string(), "_norm.org".to_string());
+        let mut spans = BTreeMap::new();
+        spans.insert("actor".to_string(), "24h".to_string());
+        spans.insert("org".to_string(), "1h".to_string());
+        cfg.context = Some(ContextConfig {
+            namespace: "events".into(),
+            scopes,
+            spans,
+            max_events: 20,
+            max_bytes: 40_000,
+            fields: vec!["ts".into(), "_norm.kind".into()],
+            time: "ts".into(),
         });
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let part: Arc<str> = Arc::from("acme");
         let outs = node
-            .annotate_all(vec![
-                json!({"id": 1, "_norm": {"actor": "a", "org": "acme"}, "_window": w("a", "2026-10-28T00:01:00Z")}),
-                json!({"id": 2, "_norm": {"actor": "b", "org": "acme"}, "_window": w("b", "2026-10-28T00:02:00Z")}),
-                json!({"id": 3, "_norm": {"actor": "a", "org": "acme"}, "_window": w("a", "2026-10-28T00:03:00Z"), "msg": "bad"}),
-            ])
+            .annotate_in(
+                vec![
+                    (json!({"ts": crate::windows::iso(t0), "_norm": {"actor": "a", "org": "acme"}, "msg": "bad"}), Arc::clone(&part)),
+                    (json!({"ts": crate::windows::iso(t0 + 1000), "_norm": {"actor": "b", "org": "acme"}}), Arc::clone(&part)),
+                ],
+                Some(Arc::clone(&store)),
+            )
             .await;
-        assert_eq!(outs.len(), 3);
-        assert!(outs.iter().all(|o| o.get("_window").is_none()), "the context is gone afterwards: {outs:?}");
-        assert_eq!(outs[2]["judge"]["flag"], true, "answers still land: {outs:?}");
+        assert_eq!(outs[0]["judge"]["flag"], true, "{outs:?}");
+        assert!(outs.iter().all(|o| o.get("_window").is_none()), "nothing is attached to the records");
         let seen = seen.lock().await;
         assert_eq!(seen.len(), 1);
         let req: Value = serde_json::from_str(&seen[0]).unwrap();
@@ -966,14 +1130,15 @@ mod tests {
             Value::String(s) => s.clone(),
             other => other[0]["text"].as_str().unwrap_or_default().to_string(),
         };
-        let context_lines: Vec<&str> = user.lines().filter(|l| l.starts_with("{\"context\"")).collect();
-        assert_eq!(context_lines.len(), 3, "a, b and acme once each: {user}");
-        let a: Value = serde_json::from_str(context_lines.iter().find(|l| l.contains("\"key\":\"a\"")).unwrap()).unwrap();
-        assert_eq!(a["to"], "2026-10-28T00:03:00Z", "the latest view for a scope wins");
-        let record_lines: Vec<&str> = user.lines().filter(|l| l.starts_with("{\"i\":")).collect();
-        assert_eq!(record_lines.len(), 3);
-        assert!(record_lines.iter().all(|l| !l.contains("_window")), "records carry no window: {user}");
-        assert!(user.contains("The records:"));
+        let views: Vec<Value> = user.lines().filter(|l| l.starts_with("{\"scope\"")).map(|l| serde_json::from_str(l).unwrap()).collect();
+        let a = views.iter().find(|v| v["scope"] == "actor" && v["key"] == "a").unwrap_or_else(|| panic!("a's view in: {user}"));
+        assert_eq!(a["recent"].as_array().unwrap().len(), 2, "a's day, not what came after: {a}");
+        assert_eq!(a["recent"][1]["_norm.kind"], "token.create");
+        assert!(a["recent"][0].get("noise").is_none(), "only the configured fields");
+        let org = views.iter().find(|v| v["scope"] == "org").expect("the org's hour");
+        let kinds: Vec<&str> = org["recent"].as_array().unwrap().iter().map(|r| r["_norm.kind"].as_str().unwrap()).collect();
+        assert_eq!(kinds, ["export"], "the org's hour, without what the actors' views showed: {org}");
+        assert!(!user.contains("later"), "nothing at or after the earliest record");
         let _ = std::fs::remove_dir_all(dir);
     }
 

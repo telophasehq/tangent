@@ -7,16 +7,19 @@ your company, run.
 ```
 CloudTrail ──▶ cloudtrail ─┐
 GitHub audit log ──▶ github_audit ─┤
-Okta ──▶ okta ─┼──▶ enrich ──▶ facts ──▶ window ──▶ judge ──▶ alerts.ndjson
+Okta ──▶ okta ─┼──▶ enrich ──▶ facts ──▶ store          (ingest)
 Google Workspace ──▶ google_workspace ─┤
 CI, anything else (TCP) ──▶ norm ─┘
+
+store ──▶ windows ──▶ judge ──▶ flagged ──▶ alerts.ndjson   (judgment)
 ```
 
 - **A plugin per provider** ([providers/](providers/)) reads its source's records: it puts the shape into `_norm.{actor, org, kind, ip, country, dest, target}` and trims the record to what it means, dropping the provider's ids, hashes, protocol details and bulk, so the judge and the retained history carry a record a reader would keep. **norm** does the `_norm` half for anything else arriving over TCP (CI lines, a product's logs) and leaves those records as they came.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
-- **window** attaches the actor's last day and the org's last hour, one line per event, read back from the runtime's retained rows.
-- **judge** reads every record, in batches of as many as fit a request, each with its facts and history, and writes a verdict per record: `flag`, `one_line`, `check_first`. No rule decides what the model reads; the profile is context, not a rulebook.
+- **store** keeps every normalized, enriched record under its partition for 30 days. That ends the ingest pipeline: a source is acknowledged when its records are kept, and nothing waits on a model.
+- **windows** reads the store back a window at a time: a quarter hour of one partition's activity, closed once the stream has moved twenty minutes past it (a quiet partition closes on the clock). Where each partition stands lives in the store too, so a restart catches up what fell due while it was down.
+- **judge** reads each window's records together, with the history before the window (each actor's day, the org's hour) read once from the store, and writes a verdict per record: `flag`, `one_line`, `why`. No rule decides what the model reads; the profile is context, not a rulebook.
 - The judge is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see.
 
 On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the judge's recall and false-positive rate are in [RESULTS](#what-it-catches).
@@ -26,7 +29,7 @@ On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the judge'
 ```bash
 make setup          # Rust WASM toolchain; GeoLite2, cloud ranges, Tor exits into examples/enrich/data
 $EDITOR profile/profile.yaml
-make test           # the cases through norm, facts and window; no model needed
+make test           # the cases through the provider plugins, norm, enrich and facts; no model needed
 make run            # listens on :9400 for NDJSON records
 ```
 
@@ -80,7 +83,7 @@ Measured 2026-10-28 with Claude Haiku 4.5 (Bedrock) judging **every record** of 
 tangent.yaml          the pipeline
 profile/profile.yaml  your company (edit this)
 judge.md              the model's brief
-providers/ norm/ facts/ window/   the plugins, Rust, compiled to WASM by make setup; providers/common is what they share
+providers/ norm/ facts/   the plugins, Rust, compiled to WASM by make setup; providers/common is what they share
 cases/                the sequences, one directory each: case.yaml + events.ndjson
 tests/                fixtures for make test
 ```

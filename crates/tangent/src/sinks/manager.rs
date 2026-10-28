@@ -13,6 +13,9 @@ use tokio::time::{sleep, Instant};
 
 use crate::sinks::blackhole;
 use crate::sinks::file;
+use crate::sinks::store as store_sink;
+use crate::state::StateStore;
+use tangent_shared::runtime::PartitionConfig;
 use crate::sinks::s3::S3SinkItem;
 use crate::INFLIGHT;
 use crate::{
@@ -62,7 +65,11 @@ pub struct SinkManager {
 }
 
 impl SinkManager {
-    pub async fn new(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<Self> {
+    pub async fn new(
+        cfgs: &BTreeMap<Arc<str>, SinkConfig>,
+        store: Arc<dyn StateStore>,
+        partition: Option<PartitionConfig>,
+    ) -> Result<Self> {
         let mut sinks: HashMap<Arc<str>, SinkEntry> = HashMap::with_capacity(cfgs.len());
 
         let total_inflight: usize = cfgs.values().map(|c| c.common.in_flight_limit).sum();
@@ -97,6 +104,10 @@ impl SinkManager {
                 SinkKind::Blackhole(_) => {
                     let bh = blackhole::BlackholeSink::new();
                     sinks.insert(Arc::clone(&name), SinkEntry::Other { sink: bh });
+                }
+                SinkKind::Store(scfg) => {
+                    let sink = store_sink::StoreSink::new(scfg, Arc::clone(&store), partition.clone())?;
+                    sinks.insert(Arc::clone(&name), SinkEntry::Other { sink });
                 }
             }
         }

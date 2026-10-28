@@ -5,8 +5,6 @@ runtime:
   plugins_path: plugins/
   partition:
     key: [_norm.org]            # the customer's tenant id, as norm extracts it from each source
-    time: ts
-    retain_ms: 2592000000       # 30 days of each customer's history
   state:
     backend: sqlite
     path: state.sqlite
@@ -17,6 +15,12 @@ sources:
   events:
     type: tcp
     bind_address: 0.0.0.0:9401
+
+  windows:                      # the stored records, read back a window at a time as each closes
+    type: store
+    span: 15m                   # one partition's quarter hour is judged together
+    late: 20m                   # CloudTrail reports up to about fifteen minutes late
+    grace: 2m                   # after a start, let the sources catch up before closing anything
 
 plugins:
   norm:
@@ -33,14 +37,6 @@ plugins:
     module_type: rust
     path: ../cloud-infra/facts
     data: profile               # one profile for every customer, until profiles live in the customer's partition
-  window:
-    module_type: rust
-    path: ../cloud-infra/window
-    config:
-      time: ts
-      scopes: { actor: _norm.actor, org: _norm.org }
-      spans: { actor: 24h, org: 1h }
-      max_events: 20
   flagged:
     module_type: rust
     path: ../../examples/inference-local/flagged
@@ -55,7 +51,13 @@ inference:
     schema_file: ../cloud-infra/judge.schema.json      # the shape, enforced by the backend where it can
     batch: 16                   # records per request, as many as fit batch_bytes; the model judges them together
     batch_bytes: 16000          # one local model's comfortable prompt; raise it for a hosted model
-    context: [_window]         # history is the request's, not the record's: written once, then dropped
+    context:                    # the history before a window, read from the store once per request
+      scopes: { actor: _norm.actor, org: _norm.org }
+      spans: { actor: 24h, org: 1h }
+      max_events: 20
+      fields: [ts, source, _norm.kind, _norm.actor, _norm.ip, _norm.dest, _norm.target,
+               _facts.ip.country, _facts.ip.org, _facts.ip.hosting, _facts.ip.tor, _facts.ip.vpn, _facts.ip.ours,
+               _facts.principal, outcome.result, errorCode]
     max_tokens: 200             # per record; a batch may say batch times as much
     timeout_ms: 90000
     concurrency: 4
@@ -64,6 +66,9 @@ inference:
         enable_thinking: false
 
 sinks:
+  store:                        # every normalized, enriched record, per partition: what windows and history are read from
+    type: store
+    retain: 30d
   alerts:
     type: file
     path: alerts.ndjson
@@ -82,9 +87,11 @@ dag:
     to: [{ kind: plugin, name: enrich }]
   - from: { kind: plugin, name: enrich }
     to: [{ kind: plugin, name: facts }]
+  # 1. ingest: normalized, enriched, kept
   - from: { kind: plugin, name: facts }
-    to: [{ kind: plugin, name: window }]
-  - from: { kind: plugin, name: window }
+    to: [{ kind: sink, name: store }]
+  # 2. judgment: a window at a time, read back from the store
+  - from: { kind: source, name: windows }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
     to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]
