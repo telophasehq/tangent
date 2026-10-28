@@ -243,9 +243,11 @@ impl InferenceNode {
                 n.saturating_sub(1)
             ),
         };
+        // `max_tokens` is per record: a batch of n may say n times as much.
+        let budget = u64::from(self.cfg.max_tokens) * batch.unwrap_or(1) as u64;
         let mut request = CompletionRequest::new(user)
             .preamble(preamble)
-            .max_tokens(u64::from(self.cfg.max_tokens));
+            .max_tokens(budget);
         if let Some(t) = self.cfg.temperature {
             request = request.temperature(t);
         }
@@ -763,6 +765,7 @@ mod tests {
         };
         let lines: Vec<Value> = user.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
         assert_eq!(lines.len(), 2);
+        assert_eq!(req["max_tokens"], 100, "max_tokens is per record: 50 x 2");
         assert_eq!(lines[0]["i"], 0);
         assert_eq!(lines[1]["i"], 1);
         assert_eq!(lines[1]["id"], 2);

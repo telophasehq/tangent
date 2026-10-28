@@ -80,6 +80,8 @@ pub struct InferenceConfig {
     #[serde(default = "default_retries")]
     pub retries: u32,
 
+    /// The reply's budget, per record: a batched request may say `batch`
+    /// times as much.
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
 
