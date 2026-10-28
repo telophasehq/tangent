@@ -95,6 +95,7 @@ inference:
     api_key: ${JUDGE_API_KEY}
     prompt_file: screen.md
     schema_file: screen.schema.json
+    fields: [ts, source, _norm, _facts, _window, outcome, displayMessage, errorCode, events, tool, path, destination, message, plan_id, step_id]   # who, what, where, the facts, the history; the judge sees the whole record
     batch: 16                  # records per request; the model answers them together
     batch_bytes: 24000          # a local model's comfortable prompt; raise it for a hosted one
     max_tokens: 48                # per record; {"look": true} with room for the model's formatting
