@@ -123,9 +123,11 @@ inference:
                _facts.ip.country, _facts.ip.org, _facts.ip.hosting, _facts.ip.tor, _facts.ip.vpn, _facts.ip.ours,
                _facts.principal, outcome.result, errorCode]
     max_tokens: 200             # per record; a batch may say batch times as much
+    temperature: 0.7            # sampled, never greedy: greedy decoding repeats itself and replays identically
     timeout_ms: 90000
     concurrency: 4
     extra:
+      top_p: 0.95
       chat_template_kwargs:
         enable_thinking: false  # local reasoning models: answer, do not think aloud
 
