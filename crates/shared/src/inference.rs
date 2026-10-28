@@ -48,6 +48,21 @@ pub struct InferenceConfig {
     #[serde(default)]
     pub fields: Vec<String>,
 
+    /// Records per request. 1 (the default) sends each record on its own.
+    /// More sends up to this many records of a batch together, in order:
+    /// the user message is one JSON object per line, each with its index
+    /// `i`, and the model answers them all at once as `{"answers": [...]}`,
+    /// one object per record in the same order (an answer may carry its
+    /// `i`). With `schema_file`, each answer satisfies the schema. A record
+    /// that gets no answer lands with the error, like a failed request.
+    #[serde(default = "default_batch")]
+    pub batch: usize,
+
+    /// A request's records stop at this many bytes of JSON, whatever
+    /// `batch` says; one record always goes, however large.
+    #[serde(default = "default_batch_bytes")]
+    pub batch_bytes: usize,
+
     /// Requests in flight at once, per worker: the model sees at most
     /// `runtime.workers` times this from one node.
     #[serde(default = "default_concurrency")]
@@ -106,6 +121,12 @@ fn default_url() -> String {
 }
 const fn default_concurrency() -> usize {
     1
+}
+const fn default_batch() -> usize {
+    1
+}
+const fn default_batch_bytes() -> usize {
+    32_768
 }
 const fn default_timeout_ms() -> u64 {
     30_000

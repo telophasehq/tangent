@@ -110,21 +110,30 @@ impl InferenceNode {
         })
     }
 
-    /// Every record through the model at once, each under one of the node's
-    /// permits; the annotated records, in the order given.
+    /// Every record through the model, under the node's permits: one request
+    /// per record, or per `batch` of them; the annotated records, in the
+    /// order given.
     pub async fn annotate_all(&self, records: Vec<Value>) -> Vec<Value> {
-        futures::future::join_all(records.into_iter().map(|v| async move {
+        if self.cfg.batch <= 1 {
+            return futures::future::join_all(records.into_iter().map(|v| async move {
+                let _permit = self.sem.acquire().await.expect("semaphore is never closed");
+                self.annotate(v).await
+            }))
+            .await;
+        }
+        let answered = futures::future::join_all(self.chunks(records).into_iter().map(|chunk| async move {
             let _permit = self.sem.acquire().await.expect("semaphore is never closed");
-            self.annotate(v).await
+            self.annotate_batch(chunk).await
         }))
-        .await
+        .await;
+        answered.into_iter().flatten().collect()
     }
 
     /// One record through the model: the reply, or the error, added under the
     /// node's name.
     pub async fn annotate(&self, v: Value) -> Value {
         let start = Instant::now();
-        let reply = match self.ask(self.user_message(&v)).await {
+        let reply = match self.ask(self.user_message(&v), None).await {
             Ok(reply) => reply,
             Err(e) => {
                 tracing::warn!(node = %self.name, "inference failed: {e:#}");
@@ -136,21 +145,66 @@ impl InferenceNode {
             ms = start.elapsed().as_millis() as u64,
             "inference"
         );
-        let mut obj = match v {
-            Value::Object(m) => m,
-            other => {
-                let mut m = Map::new();
-                m.insert("value".into(), other);
-                m
-            }
-        };
-        obj.insert(self.name.to_string(), reply);
-        Value::Object(obj)
+        attach(&self.name, v, reply)
     }
 
-    fn user_message(&self, v: &Value) -> String {
+    /// Several records through the model in one request: each gets its
+    /// answer, or the error, under the node's name, in the order given.
+    async fn annotate_batch(&self, records: Vec<Value>) -> Vec<Value> {
+        let n = records.len();
+        let start = Instant::now();
+        let user = records
+            .iter()
+            .enumerate()
+            .map(|(k, v)| self.batch_line(k, v))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let answers = match self.ask(user, Some(n)).await {
+            Ok(reply) => spread(reply, n),
+            Err(e) => {
+                tracing::warn!(node = %self.name, records = n, "inference failed: {e:#}");
+                vec![json!({"error": format!("{e:#}")}); n]
+            }
+        };
+        tracing::debug!(
+            node = %self.name,
+            records = n,
+            ms = start.elapsed().as_millis() as u64,
+            "inference"
+        );
+        records
+            .into_iter()
+            .zip(answers)
+            .map(|(v, a)| attach(&self.name, v, a))
+            .collect()
+    }
+
+    /// Records in request-sized runs: at most `batch` of them and about
+    /// `batch_bytes` of JSON each; a record larger than that goes alone.
+    fn chunks(&self, records: Vec<Value>) -> Vec<Vec<Value>> {
+        let (max_n, max_bytes) = (self.cfg.batch.max(1), self.cfg.batch_bytes.max(1));
+        let mut out = Vec::new();
+        let mut cur: Vec<Value> = Vec::new();
+        let mut bytes = 0usize;
+        for v in records {
+            let size = self.view(&v).to_string().len();
+            if !cur.is_empty() && (cur.len() >= max_n || bytes + size > max_bytes) {
+                out.push(std::mem::take(&mut cur));
+                bytes = 0;
+            }
+            bytes += size;
+            cur.push(v);
+        }
+        if !cur.is_empty() {
+            out.push(cur);
+        }
+        out
+    }
+
+    /// The record as the model sees it: whole, or the listed `fields`.
+    fn view(&self, v: &Value) -> Value {
         if self.cfg.fields.is_empty() {
-            return serde_json::to_string_pretty(v).unwrap_or_default();
+            return v.clone();
         }
         let mut m = Map::new();
         for f in &self.cfg.fields {
@@ -158,19 +212,52 @@ impl InferenceNode {
                 m.insert(f.clone(), x.clone());
             }
         }
-        serde_json::to_string_pretty(&Value::Object(m)).unwrap_or_default()
+        Value::Object(m)
     }
 
-    fn request(&self, user: String) -> CompletionRequest {
+    fn user_message(&self, v: &Value) -> String {
+        serde_json::to_string_pretty(&self.view(v)).unwrap_or_default()
+    }
+
+    /// One line of a batched request: the record's view with its index first.
+    fn batch_line(&self, k: usize, v: &Value) -> String {
+        let mut m = Map::new();
+        m.insert("i".into(), json!(k));
+        if let Value::Object(fields) = self.view(v) {
+            m.extend(fields);
+        }
+        serde_json::to_string(&Value::Object(m)).unwrap_or_default()
+    }
+
+    /// The request for one record (`batch` is None) or for a batch of
+    /// `n` records: the same prompt, plus how to answer them all at once; the
+    /// schema, if any, wrapped around each answer.
+    fn request(&self, user: String, batch: Option<usize>) -> CompletionRequest {
+        let preamble = match batch {
+            None => self.prompt.clone(),
+            Some(n) => format!(
+                "{}\n\nThis request carries {n} records, one JSON object per line, each with its index `i` (0 to {}). \
+                 Reply with one JSON object, {{\"answers\": [...]}}, holding exactly {n} answers in the same order: \
+                 answers[k] is your answer for the record with i = k, shaped as described above, and nothing else.",
+                self.prompt.trim_end(),
+                n.saturating_sub(1)
+            ),
+        };
         let mut request = CompletionRequest::new(user)
-            .preamble(self.prompt.clone())
+            .preamble(preamble)
             .max_tokens(u64::from(self.cfg.max_tokens));
         if let Some(t) = self.cfg.temperature {
             request = request.temperature(t);
         }
         let mut params = Map::new();
         match (&self.schema, self.cfg.backend) {
-            (Some(schema), _) => request = request.output_schema(schema.clone()),
+            (Some(schema), _) => {
+                let schema = match batch {
+                    None => schema.clone(),
+                    Some(n) => answers_schema(schema, n),
+                };
+                request = request.output_schema(schema);
+            }
             // JSON mode: any object. Converse has no such mode without a schema.
             (None, Backend::Openai) => {
                 params.insert("response_format".into(), json!({"type": "json_object"}));
@@ -188,12 +275,12 @@ impl InferenceNode {
 
     /// The reply as a JSON object, after `retries` more tries for a request
     /// that got no reply.
-    async fn ask(&self, user: String) -> Result<Value> {
+    async fn ask(&self, user: String, batch: Option<usize>) -> Result<Value> {
         let attempts = self.cfg.retries.saturating_add(1);
         let mut attempt = 0;
         let text = loop {
             attempt += 1;
-            match self.call(user.clone()).await {
+            match self.call(user.clone(), batch).await {
                 Ok(text) => break text,
                 Err(e) if attempt < attempts => {
                     let wait = Duration::from_secs(1 << (attempt - 1).min(6));
@@ -216,10 +303,10 @@ impl InferenceNode {
     }
 
     /// One request: the reply's text, or why there is none.
-    async fn call(&self, user: String) -> Result<String> {
+    async fn call(&self, user: String, batch: Option<usize>) -> Result<String> {
         let reply = tokio::time::timeout(
             Duration::from_millis(self.cfg.timeout_ms),
-            self.model.call(self.request(user)),
+            self.model.call(self.request(user, batch)),
         )
         .await
         .map_err(|_| anyhow!("no reply within {} ms", self.cfg.timeout_ms))?
@@ -243,6 +330,72 @@ impl InferenceNode {
         }
         Ok(text)
     }
+}
+
+/// The reply, or the error, under the node's name on the record.
+fn attach(name: &str, v: Value, reply: Value) -> Value {
+    let mut obj = match v {
+        Value::Object(m) => m,
+        other => {
+            let mut m = Map::new();
+            m.insert("value".into(), other);
+            m
+        }
+    };
+    obj.insert(name.to_string(), reply);
+    Value::Object(obj)
+}
+
+/// A batched reply's `answers`, one per record: by each answer's `i` when
+/// they all carry one, else by position. A record whose answer is missing or
+/// not an object gets the error instead.
+fn spread(reply: Value, n: usize) -> Vec<Value> {
+    let Some(items) = reply.get("answers").and_then(Value::as_array).cloned() else {
+        let err = format!("reply has no `answers` array: {}", head(&reply.to_string(), 200));
+        return vec![json!({"error": err}); n];
+    };
+    let indexed = !items.is_empty()
+        && items
+            .iter()
+            .all(|a| a.get("i").and_then(Value::as_u64).is_some());
+    let mut slots: Vec<Option<Value>> = vec![None; n];
+    for (pos, a) in items.into_iter().enumerate() {
+        let k = if indexed {
+            a["i"].as_u64().unwrap_or(u64::MAX) as usize
+        } else {
+            pos
+        };
+        if k < n && slots[k].is_none() {
+            slots[k] = Some(a);
+        }
+    }
+    slots
+        .into_iter()
+        .enumerate()
+        .map(|(k, slot)| match slot {
+            Some(Value::Object(mut m)) => {
+                m.remove("i");
+                Value::Object(m)
+            }
+            Some(other) => json!({"error": format!("answer {k} is not a JSON object: {}", head(&other.to_string(), 200))}),
+            None => json!({"error": format!("no answer for record {k} in a reply to {n}")}),
+        })
+        .collect()
+}
+
+/// `{"answers": [item, item, ...]}`, exactly `n` of them, each `item`.
+fn answers_schema(item: &schemars::Schema, n: usize) -> schemars::Schema {
+    let item = serde_json::to_value(item).unwrap_or(Value::Null);
+    let wrapped = json!({
+        "title": "Answers",
+        "type": "object",
+        "properties": {
+            "answers": {"type": "array", "items": item, "minItems": n, "maxItems": n}
+        },
+        "required": ["answers"],
+        "additionalProperties": false
+    });
+    schemars::Schema::try_from(wrapped).expect("a schema wrapped in an object is a schema")
 }
 
 fn head(s: &str, n: usize) -> String {
@@ -329,12 +482,40 @@ pub(crate) mod stub {
                         let _ = sock.shutdown().await;
                         return;
                     }
+                    let verdict = |text: &str| {
+                        if text.contains("bad") {
+                            json!({"flag": true, "one_line": "bad thing"})
+                        } else {
+                            json!({"flag": false, "one_line": "fine"})
+                        }
+                    };
+                    // A message's content is a string or a list of text parts.
+                    let text_of = |c: &serde_json::Value| -> String {
+                        match c {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Array(parts) => parts
+                                .iter()
+                                .filter_map(|p| p["text"].as_str())
+                                .collect::<Vec<_>>()
+                                .join(""),
+                            _ => String::new(),
+                        }
+                    };
+                    let req: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                    let batched = text_of(&req["messages"][0]["content"]).contains("This request carries");
                     let content = if body.contains("prose") {
                         "Looks fine to me, nothing to flag.".to_string()
-                    } else if body.contains("bad") {
-                        r#"{"flag": true, "one_line": "bad thing"}"#.to_string()
+                    } else if batched {
+                        // One answer per line of the user message; "short"
+                        // anywhere in the batch drops the last answer.
+                        let user = text_of(&req["messages"][1]["content"]);
+                        let mut answers: Vec<_> = user.lines().map(verdict).collect();
+                        if user.contains("short") {
+                            answers.pop();
+                        }
+                        json!({"answers": answers}).to_string()
                     } else {
-                        r#"{"flag": false, "one_line": "fine"}"#.to_string()
+                        verdict(&body).to_string()
                     };
                     let reply = json!({
                         "choices": [{"message": {"content": content}, "finish_reason": "stop"}]
@@ -370,6 +551,8 @@ pub(crate) mod stub {
             prompt_file: "judge.md".into(),
             schema_file: None,
             fields: Vec::new(),
+            batch: 1,
+            batch_bytes: 32_768,
             concurrency: 2,
             timeout_ms: 5_000,
             retries: 0,
@@ -537,6 +720,116 @@ mod tests {
         let out = node.annotate(json!({"id": 9})).await;
         assert_eq!(out["id"], 9);
         assert!(!out["judge"]["error"].as_str().unwrap().is_empty(), "{out}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_batch_shares_one_request_and_each_record_gets_its_answer() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("batch");
+        let mut cfg = stub::config(&url);
+        cfg.batch = 2;
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let outs = node
+            .annotate_all(vec![
+                json!({"id": 1, "msg": "fine"}),
+                json!({"id": 2, "msg": "bad"}),
+                json!({"id": 3, "msg": "fine"}),
+                json!({"id": 4, "msg": "fine"}),
+                json!({"id": 5, "msg": "bad again"}),
+            ])
+            .await;
+        assert_eq!(
+            outs.iter().map(|o| o["id"].as_i64().unwrap()).collect::<Vec<_>>(),
+            [1, 2, 3, 4, 5],
+            "order kept"
+        );
+        assert_eq!(
+            outs.iter().map(|o| o["judge"]["flag"].as_bool().unwrap()).collect::<Vec<_>>(),
+            [false, true, false, false, true],
+            "each record has its own answer: {outs:?}"
+        );
+        assert!(outs[1]["judge"].get("i").is_none(), "the index is not part of the answer");
+
+        let seen = seen.lock().await;
+        assert_eq!(seen.len(), 3, "five records, two per request: 2 + 2 + 1");
+        let req: Value = serde_json::from_str(&seen[0]).unwrap();
+        let system = req["messages"][0]["content"].to_string();
+        assert!(system.contains("You are a test judge."), "the prompt comes first: {system}");
+        assert!(system.contains("2 records"), "{system}");
+        let user = match &req["messages"][1]["content"] {
+            Value::String(s) => s.clone(),
+            other => other["0"]["text"].as_str().or(other[0]["text"].as_str()).unwrap_or_default().to_string(),
+        };
+        let lines: Vec<Value> = user.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0]["i"], 0);
+        assert_eq!(lines[1]["i"], 1);
+        assert_eq!(lines[1]["id"], 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_short_answer_list_leaves_errors_on_the_rest() {
+        let (url, _seen) = stub::model().await;
+        let dir = stub::dir("short");
+        let mut cfg = stub::config(&url);
+        cfg.batch = 3;
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let outs = node
+            .annotate_all(vec![
+                json!({"id": 1, "msg": "bad"}),
+                json!({"id": 2, "msg": "short reply please"}),
+                json!({"id": 3, "msg": "fine"}),
+            ])
+            .await;
+        assert_eq!(outs[0]["judge"]["flag"], true);
+        assert_eq!(outs[1]["judge"]["flag"], false);
+        let err = outs[2]["judge"]["error"].as_str().unwrap();
+        assert!(err.contains("no answer for record 2"), "{err}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_batch_wraps_the_schema_around_each_answer() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("batch-schema");
+        std::fs::write(
+            dir.join("verdict.json"),
+            r#"{"title": "Verdict", "type": "object", "properties": {"flag": {"type": "boolean"}}, "required": ["flag"], "additionalProperties": false}"#,
+        )
+        .unwrap();
+        let mut cfg = stub::config(&url);
+        cfg.schema_file = Some("verdict.json".into());
+        cfg.batch = 4;
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let outs = node
+            .annotate_all(vec![json!({"id": 1, "msg": "bad"}), json!({"id": 2})])
+            .await;
+        assert_eq!(outs[0]["judge"]["flag"], true);
+        let seen = seen.lock().await;
+        let req: Value = serde_json::from_str(&seen[0]).unwrap();
+        let schema = &req["response_format"]["json_schema"]["schema"];
+        assert_eq!(req["response_format"]["json_schema"]["name"], "Answers");
+        assert_eq!(schema["properties"]["answers"]["items"]["properties"]["flag"]["type"], "boolean", "{schema}");
+        assert_eq!(schema["properties"]["answers"]["minItems"], 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn batch_bytes_caps_a_request() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("batch-bytes");
+        let mut cfg = stub::config(&url);
+        cfg.batch = 10;
+        cfg.batch_bytes = 80;
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        // ~45 bytes each: two fit under 80, the third starts a new request.
+        let outs = node
+            .annotate_all((1..=5).map(|i| json!({"id": i, "msg": "a record of some length"})).collect())
+            .await;
+        assert_eq!(outs.len(), 5);
+        assert_eq!(seen.lock().await.len(), 3, "2 + 2 + 1 by bytes");
         let _ = std::fs::remove_dir_all(dir);
     }
 
