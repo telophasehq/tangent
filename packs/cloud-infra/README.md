@@ -18,7 +18,7 @@ store ──▶ windows ──▶ judge ──▶ flagged ──▶ alerts.ndjso
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
 - **store** keeps every normalized, enriched record under its partition for 30 days. That ends the ingest pipeline: a source is acknowledged when its records are kept, and nothing waits on a model.
-- **windows** reads the store back a window at a time: a quarter hour of one partition's activity, closed once the stream has moved twenty minutes past it (a quiet partition closes on the clock). Where each partition stands lives in the store too, so a restart catches up what fell due while it was down.
+- **windows** reads the store back a window at a time: an hour of one partition's activity, closed once the stream has moved twenty minutes past it (a quiet partition closes on the clock). Where each partition stands lives in the store too, so a restart catches up what fell due while it was down.
 - **judge** reads each window's records together, with the history before the window (each actor's day, the org's hour) read once from the store, and writes a verdict per record: `flag`, `one_line`, `why`. No rule decides what the model reads; the profile is context, not a rulebook.
 - The judge is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see.
 

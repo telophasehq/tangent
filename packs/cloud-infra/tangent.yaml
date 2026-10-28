@@ -47,7 +47,7 @@ sources:
 
   windows:                      # the stored records, read back a window at a time as each closes
     type: store
-    span: 15m                   # one partition's quarter hour is judged together
+    span: 1h                    # one partition's hour is judged together; a record waits up to span + late for its verdict
     late: 20m                   # CloudTrail reports up to about fifteen minutes late
     grace: 2m                   # after a start, let the sources catch up before closing anything
 
