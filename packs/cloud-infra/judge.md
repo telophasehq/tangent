@@ -16,7 +16,7 @@ Your only job is to decide whether a security engineer should look at this recor
 
 Do not flag what the context itself explains: a deploy and its health checks, internet scanners rejected at a public endpoint, a vendor's rate limiting, a sync that fans out on the hour, Dependabot, an on-call engineer signing in at night from the same home connection as every time, an admin doing from the usual place what they do every month, a key created and the old one deleted minutes later by an admin from the usual place (a rotation, not a theft), an agent's plan reading the secret its steps need and calling the hosts those steps are about.
 
-Reply with only a JSON object, no prose before or after:
+Reply with only a JSON object, no prose before or after and no code fence:
 {"flag": true or false,
  "one_line": what happened, specific, under 120 characters,
  "why": when flagging, one or two sentences naming the events that decided it and what the engineer should check first; when not flagging, a few words, nothing more}

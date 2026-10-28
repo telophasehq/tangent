@@ -119,6 +119,7 @@ inference:
     model: ${JUDGE_MODEL}
     api_key: ${JUDGE_API_KEY}
     prompt_file: judge.md
+    schema_file: judge.schema.json      # the shape, enforced by the backend where it can
     batch: 16                   # records per request, as many as fit batch_bytes; the model judges them together
     batch_bytes: 16000          # one local model's comfortable prompt; raise it for a hosted model
     max_tokens: 200             # per record; a batch may say batch times as much

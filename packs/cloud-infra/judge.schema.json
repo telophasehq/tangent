@@ -1,0 +1,11 @@
+{
+  "title": "Verdict",
+  "type": "object",
+  "properties": {
+    "flag": { "type": "boolean" },
+    "one_line": { "type": "string" },
+    "why": { "type": "string" }
+  },
+  "required": ["flag", "one_line", "why"],
+  "additionalProperties": false
+}

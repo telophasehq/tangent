@@ -256,7 +256,8 @@ impl InferenceNode {
                  Reply with one JSON object, {{\"answers\": [...]}}, holding exactly {n} answers, one per record in \
                  the same order. Each answer starts with the record's index, {{\"i\": k, ...}}, then the fields described \
                  above, and nothing else. Keep going through every record: the reply is not finished until the answer \
-                 with \"i\": {last} is written, then close the array and the object.",
+                 with \"i\": {last} is written, then close the array and the object. The reply is the JSON object \
+                 itself: no code fence, no text before or after it.",
                 self.prompt.trim_end(),
                 last = n.saturating_sub(1)
             ),
@@ -421,14 +422,17 @@ fn spread(reply: Value, n: usize) -> Vec<Value> {
         .collect()
 }
 
-/// `{"answers": [item, item, ...]}`, exactly `n` of them, each `item`.
-fn answers_schema(item: &schemars::Schema, n: usize) -> schemars::Schema {
+/// `{"answers": [item, item, ...]}`, each `item`. The count is in the
+/// prompt, not the schema: backends that enforce schemas reject array
+/// bounds (Bedrock's structured output does), and a short reply is caught
+/// when the answers are spread over the records anyway.
+fn answers_schema(item: &schemars::Schema, _n: usize) -> schemars::Schema {
     let item = serde_json::to_value(item).unwrap_or(Value::Null);
     let wrapped = json!({
         "title": "Answers",
         "type": "object",
         "properties": {
-            "answers": {"type": "array", "items": item, "minItems": n, "maxItems": n}
+            "answers": {"type": "array", "items": item}
         },
         "required": ["answers"],
         "additionalProperties": false
@@ -872,7 +876,7 @@ mod tests {
         let schema = &req["response_format"]["json_schema"]["schema"];
         assert_eq!(req["response_format"]["json_schema"]["name"], "Answers");
         assert_eq!(schema["properties"]["answers"]["items"]["properties"]["flag"]["type"], "boolean", "{schema}");
-        assert_eq!(schema["properties"]["answers"]["minItems"], 2);
+        assert!(schema["properties"]["answers"].get("minItems").is_none(), "no array bounds: backends reject them");
         let _ = std::fs::remove_dir_all(dir);
     }
 
