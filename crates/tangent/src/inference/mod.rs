@@ -125,7 +125,7 @@ impl InferenceNode {
     }
 
     /// Records with their partitions through the model: grouped by
-    /// partition and by window (`_span.from`, when the records came from a
+    /// partition and by buffer (`_buffer.from`, when the records came from a
     /// `store` source), each group in requests of `batch`, each request read
     /// with the history before its earliest record when `context` is set and
     /// a store is given. The annotated records, in the order given.
@@ -138,7 +138,7 @@ impl InferenceNode {
         let mut groups: Vec<(GroupKey, Vec<(usize, Value)>)> = Vec::new();
         for (i, (v, part)) in records.into_iter().enumerate() {
             let window = v
-                .get("_span")
+                .get("_buffer")
                 .and_then(|s| s.get("from"))
                 .and_then(Value::as_str)
                 .unwrap_or("")
@@ -288,7 +288,7 @@ impl InferenceNode {
             .filter_map(|v| crate::windows::time_of_value(v, &cfg.time))
             .min()?;
         let spans: BTreeMap<&str, i64> = cfg
-            .spans
+            .window
             .iter()
             .filter_map(|(k, v)| Some((k.as_str(), crate::sources::poll::duration_ms(v)?)))
             .collect();
@@ -1098,13 +1098,13 @@ mod tests {
         let mut scopes = BTreeMap::new();
         scopes.insert("actor".to_string(), "_norm.actor".to_string());
         scopes.insert("org".to_string(), "_norm.org".to_string());
-        let mut spans = BTreeMap::new();
-        spans.insert("actor".to_string(), "24h".to_string());
-        spans.insert("org".to_string(), "1h".to_string());
+        let mut window = BTreeMap::new();
+        window.insert("actor".to_string(), "24h".to_string());
+        window.insert("org".to_string(), "1h".to_string());
         cfg.context = Some(ContextConfig {
             namespace: "events".into(),
             scopes,
-            spans,
+            window,
             max_events: 20,
             max_bytes: 40_000,
             fields: vec!["ts".into(), "_norm.kind".into()],

@@ -1,5 +1,5 @@
-//! The `store` source: windows of what a `store` sink kept, read back from
-//! the state store as they close. See `tangent_shared::sources::store` for
+//! The `store` source: what a `store` sink kept, read back from the state
+//! store a buffer at a time as each closes. See `tangent_shared::sources::store` for
 //! the rules and `crate::windows` for the bookkeeping.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -32,6 +32,8 @@ struct Rules {
     span: i64,
     late: i64,
     idle: i64,
+    /// Nothing before this is judged, on a partition's first sight.
+    since: Option<i64>,
 }
 
 /// One partition, as the source knows it while running. `closed` and the
@@ -86,20 +88,28 @@ pub async fn run_consumer(
     store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    let span = ms(&cfg.span, "span")?;
+    let span = ms(&cfg.buffer, "buffer")?;
     if span <= 0 {
-        return Err(anyhow!("store source: span must be positive"));
+        return Err(anyhow!("store source: buffer must be positive"));
     }
     let late = ms(&cfg.late, "late")?;
     let idle = cfg.idle.as_deref().map(|s| ms(s, "idle")).transpose()?.unwrap_or(late);
     let grace = cfg.grace.as_deref().map(|s| ms(s, "grace")).transpose()?.unwrap_or(late);
-    let rules = Rules { span, late, idle };
+    let since = match cfg.since.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(s) => Some(
+            chrono::DateTime::parse_from_rfc3339(s)
+                .map_err(|e| anyhow!("store source: since {s:?}: {e}"))?
+                .timestamp_millis(),
+        ),
+        None => None,
+    };
+    let rules = Rules { span, late, idle, since };
     let from = NodeRef::Source {
         name: Arc::clone(&name),
     };
     tracing::info!(
-        source = %name, span = %cfg.span, late = %cfg.late, idle_ms = idle, grace_ms = grace,
-        "store source: windows of the stored records"
+        source = %name, buffer = %cfg.buffer, late = %cfg.late, idle_ms = idle, grace_ms = grace,
+        "store source: the stored records, a buffer at a time"
     );
     tokio::select! {
         () = shutdown.cancelled() => return Ok(()),
@@ -157,7 +167,7 @@ async fn tick(
             let closed = match get_int(store, &p, CLOSED_THROUGH).await? {
                 Some(c) => c,
                 None => match get_int(store, &p, FIRST).await? {
-                    Some(f) => f.div_euclid(rules.span) * rules.span,
+                    Some(f) => f.max(rules.since.unwrap_or(i64::MIN)).div_euclid(rules.span) * rules.span,
                     None => continue,
                 },
             };
@@ -206,11 +216,11 @@ async fn tick(
                 continue;
             }
             state.pending.insert(start, false);
-            let span = json!({"from": iso(start), "to": iso(end)});
+            let buffer = json!({"from": iso(start), "to": iso(end)});
             let frames = frames(&rows, |m| {
-                m.insert("_span".into(), span.clone());
+                m.insert("_buffer".into(), buffer.clone());
             });
-            tracing::debug!(source = %name, partition = %p, from = %iso(start), records = frames.len(), "window closed");
+            tracing::debug!(source = %name, partition = %p, from = %iso(start), records = frames.len(), "buffer closed");
             let ack: Arc<dyn Ack> = Arc::new(DoneAck {
                 tx: tx.clone(),
                 done: Mutex::new(Some(Done::Window {

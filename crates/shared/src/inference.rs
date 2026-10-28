@@ -120,8 +120,10 @@ pub struct ContextConfig {
     /// A view per scope: the records whose `field` has the value one of the
     /// request's records has, e.g. `{actor: _norm.actor, org: _norm.org}`.
     pub scopes: BTreeMap<String, String>,
-    /// How far back each scope reads: `{actor: 24h, org: 1h}`.
-    pub spans: BTreeMap<String, String>,
+    /// How far back each scope reads, the window of history a batch is
+    /// read with: `{actor: 24h, org: 1h}`.
+    #[serde(alias = "spans")]
+    pub window: BTreeMap<String, String>,
     /// Lines per view, the latest kept.
     #[serde(default = "default_max_events")]
     pub max_events: usize,
