@@ -33,7 +33,13 @@ make test           # the cases through the provider plugins, norm, enrich and f
 make run            # listens on :9400 for NDJSON records
 ```
 
-The judge defaults to a local model on `:8080` (mlx_lm.server or llama-server). For a hosted one:
+The judge defaults to a local model on `:8080`. Serve it with llama.cpp's `llama-server`, which turns the verdict schema into a grammar: replies are always well-formed and their reasons stay short. `mlx_lm.server` accepts the schema and ignores it, and with this model about one reply in five came back unreadable.
+
+```bash
+llama-server -m GLM-4.7-Flash-Q4_K.gguf --port 8080 -np 1 -c 32768 -ngl 99 -fa on --jinja --temp 0.7 --top-p 0.95
+```
+
+For a hosted one:
 
 ```bash
 JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY make run

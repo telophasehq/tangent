@@ -3,8 +3,8 @@
   "type": "object",
   "properties": {
     "flag": { "type": "boolean" },
-    "one_line": { "type": "string" },
-    "why": { "type": "string" }
+    "one_line": { "type": "string", "maxLength": 160 },
+    "why": { "type": "string", "maxLength": 400 }
   },
   "required": ["flag", "one_line", "why"],
   "additionalProperties": false
