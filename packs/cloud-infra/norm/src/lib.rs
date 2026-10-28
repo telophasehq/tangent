@@ -100,6 +100,40 @@ fn org_of_repo(repo: &str) -> Option<String> {
     repo.split('/').next().map(str::to_string)
 }
 
+/// Who acted, as CloudTrail records it. An IAM user by name. A role session
+/// by the role, since the session name is new every time, except an SSO
+/// role, where the session name is the person. AWS acting for you (a
+/// service-linked role, or a service calling as itself) is nobody: there is
+/// no principal to know or not know. Another account assuming a role here is
+/// `account:<id>`.
+fn cloudtrail_actor(lv: &Logview) -> Option<String> {
+    let kind = get(lv, "userIdentity.type").unwrap_or_default();
+    match kind.as_str() {
+        "AssumedRole" => {
+            let Some(role) = get(lv, "userIdentity.sessionContext.sessionIssuer.userName") else {
+                // No session context (the corpus' shape): the name, else the ARN.
+                return get(lv, "userIdentity.userName").or_else(|| get(lv, "userIdentity.arn"));
+            };
+            let issuer = get(lv, "userIdentity.sessionContext.sessionIssuer.arn").unwrap_or_default();
+            if issuer.contains("/aws-service-role/") {
+                return None;
+            }
+            if role.starts_with("AWSReservedSSO_") {
+                let arn = get(lv, "userIdentity.arn").unwrap_or_default();
+                if let Some(session) = arn.rsplit('/').next().filter(|s| !s.is_empty()) {
+                    return Some(session.to_string());
+                }
+            }
+            Some(role)
+        }
+        "AWSService" => None,
+        "AWSAccount" => get(lv, "userIdentity.accountId").map(|a| format!("account:{a}")),
+        "Root" => get(lv, "userIdentity.userName").or_else(|| Some("root".to_string())),
+        "" if get(lv, "userIdentity.invokedBy").is_some() => None,
+        _ => get(lv, "userIdentity.userName").or_else(|| get(lv, "userIdentity.arn")),
+    }
+}
+
 fn norm(lv: &Logview) -> Norm {
     let source = get(lv, "source").unwrap_or_default();
     let mut n = Norm::default();
@@ -122,10 +156,21 @@ fn norm(lv: &Logview) -> Norm {
             n.target = get(lv, "repo");
         }
         "cloudtrail" => {
-            n.actor = get(lv, "userIdentity.userName").or_else(|| get(lv, "userIdentity.arn"));
+            n.actor = cloudtrail_actor(lv);
             n.org = get(lv, "userIdentity.accountId");
             n.kind = get(lv, "eventName");
-            n.ip = get(lv, "sourceIPAddress");
+            // The address is the caller's, except when the caller is an AWS
+            // service (`ecs.amazonaws.com`, `AWS Internal`: not an address) or
+            // the identity broker: a federated sign-in is recorded from IAM
+            // Identity Center's address, not the person's.
+            n.ip = get(lv, "sourceIPAddress").filter(|ip| {
+                !ip.ends_with(".amazonaws.com")
+                    && ip != "AWS Internal"
+                    && !matches!(
+                        n.kind.as_deref(),
+                        Some("AssumeRoleWithSAML" | "AssumeRoleWithWebIdentity")
+                    )
+            });
             // The object acted on, when it has a stable name. Snapshot ids
             // and the like are new every day and would read as first sightings.
             n.target = get(lv, "requestParameters.bucketName")

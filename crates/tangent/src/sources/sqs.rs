@@ -67,11 +67,23 @@ pub async fn run_consumer(
 
                                             match s3_client.get_object().bucket(bucket).key(&key).send().await {
                                                 Ok(obj) => {
-                                                    let aws_sdk_s3::operation::get_object::GetObjectOutput { body: body_stream, .. } = obj;
+                                                    let aws_sdk_s3::operation::get_object::GetObjectOutput { body: body_stream, content_encoding, .. } = obj;
                                                     match body_stream.collect().await {
                                                         Ok(collected) => {
                                                             let bytes = collected.into_bytes();
                                                             let raw = BytesMut::from(bytes.as_ref());
+
+                                                            // Objects are often stored compressed (a trail's
+                                                            // files, for one): the encoding, the key's suffix
+                                                            // or the magic bytes say so.
+                                                            let comp = dc.resolve_compression(content_encoding.as_deref(), Some(&key), &raw[..raw.len().min(8)]);
+                                                            let raw = match decoding::decompress_bytes(&comp, raw) {
+                                                                Ok(v) => v,
+                                                                Err(e) => {
+                                                                    tracing::warn!(error=?e, "S3 object {bucket}/{key}: decompress failed; treating as plain");
+                                                                    BytesMut::from(bytes.as_ref())
+                                                                }
+                                                            };
 
                                                             let mut ndjson = decoding::normalize_to_ndjson(&cfg.decoding.format, raw)?;
                                                             frames_all.extend(decoding::chunk_ndjson(&mut ndjson, chunks));
