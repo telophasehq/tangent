@@ -96,9 +96,15 @@ pub struct InferenceConfig {
     pub retries: u32,
 
     /// The reply's budget, per record: a batched request may say `batch`
-    /// times as much.
+    /// times as much, up to `max_request_tokens`.
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
+
+    /// A request's whole reply budget. Models cap their output (Claude Haiku
+    /// at 64k tokens), so a request takes at most this over `max_tokens`
+    /// records, whatever `batch` says.
+    #[serde(default = "default_max_request_tokens")]
+    pub max_request_tokens: u32,
 
     /// Sent only when set; the model's default otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -192,6 +198,9 @@ const fn default_timeout_ms() -> u64 {
 }
 const fn default_retries() -> u32 {
     2
+}
+const fn default_max_request_tokens() -> u32 {
+    32_000
 }
 const fn default_max_tokens() -> u32 {
     2_000

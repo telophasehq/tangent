@@ -411,7 +411,9 @@ impl InferenceNode {
     /// Records in request-sized runs: at most `batch` of them and about
     /// `batch_bytes` of JSON each; a record larger than that goes alone.
     fn chunks(&self, records: Vec<Value>) -> Vec<Vec<Value>> {
-        let (max_n, max_bytes) = (self.cfg.batch.max(1), self.cfg.batch_bytes.max(1));
+        // As many as the request's reply budget has room to answer.
+        let by_budget = (self.cfg.max_request_tokens / self.cfg.max_tokens.max(1)).max(1) as usize;
+        let (max_n, max_bytes) = (self.cfg.batch.max(1).min(by_budget), self.cfg.batch_bytes.max(1));
         let mut out = Vec::new();
         let mut cur: Vec<Value> = Vec::new();
         let mut bytes = 0usize;
@@ -475,8 +477,10 @@ impl InferenceNode {
                 last = n.saturating_sub(1)
             ),
         };
-        // `max_tokens` is per record: a batch of n may say n times as much.
-        let budget = u64::from(self.cfg.max_tokens) * batch.unwrap_or(1) as u64;
+        // `max_tokens` is per record: a batch of n may say n times as much,
+        // up to the request's budget.
+        let budget = (u64::from(self.cfg.max_tokens) * batch.unwrap_or(1) as u64)
+            .min(u64::from(self.cfg.max_request_tokens.max(self.cfg.max_tokens)));
         let mut request = CompletionRequest::new(user)
             .preamble(preamble)
             .max_tokens(budget);
@@ -837,6 +841,7 @@ pub(crate) mod stub {
             timeout_ms: 5_000,
             retries: 0,
             max_tokens: 50,
+            max_request_tokens: 32_000,
             temperature: None,
             extra,
         }
@@ -1189,6 +1194,26 @@ mod tests {
         let item = &schema["properties"]["answers"]["items"];
         assert_eq!(item["properties"]["i"]["type"], "integer", "each answer carries its record's index: {item}");
         assert!(item["required"].as_array().unwrap().iter().any(|r| r == "i"), "{item}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_request_takes_no_more_records_than_its_reply_budget_answers() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("reply-budget");
+        let mut cfg = stub::config(&url);
+        cfg.batch = 10;
+        cfg.max_tokens = 50;
+        cfg.max_request_tokens = 100;
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let outs = node.annotate_all((1..=5).map(|i| json!({"id": i})).collect()).await;
+        assert_eq!(outs.len(), 5);
+        let seen = seen.lock().await;
+        assert_eq!(seen.len(), 3, "two records per request: 2 + 2 + 1");
+        for body in seen.iter() {
+            let req: Value = serde_json::from_str(body).unwrap();
+            assert!(req["max_tokens"].as_u64().unwrap() <= 100, "{req}");
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 
