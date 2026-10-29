@@ -20,8 +20,8 @@ pub struct CloudtrailConfig {
     #[serde(default)]
     pub profile: Option<String>,
     /// An SQS queue told of each file the trail delivers: S3 event
-    /// notifications on the trail's bucket (straight, through SNS or through
-    /// EventBridge), or the trail's own SNS notifications. With Control
+    /// notifications on the trail's bucket (straight or through SNS), or the
+    /// trail's own SNS notifications. With Control
     /// Tower, the trail notifies the audit account's
     /// `aws-controltower-AllConfigNotifications` topic, which AWS Config
     /// shares; its messages are skipped. Required.

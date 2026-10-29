@@ -137,33 +137,19 @@ async fn run_delivery(
                 for msg in out.messages.unwrap_or_default() {
                     let (Some(body), Some(handle)) = (msg.body(), msg.receipt_handle()) else { continue };
                     let ack: Arc<dyn Ack> = Arc::new(SqsAck::new(sqs.clone(), Arc::clone(&qurl), handle.to_string()));
-                    let files = match notice_of(body) {
-                        Notice::Files(files) => files,
-                        Notice::Skip(why) => {
-                            tracing::debug!(source = %name, "nothing to read ({why}); deleting the message");
-                            delete(&name, &ack).await;
-                            continue;
-                        }
-                        Notice::Confirm(url) => {
-                            tracing::warn!(source = %name, "the queue's SNS subscription is not confirmed yet; open this link once to confirm it: {url}");
-                            delete(&name, &ack).await;
-                            continue;
-                        }
-                        Notice::Unknown => {
-                            let head: String = body.chars().take(200).collect();
-                            tracing::warn!(source = %name, message = %head, "a message that names no trail file; deleting it");
-                            delete(&name, &ack).await;
-                            continue;
-                        }
-                    };
-                    match read_files(&mut s3, &files).await {
+                    match read_files(&mut s3, &trail_files(body)).await {
                         Ok(mut ndjson) => {
-                            failing = false;
                             let frames = decoding::chunk_ndjson(&mut ndjson, chunks);
                             if frames.is_empty() {
-                                delete(&name, &ack).await;
-                            } else if let Err(e) = router.forward(&from, frames, vec![ack]).await {
-                                tracing::error!(source = %name, "forward: {e:#}");
+                                tracing::debug!(source = %name, "nothing to read; deleting the message");
+                                if let Err(e) = ack.ack().await {
+                                    tracing::warn!(source = %name, "deleting a message: {e:#}");
+                                }
+                            } else {
+                                failing = false;
+                                if let Err(e) = router.forward(&from, frames, vec![ack]).await {
+                                    tracing::error!(source = %name, "forward: {e:#}");
+                                }
                             }
                         }
                         Err(e) if !failing => {
@@ -202,22 +188,16 @@ impl Backoff {
     }
 }
 
-async fn delete(name: &str, ack: &Arc<dyn Ack>) {
-    if let Err(e) = ack.ack().await {
-        tracing::warn!(source = %name, "deleting a message: {e:#}");
-    }
-}
-
 /// Every record in the files, stamped, as NDJSON. An error is a file that
 /// could not be fetched, and then nothing of the message is forwarded. A
 /// file fetched that is not a trail log is skipped: asking again would not
 /// change it.
-async fn read_files(s3: &mut S3Client, files: &[TrailFile]) -> Result<BytesMut> {
+async fn read_files(s3: &mut S3Client, files: &[(String, String)]) -> Result<BytesMut> {
     let mut ndjson = BytesMut::new();
-    for f in files {
-        let bytes = fetch(s3, &f.bucket, &f.key)
+    for (bucket, key) in files {
+        let bytes = fetch(s3, bucket, key)
             .await
-            .with_context(|| format!("trail file s3://{}/{} not read", f.bucket, f.key))?;
+            .with_context(|| format!("trail file s3://{bucket}/{key} not read"))?;
         match records_of(&bytes) {
             Ok(records) => {
                 for (t, mut v) in records {
@@ -226,141 +206,43 @@ async fn read_files(s3: &mut S3Client, files: &[TrailFile]) -> Result<BytesMut> 
                 }
             }
             Err(e) => {
-                tracing::warn!(bucket = %f.bucket, key = %f.key, "not a trail log file, skipped: {e:#}")
+                tracing::warn!(bucket, key, "not a trail log file, skipped: {e:#}")
             }
         }
     }
     Ok(ndjson)
 }
 
-/// What a queue message asks for.
-#[derive(Debug, PartialEq, Eq)]
-enum Notice {
-    /// Trail log files to read.
-    Files(Vec<TrailFile>),
-    /// Nothing to read, and why.
-    Skip(&'static str),
-    /// SNS asking that the queue's subscription be confirmed: the link to
-    /// confirm it, which a person (or the topic's owner) opens once.
-    Confirm(String),
-    /// Not a notification this source knows.
-    Unknown,
-}
-
-/// One delivered file.
-#[derive(Debug, PartialEq, Eq)]
-struct TrailFile {
-    bucket: String,
-    key: String,
-}
-
-/// The trail files a message names: S3 event notifications (`Records[].s3`,
-/// keys URL-encoded), CloudTrail's SNS notifications (`s3Bucket`,
-/// `s3ObjectKey[]`) and EventBridge's `Object Created`, each possibly inside
-/// an SNS envelope (`Message`, unless the subscription delivers raw). Only
-/// log files are read: a digest, a deleted object or anything else in the
-/// bucket (Control Tower's also holds AWS Config's files) is not an event,
-/// and neither is AWS Config's notification on a topic it shares with the
-/// trail.
-fn notice_of(body: &str) -> Notice {
-    let Ok(mut v) = serde_json::from_str::<Value>(body) else {
-        return Notice::Unknown;
+fn trail_files(body: &str) -> Vec<(String, String)> {
+    let Ok(v) = serde_json::from_str::<Value>(body) else {
+        return Vec::new();
     };
-    if v.get("Type").and_then(Value::as_str) == Some("SubscriptionConfirmation") {
-        return match v.get("SubscribeURL").and_then(Value::as_str) {
-            Some(url) => Notice::Confirm(url.to_string()),
-            None => Notice::Unknown,
-        };
+    if let Some(url) = v.get("SubscribeURL").and_then(Value::as_str) {
+        tracing::warn!("confirm the queue's SNS subscription: {url}");
     }
-    if v.get("Type").and_then(Value::as_str) == Some("Notification") {
-        match v
-            .get("Message")
-            .and_then(Value::as_str)
-            .map(serde_json::from_str::<Value>)
-        {
-            Some(Ok(inner)) => v = inner,
-            _ => return Notice::Unknown,
+    let v = match v.get("Message").and_then(Value::as_str) {
+        Some(inner) => serde_json::from_str::<Value>(inner).unwrap_or(v),
+        None => v,
+    };
+    let mut out = Vec::new();
+    for r in v.get("Records").and_then(Value::as_array).into_iter().flatten() {
+        let created = r["eventName"].as_str().is_none_or(|e| e.starts_with("ObjectCreated"));
+        let bucket = r.pointer("/s3/bucket/name").and_then(Value::as_str);
+        let key = r.pointer("/s3/object/key").and_then(Value::as_str);
+        if let (true, Some(b), Some(k)) = (created, bucket, key) {
+            let k = percent_decode_str(&k.replace('+', " ")).decode_utf8_lossy().into_owned();
+            out.push((b.to_string(), k));
         }
     }
-    if v.get("Event").and_then(Value::as_str) == Some("s3:TestEvent") {
-        return Notice::Skip("S3's test event");
-    }
-    if v.get("messageType").is_some() {
-        return Notice::Skip("an AWS Config notification");
-    }
-    let text = |v: &Value, at: &str| v.pointer(at).and_then(Value::as_str).map(str::to_string);
-    let mut known = false;
-    let mut named = Vec::new();
-    for r in v
-        .get("Records")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        if r.get("s3").is_none() {
-            continue;
-        }
-        known = true;
-        let created = text(r, "/eventName").is_none_or(|e| e.starts_with("ObjectCreated"));
-        if !created {
-            continue;
-        }
-        if let (Some(bucket), Some(key)) = (text(r, "/s3/bucket/name"), text(r, "/s3/object/key")) {
-            named.push(TrailFile {
-                bucket,
-                key: form_decoded(&key),
-            });
-        }
-    }
-    if let Some(bucket) = text(&v, "/s3Bucket") {
-        known = true;
-        let keys: Vec<&str> = match v.get("s3ObjectKey") {
-            Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).collect(),
-            Some(Value::String(k)) => vec![k.as_str()],
-            _ => Vec::new(),
-        };
-        for key in keys {
-            named.push(TrailFile {
-                bucket: bucket.clone(),
-                key: key.to_string(),
-            });
-        }
-    }
-    if text(&v, "/source").as_deref() == Some("aws.s3") {
-        known = true;
-        if text(&v, "/detail-type").as_deref() == Some("Object Created") {
-            if let (Some(bucket), Some(key)) = (
-                text(&v, "/detail/bucket/name"),
-                text(&v, "/detail/object/key"),
-            ) {
-                named.push(TrailFile { bucket, key });
+    if let Some(b) = v.get("s3Bucket").and_then(Value::as_str) {
+        for k in v.get("s3ObjectKey").and_then(Value::as_array).into_iter().flatten() {
+            if let Some(k) = k.as_str() {
+                out.push((b.to_string(), k.to_string()));
             }
         }
     }
-    if !known {
-        return Notice::Unknown;
-    }
-    named.retain(|f| is_log(&f.key));
-    if named.is_empty() {
-        Notice::Skip("no trail log file: a digest, a deleted object, or another file in the bucket")
-    } else {
-        Notice::Files(named)
-    }
-}
-
-/// A trail writes its logs under `CloudTrail/` and its Insights under
-/// `CloudTrail-Insight/`; its digests, under `CloudTrail-Digest/`, are not
-/// events.
-fn is_log(key: &str) -> bool {
-    key.contains("/CloudTrail/") || key.contains("/CloudTrail-Insight/")
-}
-
-/// An S3 event notification's key is form-encoded: `+` is a space, `%2B` a
-/// plus.
-fn form_decoded(key: &str) -> String {
-    percent_decode_str(&key.replace('+', " "))
-        .decode_utf8_lossy()
-        .into_owned()
+    out.retain(|(_, k)| k.contains("/CloudTrail/") || k.contains("/CloudTrail-Insight/"));
+    out
 }
 
 async fn fetch(s3: &mut S3Client, bucket: &str, key: &str) -> Result<Bytes> {
@@ -406,112 +288,36 @@ mod tests {
     use serde_json::json;
     use std::io::Write;
 
-    const LOG: &str = "o-exampleorg/AWSLogs/o-exampleorg/111122223333/CloudTrail/us-east-1/2026/10/28/111122223333_CloudTrail_us-east-1_20261028T1705Z_abc.json.gz";
+    const LOG: &str = "AWSLogs/1/CloudTrail/us-east-1/2026/10/28/1_CloudTrail_us-east-1_20261028T1705Z_x.json.gz";
 
-    fn files(n: Notice) -> Vec<TrailFile> {
-        match n {
-            Notice::Files(f) => f,
-            other => panic!("expected files, got {other:?}"),
-        }
-    }
-
-    fn file(bucket: &str, key: &str) -> TrailFile {
-        TrailFile {
-            bucket: bucket.into(),
-            key: key.into(),
-        }
-    }
-
-    /// Control Tower: the trail notifies a topic in the audit account, and
-    /// the queue subscribes to it without raw delivery.
     #[test]
-    fn cloudtrails_own_notification_through_sns() {
-        let inner = json!({"s3Bucket": "aws-controltower-logs-444455556666-us-east-1", "s3ObjectKey": [LOG]});
-        let body = json!({
-            "Type": "Notification",
-            "TopicArn": "arn:aws:sns:us-east-1:777788889999:aws-controltower-AllConfigNotifications",
-            "Message": inner.to_string(),
-        });
-        assert_eq!(
-            files(notice_of(&body.to_string())),
-            [file("aws-controltower-logs-444455556666-us-east-1", LOG)]
-        );
-        // Raw delivery: the notification itself.
-        assert_eq!(files(notice_of(&inner.to_string())).len(), 1);
-    }
-
-    /// AWS Config shares Control Tower's topic: its notifications, and the
-    /// files it delivers, are not the trail's.
-    #[test]
-    fn aws_config_on_the_same_topic() {
-        for inner in [
-            json!({"messageType": "ConfigurationItemChangeNotification", "configurationItem": {"resourceType": "AWS::S3::Bucket"}}),
-            json!({"messageType": "ConfigurationHistoryDeliveryCompleted", "s3Bucket": "b", "s3ObjectKey": "AWSLogs/111122223333/Config/us-east-1/2026/10/28/ConfigHistory/x.json.gz"}),
+    fn notifications() {
+        let digest = "AWSLogs/1/CloudTrail-Digest/us-east-1/2026/10/28/d.json.gz";
+        let config = "AWSLogs/1/Config/us-east-1/2026/10/28/ConfigHistory/x.json.gz";
+        let sns = |m: &Value| json!({"Type": "Notification", "Message": m.to_string()});
+        let s3 = |name: &str, key: &str| json!({"eventName": name, "s3": {"bucket": {"name": "trail"}, "object": {"key": key}}});
+        let own = json!({"s3Bucket": "trail", "s3ObjectKey": [LOG, digest]});
+        let events = json!({"Records": [
+            s3("ObjectCreated:Put", "AWSLogs/1/CloudTrail/us-east-1/2026/10/28/a+b%2Bc.json.gz"),
+            s3("ObjectCreated:Put", digest),
+            s3("ObjectCreated:Put", config),
+            s3("ObjectRemoved:Delete", LOG),
+        ]});
+        let spaced = "AWSLogs/1/CloudTrail/us-east-1/2026/10/28/a b+c.json.gz";
+        for (body, want) in [
+            (own.clone(), vec![LOG]),
+            (sns(&own), vec![LOG]),
+            (events.clone(), vec![spaced]),
+            (sns(&events), vec![spaced]),
+            (sns(&json!({"messageType": "ConfigurationHistoryDeliveryCompleted", "s3Bucket": "trail", "s3ObjectKey": config})), vec![]),
+            (json!({"Service": "Amazon S3", "Event": "s3:TestEvent", "Bucket": "trail"}), vec![]),
+            (json!({"Type": "Notification", "Message": "plain text"}), vec![]),
         ] {
-            let body = json!({"Type": "Notification", "Message": inner.to_string()}).to_string();
-            assert!(matches!(notice_of(&body), Notice::Skip(_)), "{body}");
+            let got = trail_files(&body.to_string());
+            assert!(got.iter().all(|(b, _)| b == "trail"), "{body}");
+            assert_eq!(got.into_iter().map(|(_, k)| k).collect::<Vec<_>>(), want, "{body}");
         }
-    }
-
-    #[test]
-    fn s3_event_notifications() {
-        let event = |name: &str, key: &str| json!({"eventName": name, "awsRegion": "us-east-1", "s3": {"bucket": {"name": "trail"}, "object": {"key": key}}});
-        let body = json!({"Records": [
-            event("ObjectCreated:Put", "AWSLogs/111122223333/CloudTrail/us-east-1/2026/10/28/a+b%2Bc.json.gz"),
-            event("ObjectCreated:Put", "AWSLogs/111122223333/CloudTrail-Digest/us-east-1/2026/10/28/d.json.gz"),
-            event("ObjectCreated:Put", "AWSLogs/111122223333/Config/us-east-1/2026/10/28/ConfigSnapshot/s.json.gz"),
-            event("ObjectRemoved:Delete", "AWSLogs/111122223333/CloudTrail/us-east-1/2026/10/28/gone.json.gz"),
-        ]})
-        .to_string();
-        let want = [file(
-            "trail",
-            "AWSLogs/111122223333/CloudTrail/us-east-1/2026/10/28/a b+c.json.gz",
-        )];
-        assert_eq!(files(notice_of(&body)), want);
-        let through_sns = json!({"Type": "Notification", "Message": body}).to_string();
-        assert_eq!(files(notice_of(&through_sns)), want);
-    }
-
-    #[test]
-    fn eventbridge_object_created() {
-        let body = json!({
-            "version": "0", "source": "aws.s3", "detail-type": "Object Created", "region": "eu-west-1",
-            "detail": {"bucket": {"name": "trail"}, "object": {"key": LOG, "size": 1234}},
-        });
-        assert_eq!(
-            files(notice_of(&body.to_string())),
-            [file("trail", LOG)]
-        );
-        let deleted = json!({"source": "aws.s3", "detail-type": "Object Deleted", "detail": {"bucket": {"name": "trail"}, "object": {"key": LOG}}});
-        assert!(matches!(notice_of(&deleted.to_string()), Notice::Skip(_)));
-    }
-
-    #[test]
-    fn a_subscription_confirmation_gives_its_link() {
-        let body = json!({"Type": "SubscriptionConfirmation", "TopicArn": "arn:aws:sns:us-east-1:777788889999:trail",
-                          "SubscribeURL": "https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&Token=abc"});
-        assert_eq!(
-            notice_of(&body.to_string()),
-            Notice::Confirm(
-                "https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&Token=abc".into()
-            )
-        );
-    }
-
-    #[test]
-    fn nothing_to_read() {
-        assert!(matches!(
-            notice_of(r#"{"Service":"Amazon S3","Event":"s3:TestEvent","Bucket":"trail"}"#),
-            Notice::Skip(_)
-        ));
-        let digest = json!({"s3Bucket": "trail", "s3ObjectKey": ["AWSLogs/111122223333/CloudTrail-Digest/us-east-1/2026/10/28/d.json.gz"]});
-        assert!(matches!(notice_of(&digest.to_string()), Notice::Skip(_)));
-        assert_eq!(notice_of("not json"), Notice::Unknown);
-        assert_eq!(notice_of(r#"{"hello":"world"}"#), Notice::Unknown);
-        assert_eq!(
-            notice_of(r#"{"Type":"Notification","Message":"plain text"}"#),
-            Notice::Unknown
-        );
+        assert!(trail_files("not json").is_empty());
     }
 
     #[test]

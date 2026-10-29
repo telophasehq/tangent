@@ -48,11 +48,10 @@ Anything else (CI logs, runner egress, a forwarder for a source not listed) is o
 
 #### An organization trail
 
-One trail can record every account and region in the organization into one bucket. The source reads it through an SQS queue that is told of each file the trail writes. Any of these notifications works:
+One trail can record every account and region in the organization into one bucket. The source reads it through an SQS queue that is told of each file the trail writes. Either of these notifications works:
 
 - the trail's own SNS notifications, with the queue subscribed to the topic;
-- S3 event notifications on the bucket, straight to the queue or through SNS;
-- EventBridge's `Object Created` for the bucket, with the queue as the rule's target.
+- S3 event notifications on the bucket, straight to the queue or through SNS.
 
 With Control Tower, the trail already notifies the audit account's `aws-controltower-AllConfigNotifications` topic, and its bucket is the log archive account's. Subscribe a queue in the audit account to the topic, and set `CLOUDTRAIL_BUCKET_ROLE` to a role in the log archive account that can read the bucket. AWS Config's messages share the topic and are skipped, as are digests and the bucket's other files.
 
