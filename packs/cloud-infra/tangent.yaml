@@ -24,12 +24,11 @@ sources:
   # Each API is read directly, with nothing in between; a source whose
   # credential is empty says so once and stays idle. See the Makefile for the
   # variables and the README for what each credential needs.
-  cloudtrail:                   # LookupEvents: management events, nothing to set up (cloudtrail:LookupEvents)
+  cloudtrail:                   # a trail's delivered files, every event, through its SQS notifications
     type: cloudtrail
-    region: ${AWS_REGION}
-    regions: ${AWS_REGIONS}     # several, comma-separated, one cursor each; include us-east-1 (IAM, STS, sign-ins land there)
+    region: ${AWS_REGION}       # the queue's
     profile: ${AWS_PROFILE}
-    queue_url: ${CLOUDTRAIL_QUEUE_URL}   # set: a trail's delivered files, every event, through its SQS notifications
+    queue_url: ${CLOUDTRAIL_QUEUE_URL}
     bucket_role: ${CLOUDTRAIL_BUCKET_ROLE}   # the role to read the trail's bucket as, when another account owns it
   github_audit:                 # the organization's audit log (a token with read:audit_log)
     type: github_audit

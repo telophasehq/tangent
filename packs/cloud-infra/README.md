@@ -63,18 +63,18 @@ Four sources read their APIs directly, with nothing in between. Each wakes up wh
 
 | source | export | what it reads |
 |---|---|---|
-| `cloudtrail` | AWS credentials: `AWS_PROFILE`, or the SDK's default chain; `AWS_REGIONS` as a comma-separated list, one cursor each, and include `us-east-1`, where IAM, STS and console sign-in events are recorded (`AWS_REGION` for one region); the identity needs `cloudtrail:LookupEvents` | `LookupEvents` on the account, per region: management events (IAM, STS, console sign-ins, bucket policy changes), about fifteen minutes behind, nothing to set up. With `CLOUDTRAIL_QUEUE_URL`, a trail's files instead, through the SQS queue told of each one: every event, data events included, every account and region of an organization trail, a few minutes behind (see below) |
+| `cloudtrail` | AWS credentials: `AWS_PROFILE`, or the SDK's default chain; `AWS_REGION`, the queue's; `CLOUDTRAIL_QUEUE_URL`, the SQS queue told of each file a trail writes (see below) | a trail's files: every event, data events included, every account and region of an organization trail, a few minutes behind. There is no polling of `LookupEvents`: a poller's own calls are CloudTrail events, and it reads them back |
 | `github_audit` | `GITHUB_ORG`, `GITHUB_TOKEN` with `read:audit_log` (the audit log API is a GitHub Enterprise Cloud feature) | the organization's audit log, web and git events |
 | `okta` | `OKTA_ORG_URL` (`https://acme.okta.com`), `OKTA_API_TOKEN` from Security → API → Tokens, made by a read-only administrator | the System Log |
 | `google_workspace` | `GOOGLE_APPLICATION_CREDENTIALS`, a service account key file with domain-wide delegation for the scope `https://www.googleapis.com/auth/admin.reports.audit.readonly`; `GOOGLE_ADMIN_EMAIL`, the administrator it acts as (the Admin SDK API enabled on the project) | login, token, drive and admin activity |
 
-A source keeps its place in the runtime's state store (the `sources` namespace), so a restart resumes where it stopped; on first start it reads the last hour (`since`). Records arrive as the APIs write them, plus `source` and `ts`; norm knows the four shapes.
+GitHub, Okta and Workspace keep their place in the runtime's state store (the `sources` namespace), so a restart resumes where it stopped; on first start each reads the last hour (`since`). CloudTrail's place is its queue: a message is deleted once its file's records are kept. Records arrive as the APIs write them, plus `source` and `ts`; norm knows the four shapes.
 
 Anything else (CI logs, runner egress, a forwarder for a source not listed) is one JSON line per record on `:9400`, with a `source` field naming its shape (`gha_ci`, `runner_egress`, or one of the four above) and a `ts`.
 
 #### An organization trail
 
-One trail can record every account and region in the organization into one bucket, and reading it costs no API calls that land back in CloudTrail, as polling `LookupEvents` does. The source reads it through an SQS queue that is told of each file the trail writes. Any of these notifications works:
+One trail can record every account and region in the organization into one bucket, and reading it costs no API calls that land back in CloudTrail. The source reads it through an SQS queue that is told of each file the trail writes. Any of these notifications works:
 
 - the trail's own SNS notifications, with the queue subscribed to the topic;
 - S3 event notifications on the bucket, straight to the queue or through SNS;
