@@ -21,10 +21,7 @@ use wasmtime::component::{Component, Resource};
 use crate::inference::{lines, InferenceNode};
 use crate::router::{RefCountAck, Router};
 use crate::wasm::host::JsonLogView;
-use crate::{
-    partition,
-    wasm::{self, mapper::Mappers, probe::eval_selector},
-};
+use crate::wasm::{self, mapper::Mappers, probe::eval_selector};
 use crate::{
     CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, GUEST_BYTES_TOTAL, GUEST_LATENCY,
     PLUGIN_TRAPS_TOTAL,
@@ -75,11 +72,11 @@ impl Drop for Done {
     }
 }
 
-/// The worker that owns a partition value: a stable function of the value, so
-/// one guest sees a value's records in order and nothing races on its state.
-fn worker_for(value: &str, workers: usize) -> usize {
+/// The worker that owns a scope: a stable function of it, so one guest sees
+/// a scope's records in order and nothing races on its state.
+fn worker_for(scope: &str, workers: usize) -> usize {
     let mut h = DefaultHasher::new();
-    value.hash(&mut h);
+    scope.hash(&mut h);
     (h.finish() % workers as u64) as usize
 }
 
@@ -157,7 +154,7 @@ fn deliver(
 /// for each batch it is handed: a record enters at its source and goes to
 /// each of the node's outputs in turn, a plugin's or a model's output being
 /// the next node's input, until the sinks. A partitioned node runs a record
-/// on the worker that owns its value; this one hands it there.
+/// on the worker that owns its scope; this one hands it there.
 pub struct Worker {
     id: usize,
     rx: mpsc::Receiver<Record>,
@@ -305,10 +302,8 @@ impl Worker {
                 queue.push_back((node, Hop::Views(views)));
                 continue;
             }
-            // Handed over: this worker owns their value at `node`.
-            let out = self
-                .run_node(&node, &views, router.partition(&node))
-                .await?;
+            // Handed over: this worker owns their scope at `node`.
+            let out = self.run_node(&node, &views).await?;
             if !out.is_empty() {
                 queue.push_back((node, Hop::Frames(out)));
             }
@@ -364,13 +359,12 @@ impl Worker {
                 continue;
             }
             for to in nodes {
-                let fields = router.partition(to);
-                let out = if fields.is_empty() || workers <= 1 {
-                    self.run_node(to, &views, fields).await?
+                let out = if workers <= 1 || !router.partitioned(to) {
+                    self.run_node(to, &views).await?
                 } else {
                     let mut mine = Vec::new();
                     for lv in &views {
-                        let owner = worker_for(&partition::value(lv, fields), workers);
+                        let owner = worker_for(&router.scope(to, lv), workers);
                         if owner == self.id {
                             mine.push(lv.clone());
                         } else {
@@ -380,7 +374,7 @@ impl Worker {
                     if mine.is_empty() {
                         continue;
                     }
-                    self.run_node(to, &mine, fields).await?
+                    self.run_node(to, &mine).await?
                 };
                 if !out.is_empty() {
                     queue.push_back((to.clone(), Hop::Frames(out)));
@@ -424,27 +418,26 @@ impl Worker {
         Ok(())
     }
 
-    async fn run_node(
-        &mut self,
-        node: &NodeRef,
-        views: &[JsonLogView],
-        fields: &[String],
-    ) -> Result<Vec<BytesMut>> {
+    async fn run_node(&mut self, node: &NodeRef, views: &[JsonLogView]) -> Result<Vec<BytesMut>> {
         match node {
-            NodeRef::Plugin { name } => self.run_plugin(name, views, fields).await,
+            NodeRef::Plugin { name } => {
+                let scopes: Vec<Arc<str>> =
+                    views.iter().map(|lv| self.router.scope(node, lv)).collect();
+                self.run_plugin(name, views, &scopes).await
+            }
             NodeRef::Inference { name } => run_inference(&self.inference, name, views).await,
             _ => unreachable!("only plugins and inference nodes run"),
         }
     }
 
-    /// `views` through plugin `name`: one guest call per value of `fields`,
-    /// with the records whose probe matched and the plugin's state scoped to
-    /// that value. The output frames, values in first-seen order.
+    /// `views` through plugin `name`: one guest call per scope, with the
+    /// records whose probe matched and the plugin's state scoped to that
+    /// scope. The output frames, scopes in first-seen order.
     async fn run_plugin(
         &mut self,
         name: &Arc<str>,
         views: &[JsonLogView],
-        fields: &[String],
+        scopes: &[Arc<str>],
     ) -> Result<Vec<BytesMut>> {
         let Some(idx) = self
             .mappers
@@ -455,25 +448,19 @@ impl Worker {
             bail!("unknown plugin {name}");
         };
 
-        let unpartitioned: Arc<str> = Arc::from("");
         let mut groups: Vec<(Arc<str>, Vec<JsonLogView>, usize)> = Vec::new();
         {
             let m = &self.mappers.mappers[idx];
-            for lv in views {
+            for (lv, scope) in views.iter().zip(scopes) {
                 if !m.selectors.iter().any(|s| eval_selector(s, lv)) {
                     continue;
                 }
-                let value = if fields.is_empty() {
-                    Arc::clone(&unpartitioned)
-                } else {
-                    partition::value(lv, fields)
-                };
-                match groups.iter_mut().find(|(v, _, _)| *v == value) {
+                match groups.iter_mut().find(|(sc, _, _)| sc == scope) {
                     Some((_, g, bytes)) => {
                         g.push(lv.clone());
                         *bytes += lv.byte_len();
                     }
-                    None => groups.push((value, vec![lv.clone()], lv.byte_len())),
+                    None => groups.push((Arc::clone(scope), vec![lv.clone()], lv.byte_len())),
                 }
             }
         }
@@ -483,9 +470,9 @@ impl Worker {
         }
 
         let mut out = Vec::new();
-        for (value, group, bytes) in groups {
+        for (scope, group, bytes) in groups {
             let m = &mut self.mappers.mappers[idx];
-            m.store.data_mut().partition = Arc::clone(&value);
+            m.store.data_mut().partition = Arc::clone(&scope);
 
             let mut owned: Vec<Resource<JsonLogView>> = Vec::with_capacity(group.len());
             for lv in group {
@@ -514,7 +501,7 @@ impl Worker {
                     tracing::error!(
                         error = ?trap,
                         mapper = %m.name,
-                        partition = %value,
+                        scope = %scope,
                         records = owned.len(),
                         "plugin trapped; reinstantiating it and skipping the batch"
                     );
@@ -907,7 +894,7 @@ mod tests {
     /// from the source, the judge runs it on worker 1, its owner, and it
     /// reaches the sink once.
     #[tokio::test]
-    async fn partitioned_node_hands_record_to_owner() {
+    async fn hands_off_to_owner() {
         let (url, seen) = stub::model().await;
         let dir = stub::dir("handoff");
         let source = NodeRef::Source {
@@ -932,7 +919,7 @@ mod tests {
             }],
         );
         let mut partitions = HashMap::default();
-        partitions.insert(judge, vec!["org_id".to_string()]);
+        partitions.insert(judge, ("org".to_string(), vec!["org_id".to_string()]));
         let router = Arc::new(Router::new(outs, partitions, Arc::clone(&sink_manager)));
         let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
         let engines = (0..2)
@@ -958,7 +945,7 @@ mod tests {
 
         let org = (0..)
             .map(|i| format!("org-{i}"))
-            .find(|o| worker_for(o, 2) == 1)
+            .find(|o| worker_for(&format!("org:{o}"), 2) == 1)
             .unwrap();
         let ack = Arc::new(CountingAck::default());
         let frame = BytesMut::from(format!("{{\"id\":1,\"org_id\":\"{org}\"}}\n").as_str());

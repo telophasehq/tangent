@@ -11,7 +11,9 @@ use tokio::sync::OnceCell;
 
 use crate::{
     inference::lines,
+    partition,
     sinks::manager::SinkManager,
+    wasm::host::JsonLogView,
     worker::{Ack, Payload, Record, WorkerPool},
 };
 
@@ -62,8 +64,8 @@ impl Ack for RefCountAck {
 
 pub struct Router {
     outs: HashMap<NodeRef, Vec<NodeRef>>,
-    /// The fields each partitioned node's records are partitioned by.
-    partitions: HashMap<NodeRef, Vec<String>>,
+    /// Each partitioned node's partition: its name and fields.
+    partitions: HashMap<NodeRef, (String, Vec<String>)>,
     pool: OnceCell<Weak<WorkerPool>>,
     sink_manager: Arc<SinkManager>,
     /// Records handed to a worker and not yet through their walk of the DAG.
@@ -74,7 +76,7 @@ pub struct Router {
 impl Router {
     pub fn new(
         outs: HashMap<NodeRef, Vec<NodeRef>>,
-        partitions: HashMap<NodeRef, Vec<String>>,
+        partitions: HashMap<NodeRef, (String, Vec<String>)>,
         sink_manager: Arc<SinkManager>,
     ) -> Self {
         Self {
@@ -108,9 +110,16 @@ impl Router {
         self.outs.get(node).map_or(&[], Vec::as_slice)
     }
 
-    /// The fields `node` is partitioned by; none when it has no partition.
-    pub fn partition(&self, node: &NodeRef) -> &[String] {
-        self.partitions.get(node).map_or(&[], Vec::as_slice)
+    pub fn partitioned(&self, node: &NodeRef) -> bool {
+        self.partitions.contains_key(node)
+    }
+
+    /// A record's scope at `node`; "" when the node has no partition.
+    pub fn scope(&self, node: &NodeRef, lv: &JsonLogView) -> Arc<str> {
+        match self.partitions.get(node) {
+            Some((name, fields)) => partition::scope(lv, name, fields),
+            None => Arc::from(""),
+        }
     }
 
     pub fn sinks(&self) -> &Arc<SinkManager> {

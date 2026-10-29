@@ -25,7 +25,7 @@ pub enum StateCommands {
         /// Defaults to the pipeline's only namespace.
         #[arg(long)]
         ns: Option<String>,
-        /// Partition; empty for an unpartitioned stream
+        /// Partition: a scope like org:acme; empty for a node without one
         #[arg(long, default_value = "")]
         partition: String,
     },

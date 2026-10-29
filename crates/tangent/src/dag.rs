@@ -8,12 +8,8 @@ use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    router::Router,
-    sinks::manager::SinkManager,
-    sources, state,
-    state::StateStore,
-    wasm::engine::WasmEngine,
-    worker::WorkerPool,
+    router::Router, sinks::manager::SinkManager, sources, state, state::StateStore,
+    wasm::engine::WasmEngine, worker::WorkerPool,
 };
 
 pub struct DagRuntime {
@@ -99,7 +95,7 @@ impl DagRuntime {
             outs.entry(e.from.clone()).or_default().extend(e.to.clone());
         }
 
-        let partitions: HashMap<NodeRef, Vec<String>> = cfg
+        let partitions: HashMap<NodeRef, (String, Vec<String>)> = cfg
             .plugins
             .iter()
             .map(|(name, p)| (NodeRef::Plugin { name: name.clone() }, &p.partition))
@@ -108,7 +104,10 @@ impl DagRuntime {
                     .iter()
                     .map(|(name, i)| (NodeRef::Inference { name: name.clone() }, &i.partition)),
             )
-            .filter_map(|(node, p)| Some((node, cfg.runtime.partitions.get(p.as_ref()?)?.clone())))
+            .filter_map(|(node, p)| {
+                let p = p.as_ref()?;
+                Some((node, (p.clone(), cfg.runtime.partitions.get(p)?.clone())))
+            })
             .collect();
 
         let router = Arc::new(Router::new(outs, partitions, Arc::clone(&sink_manager)));

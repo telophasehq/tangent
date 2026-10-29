@@ -60,7 +60,7 @@ plugins:
   counter: { module_type: rust, path: ./counter, partition: org }
 ```
 
-Entries are keyed by `(namespace, partition, key)`. Plugins share one namespace, `plugins`, so what one plugin writes the next can read; within a partition all of it runs on one worker, so there is nothing to race against (below). Give a plugin a `state_namespace` of its own when it must not share, such as two instances of one plugin with different configs:
+Entries are keyed by `(namespace, partition, key)`, the partition being a record's scope (below). Plugins share one namespace, `plugins`, so what one plugin writes the next can read. Give a plugin a `state_namespace` of its own when it must not share, such as two instances of one plugin with different configs:
 
 ```yaml
 plugins:
@@ -70,13 +70,13 @@ plugins:
 
 A plugin may read files too: `data: <dir>` mounts a directory, relative to the config file, read-only at `/data` in the guest, for reference data too big for `config` such as an IP database or published address ranges. [examples/enrich](/examples/enrich) reads MaxMind GeoLite2 and the cloud providers' ranges that way, and its `setup.sh` fetches them.
 
-A plugin or inference node with `partition: <name>` runs each record on the worker that owns the record's value for it (the fields' values joined with `|`), and a plugin's state calls are scoped to that value: "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. A node without one runs wherever the record is, its state in the empty partition. [examples/partition](/examples/partition) counts events per org with a single `count` key.
+A plugin or inference node with `partition: <name>` runs each record on the worker that owns the record's scope for it, `<name>:` and the fields' values joined with `|` (`org:acme`), and a plugin's state calls are scoped to it: "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. A node without one runs wherever the record is, its state in the scope `""`. [examples/partition](/examples/partition) counts events per org with a single `count` key.
 
 The store is readable while the pipeline runs:
 
 ```bash
-tangent state --config tangent.yaml ls                          # keys per namespace and partition
-tangent state --config tangent.yaml get seen --partition acme   # one entry (--ns defaults to the only namespace)
+tangent state --config tangent.yaml ls                              # keys per namespace and partition
+tangent state --config tangent.yaml get seen --partition org:acme   # one entry (--ns defaults to the only namespace)
 tangent state --config tangent.yaml scan --prefix user: --limit 50
 tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
 ```

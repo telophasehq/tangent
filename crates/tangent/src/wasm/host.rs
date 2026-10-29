@@ -463,7 +463,7 @@ mod tests {
     use wasmtime_wasi::WasiCtxBuilder;
 
     #[tokio::test]
-    async fn state_scoped_by_value() {
+    async fn scoped_state() {
         let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
         let mut host = HostEngine::new(
             WasiCtxBuilder::new().build(),
@@ -472,22 +472,32 @@ mod tests {
             Arc::new(HashMap::new()),
             true,
         );
-        for value in ["acme", "acme", "globex"] {
-            host.partition = Arc::from(value);
+        for scope in ["org:acme", "org:acme", "org:globex"] {
+            host.partition = Arc::from(scope);
             host.incr("count".into(), 1, None).await.unwrap();
+            host.set("ev:1".into(), Scalar::Str(scope.into()), None)
+                .await
+                .unwrap();
         }
-        host.partition = Arc::from("acme");
+        host.partition = Arc::from("org:acme");
         assert!(matches!(
             host.get("count".into()).await,
             Ok(Some(Scalar::Int(2)))
         ));
-        host.partition = Arc::from("globex");
+        let rows = host.scan("ev:".into(), "ev:~".into(), 10).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        host.partition = Arc::from("org:globex");
         assert!(matches!(
             host.get("count".into()).await,
             Ok(Some(Scalar::Int(1)))
         ));
         host.partition = Arc::from("");
         assert!(matches!(host.get("count".into()).await, Ok(None)));
+        assert!(host
+            .scan("ev:".into(), "ev:~".into(), 10)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     /// simd-json parses in place: a de-escaped string is written over the

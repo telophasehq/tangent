@@ -13,8 +13,9 @@ fn scalar_text(s: Scalar) -> String {
     }
 }
 
-/// A record's value for a partition: its fields joined with "|", a missing one empty.
-pub fn value(view: &JsonLogView, fields: &[String]) -> Arc<str> {
+/// A record's scope for partition `name`: "name:" and its fields' values
+/// joined with "|", a missing one empty.
+pub fn scope(view: &JsonLogView, name: &str, fields: &[String]) -> Arc<str> {
     let parts: Vec<String> = fields
         .iter()
         .map(|path| {
@@ -24,7 +25,7 @@ pub fn value(view: &JsonLogView, fields: &[String]) -> Arc<str> {
                 .unwrap_or_default()
         })
         .collect();
-    Arc::from(parts.join("|"))
+    Arc::from(format!("{name}:{}", parts.join("|")))
 }
 
 #[cfg(test)]
@@ -33,19 +34,19 @@ mod tests {
     use bytes::BytesMut;
 
     #[test]
-    fn partition_value() {
+    fn record_scope() {
         let view = JsonLogView::from_bytes(BytesMut::from(
             r#"{"org_id":"acme","n":7,"user":{"id":"u1"}}"#,
         ))
         .unwrap();
         let of = |fields: &[&str]| {
             let fields: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
-            value(&view, &fields)
+            scope(&view, "org", &fields)
         };
-        assert_eq!(&*of(&["org_id"]), "acme");
-        assert_eq!(&*of(&["n"]), "7");
-        assert_eq!(&*of(&["org_id", "user.id"]), "acme|u1");
-        assert_eq!(&*of(&["org_id", "missing"]), "acme|");
-        assert_eq!(&*of(&["missing"]), "");
+        assert_eq!(&*of(&["org_id"]), "org:acme");
+        assert_eq!(&*of(&["n"]), "org:7");
+        assert_eq!(&*of(&["org_id", "user.id"]), "org:acme|u1");
+        assert_eq!(&*of(&["org_id", "missing"]), "org:acme|");
+        assert_eq!(&*of(&["missing"]), "org:");
     }
 }
