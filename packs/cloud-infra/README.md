@@ -96,6 +96,7 @@ The source's identity needs `sqs:ReceiveMessage` and `sqs:DeleteMessage` on the 
 | `members` | people: IdP emails, GitHub handles | anyone else is a principal you do not know |
 | `services` | IAM users and roles, bots | exempt from the "person abroad" rules, held to `cloud` |
 | `keys` | API keys and the networks each calls from | a key off its networks reaches the judge |
+| `about` | who an actor is, when its name does not say (`DrataAutopilotRole: "Drata, the compliance vendor: ..."`) | the judge reads it with the actor's records, in place of "nobody you know" |
 | `hosts` | hosts your systems talk to (`*.suffix` allowed) | a request anywhere else reaches the judge |
 | `sensitive` | buckets, repos, tables | a touch reaches the judge every time |
 

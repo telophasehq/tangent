@@ -2397,5 +2397,55 @@
   "org": "acme",
   "source": "app",
   "ts": "2026-10-22T03:25:00Z"
+ },
+ {
+  "_facts": {
+   "about": "Drata, the compliance vendor: reads IAM, credential reports and backups every day",
+   "ip": {
+    "asn": 16509,
+    "country": "US",
+    "hosting": "aws",
+    "ip": "3.208.10.20",
+    "org": "Amazon.com, Inc.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [
+    "DrataAutopilotRole is Drata, the compliance vendor: reads IAM, credential reports and backups every day",
+    "DrataAutopilotRole acting from aws hosting, 3.208.10.20 (Amazon.com, Inc.)"
+   ],
+   "principal": "unknown"
+  },
+  "_ip": {
+   "_norm.ip": {
+    "asn": 16509,
+    "country": "US",
+    "hosting": "aws",
+    "ip": "3.208.10.20",
+    "org": "Amazon.com, Inc.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "DrataAutopilotRole",
+   "ip": "3.208.10.20",
+   "kind": "GenerateCredentialReport",
+   "org": "acme"
+  },
+  "eventName": "GenerateCredentialReport",
+  "eventSource": "iam.amazonaws.com",
+  "source": "cloudtrail",
+  "sourceIPAddress": "3.208.10.20",
+  "ts": "2026-10-22T04:00:00Z",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "role": "DrataAutopilotRole",
+   "type": "AssumedRole"
+  }
  }
 ]

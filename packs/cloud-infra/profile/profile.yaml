@@ -36,6 +36,9 @@ services:                        # service principals: IAM users and roles, depl
   - railway-deploy
   - hiro-plan-worker
 
+about:                           # who an actor is, when its name does not say; the models read "<actor> is <this>"
+  DrataAutopilotRole: "Drata, the compliance vendor: reads IAM, credential reports and backups every day"
+
 keys:                            # API keys and the networks each calls from
   ak_1a1: [165.227.44.19]        # the findings poller
   ak_rail: [35.212.0.0/16]       # the service hosted at a vendor
