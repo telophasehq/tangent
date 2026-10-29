@@ -28,6 +28,14 @@ pub struct StoreSinkConfig {
     /// history.
     #[serde(default)]
     pub recent: BTreeMap<String, String>,
+    /// What is new, per scope of `recent`: the fields whose values each
+    /// scope value is remembered to have had (`{actor: [_norm.kind,
+    /// _facts.ip.org], org: [_norm.actor]}`). A record with a value its
+    /// scope has not had within `retain` is stored with `_novel`, which
+    /// scope and fields: `{"actor": ["_norm.kind"]}`. A record that has
+    /// none is what its scopes do every day.
+    #[serde(default)]
+    pub novel: BTreeMap<String, Vec<String>>,
 }
 
 pub fn default_namespace() -> String {

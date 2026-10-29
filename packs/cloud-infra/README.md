@@ -11,16 +11,28 @@ Okta ──▶ okta ─┼──▶ enrich ──▶ facts ──▶ store      
 Google Workspace ──▶ google_workspace ─┤
 CI, anything else (TCP) ──▶ norm ─┘
 
-store ──▶ buffer ──▶ judge ──▶ flagged ──▶ alerts.ndjson   (judgment)
+store ──▶ buffer ──▶ novel ──▶ judge ──▶ flagged ──▶ alerts.ndjson, Slack   (judgment)
 ```
 
 - **A plugin per provider** ([providers/](providers/)) reads its source's records: it puts the shape into `_norm.{actor, org, kind, ip, country, dest, target}` and trims the record to what it means, dropping the provider's ids, hashes, protocol details and bulk, so the judge and the retained history carry a record a reader would keep. **norm** does the `_norm` half for anything else arriving over TCP (CI lines, a product's logs) and leaves those records as they came.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
-- **store** keeps every normalized, enriched record under its partition for 30 days. That ends the ingest pipeline: a source is acknowledged when its records are kept, and nothing waits on a model.
+- **store** keeps every normalized, enriched record under its partition for 30 days, and marks a record `_novel` when it has something its actor or the organization has not had in that time: for the actor, a kind, a network (`_facts.ip.org`) or a destination; for the organization, an actor, a destination, a kind or a target. That ends the ingest pipeline: a source is acknowledged when its records are kept, and nothing waits on a model.
 - **buffer** reads the store back five minutes of one partition's activity at a time, once the stream has moved twenty minutes past them (a quiet partition closes on the clock), so a verdict comes about twenty-five minutes after its record. Where each partition stands lives in the store too, so a restart catches up what fell due while it was down.
-- **judge** reads each buffer's records together, with the history before it (each actor's latest records and the org's, however long ago) read once from the store, and writes a verdict per record: a pass is the flag alone, a flag says why. No rule decides what the model reads; the profile is context, not a rulebook.
-- The judge is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see.
+- **novel** passes only the records marked new. What an actor or the organization does every day is kept, and is history for the judge, but is never itself judged: on the corpus about 1 record in 400 is new, and on Telophase's own logs (CloudTrail, GitHub, Okta, Workspace) 47 of 19,846 in their first three hours.
+- **judge** reads each buffer's new records together, with the history before it (each actor's latest records and the org's, however long ago) read once from the store, and writes a verdict per record: a pass is the flag alone, a flag says why. No rule decides what the model reads; the profile is context, not a rulebook.
+- The judge is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see, for `alerts.ndjson` and, with a `slack` sink, a channel:
+
+  ```yaml
+  sinks:
+    slack:
+      type: slack
+      webhook_url: ${SLACK_WEBHOOK_URL}     # an incoming webhook's URL
+      text: "*{_norm.actor}* {_norm.kind} from {_norm.ip} ({_facts.ip.org}): {judge.why}"
+  dag:
+    - from: { kind: plugin, name: flagged }
+      to: [{ kind: sink, name: alerts }, { kind: sink, name: slack }]
+  ```
 
 On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the judge's recall and false-positive rate are in [RESULTS](#what-it-catches).
 

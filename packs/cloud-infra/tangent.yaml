@@ -1,6 +1,7 @@
-# cloud-infra: your own infrastructure's logs. A model reads every record, in
-# batches, each in its context, and writes a verdict; a person reads the ones
-# it flagged. No rule decides anything.
+# cloud-infra: your own infrastructure's logs. Every record is kept; a model
+# reads the new ones (something its actor or the org has not done in thirty
+# days), in batches, each with its history, and writes a verdict; a person
+# reads the ones it flagged. No rule decides anything.
 #
 #   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
 #   make test       the cases in cases/ through norm, facts and window; no model needed
@@ -102,12 +103,15 @@ plugins:
     tests:
       - input: tests/facts/input.json
         expected: tests/facts/expected.json
+  novel:                        # keeps what is new for its actor or the org: all the judge reads
+    module_type: rust
+    path: ../../examples/inference-local/novel
   flagged:                      # keeps what the judge flagged, and what it could not read
     module_type: rust
     path: ../../examples/inference-local/flagged
 
 inference:
-  judge:                        # every record, with its facts and history: the verdict a person reads
+  judge:                        # every new record, with its facts and history: the verdict a person reads
     backend: openai
     url: ${JUDGE_URL}
     model: ${JUDGE_MODEL}
@@ -136,6 +140,9 @@ sinks:
     type: store
     retain: 30d
     recent: { actor: _norm.actor, org: _norm.org }   # history is read by these: each record indexed by its actor; the org is the partition itself
+    novel:                      # what each scope has had in 30 days; a record with something it has not is marked `_novel`
+      actor: [_norm.kind, _facts.ip.org, _norm.dest]
+      org: [_norm.actor, _norm.dest, _norm.kind, _norm.target]
   alerts:                       # what a person should look at
     type: file
     path: alerts.ndjson
@@ -173,8 +180,10 @@ dag:
   # 1. ingest: normalized, enriched, kept
   - from: { kind: plugin, name: facts }
     to: [{ kind: sink, name: store }]
-  # 2. judgment: a buffer at a time, read back from the store, with the window of history before it
+  # 2. judgment: a buffer at a time, read back from the store; what is new, with the history before it
   - from: { kind: source, name: buffer }
+    to: [{ kind: plugin, name: novel }]
+  - from: { kind: plugin, name: novel }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
     to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]

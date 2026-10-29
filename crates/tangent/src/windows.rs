@@ -41,10 +41,17 @@ pub const CLOSED_THROUGH: &str = "closed_through";
 pub const LATE_PREFIX: &str = "late:";
 
 pub const INDEXED: &str = "indexed";
+pub const REMEMBERED: &str = "remembered";
 
 /// Where a store namespace's history index lives.
 pub fn index_ns(ns: &str) -> String {
     format!("recent:{ns}")
+}
+
+/// Where a store namespace's remembered values live: what each scope value
+/// has had, the novelty a record is marked by.
+pub fn seen_ns(ns: &str) -> String {
+    format!("seen:{ns}")
 }
 
 /// The index keys of one scope value: `<scope>\x1f<value>\x1f`, then the

@@ -23,6 +23,9 @@ pub enum SinkKind {
     /// The state store, per partition: what windows are read from.
     #[serde(rename = "store")]
     Store(super::store::StoreSinkConfig),
+    /// A Slack channel, through an incoming webhook: one message a record.
+    #[serde(rename = "slack")]
+    Slack(super::slack::SlackConfig),
 }
 
 #[derive(Debug, Deserialize, Serialize)]

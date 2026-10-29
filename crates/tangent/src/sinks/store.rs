@@ -1,13 +1,14 @@
 //! The `store` sink: every record kept in the state store under its
-//! partition, indexed by the scopes an inference node reads history by, and
-//! the bookkeeping the `store` source closes windows by.
+//! partition, indexed by the scopes an inference node reads history by,
+//! marked with what is new for its scopes, and the bookkeeping the `store`
+//! source closes windows by.
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tangent_shared::runtime::PartitionConfig;
 use tangent_shared::sinks::store::StoreSinkConfig;
 
@@ -16,13 +17,17 @@ use crate::sinks::manager::{Sink, SinkWrite};
 use crate::sources::poll::duration_ms;
 use crate::state::{now_ms, StateStore, StateValue};
 use crate::windows::{
-    ev_key, get_int, index_ns, index_prefix, scope_value, set_int, time_of_value, CLOSED_THROUGH,
-    FIRST, INDEXED, LAST_ARRIVAL, LATE_PREFIX, READ_THROUGH, WATERMARK, WINDOWS_NS,
+    ev_key, get_int, index_ns, index_prefix, scope_value, seen_ns, set_int, time_of_value,
+    CLOSED_THROUGH, FIRST, INDEXED, LAST_ARRIVAL, LATE_PREFIX, READ_THROUGH, REMEMBERED, WATERMARK,
+    WINDOWS_NS,
 };
 use crate::{SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL};
 
 /// Where a record with no partition key goes.
 const NO_PARTITION: &str = "_";
+
+/// The field a record new for its scopes is marked with.
+pub const NOVEL: &str = "_novel";
 
 pub struct StoreSink {
     store: Arc<dyn StateStore>,
@@ -33,8 +38,11 @@ pub struct StoreSink {
     /// (scope, field) each record is indexed by; a scope whose field is a
     /// partition key is not: the partition is its history.
     indexed: Vec<(String, String)>,
+    /// (scope, its field, the fields whose values it is remembered to have had).
+    novel: Vec<(String, String, Vec<String>)>,
     /// Writes run side by side; a partition's window bookkeeping (read, then
-    /// written) and its first indexing happen under this, one at a time.
+    /// written) and its first reading of older rows happen under this, one
+    /// at a time.
     bookkeeping: tokio::sync::Mutex<HashSet<String>>,
 }
 
@@ -55,6 +63,14 @@ impl StoreSink {
             .filter(|(_, field)| !partition_fields.contains(field))
             .map(|(s, f)| (s.clone(), f.clone()))
             .collect();
+        let novel = cfg
+            .novel
+            .iter()
+            .map(|(scope, fields)| match cfg.recent.get(scope) {
+                Some(field) => Ok((scope.clone(), field.clone(), fields.clone())),
+                None => Err(anyhow!("store sink: novel scope {scope:?} is not one of `recent`'s, which give a scope its field")),
+            })
+            .collect::<Result<_>>()?;
         Ok(Arc::new(Self {
             store,
             partition,
@@ -62,6 +78,7 @@ impl StoreSink {
             retain_ms,
             time: cfg.time.clone(),
             indexed,
+            novel,
             bookkeeping: tokio::sync::Mutex::new(HashSet::new()),
         }))
     }
@@ -81,11 +98,44 @@ impl StoreSink {
         Ok(())
     }
 
-    /// A partition's rows stored before the index existed, indexed once: a
-    /// store written by an older version, or by a sink that listed fewer
-    /// scopes, has history for them from its first write on.
-    async fn index_existing(&self, part: &str) -> Result<()> {
-        if self.indexed.is_empty() || get_int(&self.store, part, INDEXED).await?.is_some() {
+    /// What of one record its scopes have not had within `retain`, by scope;
+    /// each value it has is remembered, from now, for `retain`.
+    async fn remember(&self, part: &str, v: &Value) -> Result<Map<String, Value>> {
+        let ns = seen_ns(&self.ns);
+        let now = now_ms() as i64;
+        let mut new = Map::new();
+        for (scope, field, fields) in &self.novel {
+            let Some(sv) = crate::inference::lookup(v, field).and_then(scope_value) else { continue };
+            for f in fields {
+                let Some(value) = crate::inference::lookup(v, f).and_then(scope_value) else { continue };
+                let at = format!("{}{f}\u{1f}{value}", index_prefix(scope, &sv));
+                let last = match self.store.get(&ns, part, &at).await? {
+                    Some(StateValue::Int(t)) => Some(t),
+                    _ => None,
+                };
+                if last.is_none() {
+                    new.entry(scope.clone()).or_insert_with(|| Value::Array(Vec::new()))
+                        .as_array_mut()
+                        .expect("an array")
+                        .push(Value::String(f.clone()));
+                }
+                // Kept from its last sighting, rewritten at most twice a retention.
+                if last.is_none_or(|t| now - t > self.retain_ms as i64 / 2) {
+                    self.store.set(&ns, part, &at, &StateValue::Int(now), Some(self.retain_ms)).await?;
+                }
+            }
+        }
+        Ok(new)
+    }
+
+    /// A partition's rows stored before this sink indexed or remembered them,
+    /// read once: a store written by an older version, or by a sink that
+    /// listed fewer scopes, has history and knows what is usual from its
+    /// first write on.
+    async fn prepare(&self, part: &str) -> Result<()> {
+        let index = !self.indexed.is_empty() && get_int(&self.store, part, INDEXED).await?.is_none();
+        let remember = !self.novel.is_empty() && get_int(&self.store, part, REMEMBERED).await?.is_none();
+        if !index && !remember {
             return Ok(());
         }
         let (mut from, mut n) = ("ev:".to_string(), 0usize);
@@ -96,16 +146,27 @@ impl StoreSink {
             for e in &page {
                 if let StateValue::Str(text) = &e.value {
                     if let Ok(v) = serde_json::from_str::<Value>(text) {
-                        self.index(part, &e.key, &v).await?;
+                        if index {
+                            self.index(part, &e.key, &v).await?;
+                        }
+                        if remember {
+                            self.remember(part, &v).await?;
+                        }
                         n += 1;
                     }
                 }
             }
         }
         if n > 0 {
-            tracing::info!(partition = %part, records = n, "store sink: indexed the records stored before the index");
+            tracing::info!(partition = %part, records = n, index, remember, "store sink: read the records stored before");
         }
-        set_int(&self.store, part, INDEXED, now_ms() as i64).await
+        if index {
+            set_int(&self.store, part, INDEXED, now_ms() as i64).await?;
+        }
+        if remember {
+            set_int(&self.store, part, REMEMBERED, now_ms() as i64).await?;
+        }
+        Ok(())
     }
 }
 
@@ -113,8 +174,7 @@ impl StoreSink {
 impl Sink for StoreSink {
     async fn write(&self, req: SinkWrite) -> Result<()> {
         let now = now_ms() as i64;
-        // Per partition: (record time, key) of what this write stored.
-        let mut stored: BTreeMap<String, Vec<(i64, String)>> = BTreeMap::new();
+        let mut records = Vec::new();
         for line in req.payload[..].split(|b: &u8| *b == b'\n') {
             if line.iter().all(u8::is_ascii_whitespace) {
                 continue;
@@ -133,8 +193,32 @@ impl Sink for StoreSink {
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| NO_PARTITION.to_string());
             let ts = time_of_value(&v, &self.time).unwrap_or(now);
+            records.push((part, ts, v, line));
+        }
+        // A partition's older rows are read before its first new one is
+        // stored, so what they had is not new.
+        {
+            let mut ready = self.bookkeeping.lock().await;
+            for (part, ..) in &records {
+                if !ready.contains(part) {
+                    self.prepare(part).await?;
+                    ready.insert(part.clone());
+                }
+            }
+        }
+
+        // Per partition: (record time, key) of what this write stored.
+        let mut stored: BTreeMap<String, Vec<(i64, String)>> = BTreeMap::new();
+        for (part, ts, mut v, line) in records {
             let key = ev_key(ts, &ulid::Ulid::new().to_string());
-            let text = String::from_utf8_lossy(line).into_owned();
+            let new = self.remember(&part, &v).await?;
+            let text = match v.as_object_mut() {
+                Some(obj) if !new.is_empty() => {
+                    obj.insert(NOVEL.to_string(), Value::Object(new));
+                    v.to_string()
+                }
+                _ => String::from_utf8_lossy(line).into_owned(),
+            };
             self.store
                 .set(&self.ns, &part, &key, &StateValue::Str(text), Some(self.retain_ms))
                 .await?;
@@ -142,12 +226,8 @@ impl Sink for StoreSink {
             stored.entry(part).or_default().push((ts, key));
         }
 
-        let mut seen = self.bookkeeping.lock().await;
+        let held = self.bookkeeping.lock().await;
         for (part, rows) in stored {
-            if !seen.contains(&part) {
-                self.index_existing(&part).await?;
-                seen.insert(part.clone());
-            }
             let max = rows.iter().map(|(t, _)| *t).max().unwrap_or(now);
             let min = rows.iter().map(|(t, _)| *t).min().unwrap_or(now);
             if get_int(&self.store, &part, WATERMARK).await?.is_none_or(|w| max > w) {
@@ -175,7 +255,7 @@ impl Sink for StoreSink {
                     .await?;
             }
         }
-        drop(seen);
+        drop(held);
         SINK_OBJECTS_TOTAL.inc();
         SINK_BYTES_TOTAL.inc_by(req.payload.len() as u64);
         Ok(())
@@ -208,7 +288,7 @@ mod tests {
             retain_ms: None,
             time: None,
         };
-        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new() };
+        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new(), novel: BTreeMap::new() };
         let sink = StoreSink::new(&cfg, Arc::clone(&store), Some(partition)).unwrap();
         sink.write(write(&[
             serde_json::json!({"ts": "2026-10-27T13:05:00Z", "_norm": {"org": "acme"}, "n": 2}),
@@ -257,7 +337,7 @@ mod tests {
         let mut recent = BTreeMap::new();
         recent.insert("actor".to_string(), "_norm.actor".to_string());
         recent.insert("org".to_string(), "_norm.org".to_string());
-        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent };
+        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent, novel: BTreeMap::new() };
         StoreSink::new(&cfg, Arc::clone(store), Some(partition)).unwrap()
     }
 
@@ -283,6 +363,78 @@ mod tests {
         for k in latest(&store, "actor", "alice", "ev:~", 1000).await {
             assert!(store.get("events", "acme", &k).await.unwrap().is_some(), "an indexed key is a stored record");
         }
+    }
+
+    fn sink_with_novelty(store: &Arc<dyn StateStore>) -> Arc<StoreSink> {
+        let partition = PartitionConfig { key: vec!["_norm.org".into()], separator: "|".into(), retain_ms: None, time: None };
+        let recent = BTreeMap::from([("actor".to_string(), "_norm.actor".to_string()), ("org".to_string(), "_norm.org".to_string())]);
+        let novel = BTreeMap::from([
+            ("actor".to_string(), vec!["_norm.kind".to_string(), "_norm.ip".to_string()]),
+            ("org".to_string(), vec!["_norm.actor".to_string()]),
+        ]);
+        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent, novel };
+        StoreSink::new(&cfg, Arc::clone(store), Some(partition)).unwrap()
+    }
+
+    fn act(min: u32, actor: &str, kind: &str, ip: &str) -> serde_json::Value {
+        serde_json::json!({"ts": format!("2026-10-27T13:{min:02}:00Z"), "_norm": {"org": "acme", "actor": actor, "kind": kind, "ip": ip}})
+    }
+
+    async fn novelty(store: &Arc<dyn StateStore>) -> Vec<serde_json::Value> {
+        store
+            .range("events", "acme", "ev:", "ev:~", 100)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| match e.value {
+                StateValue::Str(t) => serde_json::from_str::<serde_json::Value>(&t).unwrap()[NOVEL].clone(),
+                _ => panic!(),
+            })
+            .collect()
+    }
+
+    /// A record is marked with what its scopes had not had; the same again is not.
+    #[tokio::test]
+    async fn a_record_is_marked_with_what_is_new_for_its_scopes() {
+        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
+        let sink = sink_with_novelty(&store);
+        sink.write(write(&[act(1, "alice", "Describe", "10.0.0.1")])).await.unwrap();
+        sink.write(write(&[act(2, "alice", "Describe", "10.0.0.1"), act(3, "alice", "CreateUser", "10.0.0.1")])).await.unwrap();
+        sink.write(write(&[act(4, "alice", "CreateUser", "5.6.7.8"), act(5, "bob", "Describe", "10.0.0.1")])).await.unwrap();
+        assert_eq!(
+            novelty(&store).await,
+            [
+                serde_json::json!({"actor": ["_norm.kind", "_norm.ip"], "org": ["_norm.actor"]}),
+                serde_json::Value::Null,
+                serde_json::json!({"actor": ["_norm.kind"]}),
+                serde_json::json!({"actor": ["_norm.ip"]}),
+                serde_json::json!({"actor": ["_norm.kind", "_norm.ip"], "org": ["_norm.actor"]}),
+            ],
+            "alice's first record; the same again; a new action; a new address; bob's first"
+        );
+    }
+
+    /// What rows stored before novelty was remembered had is not new.
+    #[tokio::test]
+    async fn what_older_rows_had_is_not_new() {
+        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
+        let old = crate::windows::ev_key(1_793_105_000_000, "01OLD");
+        store
+            .set("events", "acme", &old, &StateValue::Str(act(0, "alice", "Describe", "10.0.0.1").to_string()), None)
+            .await
+            .unwrap();
+        let sink = sink_with_novelty(&store);
+        sink.write(write(&[act(5, "alice", "Describe", "10.0.0.1")])).await.unwrap();
+        assert_eq!(novelty(&store).await[1], serde_json::Value::Null);
+        assert!(get_int(&store, "acme", REMEMBERED).await.unwrap().is_some());
+    }
+
+    #[test]
+    fn a_novel_scope_needs_a_field() {
+        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
+        let novel = BTreeMap::from([("actor".to_string(), vec!["_norm.kind".to_string()])]);
+        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new(), novel };
+        assert!(StoreSink::new(&cfg, store, None).is_err());
     }
 
     /// Rows stored before the index existed are indexed at the first write.

@@ -13,6 +13,7 @@ use tokio::time::{sleep, Instant};
 
 use crate::sinks::blackhole;
 use crate::sinks::file;
+use crate::sinks::slack;
 use crate::sinks::store as store_sink;
 use crate::state::StateStore;
 use tangent_shared::runtime::PartitionConfig;
@@ -107,6 +108,10 @@ impl SinkManager {
                 }
                 SinkKind::Store(scfg) => {
                     let sink = store_sink::StoreSink::new(scfg, Arc::clone(&store), partition.clone())?;
+                    sinks.insert(Arc::clone(&name), SinkEntry::Other { sink });
+                }
+                SinkKind::Slack(scfg) => {
+                    let sink = slack::SlackSink::new(scfg)?;
                     sinks.insert(Arc::clone(&name), SinkEntry::Other { sink });
                 }
             }
