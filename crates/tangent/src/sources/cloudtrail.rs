@@ -1,11 +1,11 @@
 //! CloudTrail, read from a trail's delivered files, through the SQS queue
 //! its notifications land in (`queue_url`).
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
+use aws_sdk_s3::error::DisplayErrorContext;
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_sqs::Client as SQSClient;
 use bytes::{Bytes, BytesMut};
@@ -82,7 +82,16 @@ async fn run_delivery(
     shutdown: CancellationToken,
 ) -> Result<()> {
     let sqs = SQSClient::new(aws);
-    let mut buckets = Buckets::new(aws, bucket_role).await;
+    let mut s3conf = aws_sdk_s3::config::Builder::from(aws);
+    if let Some(role) = bucket_role {
+        let creds = aws_config::sts::AssumeRoleProvider::builder(role)
+            .session_name("tangent")
+            .configure(aws)
+            .build()
+            .await;
+        s3conf = s3conf.credentials_provider(creds);
+    }
+    let mut s3 = S3Client::from_conf(s3conf.build());
     let qurl = Arc::new(queue_url);
     let from = NodeRef::Source {
         name: Arc::clone(&name),
@@ -147,7 +156,7 @@ async fn run_delivery(
                             continue;
                         }
                     };
-                    match read_files(&mut buckets, &files).await {
+                    match read_files(&mut s3, &files).await {
                         Ok(mut ndjson) => {
                             failing = false;
                             let frames = decoding::chunk_ndjson(&mut ndjson, chunks);
@@ -203,11 +212,10 @@ async fn delete(name: &str, ack: &Arc<dyn Ack>) {
 /// could not be fetched, and then nothing of the message is forwarded. A
 /// file fetched that is not a trail log is skipped: asking again would not
 /// change it.
-async fn read_files(buckets: &mut Buckets, files: &[TrailFile]) -> Result<BytesMut> {
+async fn read_files(s3: &mut S3Client, files: &[TrailFile]) -> Result<BytesMut> {
     let mut ndjson = BytesMut::new();
     for f in files {
-        let bytes = buckets
-            .fetch(f)
+        let bytes = fetch(s3, &f.bucket, &f.key)
             .await
             .with_context(|| format!("trail file s3://{}/{} not read", f.bucket, f.key))?;
         match records_of(&bytes) {
@@ -244,9 +252,6 @@ enum Notice {
 struct TrailFile {
     bucket: String,
     key: String,
-    /// The bucket's region, when the notification says: S3's and
-    /// EventBridge's do, CloudTrail's own does not.
-    region: Option<String>,
 }
 
 /// The trail files a message names: S3 event notifications (`Records[].s3`,
@@ -304,7 +309,6 @@ fn notice_of(body: &str) -> Notice {
             named.push(TrailFile {
                 bucket,
                 key: form_decoded(&key),
-                region: text(r, "/awsRegion"),
             });
         }
     }
@@ -319,7 +323,6 @@ fn notice_of(body: &str) -> Notice {
             named.push(TrailFile {
                 bucket: bucket.clone(),
                 key: key.to_string(),
-                region: None,
             });
         }
     }
@@ -330,11 +333,7 @@ fn notice_of(body: &str) -> Notice {
                 text(&v, "/detail/bucket/name"),
                 text(&v, "/detail/object/key"),
             ) {
-                named.push(TrailFile {
-                    bucket,
-                    key,
-                    region: text(&v, "/region"),
-                });
+                named.push(TrailFile { bucket, key });
             }
         }
     }
@@ -364,118 +363,20 @@ fn form_decoded(key: &str) -> String {
         .into_owned()
 }
 
-/// S3 clients for the trail's buckets, one per region. A bucket's region is
-/// the notification's when it says; otherwise S3 names it, answering a
-/// request in the wrong region with a redirect the SDK does not follow. The
-/// credentials are `bucket_role`'s when set, the bucket being another
-/// account's.
-struct Buckets {
-    conf: aws_sdk_s3::Config,
-    clients: HashMap<String, S3Client>,
-    region_of: HashMap<String, String>,
-}
-
-impl Buckets {
-    async fn new(aws: &aws_config::SdkConfig, role: Option<&str>) -> Self {
-        let mut conf = aws_sdk_s3::config::Builder::from(aws);
-        if let Some(role) = role {
-            let creds = aws_config::sts::AssumeRoleProvider::builder(role)
-                .session_name("tangent")
-                .configure(aws)
-                .build()
-                .await;
-            conf = conf.credentials_provider(creds);
-        }
-        Self::with(conf.build())
+async fn fetch(s3: &mut S3Client, bucket: &str, key: &str) -> Result<Bytes> {
+    let mut res = s3.get_object().bucket(bucket).key(key).send().await;
+    let moved = res
+        .as_ref()
+        .err()
+        .and_then(|e| e.raw_response()?.headers().get("x-amz-bucket-region"))
+        .map(str::to_string);
+    if let Some(region) = moved {
+        let conf = s3.config().to_builder().region(aws_sdk_s3::config::Region::new(region));
+        *s3 = S3Client::from_conf(conf.build());
+        res = s3.get_object().bucket(bucket).key(key).send().await;
     }
-
-    fn with(conf: aws_sdk_s3::Config) -> Self {
-        Self {
-            conf,
-            clients: HashMap::new(),
-            region_of: HashMap::new(),
-        }
-    }
-
-    /// The client for a region; `None`, the configured one.
-    fn client(&mut self, region: Option<&str>) -> S3Client {
-        let at = region.unwrap_or_default();
-        if let Some(c) = self.clients.get(at) {
-            return c.clone();
-        }
-        let mut conf = self.conf.to_builder();
-        if let Some(r) = region {
-            conf = conf.region(aws_sdk_s3::config::Region::new(r.to_string()));
-        }
-        let c = S3Client::from_conf(conf.build());
-        self.clients.insert(at.to_string(), c.clone());
-        c
-    }
-
-    /// A file's bytes.
-    async fn fetch(&mut self, f: &TrailFile) -> Result<Bytes> {
-        let mut region = self
-            .region_of
-            .get(&f.bucket)
-            .cloned()
-            .or_else(|| f.region.clone());
-        let mut redirected = false;
-        loop {
-            let asked = region
-                .clone()
-                .or_else(|| self.conf.region().map(ToString::to_string));
-            let client = self.client(region.as_deref());
-            match client
-                .get_object()
-                .bucket(&f.bucket)
-                .key(&f.key)
-                .send()
-                .await
-            {
-                Ok(obj) => {
-                    if let Some(r) = asked {
-                        self.region_of.insert(f.bucket.clone(), r);
-                    }
-                    let bytes = obj
-                        .body
-                        .collect()
-                        .await
-                        .context("reading the object")?
-                        .into_bytes();
-                    return Ok(bytes);
-                }
-                Err(e) => {
-                    let told = e
-                        .raw_response()
-                        .and_then(|r| r.headers().get("x-amz-bucket-region"))
-                        .map(str::to_string);
-                    match told {
-                        Some(r) if !redirected && asked.as_deref() != Some(r.as_str()) => {
-                            redirected = true;
-                            region = Some(r);
-                        }
-                        _ => bail!("GetObject: {}", s3_error(&e)),
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// S3's code and message (`AccessDenied: Access Denied`); the SDK's whole
-/// chain when there is no answer from S3 (the network, credentials).
-fn s3_error<R: std::fmt::Debug>(
-    e: &aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError, R>,
-) -> String {
-    use aws_sdk_s3::error::ProvideErrorMetadata;
-    match e.as_service_error() {
-        Some(se) => format!(
-            "{}: {}",
-            se.code().unwrap_or("error"),
-            se.message().unwrap_or("no message")
-        ),
-        None => aws_sdk_s3::error::DisplayErrorContext(e).to_string(),
-    }
+    let obj = res.map_err(|e| anyhow!("GetObject: {}", DisplayErrorContext(&e)))?;
+    Ok(obj.body.collect().await.context("reading the object")?.into_bytes())
 }
 
 /// A delivered file's records with their times: decompressed (CloudTrail
@@ -514,11 +415,10 @@ mod tests {
         }
     }
 
-    fn file(bucket: &str, key: &str, region: Option<&str>) -> TrailFile {
+    fn file(bucket: &str, key: &str) -> TrailFile {
         TrailFile {
             bucket: bucket.into(),
             key: key.into(),
-            region: region.map(str::to_string),
         }
     }
 
@@ -534,11 +434,7 @@ mod tests {
         });
         assert_eq!(
             files(notice_of(&body.to_string())),
-            [file(
-                "aws-controltower-logs-444455556666-us-east-1",
-                LOG,
-                None
-            )]
+            [file("aws-controltower-logs-444455556666-us-east-1", LOG)]
         );
         // Raw delivery: the notification itself.
         assert_eq!(files(notice_of(&inner.to_string())).len(), 1);
@@ -570,7 +466,6 @@ mod tests {
         let want = [file(
             "trail",
             "AWSLogs/111122223333/CloudTrail/us-east-1/2026/10/28/a b+c.json.gz",
-            Some("us-east-1"),
         )];
         assert_eq!(files(notice_of(&body)), want);
         let through_sns = json!({"Type": "Notification", "Message": body}).to_string();
@@ -585,7 +480,7 @@ mod tests {
         });
         assert_eq!(
             files(notice_of(&body.to_string())),
-            [file("trail", LOG, Some("eu-west-1"))]
+            [file("trail", LOG)]
         );
         let deleted = json!({"source": "aws.s3", "detail-type": "Object Deleted", "detail": {"bucket": {"name": "trail"}, "object": {"key": LOG}}});
         assert!(matches!(notice_of(&deleted.to_string()), Notice::Skip(_)));
@@ -721,11 +616,10 @@ mod tests {
             .force_path_style(true)
             .retry_config(aws_sdk_s3::config::retry::RetryConfig::disabled())
             .build();
-        let mut buckets = Buckets::with(conf);
-        let f = file("trail", LOG, None);
-        let bytes = buckets.fetch(&f).await.unwrap();
+        let mut s3 = S3Client::from_conf(conf);
+        let bytes = fetch(&mut s3, "trail", LOG).await.unwrap();
         assert_eq!(records_of(&bytes).unwrap().len(), 1);
-        buckets.fetch(&f).await.unwrap();
+        fetch(&mut s3, "trail", LOG).await.unwrap();
         assert_eq!(
             *signed_for.lock().unwrap(),
             ["us-west-2", "us-east-1", "us-east-1"]
