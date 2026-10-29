@@ -1,21 +1,4 @@
-//! What the org's profile and the address data say about a record, for the
-//! models downstream. Nothing is decided here and nothing is dropped: every
-//! record goes on with `_facts` attached. Upstream plugins normalized the
-//! record (`_norm`) and decorated its address (`_ip`, from `examples/enrich`:
-//! country, ASN, hosting, Tor, VPN, ours). This plugin holds the profile
-//! (where the people are, who the members, services and keys are, which hosts
-//! the systems talk to, which assets are sensitive, which kinds are watched)
-//! and writes what it knows:
-//!   - `principal`: `member`, `service`, `key`, or `unknown`;
-//!   - `ip`: the address as decorated; `key_known_network` for a key;
-//!   - `dest_known`, `sensitive_target`, `watch`, `root`, `world_open`;
-//!   - `notes`: the same, in sentences a model reads.
-//!
-//! The profile is `profile.yaml` in the plugin's data directory (`data:`),
-//! or the same keys under `plugins.facts.config`:
-//!   countries: [US]     cloud: aws       watch: [StopLogging, ...]
-//!   members: [...]      services: [...]  keys: {ak_1: [1.2.3.0/24]}
-//!   hosts: [...]        sensitive: [...] ip: _norm.ip     # the field `enrich` decorated
+//! `_facts`: what the profile (`/data/profile.yaml`, or the same keys under `config:`) says about a record.
 
 wit_bindgen::generate!({
     path: ".tangent/wit",
@@ -43,14 +26,10 @@ const NO_PRINCIPAL: &[&str] = &["hiro", "gha_ci", "runner_egress"];
 
 struct Profile {
     countries: BTreeSet<String>,
-    /// Kinds the org wants seen every time, however usual.
     watch: BTreeSet<String>,
     members: BTreeSet<String>,
     services: BTreeSet<String>,
-    /// The org's API keys and the networks each calls from (`keys: {ak_1: [1.2.3.0/24]}`;
-    /// a plain list means any network).
-    keys: BTreeMap<String, Vec<IpNet>>,
-    /// Where the org's services run (`aws`): a service seen elsewhere is news.
+    keys: BTreeMap<String, Vec<IpNet>>, // empty: any network
     cloud: Option<String>,
     hosts: BTreeSet<String>,
     sensitive: BTreeSet<String>,

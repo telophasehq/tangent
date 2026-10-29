@@ -72,16 +72,17 @@ The source's identity needs `sqs:ReceiveMessage` and `sqs:DeleteMessage` on the 
 
 [profile/profile.yaml](profile/profile.yaml) is every fact about your company that no log carries; the models read it as `_facts`:
 
-| key | what it is | what it decides |
+| key | what it is | what the record gets |
 |---|---|---|
 | `org`, `own_sources` | your name; which sources are your own infrastructure | all of them land in one partition, yours |
-| `countries` | where your people are | a person signing in from elsewhere reaches the judge |
-| `cloud` | where your services run | a service seen on any other hosting reaches the judge |
-| `members` | people: IdP emails, GitHub handles | anyone else is a principal you do not know |
-| `services` | IAM users and roles, bots | exempt from the "person abroad" rules, held to `cloud` |
-| `keys` | API keys and the networks each calls from | a key off its networks reaches the judge |
-| `hosts` | hosts your systems talk to (`*.suffix` allowed) | a request anywhere else reaches the judge |
-| `sensitive` | buckets, repos, tables | a touch reaches the judge every time |
+| `countries` | where your people are | a note when a person acts from elsewhere |
+| `cloud` | where your services run | a note when a service acts from any other hosting |
+| `members` | people: IdP emails, GitHub handles | `principal: member`; anyone else is `unknown` |
+| `services` | IAM users and roles, bots | `principal: service`, held to `cloud` |
+| `keys` | API keys and the networks each calls from | `principal: key`, `key_known_network` |
+| `hosts` | hosts your systems talk to (`*.suffix` allowed) | `dest_known` |
+| `sensitive` | buckets, repos, tables | `sensitive_target` |
+| `watch` | kinds a person wants seen every time | `watch` |
 
 The file ships filled in for the fictional company the cases describe, so `make test` passes before you touch it.
 
