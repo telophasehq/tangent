@@ -95,6 +95,7 @@ async fn run_delivery(
     );
 
     let mut failing = false;
+    let mut receiving = Backoff::default();
     loop {
         tokio::select! {
             () = shutdown.cancelled() => break,
@@ -106,11 +107,22 @@ async fn run_delivery(
                 .visibility_timeout(VISIBILITY_SECS)
                 .send() => {
                 let out = match res {
-                    Ok(out) => out,
+                    Ok(out) => {
+                        receiving.succeeded();
+                        out
+                    }
                     Err(e) => {
-                        tracing::warn!(source = %name, "SQS ReceiveMessage: {}", aws_sdk_sqs::error::DisplayErrorContext(&e));
-                        tokio::time::sleep(StdDuration::from_millis(500)).await;
-                        continue;
+                        let e = aws_sdk_sqs::error::DisplayErrorContext(&e);
+                        let (wait, warn) = receiving.failed();
+                        if warn {
+                            tracing::warn!(source = %name, "SQS ReceiveMessage: {e}; retrying, at most a minute apart");
+                        } else {
+                            tracing::debug!(source = %name, "SQS ReceiveMessage: {e}; retrying in {}s", wait.as_secs());
+                        }
+                        tokio::select! {
+                            () = shutdown.cancelled() => break,
+                            () = tokio::time::sleep(wait) => continue,
+                        }
                     }
                 };
                 for msg in out.messages.unwrap_or_default() {
@@ -156,6 +168,29 @@ async fn run_delivery(
         }
     }
     Ok(())
+}
+
+/// The wait before reading the queue again after a failure (an expired
+/// session, a permission, the network): a second, doubling up to a minute,
+/// and a second again once a read succeeds. Only the first failure of a run
+/// is a warning, so a session left expired overnight is one line, not
+/// thousands.
+#[derive(Debug, Default)]
+struct Backoff {
+    failures: u32,
+}
+
+impl Backoff {
+    /// A failed read: how long to wait, and whether to warn.
+    fn failed(&mut self) -> (StdDuration, bool) {
+        self.failures = self.failures.saturating_add(1);
+        let secs = 1u64 << (self.failures - 1).min(6);
+        (StdDuration::from_secs(secs.min(60)), self.failures == 1)
+    }
+
+    fn succeeded(&mut self) {
+        self.failures = 0;
+    }
 }
 
 async fn delete(name: &str, ack: &Arc<dyn Ack>) {
@@ -604,6 +639,37 @@ mod tests {
         assert_eq!(records_of(doc.as_bytes()).unwrap().len(), 2);
         assert!(records_of(br#"{"digestStartTime":"2026-10-28T17:00:00Z"}"#).is_err());
         assert!(records_of(b"\x1f\x8b\x08 not gzip").is_err());
+    }
+
+    #[test]
+    fn queue_failures_back_off_and_warn_once() {
+        let mut b = Backoff::default();
+        let waits: Vec<(u64, bool)> = (0..9)
+            .map(|_| b.failed())
+            .map(|(d, warn)| (d.as_secs(), warn))
+            .collect();
+        assert_eq!(
+            waits,
+            [
+                (1, true),
+                (2, false),
+                (4, false),
+                (8, false),
+                (16, false),
+                (32, false),
+                (60, false),
+                (60, false),
+                (60, false),
+            ]
+        );
+        // A read that succeeds starts the next run of failures over.
+        b.succeeded();
+        assert_eq!(b.failed(), (StdDuration::from_secs(1), true));
+        assert_eq!(b.failed(), (StdDuration::from_secs(2), false));
+        // A failure that never ends stays a minute apart.
+        b.failures = u32::MAX - 1;
+        assert_eq!(b.failed(), (StdDuration::from_secs(60), false));
+        assert_eq!(b.failed(), (StdDuration::from_secs(60), false));
     }
 
     /// A bucket in another region than the client's: S3 redirects, naming
