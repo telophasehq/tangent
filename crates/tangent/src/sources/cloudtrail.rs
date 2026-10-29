@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
 use crate::sources::decoding;
-use crate::sources::poll::{frame, opt, parse_time, stamp};
+use crate::sources::poll::{frame, idle, opt, parse_time, stamp};
 use crate::sources::sqs::SqsAck;
 use crate::state::StateStore;
 use crate::worker::Ack;
@@ -34,11 +34,12 @@ pub async fn run_consumer(
     _store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Result<()> {
+    // There is no LookupEvents polling: a poller's own calls are CloudTrail
+    // events it would read back.
     let Some(queue_url) = opt(&cfg.queue_url) else {
-        bail!(
-            "cloudtrail source {name}: `queue_url` is required, the queue a trail's delivery notifications \
-             land in (there is no LookupEvents polling: a poller's own calls are CloudTrail events it would read back)"
-        );
+        idle(&name, "cloudtrail queue_url (the queue a trail's delivery notifications land in)");
+        shutdown.cancelled().await;
+        return Ok(());
     };
     let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
     if let Some(region) = opt(&cfg.region) {
