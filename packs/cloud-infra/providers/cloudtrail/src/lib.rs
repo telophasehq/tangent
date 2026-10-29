@@ -1,9 +1,10 @@
 //! CloudTrail records: `_norm` (who, which account, what, from where, on
 //! what) and the record trimmed to what it means. A role session is the
-//! role, an SSO session the person, AWS acting for you nobody, another
-//! account `account:<id>`. The response is kept when it granted something
-//! (a sign-in, a key, a session); a Describe call's response is bulk and
-//! goes. The ids, versions, categories and TLS details go.
+//! role, an SSO session the person, AWS acting on its own `aws:<service>`
+//! with `_norm.aws: true`, another account `account:<id>`. The response is
+//! kept when it granted something (a sign-in, a key, a session); a Describe
+//! call's response is bulk and goes. The ids, versions, categories and TLS
+//! details go.
 wit_bindgen::generate!({
     path: ".tangent/wit",
     world: "processor",
@@ -12,7 +13,7 @@ wit_bindgen::generate!({
 
 use std::sync::OnceLock;
 
-use common::{carry_attached, emit, get, obj, org_from_profile, pick, shrink, Norm};
+use common::{carry_attached, get, obj, org_from_profile, pick, shrink, Norm};
 use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
 use serde_json::{Map, Value};
 use tangent::logs::config;
@@ -39,20 +40,18 @@ fn org() -> &'static Option<String> {
 
 /// Who acted. An IAM user by name. A role session by the role, since the
 /// session name is new every time, except an SSO role, where the session
-/// name is the person. A service-linked role, or a service calling as itself,
-/// is nobody: there is no principal to know. Another account assuming a role
-/// here is `account:<id>`.
+/// name is the person. AWS acting on its own is `aws:<service>`. Another
+/// account assuming a role here is `account:<id>`.
 fn actor_of(r: &Value) -> Option<String> {
+    if let Some(service) = aws_acting(r) {
+        return Some(format!("aws:{service}"));
+    }
     let kind = get(r, "userIdentity.type").unwrap_or_default();
     match kind.as_str() {
         "AssumedRole" => {
             let Some(role) = get(r, "userIdentity.sessionContext.sessionIssuer.userName") else {
                 return get(r, "userIdentity.userName").or_else(|| get(r, "userIdentity.arn"));
             };
-            let issuer = get(r, "userIdentity.sessionContext.sessionIssuer.arn").unwrap_or_default();
-            if issuer.contains("/aws-service-role/") {
-                return Some(aws_acting(r, Some(&role)));
-            }
             if role.starts_with("AWSReservedSSO_") {
                 let arn = get(r, "userIdentity.arn").unwrap_or_default();
                 if let Some(session) = arn.rsplit('/').next().filter(|s| !s.is_empty()) {
@@ -61,23 +60,52 @@ fn actor_of(r: &Value) -> Option<String> {
             }
             Some(role)
         }
-        "AWSService" => Some(aws_acting(r, None)),
         "AWSAccount" => get(r, "userIdentity.accountId").map(|a| format!("account:{a}")),
         "Root" => get(r, "userIdentity.userName").or_else(|| Some("root".to_string())),
-        "" if get(r, "userIdentity.invokedBy").is_some() => Some(aws_acting(r, None)),
         _ => get(r, "userIdentity.userName").or_else(|| get(r, "userIdentity.arn")),
     }
 }
 
-/// AWS acting on its own, a service or a service-linked role's session:
-/// `aws:<service>` (`aws:resource-explorer-2`), by the service that invoked
-/// the call, else the role, so its history is its own and `facts` can say
-/// it is AWS.
-fn aws_acting(r: &Value, role: Option<&str>) -> String {
-    let by = get(r, "userIdentity.invokedBy")
-        .or_else(|| get(r, "sourceIPAddress").filter(|ip| ip.ends_with(".amazonaws.com")))
-        .map(|s| s.trim_end_matches(".amazonaws.com").to_string());
-    format!("aws:{}", by.or_else(|| role.map(str::to_string)).unwrap_or_else(|| "service".to_string()))
+/// The service, when AWS acted on its own: a service-linked role's session,
+/// a service calling as itself (`AWSService`), or a call only `invokedBy`
+/// names. Every field read here is one AWS writes, so no name a customer
+/// chooses becomes an `aws:` actor.
+fn aws_acting(r: &Value) -> Option<String> {
+    match get(r, "userIdentity.type").unwrap_or_default().as_str() {
+        // By the service in the role's path, whatever invoked the call: the
+        // same service also calls from plain addresses.
+        "AssumedRole" => linked_service(&get(r, "userIdentity.sessionContext.sessionIssuer.arn")?),
+        "AWSService" => Some(invoker(r)),
+        "" if get(r, "userIdentity.invokedBy").is_some_and(|by| !by.is_empty()) => Some(invoker(r)),
+        _ => None,
+    }
+}
+
+/// The service a service-linked role belongs to: its path starts with
+/// `aws-service-role/<service>.amazonaws.com/`. IAM reserves that prefix for
+/// AWS, but only as a prefix; `role/x/aws-service-role/foo` is anyone's.
+fn linked_service(arn: &str) -> Option<String> {
+    let (_, path) = arn.split_once(":role/")?;
+    let service = path.strip_prefix("aws-service-role/")?.split('/').next();
+    Some(named(service.map(str::to_string)).unwrap_or_else(|| "service".to_string()))
+}
+
+/// Which service made a call: `invokedBy`, else an `*.amazonaws.com` address,
+/// else the service-linked role it assumed, else the API's own service (an
+/// ECR lifecycle event is `aws:ecr`).
+fn invoker(r: &Value) -> String {
+    named(get(r, "userIdentity.invokedBy"))
+        .or_else(|| named(get(r, "sourceIPAddress").filter(|ip| ip.ends_with(".amazonaws.com"))))
+        .or_else(|| get(r, "requestParameters.roleArn").and_then(|arn| linked_service(&arn)))
+        .or_else(|| named(get(r, "eventSource")))
+        .unwrap_or_else(|| "service".to_string())
+}
+
+/// A service's name without `.amazonaws.com`. `AWS Internal` names nothing:
+/// unrelated services all write it.
+fn named(s: Option<String>) -> Option<String> {
+    s.map(|s| s.strip_suffix(".amazonaws.com").unwrap_or(&s).to_string())
+        .filter(|s| !s.is_empty() && s != "AWS Internal")
 }
 
 fn norm_of(r: &Value) -> Norm {
@@ -166,16 +194,24 @@ impl Guest for Component {
         let mut out = Vec::new();
         for lv in input {
             let rec: Value = serde_json::from_str(&lv.log()).map_err(|e| e.to_string())?;
-            let Value::Object(m) = rec else {
+            let Some(m) = rec.as_object() else {
                 return Err("record is not a JSON object".to_string());
             };
-            let mut n = norm_of(&Value::Object(m.clone()));
+            let mut n = norm_of(&rec);
             if let Some(o) = org() {
                 n.org = Some(o.clone());
             }
-            let mut trimmed = trim(&m);
-            carry_attached(&m, &mut trimmed);
-            emit(&mut out, trimmed, &n)?;
+            let mut trimmed = trim(m);
+            carry_attached(m, &mut trimmed);
+            // AWS acting says so in `_norm.aws`: facts reads the marker, since
+            // an `aws:` name alone could be any source's user.
+            let mut norm = serde_json::to_value(&n).map_err(|e| e.to_string())?;
+            if aws_acting(&rec).is_some() {
+                norm["aws"] = Value::Bool(true);
+            }
+            trimmed.insert("_norm".into(), norm);
+            out.extend(serde_json::to_vec(&Value::Object(trimmed)).map_err(|e| e.to_string())?);
+            out.push(b'\n');
         }
         Ok(out)
     }

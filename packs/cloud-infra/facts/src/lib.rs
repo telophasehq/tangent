@@ -7,7 +7,7 @@
 //! the systems talk to, which assets are sensitive, which kinds are watched)
 //! and writes what it knows:
 //!   - `principal`: `member`, `service`, `key`, `aws` (AWS acting on its own,
-//!     an actor `aws:<service>`), or `unknown`;
+//!     as the cloudtrail plugin marks it, `_norm.aws`), or `unknown`;
 //!   - `ip`: the address as decorated; `key_known_network` for a key;
 //!   - `dest_known`, `sensitive_target`, `watch`, `root`, `world_open`;
 //!   - `notes`: the same, in sentences a model reads.
@@ -181,9 +181,9 @@ fn text(v: &Value) -> Option<String> {
     }
 }
 
-/// Who the actor is to the profile.
-fn principal(p: &Profile, actor: &str) -> &'static str {
-    if actor.starts_with("aws:") {
+/// Who the actor is to the profile; `aws` when the record says AWS acted.
+fn principal(p: &Profile, actor: &str, aws: bool) -> &'static str {
+    if aws {
         "aws"
     } else if p.services.contains(actor) {
         "service"
@@ -220,11 +220,13 @@ fn facts_of(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, Strin
         reasons.push(("opened to 0.0.0.0/0".into(), "world".into()));
     }
 
-    // The principal: known to the profile, or nobody it knows.
+    // The principal: known to the profile, or nobody it knows. AWS acting is
+    // what the cloudtrail plugin marked; an `aws:` name alone could be anyone.
+    let aws = source == "cloudtrail" && rec["_norm"]["aws"].as_bool() == Some(true);
     let who = actor
         .as_deref()
         .filter(|_| !NO_PRINCIPAL.contains(&source))
-        .map(|a| principal(p, a));
+        .map(|a| principal(p, a, aws));
     if let (Some(a), Some(w)) = (&actor, who) {
         facts.insert("principal".into(), json!(w));
         if w == "unknown" {
