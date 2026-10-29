@@ -4,7 +4,7 @@ runtime:
   workers: 2
   plugins_path: plugins/
   partition:
-    key: [_norm.org]            # the customer's tenant id, as norm extracts it from each source
+    key: [_norm.org]
   state:
     backend: sqlite
     path: state.sqlite
@@ -16,17 +16,16 @@ sources:
     type: tcp
     bind_address: 0.0.0.0:9401
 
-  buffer:                       # the stored records, read back a buffer at a time as each closes
+  buffer:
     type: store
-    buffer: 5m                  # how long records gather before they are judged; a verdict comes buffer + late after its record
-    late: 20m                   # CloudTrail reports up to about fifteen minutes late
-    grace: 2m                   # after a start, let the sources catch up before closing anything
+    buffer_secs: 300
+    grace_secs: 120
 
 plugins:
   norm:
     module_type: rust
     path: ../cloud-infra/norm
-    data: profile               # org and own_sources are empty here: nothing is folded, every tenant is its own partition
+    data: profile
   enrich:
     module_type: rust
     path: ../../examples/enrich
@@ -36,29 +35,27 @@ plugins:
   facts:
     module_type: rust
     path: ../cloud-infra/facts
-    data: profile               # one profile for every customer, until profiles live in the customer's partition
+    data: profile
   flagged:
     module_type: rust
     path: ../../examples/inference-local/flagged
 
 inference:
   judge:
-    backend: openai
     url: ${JUDGE_URL}
     model: ${JUDGE_MODEL}
     api_key: ${JUDGE_API_KEY}
     prompt_file: ../cloud-infra/judge.md
-    schema_file: ../cloud-infra/judge.schema.json      # the shape, enforced by the backend where it can
-    batch: 16                   # records per request, as many as fit batch_bytes; the model judges them together
-    batch_bytes: 16000          # one local model's comfortable prompt; raise it for a hosted model
-    context:                    # the history before a window, read from the store once per request
+    schema_file: ../cloud-infra/judge.schema.json
+    batch: 16
+    batch_bytes: 16000
+    context:
       scopes: { actor: _norm.actor, org: _norm.org }
-      max_events: 20             # per scope: its latest records before the batch, however long ago
       fields: [ts, source, _norm.kind, _norm.actor, _norm.ip, _norm.dest, _norm.target,
                _facts.ip.country, _facts.ip.org, _facts.ip.hosting, _facts.ip.tor, _facts.ip.vpn, _facts.ip.ours,
                _facts.principal, outcome.result, errorCode]
-    max_tokens: 200             # per record; a batch may say batch times as much
-    temperature: 0.7            # sampled, never greedy: greedy decoding repeats itself and replays identically
+    max_tokens: 200
+    temperature: 0.7
     timeout_ms: 90000
     concurrency: 4
     extra:
@@ -67,10 +64,9 @@ inference:
         enable_thinking: false
 
 sinks:
-  store:                        # every normalized, enriched record, per partition: what windows and history are read from
+  store:
     type: store
-    retain: 30d
-    recent: { actor: _norm.actor, org: _norm.org }   # history is read by these: each record indexed by its actor; the org is the partition itself
+    recent: { actor: _norm.actor, org: _norm.org }
   alerts:
     type: file
     path: alerts.ndjson
@@ -89,10 +85,8 @@ dag:
     to: [{ kind: plugin, name: enrich }]
   - from: { kind: plugin, name: enrich }
     to: [{ kind: plugin, name: facts }]
-  # 1. ingest: normalized, enriched, kept
   - from: { kind: plugin, name: facts }
     to: [{ kind: sink, name: store }]
-  # 2. judgment: a buffer at a time, read back from the store, with the window of history before it
   - from: { kind: source, name: buffer }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }

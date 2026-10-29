@@ -104,49 +104,6 @@ impl DagRuntime {
 
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
-        // An inference node's `batch` is a record count the worker gathers
-        // towards, waiting `batch_age_ms` for it; the runtime's byte and age
-        // limits are floors, not the batch. The byte cap grows with the count
-        // so it only bounds memory.
-        let batch_records = cfg
-            .inference
-            .values()
-            .map(|n| n.batch.max(1))
-            .max()
-            .unwrap_or(1);
-        let (worker_batch_size, worker_batch_age) = if batch_records > 1 {
-            let wait = cfg
-                .inference
-                .values()
-                .filter(|n| n.batch > 1)
-                .map(|n| Duration::from_millis(n.batch_age_ms))
-                .max()
-                .unwrap_or(batch_age);
-            (batch_size.max(batch_records * 16 * 1024), batch_age.max(wait))
-        } else {
-            (batch_size, batch_age)
-        };
-
-        // A history scope this pipeline's store sink does not list would be
-        // read empty, quietly. (Without a store sink here, the store is
-        // another pipeline's to fill.)
-        let stores: Vec<&tangent_shared::sinks::store::StoreSinkConfig> = cfg
-            .sinks
-            .values()
-            .filter_map(|s| match &s.kind {
-                tangent_shared::sinks::common::SinkKind::Store(st) => Some(st),
-                _ => None,
-            })
-            .collect();
-        let listed: std::collections::BTreeSet<&str> =
-            stores.iter().flat_map(|st| st.recent.keys().map(String::as_str)).collect();
-        for (name, node) in &cfg.inference {
-            for scope in node.context.iter().flat_map(|c| c.scopes.keys()) {
-                if !stores.is_empty() && !listed.contains(scope.as_str()) {
-                    tracing::warn!(node = %name, scope, "no store sink keeps this scope's latest records (`recent`); its history will be empty");
-                }
-            }
-        }
 
         // Every worker hosts every plugin and every inference node, and walks
         // the DAG for the records it is handed.
@@ -157,9 +114,8 @@ impl DagRuntime {
                 components,
                 &cfg.inference,
                 config_dir,
-                worker_batch_size,
-                worker_batch_age,
-                batch_records,
+                batch_size,
+                batch_age,
                 Arc::clone(&router),
                 cfg.runtime.partition.clone(),
                 Arc::clone(&store),

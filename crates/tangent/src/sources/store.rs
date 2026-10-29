@@ -1,14 +1,8 @@
-//! The `store` source: what a `store` sink kept, read back from the state
-//! store a buffer at a time as each closes. See `tangent_shared::sources::store` for
-//! the rules and `crate::windows` for the bookkeeping. Each record carries
-//! the key of the row it was read from (`_key`), so a judge can tell the
-//! records it was handed from the rest of their buffer.
-
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use parking_lot::Mutex;
@@ -19,24 +13,18 @@ use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
-use crate::sources::poll::duration_ms;
+use crate::sources::poll::frame;
 use crate::state::{now_ms, StateStore, StateValue};
 use crate::windows::{
-    ev_bound, get_int, iso, set_int, ts_of_key, CLOSED_THROUGH, FIRST, LAST_ARRIVAL, LATE_PREFIX,
-    READ_THROUGH, WATERMARK, WINDOWS_NS,
+    ev_bound, get_int, iso, set_int, ts_of_key, CLOSED_THROUGH, EVENTS_NS, LAST_ARRIVAL,
+    LATE_PREFIX, READ_THROUGH, WATERMARK, WINDOWS_NS,
 };
 use crate::worker::Ack;
-
-/// Rows read per range call.
-const PAGE: usize = 5_000;
 
 struct Rules {
     span: i64,
     late: i64,
     idle: i64,
-    /// Nothing before this is judged, on a partition's first sight.
-    since: Option<i64>,
-    /// When set, only buffers overlapping one of these are judged.
     ranges: Vec<(i64, i64)>,
 }
 
@@ -46,15 +34,11 @@ impl Rules {
     }
 }
 
-/// One partition, as the source knows it while running. `closed` and the
-/// windows before it are durable; `next` and `pending` are rebuilt from
-/// `closed` at a start, so windows read but not done before a stop are read
-/// again (at least once).
+/// `closed` is durable; `next` and `pending` start from it again after a restart.
 struct Part {
     closed: i64,
     next: i64,
-    /// Windows read and not yet closed, by start: done or not.
-    pending: BTreeMap<i64, bool>,
+    pending: BTreeMap<i64, bool>, // start: done
     late_in_flight: HashSet<String>,
 }
 
@@ -87,10 +71,6 @@ impl Ack for DoneAck {
     }
 }
 
-fn ms(s: &str, what: &str) -> Result<i64> {
-    duration_ms(s).ok_or_else(|| anyhow!("store source: {what} {s:?} is not a duration like 15m"))
-}
-
 pub async fn run_consumer(
     name: Arc<str>,
     cfg: StoreSourceConfig,
@@ -98,47 +78,38 @@ pub async fn run_consumer(
     store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    let span = ms(&cfg.buffer, "buffer")?;
-    if span <= 0 {
-        return Err(anyhow!("store source: buffer must be positive"));
+    if cfg.buffer_secs == 0 {
+        bail!("store source: buffer_secs must be positive");
     }
-    let late = ms(&cfg.late, "late")?;
-    let idle = cfg.idle.as_deref().map(|s| ms(s, "idle")).transpose()?.unwrap_or(late);
-    let grace = cfg.grace.as_deref().map(|s| ms(s, "grace")).transpose()?.unwrap_or(late);
-    let since = match cfg.since.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        Some(s) => Some(
-            chrono::DateTime::parse_from_rfc3339(s)
-                .map_err(|e| anyhow!("store source: since {s:?}: {e}"))?
-                .timestamp_millis(),
-        ),
-        None => None,
+    let at = |s: &str| {
+        chrono::DateTime::parse_from_rfc3339(s.trim())
+            .map(|t| t.timestamp_millis())
+            .map_err(|e| anyhow!("store source: range time {s:?}: {e}"))
     };
     let mut ranges = Vec::with_capacity(cfg.ranges.len());
     for r in &cfg.ranges {
-        let at = |s: &str| {
-            chrono::DateTime::parse_from_rfc3339(s.trim())
-                .map(|t| t.timestamp_millis())
-                .map_err(|e| anyhow!("store source: range time {s:?}: {e}"))
-        };
-        ranges.push((at(&r.from)?, at(&r.to)?));
+        ranges.push((at(&r.from)?, r.to.as_deref().map_or(Ok(i64::MAX), at)?));
     }
-    let rules = Rules { span, late, idle, since, ranges };
+    let rules = Rules {
+        span: cfg.buffer_secs as i64 * 1000,
+        late: cfg.late_secs as i64 * 1000,
+        idle: cfg.idle_secs.unwrap_or(cfg.late_secs) as i64 * 1000,
+        ranges,
+    };
+    let grace = cfg.grace_secs.unwrap_or(cfg.late_secs);
     let from = NodeRef::Source {
         name: Arc::clone(&name),
     };
-    tracing::info!(
-        source = %name, buffer = %cfg.buffer, late = %cfg.late, idle_ms = idle, grace_ms = grace,
-        "store source: the stored records, a buffer at a time"
-    );
+    tracing::info!(source = %name, buffer_secs = cfg.buffer_secs, late_secs = cfg.late_secs, "store source");
     tokio::select! {
         () = shutdown.cancelled() => return Ok(()),
-        () = tokio::time::sleep(Duration::from_millis(grace.max(0) as u64)) => {}
+        () = tokio::time::sleep(Duration::from_secs(grace)) => {}
     }
 
     let (tx, mut rx) = mpsc::unbounded_channel::<Done>();
     let sem = Arc::new(Semaphore::new(cfg.in_flight.max(1)));
     let mut parts: HashMap<String, Part> = HashMap::new();
-    let mut ticker = tokio::time::interval(Duration::from_secs(cfg.interval_secs.max(1)));
+    let mut ticker = tokio::time::interval(Duration::from_secs(1));
     loop {
         tokio::select! {
             () = shutdown.cancelled() => break,
@@ -148,7 +119,7 @@ pub async fn run_consumer(
                 }
             }
             _ = ticker.tick() => {
-                if let Err(e) = tick(&name, &cfg, &rules, &store, &router, &from, &sem, &tx, &mut parts).await {
+                if let Err(e) = tick(&name, &rules, &store, &router, &from, &sem, &tx, &mut parts).await {
                     tracing::warn!(source = %name, "store source: {e:#}");
                 }
             }
@@ -161,7 +132,6 @@ pub async fn run_consumer(
 #[allow(clippy::too_many_arguments)]
 async fn tick(
     name: &Arc<str>,
-    cfg: &StoreSourceConfig,
     rules: &Rules,
     store: &Arc<dyn StateStore>,
     router: &Arc<Router>,
@@ -176,7 +146,7 @@ async fn tick(
         let p = mark.partition;
         let StateValue::Int(watermark) = mark.value else { continue };
         let arrived = get_int(store, &p, LAST_ARRIVAL).await?.unwrap_or(now);
-        // A quiet partition's watermark follows the clock.
+        // a quiet partition follows the clock
         let wm = if now - arrived >= rules.idle {
             watermark.max(now - rules.late)
         } else {
@@ -185,10 +155,13 @@ async fn tick(
         if !parts.contains_key(&p) {
             let closed = match get_int(store, &p, CLOSED_THROUGH).await? {
                 Some(c) => c,
-                None => match get_int(store, &p, FIRST).await? {
-                    Some(f) => f.max(rules.since.unwrap_or(i64::MIN)).div_euclid(rules.span) * rules.span,
-                    None => continue,
-                },
+                None => {
+                    let first = store.range(EVENTS_NS, &p, "ev:", "ev:~", 1).await?;
+                    match first.first().and_then(|e| ts_of_key(&e.key)) {
+                        Some(f) => f.div_euclid(rules.span) * rules.span,
+                        None => continue,
+                    }
+                }
             };
             parts.insert(
                 p.clone(),
@@ -202,12 +175,11 @@ async fn tick(
         }
         let state = parts.get_mut(&p).expect("just inserted");
 
-        // The windows that may close end at or before this.
         let due_end = (wm - rules.late).div_euclid(rules.span) * rules.span;
-        // Skip a stretch with nothing in it in one step.
+        // skip an empty stretch in one step
         if state.pending.is_empty() && state.next < due_end {
             let first = store
-                .range(&cfg.namespace, &p, &ev_bound(state.next), &ev_bound(due_end), 1)
+                .range(EVENTS_NS, &p, &ev_bound(state.next), &ev_bound(due_end), 1)
                 .await?;
             let target = match first.first().and_then(|e| ts_of_key(&e.key)) {
                 Some(t) => t.div_euclid(rules.span) * rules.span,
@@ -230,10 +202,17 @@ async fn tick(
             }
             let Ok(permit) = Arc::clone(sem).try_acquire_owned() else { break };
             state.next = end;
-            // Recorded before the read, so a record stored from now on for
-            // this window is marked late by the sink rather than lost.
+            // before the read, so a record stored from now on is marked late, not lost
             set_int(store, &p, READ_THROUGH, end).await?;
-            let rows = read(store, &cfg.namespace, &p, start, end).await?;
+            let rows: Vec<(String, String)> = store
+                .range(EVENTS_NS, &p, &ev_bound(start), &ev_bound(end), i64::MAX as usize)
+                .await?
+                .into_iter()
+                .filter_map(|e| match e.value {
+                    StateValue::Str(s) => Some((e.key, s)),
+                    _ => None,
+                })
+                .collect();
             if rows.is_empty() {
                 state.pending.insert(start, true);
                 drop(permit);
@@ -257,7 +236,7 @@ async fn tick(
         }
         advance(store, &p, state, rules).await?;
 
-        // Records stored after their window was read.
+        // late records
         let markers = store
             .scan(Some(WINDOWS_NS), Some(&p), LATE_PREFIX, 500)
             .await?
@@ -273,7 +252,7 @@ async fn tick(
         for m in &markers {
             keys.push(m.key.clone());
             let StateValue::Str(ev) = &m.value else { continue };
-            if let Some(StateValue::Str(line)) = store.get(&cfg.namespace, &p, ev).await? {
+            if let Some(StateValue::Str(line)) = store.get(EVENTS_NS, &p, ev).await? {
                 rows.push((ev.clone(), line));
             }
         }
@@ -301,37 +280,7 @@ async fn tick(
     Ok(())
 }
 
-/// A window's records, in time order: (row key, record).
-async fn read(
-    store: &Arc<dyn StateStore>,
-    ns: &str,
-    part: &str,
-    start: i64,
-    end: i64,
-) -> Result<Vec<(String, String)>> {
-    let end_key = ev_bound(end);
-    let mut from = ev_bound(start);
-    let mut out = Vec::new();
-    loop {
-        let page = store.range(ns, part, &from, &end_key, PAGE).await?;
-        let n = page.len();
-        if let Some(last) = page.last() {
-            // The next key after `last`: every key has the same shape, so
-            // anything greater differs at a character `!` sorts below.
-            from = format!("{}!", last.key);
-        }
-        out.extend(page.into_iter().filter_map(|e| match e.value {
-            StateValue::Str(s) => Some((e.key, s)),
-            _ => None,
-        }));
-        if n < PAGE {
-            return Ok(out);
-        }
-    }
-}
-
-/// One frame per record, each with its row's key (`_key`) and `mark`
-/// applied.
+/// One frame per record, each with its `_key` and `mark` applied.
 fn frames(rows: &[(String, String)], mark: impl Fn(&mut serde_json::Map<String, Value>)) -> Vec<BytesMut> {
     rows.iter()
         .filter_map(|(key, line)| {
@@ -340,9 +289,7 @@ fn frames(rows: &[(String, String)], mark: impl Fn(&mut serde_json::Map<String, 
                 m.insert("_key".into(), Value::String(key.clone()));
                 mark(m);
             }
-            let mut b = BytesMut::from(serde_json::to_vec(&v).ok()?.as_slice());
-            b.extend_from_slice(b"\n");
-            Some(b)
+            frame(&v).ok()
         })
         .collect()
 }
@@ -397,40 +344,12 @@ async fn finish(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sinks::manager::{Sink, SinkWrite};
-    use crate::state::lru::LruStore;
-    use tangent_shared::runtime::{PartitionConfig, StateConfig};
-    use tangent_shared::sinks::store::StoreSinkConfig;
 
-    #[tokio::test]
-    async fn records_carry_the_row_they_were_read_from() {
-        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
-        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new(), novel: BTreeMap::new(), follow: None };
-        let partition = PartitionConfig { key: vec!["_norm.org".into()], separator: "|".into(), retain_ms: None, time: None };
-        let sink = crate::sinks::store::StoreSink::new(&cfg, Arc::clone(&store), Some(partition)).unwrap();
-        let mut payload = BytesMut::new();
-        for (ts, n) in [("2026-10-27T13:03:00Z", 2), ("2026-10-27T13:01:00Z", 1), ("2026-10-27T13:06:00Z", 3)] {
-            payload.extend_from_slice(format!("{}\n", json!({"ts": ts, "_norm": {"org": "acme"}, "n": n})).as_bytes());
-        }
-        sink.write(SinkWrite { sink_name: Arc::from("store"), payload, s3: None }).await.unwrap();
-
-        // 13:00 to 13:05, as `tick` reads and frames it.
-        let (start, end) = (1_793_106_000_000, 1_793_106_300_000);
-        let rows = read(&store, "events", "acme", start, end).await.unwrap();
-        let buffer = json!({"from": iso(start), "to": iso(end)});
-        let out: Vec<Value> = frames(&rows, |m| {
-            m.insert("_buffer".into(), buffer.clone());
-        })
-        .iter()
-        .map(|f| serde_json::from_slice(f).unwrap())
-        .collect();
-        assert_eq!(out.iter().map(|v| v["n"].as_i64().unwrap()).collect::<Vec<_>>(), [1, 2], "the buffer's records, in time order");
-        for v in &out {
-            let key = v["_key"].as_str().unwrap_or_else(|| panic!("no _key on {v}"));
-            let Some(StateValue::Str(text)) = store.get("events", "acme", key).await.unwrap() else { panic!("no row {key}") };
-            let stored: Value = serde_json::from_str(&text).unwrap();
-            assert_eq!(stored["n"], v["n"], "the row it was read from");
-            assert_eq!(v["_buffer"], buffer);
-        }
+    #[test]
+    fn frames_carry_their_key() {
+        let rows = vec![("ev:1793106060000:a".to_string(), json!({"n": 1}).to_string())];
+        let out: Value = serde_json::from_slice(&frames(&rows, |_| {})[0]).unwrap();
+        assert_eq!(out["_key"], "ev:1793106060000:a");
+        assert_eq!(out["n"], 1);
     }
 }

@@ -40,7 +40,6 @@ pub enum SourceConfig {
     Okta(OktaConfig),
     #[serde(rename = "google_workspace")]
     GoogleWorkspace(GoogleWorkspaceConfig),
-    /// Windows of what a `store` sink kept, read back as they close.
     #[serde(rename = "store")]
     Store(StoreSourceConfig),
 }

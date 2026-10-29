@@ -37,8 +37,7 @@ pub async fn run_consumer(
     store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    // Its own calls show up in CloudTrail too; `app/tangent` in their user
-    // agent says whose they are.
+    // app/tangent in the user agent marks our own calls in CloudTrail
     let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .app_name(aws_config::AppName::new("tangent").expect("a valid app name"));
     if let Some(region) = opt(&cfg.region) {

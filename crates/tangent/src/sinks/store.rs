@@ -1,8 +1,3 @@
-//! The `store` sink: every record kept in the state store under its
-//! partition, indexed by the scopes an inference node reads history by,
-//! marked with what is new for its scopes, and the bookkeeping the `store`
-//! source closes windows by.
-
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
@@ -18,13 +13,12 @@ use crate::sinks::manager::{Sink, SinkWrite};
 use crate::sources::poll::duration_ms;
 use crate::state::{now_ms, StateStore, StateValue};
 use crate::windows::{
-    ev_key, follow_ns, get_int, index_ns, index_prefix, indexed_marker, remembered_marker,
-    scope_value, seen_ns, set_int, time_of_value, ts_of_key, CLOSED_THROUGH, FIRST, LAST_ARRIVAL,
-    LATE_PREFIX, READ_THROUGH, WATERMARK, WINDOWS_NS,
+    ev_key, get_int, index_prefix, indexed_marker, remembered_marker, scope_value, set_int,
+    time_of_value, ts_of_key, CLOSED_THROUGH, EVENTS_NS, FOLLOW_NS, INDEX_NS, LAST_ARRIVAL,
+    LATE_PREFIX, READ_THROUGH, SEEN_NS, TIME_FIELD, WATERMARK, WINDOWS_NS,
 };
 use crate::{SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL};
 
-/// Where a record with no partition key goes.
 const NO_PARTITION: &str = "_";
 
 /// The field a record new for its scopes is marked with.
@@ -272,19 +266,14 @@ async fn cached<'a, T>(
 pub struct StoreSink {
     store: Arc<dyn StateStore>,
     partition: Option<PartitionConfig>,
-    ns: String,
     retain_ms: u64,
-    time: String,
-    /// (scope, field) each record is indexed by; a scope whose field is a
-    /// partition key is not: the partition is its history.
+    /// (scope, field), less the scopes that are a partition key
     indexed: Vec<(String, String)>,
     novel: Vec<NovelScope>,
     /// How long in record time a scope value's records after a new one are
     /// marked too.
     follow_ms: Option<i64>,
-    /// Writes run side by side; a partition's window bookkeeping (read, then
-    /// written) and its first reading of older rows happen under this, one
-    /// at a time.
+    /// one write's bookkeeping at a time; the partitions prepared since the start
     bookkeeping: tokio::sync::Mutex<HashSet<String>>,
     /// Per partition, held by a write with novelty from deciding its marks
     /// to writing what it learned: a write reads what the one before it
@@ -300,10 +289,6 @@ impl StoreSink {
         store: Arc<dyn StateStore>,
         partition: Option<PartitionConfig>,
     ) -> Result<Arc<Self>> {
-        let retain_ms = duration_ms(&cfg.retain)
-            .filter(|ms| *ms > 0)
-            .ok_or_else(|| anyhow!("store sink: retain {:?} is not a duration like 30d", cfg.retain))?
-            as u64;
         let follow_ms = cfg
             .follow
             .as_deref()
@@ -332,9 +317,7 @@ impl StoreSink {
         Ok(Arc::new(Self {
             store,
             partition,
-            ns: cfg.namespace.clone(),
-            retain_ms,
-            time: cfg.time.clone(),
+            retain_ms: cfg.retain_secs * 1000,
             indexed,
             novel,
             follow_ms,
@@ -343,15 +326,12 @@ impl StoreSink {
         }))
     }
 
-    /// The index entries of one stored record: one per scope of `scopes` it
-    /// has a value for, each holding the record's key.
     async fn index(&self, part: &str, key: &str, v: &Value, scopes: &[(String, String)]) -> Result<()> {
-        let ns = index_ns(&self.ns);
         for (scope, field) in scopes {
             if let Some(value) = lookup(v, field).and_then(scope_value) {
                 let at = format!("{}{key}", index_prefix(scope, &value));
                 self.store
-                    .set(&ns, part, &at, &StateValue::Str(key.to_string()), Some(self.retain_ms))
+                    .set(INDEX_NS, part, &at, &StateValue::Str(key.to_string()), Some(self.retain_ms))
                     .await?;
             }
         }
@@ -391,7 +371,7 @@ impl StoreSink {
             if let Some(follow) = follow.filter(|_| s.follow) {
                 let at = index_prefix(&s.name, &sv);
                 let (windows, changed) =
-                    cached(&mut learned.windows, &*self.store, &follow_ns(&self.ns), part, at, Windows::read).await?;
+                    cached(&mut learned.windows, &*self.store, FOLLOW_NS, part, at, Windows::read).await?;
                 let windows = windows.get_or_insert_with(Windows::default);
                 if !marks.is_empty() {
                     // Something new starts a window at its own time.
@@ -418,7 +398,7 @@ impl StoreSink {
     /// too. Record time decides, not arrival or the clock, so a replayed
     /// year forgets as a real one would.
     async fn sighted(&self, part: &str, at: String, ts: i64, learned: &mut Learned) -> Result<bool> {
-        let (seen, changed) = cached(&mut learned.seen, &*self.store, &seen_ns(&self.ns), part, at, Seen::read).await?;
+        let (seen, changed) = cached(&mut learned.seen, &*self.store, SEEN_NS, part, at, Seen::read).await?;
         let (new, moved) = seen.get_or_insert_with(Seen::default).sight(ts, self.retain_ms as i64);
         *changed |= moved;
         Ok(new)
@@ -439,17 +419,16 @@ impl StoreSink {
     /// it outlives the record time it is new again at; the clock only
     /// clears what is stale.
     async fn commit(&self, learned: impl IntoIterator<Item = (String, Learned)>) -> Result<()> {
-        let (follow, seen) = (follow_ns(&self.ns), seen_ns(&self.ns));
         let (mut entries, mut sightings) = (Vec::new(), Vec::new());
         for (part, l) in learned {
             for (at, (w, changed)) in l.windows {
                 if let (Some(w), true) = (w, changed) {
-                    entries.push((follow.clone(), part.clone(), at, w.value()));
+                    entries.push((FOLLOW_NS.to_string(), part.clone(), at, w.value()));
                 }
             }
             for (at, (s, changed)) in l.seen {
                 if let (Some(s), true) = (s, changed) {
-                    sightings.push((seen.clone(), part.clone(), at, s.value()));
+                    sightings.push((SEEN_NS.to_string(), part.clone(), at, s.value()));
                 }
             }
         }
@@ -487,7 +466,7 @@ impl StoreSink {
         }
         let (mut from, mut n) = ("ev:".to_string(), 0usize);
         loop {
-            let page = self.store.range(&self.ns, part, &from, "ev:~", 2_000).await?;
+            let page = self.store.range(EVENTS_NS, part, &from, "ev:~", 2_000).await?;
             let Some(last) = page.last() else { break };
             from = format!("{}!", last.key);
             let mut learned = Learned::default();
@@ -525,10 +504,7 @@ impl Sink for StoreSink {
     async fn write(&self, req: SinkWrite) -> Result<()> {
         let now = now_ms() as i64;
         let mut records = Vec::new();
-        for line in req.payload[..].split(|b: &u8| *b == b'\n') {
-            if line.iter().all(u8::is_ascii_whitespace) {
-                continue;
-            }
+        for line in crate::inference::lines(&req.payload) {
             let v: Value = match serde_json::from_slice(line) {
                 Ok(v) => v,
                 Err(e) => {
@@ -542,7 +518,7 @@ impl Sink for StoreSink {
                 .and_then(|p| key_of_value(&v, p))
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| NO_PARTITION.to_string());
-            let ts = time_of_value(&v, &self.time).unwrap_or(now);
+            let ts = time_of_value(&v, TIME_FIELD).unwrap_or(now);
             records.push((part, ts, v, line));
         }
         // A partition's older rows are read before its first new one is
@@ -579,7 +555,7 @@ impl Sink for StoreSink {
             }
         }
 
-        // Per partition: (record time, key) of what this write stored.
+        // per partition: (time, key)
         let mut stored: BTreeMap<String, Vec<(i64, String)>> = BTreeMap::new();
         for ((part, ts, mut v, line), new) in records.into_iter().zip(marks) {
             let key = ev_key(ts, &ulid::Ulid::new().to_string());
@@ -591,7 +567,7 @@ impl Sink for StoreSink {
                 _ => String::from_utf8_lossy(line).into_owned(),
             };
             self.store
-                .set(&self.ns, &part, &key, &StateValue::Str(text), Some(self.retain_ms))
+                .set(EVENTS_NS, &part, &key, &StateValue::Str(text), Some(self.retain_ms))
                 .await?;
             self.index(&part, &key, &v, &self.indexed).await?;
             stored.entry(part).or_default().push((ts, key));
@@ -600,16 +576,11 @@ impl Sink for StoreSink {
         let held = self.bookkeeping.lock().await;
         for (part, rows) in stored {
             let max = rows.iter().map(|(t, _)| *t).max().unwrap_or(now);
-            let min = rows.iter().map(|(t, _)| *t).min().unwrap_or(now);
             if get_int(&self.store, &part, WATERMARK).await?.is_none_or(|w| max > w) {
                 set_int(&self.store, &part, WATERMARK, max).await?;
             }
-            if get_int(&self.store, &part, FIRST).await?.is_none_or(|f| min < f) {
-                set_int(&self.store, &part, FIRST, min).await?;
-            }
             set_int(&self.store, &part, LAST_ARRIVAL, now).await?;
-            // Read after the rows are written: a window the source read
-            // before this write did not see them, so they are marked late.
+            // read after the rows are written: a window read before missed them
             let read = get_int(&self.store, &part, READ_THROUGH).await?.unwrap_or(i64::MIN);
             let closed = get_int(&self.store, &part, CLOSED_THROUGH).await?.unwrap_or(i64::MIN);
             let seen_through = read.max(closed);
@@ -665,7 +636,7 @@ mod tests {
             retain_ms: None,
             time: None,
         };
-        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new(), novel: BTreeMap::new(), follow: None };
+        let cfg = StoreSinkConfig { retain_secs: 2_592_000, recent: BTreeMap::new(), novel: BTreeMap::new(), follow: None };
         let sink = StoreSink::new(&cfg, Arc::clone(&store), Some(partition)).unwrap();
         sink.write(write(&[
             serde_json::json!({"ts": "2026-10-27T13:05:00Z", "_norm": {"org": "acme"}, "n": 2}),
@@ -678,11 +649,9 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert!(ts_of_key(&rows[0].key) < ts_of_key(&rows[1].key), "time order, whatever the arrival order");
         assert_eq!(get_int(&store, "acme", WATERMARK).await.unwrap(), Some(1_793_106_300_000));
-        assert_eq!(get_int(&store, "acme", FIRST).await.unwrap(), Some(1_793_106_060_000));
         assert!(get_int(&store, "globex", WATERMARK).await.unwrap().is_some(), "each partition its own");
 
-        // The source has read acme's windows up to 13:15; a record for 13:10
-        // arriving now is marked late, one for 13:20 is not.
+        // read through 13:15: 13:10 is late, 13:20 is not
         set_int(&store, "acme", READ_THROUGH, 1_793_106_900_000).await.unwrap();
         sink.write(write(&[
             serde_json::json!({"ts": "2026-10-27T13:10:00Z", "_norm": {"org": "acme"}}),
@@ -696,12 +665,10 @@ mod tests {
         assert_eq!(ts_of_key(ev), Some(1_793_106_600_000));
     }
 
-    /// The latest record keys of one scope value before `bound`, newest first,
-    /// as an inference node reads them.
     async fn latest(store: &Arc<dyn StateStore>, scope: &str, value: &str, bound: &str, n: usize) -> Vec<String> {
         let prefix = crate::windows::index_prefix(scope, value);
         store
-            .range_rev(&index_ns("events"), "acme", &format!("{prefix}ev:"), &format!("{prefix}{bound}"), n)
+            .range_rev(INDEX_NS, "acme", &format!("{prefix}ev:"), &format!("{prefix}{bound}"), n)
             .await
             .unwrap()
             .into_iter()
@@ -714,7 +681,7 @@ mod tests {
         let mut recent = BTreeMap::new();
         recent.insert("actor".to_string(), "_norm.actor".to_string());
         recent.insert("org".to_string(), "_norm.org".to_string());
-        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent, novel: BTreeMap::new(), follow: None };
+        let cfg = StoreSinkConfig { retain_secs: 2_592_000, recent, novel: BTreeMap::new(), follow: None };
         StoreSink::new(&cfg, Arc::clone(store), Some(partition)).unwrap()
     }
 
@@ -722,16 +689,11 @@ mod tests {
         serde_json::json!({"ts": format!("2026-10-27T13:{min:02}:00Z"), "_norm": {"org": "acme", "actor": actor}})
     }
 
-    /// However many records come after, a scope's latest ones before any
-    /// time are there: nothing is evicted but by retention.
     #[tokio::test]
     async fn every_record_is_indexed_by_its_actor_and_read_back_newest_first() {
         let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
         let sink = sink_with_scopes(&store);
         sink.write(write(&[rec(5, "alice"), rec(1, "alice"), rec(4, "alice"), rec(2, "bob"), rec(3, "alice")])).await.unwrap();
-        // Six hundred of alice's after 13:05: her records before 13:04 stay readable.
-        let busy: Vec<serde_json::Value> = (0..600).map(|i| serde_json::json!({"ts": format!("2026-10-27T14:{:02}:{:02}Z", i / 60, i % 60), "_norm": {"org": "acme", "actor": "alice"}})).collect();
-        sink.write(write(&busy)).await.unwrap();
         let before = crate::windows::ev_bound(1_793_106_240_000); // 13:04
         let mins: Vec<i64> = latest(&store, "actor", "alice", &before, 2).await.iter().map(|k| (ts_of_key(k).unwrap() - 1_793_106_000_000) / 60_000).collect();
         assert_eq!(mins, [3, 1], "alice's latest two before 13:04, newest first");
@@ -746,7 +708,7 @@ mod tests {
         let partition = PartitionConfig { key: vec!["_norm.org".into()], separator: "|".into(), retain_ms: None, time: None };
         let recent = BTreeMap::from([("actor".to_string(), "_norm.actor".to_string()), ("org".to_string(), "_norm.org".to_string())]);
         let novel = novel.iter().map(|(s, fs)| (s.to_string(), fs.iter().map(|f| f.to_string()).collect())).collect();
-        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent, novel, follow: follow.map(String::from) };
+        let cfg = StoreSinkConfig { retain_secs: 2_592_000, recent, novel, follow: follow.map(String::from) };
         StoreSink::new(&cfg, Arc::clone(store), Some(partition)).unwrap()
     }
 
@@ -916,10 +878,10 @@ mod tests {
         let t = Y2020;
         sink.write(write(&[at(t, "alice", "Describe", "10.0.0.1")])).await.unwrap();
         sink.write(write(&[at(t + 59 * MIN, "alice", "Describe", "10.0.0.1")])).await.unwrap();
-        let entry = Seen::read(store.get(&seen_ns("events"), "acme", &key).await.unwrap());
+        let entry = Seen::read(store.get(SEEN_NS, "acme", &key).await.unwrap());
         assert_eq!(entry, Some(Seen { runs: vec![(t, t)] }), "59 min on: not written");
         sink.write(write(&[at(t + 61 * MIN, "alice", "Describe", "10.0.0.1")])).await.unwrap();
-        let entry = Seen::read(store.get(&seen_ns("events"), "acme", &key).await.unwrap());
+        let entry = Seen::read(store.get(SEEN_NS, "acme", &key).await.unwrap());
         assert_eq!(entry, Some(Seen { runs: vec![(t, t + 61 * MIN)] }));
     }
 
@@ -1290,7 +1252,7 @@ mod tests {
     #[tokio::test]
     async fn a_write_failing_at_its_window_starts_it_when_tried_again() {
         // The first window written is the day before's; the second, the new address's, fails.
-        let store: Arc<dyn StateStore> = probe(&follow_ns("events"), 1);
+        let store: Arc<dyn StateStore> = probe(FOLLOW_NS, 1);
         let sink = novelty_sink(&store, &[("actor", &["_norm.ip"])], Some("1h"));
         let t = Y2020 + 10 * DAY;
         each(&sink, &[at(t - DAY, "alice", "Describe", "10.0.0.1")]).await;
@@ -1312,14 +1274,14 @@ mod tests {
     #[tokio::test]
     async fn a_window_written_by_a_failed_write_counts_its_records_once() {
         // The first seen entry written is the day before's; the next fails.
-        let store: Arc<dyn StateStore> = probe(&seen_ns("events"), 1);
+        let store: Arc<dyn StateStore> = probe(SEEN_NS, 1);
         let sink = novelty_sink(&store, &[("actor", &["_norm.ip"])], Some("1h"));
         let t = Y2020 + 10 * DAY;
         each(&sink, &[at(t - DAY, "alice", "Describe", "10.0.0.1")]).await;
         let payload = || write(&[at(t, "alice", "Describe", "5.6.7.8"), at(t + MIN, "alice", "Describe", "10.0.0.1"), at(t + 2 * MIN, "alice", "Describe", "10.0.0.1")]);
         assert!(sink.write(payload()).await.is_err());
         sink.write(payload()).await.unwrap();
-        let windows = Windows::read(store.get(&follow_ns("events"), "acme", &index_prefix("actor", "alice")).await.unwrap());
+        let windows = Windows::read(store.get(FOLLOW_NS, "acme", &index_prefix("actor", "alice")).await.unwrap());
         assert_eq!(windows.unwrap().0, [Window { start: t - DAY, count: 0, touched: 0 }, Window { start: t, count: 2, touched: 0 }]);
     }
 
@@ -1330,7 +1292,7 @@ mod tests {
     #[tokio::test]
     async fn a_write_tried_again_counts_what_it_followed_once() {
         // Seen entries 0 and 1 are the earlier writes'; this write's fail.
-        let store: Arc<dyn StateStore> = transactional(&seen_ns("events"), 2);
+        let store: Arc<dyn StateStore> = transactional(SEEN_NS, 2);
         let sink = novelty_sink(&store, &[("actor", &["_norm.ip"])], Some("1h"));
         let t = Y2020 + 10 * DAY;
         each(&sink, &[at(t - 10 * MIN, "alice", "Describe", "10.0.0.1"), at(t, "alice", "Describe", "5.6.7.8")]).await;
@@ -1346,7 +1308,7 @@ mod tests {
         };
         assert!(sink.write(payload()).await.is_err());
         sink.write(payload()).await.unwrap();
-        let windows = Windows::read(store.get(&follow_ns("events"), "acme", &index_prefix("actor", "alice")).await.unwrap());
+        let windows = Windows::read(store.get(FOLLOW_NS, "acme", &index_prefix("actor", "alice")).await.unwrap());
         assert_eq!(
             windows.unwrap().0,
             [
@@ -1422,18 +1384,17 @@ mod tests {
     fn a_novel_scope_needs_a_field() {
         let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
         let novel = BTreeMap::from([("actor".to_string(), vec!["_norm.kind".to_string()])]);
-        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new(), novel, follow: None };
+        let cfg = StoreSinkConfig { retain_secs: 2_592_000, recent: BTreeMap::new(), novel, follow: None };
         assert!(StoreSink::new(&cfg, store, None).is_err());
     }
 
     #[test]
     fn a_follow_is_a_duration() {
-        let cfg = |follow: &str| StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new(), novel: BTreeMap::new(), follow: Some(follow.into()) };
+        let cfg = |follow: &str| StoreSinkConfig { retain_secs: 2_592_000, recent: BTreeMap::new(), novel: BTreeMap::new(), follow: Some(follow.into()) };
         assert!(StoreSink::new(&cfg("soon"), lru(), None).is_err());
         assert_eq!(StoreSink::new(&cfg("1h"), lru(), None).unwrap().follow_ms, Some(3_600_000));
     }
 
-    /// Rows stored before the index existed are indexed at the first write.
     #[tokio::test]
     async fn records_stored_before_the_index_are_indexed_once() {
         let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());

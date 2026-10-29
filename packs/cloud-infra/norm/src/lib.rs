@@ -1,28 +1,12 @@
-//! Normalizes the corpus' eight source shapes into `_norm`: the fields the
-//! window nodes key on (`actor`, `org`), count by (`kind`) and track for
-//! first sightings (`ip`, `country`, `dest`, `target`), for the shapes that
-//! are not a provider's API: a product's audit log, an agent's logs, CI
-//! lines. The sources read straight from their APIs (CloudTrail, the GitHub
-//! audit log, Okta, Google Workspace) have a plugin each under `providers/`,
-//! which also trims the record; this one leaves the record as it came and
-//! adds `_norm` beside it. Which field means what for each source is code
-//! here. One thing is config: which sources are the
-//! company's own infrastructure. A product's logs carry a customer's tenant
-//! id, and that is their partition: one per customer. The company's own
-//! logs (its cloud accounts, its GitHub org, its identity provider, its CI)
-//! have no customer in them; they are one tenant, the company, and all land
-//! in the one partition named for it, whatever ids each source carries.
-//!
-//! From `profile.yaml` in the plugin's data directory (`org`, `own_sources`),
-//! or `plugins.norm.config` (`own_org`, `own_sources`):
-//!   org: acme
-//!   own_sources: [cloudtrail, github_audit, okta, google_workspace, gha_ci, runner_egress]
+//! Each source's shape into `_norm`; the four API sources' records are trimmed too.
 
 wit_bindgen::generate!({
     path: ".tangent/wit",
     world: "processor",
     generate_all,
 });
+
+mod trim;
 
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
@@ -65,6 +49,8 @@ export!(Component);
 struct Norm {
     #[serde(skip_serializing_if = "Option::is_none")]
     actor: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    aws: bool, // AWS acting on its own
     #[serde(skip_serializing_if = "Option::is_none")]
     org: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,10 +90,102 @@ fn org_of_repo(repo: &str) -> Option<String> {
     repo.split('/').next().map(str::to_string)
 }
 
-fn norm(lv: &Logview) -> Norm {
-    let source = get(lv, "source").unwrap_or_default();
+/// a role session is its role, an SSO session its person
+fn cloudtrail_actor(lv: &Logview) -> Option<String> {
+    let kind = get(lv, "userIdentity.type").unwrap_or_default();
+    match kind.as_str() {
+        "AssumedRole" => {
+            let Some(role) = get(lv, "userIdentity.sessionContext.sessionIssuer.userName") else {
+                return get(lv, "userIdentity.userName").or_else(|| get(lv, "userIdentity.arn"));
+            };
+            if role.starts_with("AWSReservedSSO_") {
+                let arn = get(lv, "userIdentity.arn").unwrap_or_default();
+                if let Some(session) = arn.rsplit('/').next().filter(|s| !s.is_empty()) {
+                    return Some(session.to_string());
+                }
+            }
+            Some(role)
+        }
+        "AWSAccount" => get(lv, "userIdentity.accountId").map(|a| format!("account:{a}")),
+        "Root" => get(lv, "userIdentity.userName").or_else(|| Some("root".to_string())),
+        _ => get(lv, "userIdentity.userName").or_else(|| get(lv, "userIdentity.arn")),
+    }
+}
+
+/// The service, when AWS acted on its own; only fields AWS writes are read.
+fn aws_acting(lv: &Logview) -> Option<String> {
+    match get(lv, "userIdentity.type").unwrap_or_default().as_str() {
+        "AssumedRole" => linked_service(&get(lv, "userIdentity.sessionContext.sessionIssuer.arn")?),
+        "AWSService" => Some(invoker(lv)),
+        "" if get(lv, "userIdentity.invokedBy").is_some_and(|by| !by.is_empty()) => Some(invoker(lv)),
+        _ => None,
+    }
+}
+
+/// `...:role/aws-service-role/<service>.amazonaws.com/...` -> the service, only as the path's prefix
+fn linked_service(arn: &str) -> Option<String> {
+    let (_, path) = arn.split_once(":role/")?;
+    let service = path.strip_prefix("aws-service-role/")?.split('/').next();
+    Some(named(service.map(str::to_string)).unwrap_or_else(|| "service".to_string()))
+}
+
+fn invoker(lv: &Logview) -> String {
+    named(get(lv, "userIdentity.invokedBy"))
+        .or_else(|| named(get(lv, "sourceIPAddress").filter(|ip| ip.ends_with(".amazonaws.com"))))
+        .or_else(|| get(lv, "requestParameters.roleArn").and_then(|arn| linked_service(&arn)))
+        .or_else(|| named(get(lv, "eventSource")))
+        .unwrap_or_else(|| "service".to_string())
+}
+
+/// without `.amazonaws.com`; `AWS Internal` names nothing
+fn named(s: Option<String>) -> Option<String> {
+    s.map(|s| s.strip_suffix(".amazonaws.com").unwrap_or(&s).to_string())
+        .filter(|s| !s.is_empty() && s != "AWS Internal")
+}
+
+fn norm(lv: &Logview, source: &str) -> Norm {
     let mut n = Norm::default();
-    match source.as_str() {
+    match source {
+        "okta" => {
+            n.actor = get(lv, "actor.alternateId");
+            n.kind = get(lv, "eventType");
+            n.ip = get(lv, "client.ipAddress");
+            n.country = get(lv, "client.geographicalContext.country");
+            n.target = get(lv, "target[0].displayName");
+        }
+        "github_audit" => {
+            n.actor = get(lv, "actor");
+            n.org = get(lv, "org");
+            n.kind = get(lv, "action");
+            n.ip = get(lv, "actor_ip");
+            n.country = get(lv, "actor_location.country_code");
+            n.target = get(lv, "repo");
+        }
+        "cloudtrail" => {
+            let aws = aws_acting(lv);
+            n.aws = aws.is_some();
+            n.actor = aws.map(|s| format!("aws:{s}")).or_else(|| cloudtrail_actor(lv));
+            n.org = get(lv, "userIdentity.accountId");
+            n.kind = get(lv, "eventName");
+            // an AWS service or the SSO broker is not the caller's address
+            n.ip = get(lv, "sourceIPAddress").filter(|ip| {
+                !ip.ends_with(".amazonaws.com")
+                    && ip != "AWS Internal"
+                    && !matches!(
+                        n.kind.as_deref(),
+                        Some("AssumeRoleWithSAML" | "AssumeRoleWithWebIdentity")
+                    )
+            });
+            n.target = get(lv, "requestParameters.bucketName")
+                .or_else(|| get(lv, "requestParameters.roleArn"))
+                .or_else(|| get(lv, "requestParameters.userName"))
+                .or_else(|| get(lv, "requestParameters.groupId"));
+        }
+        "google_workspace" => {
+            n.actor = get(lv, "actor.email");
+            n.kind = get(lv, "events[0].name");
+            n.ip = get(lv, "ipAddress");
+        }
         "app" => {
             n.actor = get(lv, "actor");
             n.org = get(lv, "org");
@@ -152,7 +230,7 @@ fn norm(lv: &Logview) -> Norm {
     // The company's own infrastructure is one tenant: the company.
     let (own_org, own_sources) = own();
     if let Some(org) = own_org {
-        if own_sources.contains(source.as_str()) {
+        if own_sources.contains(source) {
             n.org = Some(org.clone());
         }
     }
@@ -168,24 +246,26 @@ impl Guest for Component {
     }
 
     fn probe() -> Vec<Selector> {
-        // Every record with a `source`, except the providers' own plugins'.
-        let providers = ["cloudtrail", "github_audit", "okta", "google_workspace"];
         vec![Selector {
             any: Vec::new(),
             all: vec![Pred::Has("source".to_string())],
-            none: providers
-                .iter()
-                .map(|p| Pred::Eq(("source".to_string(), Scalar::Str((*p).to_string()))))
-                .collect(),
+            none: Vec::new(),
         }]
     }
 
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
         let mut out = Vec::new();
         for lv in input {
-            let n = norm(&lv);
+            let source = get(&lv, "source").unwrap_or_default();
+            let n = norm(&lv, &source);
             let added = serde_json::to_string(&n).map_err(|e| e.to_string())?;
-            let mut line = lv.log().trim_end().to_string();
+            let mut line = match trim::of(&source) {
+                Some(trim) => {
+                    let rec = serde_json::from_str(&lv.log()).map_err(|e| e.to_string())?;
+                    serde_json::to_string(&trim(&rec)).map_err(|e| e.to_string())?
+                }
+                None => lv.log().trim_end().to_string(),
+            };
             if !line.ends_with('}') {
                 return Err("record is not a JSON object".to_string());
             }

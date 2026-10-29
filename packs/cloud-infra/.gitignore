@@ -6,4 +6,3 @@ test_out.ndjson
 .test.yaml
 .stage.yaml
 .empty.json
-tests/normalized.json
