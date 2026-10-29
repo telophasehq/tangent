@@ -447,5 +447,55 @@
    "from": "2026-10-20T13:05:00Z",
    "to": "2026-10-20T13:10:00Z"
   }
+ },
+ {
+  "_buffer": {
+   "from": "2026-10-22T03:25:00Z",
+   "to": "2026-10-22T03:30:00Z"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "ip": "185.224.128.40",
+    "org": "Alsycon B.V.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [
+    "principal aws:support is nobody the org profile knows",
+    "aws:support acting from datacenter hosting, 185.224.128.40 (Alsycon B.V.)",
+    "aws:support acting from NL, 185.224.128.40 (Alsycon B.V.)"
+   ],
+   "principal": "unknown"
+  },
+  "_ip": {
+   "_norm.ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "ip": "185.224.128.40",
+    "org": "Alsycon B.V.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "aws:support",
+   "ip": "185.224.128.40",
+   "kind": "user.login",
+   "org": "acme"
+  },
+  "actor": "aws:support",
+  "event": "user.login",
+  "ip": "185.224.128.40",
+  "org": "acme",
+  "source": "app",
+  "ts": "2026-10-22T03:25:00Z"
  }
 ]

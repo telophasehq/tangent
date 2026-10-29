@@ -62,7 +62,9 @@ impl Guest for Component {
             ],
             all: Vec::new(),
             // A service's own calls (`aws:<service>`): many, and nobody's
-            // access but AWS's.
+            // access but AWS's. Facts says `aws` only where the cloudtrail
+            // plugin marked it (`_norm.aws`), so an actor merely named
+            // `aws:...` is still judged.
             none: vec![is("_facts.principal", Scalar::Str("aws".to_string()))],
         }]
     }
