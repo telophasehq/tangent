@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
 use tangent_shared::runtime::PartitionConfig;
@@ -13,11 +13,10 @@ use tangent_shared::sinks::store::StoreSinkConfig;
 
 use crate::partition::key_of_value;
 use crate::sinks::manager::{Sink, SinkWrite};
-use crate::sources::poll::duration_ms;
 use crate::state::{now_ms, StateStore, StateValue};
 use crate::windows::{
-    ev_key, get_int, index_ns, index_prefix, scope_value, set_int, time_of_value, CLOSED_THROUGH,
-    FIRST, INDEXED, LAST_ARRIVAL, LATE_PREFIX, READ_THROUGH, WATERMARK, WINDOWS_NS,
+    ev_key, get_int, index_prefix, scope_value, set_int, time_of_value, CLOSED_THROUGH, EVENTS_NS,
+    INDEXED, INDEX_NS, LAST_ARRIVAL, LATE_PREFIX, READ_THROUGH, TIME_FIELD, WATERMARK, WINDOWS_NS,
 };
 use crate::{SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL};
 
@@ -27,9 +26,7 @@ const NO_PARTITION: &str = "_";
 pub struct StoreSink {
     store: Arc<dyn StateStore>,
     partition: Option<PartitionConfig>,
-    ns: String,
     retain_ms: u64,
-    time: String,
     /// (scope, field) each record is indexed by; a scope whose field is a
     /// partition key is not: the partition is its history.
     indexed: Vec<(String, String)>,
@@ -43,11 +40,7 @@ impl StoreSink {
         cfg: &StoreSinkConfig,
         store: Arc<dyn StateStore>,
         partition: Option<PartitionConfig>,
-    ) -> Result<Arc<Self>> {
-        let retain_ms = duration_ms(&cfg.retain)
-            .filter(|ms| *ms > 0)
-            .ok_or_else(|| anyhow!("store sink: retain {:?} is not a duration like 30d", cfg.retain))?
-            as u64;
+    ) -> Arc<Self> {
         let partition_fields: Vec<&String> = partition.iter().flat_map(|p| p.key.iter()).collect();
         let indexed = cfg
             .recent
@@ -55,26 +48,23 @@ impl StoreSink {
             .filter(|(_, field)| !partition_fields.contains(field))
             .map(|(s, f)| (s.clone(), f.clone()))
             .collect();
-        Ok(Arc::new(Self {
+        Arc::new(Self {
             store,
             partition,
-            ns: cfg.namespace.clone(),
-            retain_ms,
-            time: cfg.time.clone(),
+            retain_ms: cfg.retain_secs * 1000,
             indexed,
             bookkeeping: tokio::sync::Mutex::new(HashSet::new()),
-        }))
+        })
     }
 
     /// The index entries of one stored record: one per indexed scope it has a
     /// value for, each holding the record's key.
     async fn index(&self, part: &str, key: &str, v: &Value) -> Result<()> {
-        let ns = index_ns(&self.ns);
         for (scope, field) in &self.indexed {
             if let Some(value) = crate::inference::lookup(v, field).and_then(scope_value) {
                 let at = format!("{}{key}", index_prefix(scope, &value));
                 self.store
-                    .set(&ns, part, &at, &StateValue::Str(key.to_string()), Some(self.retain_ms))
+                    .set(INDEX_NS, part, &at, &StateValue::Str(key.to_string()), Some(self.retain_ms))
                     .await?;
             }
         }
@@ -90,7 +80,7 @@ impl StoreSink {
         }
         let (mut from, mut n) = ("ev:".to_string(), 0usize);
         loop {
-            let page = self.store.range(&self.ns, part, &from, "ev:~", 2_000).await?;
+            let page = self.store.range(EVENTS_NS, part, &from, "ev:~", 2_000).await?;
             let Some(last) = page.last() else { break };
             from = format!("{}!", last.key);
             for e in &page {
@@ -132,11 +122,11 @@ impl Sink for StoreSink {
                 .and_then(|p| key_of_value(&v, p))
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| NO_PARTITION.to_string());
-            let ts = time_of_value(&v, &self.time).unwrap_or(now);
+            let ts = time_of_value(&v, TIME_FIELD).unwrap_or(now);
             let key = ev_key(ts, &ulid::Ulid::new().to_string());
             let text = String::from_utf8_lossy(line).into_owned();
             self.store
-                .set(&self.ns, &part, &key, &StateValue::Str(text), Some(self.retain_ms))
+                .set(EVENTS_NS, &part, &key, &StateValue::Str(text), Some(self.retain_ms))
                 .await?;
             self.index(&part, &key, &v).await?;
             stored.entry(part).or_default().push((ts, key));
@@ -149,12 +139,8 @@ impl Sink for StoreSink {
                 seen.insert(part.clone());
             }
             let max = rows.iter().map(|(t, _)| *t).max().unwrap_or(now);
-            let min = rows.iter().map(|(t, _)| *t).min().unwrap_or(now);
             if get_int(&self.store, &part, WATERMARK).await?.is_none_or(|w| max > w) {
                 set_int(&self.store, &part, WATERMARK, max).await?;
-            }
-            if get_int(&self.store, &part, FIRST).await?.is_none_or(|f| min < f) {
-                set_int(&self.store, &part, FIRST, min).await?;
             }
             set_int(&self.store, &part, LAST_ARRIVAL, now).await?;
             // Read after the rows are written: a window the source read
@@ -208,8 +194,8 @@ mod tests {
             retain_ms: None,
             time: None,
         };
-        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new() };
-        let sink = StoreSink::new(&cfg, Arc::clone(&store), Some(partition)).unwrap();
+        let cfg = StoreSinkConfig { retain_secs: 2_592_000, recent: BTreeMap::new() };
+        let sink = StoreSink::new(&cfg, Arc::clone(&store), Some(partition));
         sink.write(write(&[
             serde_json::json!({"ts": "2026-10-27T13:05:00Z", "_norm": {"org": "acme"}, "n": 2}),
             serde_json::json!({"ts": "2026-10-27T13:01:00Z", "_norm": {"org": "acme"}, "n": 1}),
@@ -221,7 +207,6 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert!(ts_of_key(&rows[0].key) < ts_of_key(&rows[1].key), "time order, whatever the arrival order");
         assert_eq!(get_int(&store, "acme", WATERMARK).await.unwrap(), Some(1_793_106_300_000));
-        assert_eq!(get_int(&store, "acme", FIRST).await.unwrap(), Some(1_793_106_060_000));
         assert!(get_int(&store, "globex", WATERMARK).await.unwrap().is_some(), "each partition its own");
 
         // The source has read acme's windows up to 13:15; a record for 13:10
@@ -244,7 +229,7 @@ mod tests {
     async fn latest(store: &Arc<dyn StateStore>, scope: &str, value: &str, bound: &str, n: usize) -> Vec<String> {
         let prefix = crate::windows::index_prefix(scope, value);
         store
-            .range_rev(&index_ns("events"), "acme", &format!("{prefix}ev:"), &format!("{prefix}{bound}"), n)
+            .range_rev(INDEX_NS, "acme", &format!("{prefix}ev:"), &format!("{prefix}{bound}"), n)
             .await
             .unwrap()
             .into_iter()
@@ -257,8 +242,8 @@ mod tests {
         let mut recent = BTreeMap::new();
         recent.insert("actor".to_string(), "_norm.actor".to_string());
         recent.insert("org".to_string(), "_norm.org".to_string());
-        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent };
-        StoreSink::new(&cfg, Arc::clone(store), Some(partition)).unwrap()
+        let cfg = StoreSinkConfig { retain_secs: 2_592_000, recent };
+        StoreSink::new(&cfg, Arc::clone(store), Some(partition))
     }
 
     fn rec(min: u32, actor: &str) -> serde_json::Value {

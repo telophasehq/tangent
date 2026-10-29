@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use parking_lot::Mutex;
@@ -17,11 +17,10 @@ use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
-use crate::sources::poll::duration_ms;
 use crate::state::{now_ms, StateStore, StateValue};
 use crate::windows::{
-    ev_bound, get_int, iso, set_int, ts_of_key, CLOSED_THROUGH, FIRST, LAST_ARRIVAL, LATE_PREFIX,
-    READ_THROUGH, WATERMARK, WINDOWS_NS,
+    ev_bound, get_int, iso, set_int, ts_of_key, CLOSED_THROUGH, EVENTS_NS, LAST_ARRIVAL,
+    LATE_PREFIX, READ_THROUGH, WATERMARK, WINDOWS_NS,
 };
 use crate::worker::Ack;
 
@@ -32,8 +31,6 @@ struct Rules {
     span: i64,
     late: i64,
     idle: i64,
-    /// Nothing before this is judged, on a partition's first sight.
-    since: Option<i64>,
     /// When set, only buffers overlapping one of these are judged.
     ranges: Vec<(i64, i64)>,
 }
@@ -85,10 +82,6 @@ impl Ack for DoneAck {
     }
 }
 
-fn ms(s: &str, what: &str) -> Result<i64> {
-    duration_ms(s).ok_or_else(|| anyhow!("store source: {what} {s:?} is not a duration like 15m"))
-}
-
 pub async fn run_consumer(
     name: Arc<str>,
     cfg: StoreSourceConfig,
@@ -96,47 +89,38 @@ pub async fn run_consumer(
     store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    let span = ms(&cfg.buffer, "buffer")?;
-    if span <= 0 {
-        return Err(anyhow!("store source: buffer must be positive"));
+    if cfg.buffer_secs == 0 {
+        bail!("store source: buffer_secs must be positive");
     }
-    let late = ms(&cfg.late, "late")?;
-    let idle = cfg.idle.as_deref().map(|s| ms(s, "idle")).transpose()?.unwrap_or(late);
-    let grace = cfg.grace.as_deref().map(|s| ms(s, "grace")).transpose()?.unwrap_or(late);
-    let since = match cfg.since.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        Some(s) => Some(
-            chrono::DateTime::parse_from_rfc3339(s)
-                .map_err(|e| anyhow!("store source: since {s:?}: {e}"))?
-                .timestamp_millis(),
-        ),
-        None => None,
+    let at = |s: &str| {
+        chrono::DateTime::parse_from_rfc3339(s.trim())
+            .map(|t| t.timestamp_millis())
+            .map_err(|e| anyhow!("store source: range time {s:?}: {e}"))
     };
     let mut ranges = Vec::with_capacity(cfg.ranges.len());
     for r in &cfg.ranges {
-        let at = |s: &str| {
-            chrono::DateTime::parse_from_rfc3339(s.trim())
-                .map(|t| t.timestamp_millis())
-                .map_err(|e| anyhow!("store source: range time {s:?}: {e}"))
-        };
-        ranges.push((at(&r.from)?, at(&r.to)?));
+        ranges.push((at(&r.from)?, r.to.as_deref().map_or(Ok(i64::MAX), at)?));
     }
-    let rules = Rules { span, late, idle, since, ranges };
+    let rules = Rules {
+        span: cfg.buffer_secs as i64 * 1000,
+        late: cfg.late_secs as i64 * 1000,
+        idle: cfg.idle_secs.unwrap_or(cfg.late_secs) as i64 * 1000,
+        ranges,
+    };
+    let grace = cfg.grace_secs.unwrap_or(cfg.late_secs);
     let from = NodeRef::Source {
         name: Arc::clone(&name),
     };
-    tracing::info!(
-        source = %name, buffer = %cfg.buffer, late = %cfg.late, idle_ms = idle, grace_ms = grace,
-        "store source: the stored records, a buffer at a time"
-    );
+    tracing::info!(source = %name, buffer_secs = cfg.buffer_secs, late_secs = cfg.late_secs, "store source");
     tokio::select! {
         () = shutdown.cancelled() => return Ok(()),
-        () = tokio::time::sleep(Duration::from_millis(grace.max(0) as u64)) => {}
+        () = tokio::time::sleep(Duration::from_secs(grace)) => {}
     }
 
     let (tx, mut rx) = mpsc::unbounded_channel::<Done>();
     let sem = Arc::new(Semaphore::new(cfg.in_flight.max(1)));
     let mut parts: HashMap<String, Part> = HashMap::new();
-    let mut ticker = tokio::time::interval(Duration::from_secs(cfg.interval_secs.max(1)));
+    let mut ticker = tokio::time::interval(Duration::from_secs(1));
     loop {
         tokio::select! {
             () = shutdown.cancelled() => break,
@@ -146,7 +130,7 @@ pub async fn run_consumer(
                 }
             }
             _ = ticker.tick() => {
-                if let Err(e) = tick(&name, &cfg, &rules, &store, &router, &from, &sem, &tx, &mut parts).await {
+                if let Err(e) = tick(&name, &rules, &store, &router, &from, &sem, &tx, &mut parts).await {
                     tracing::warn!(source = %name, "store source: {e:#}");
                 }
             }
@@ -159,7 +143,6 @@ pub async fn run_consumer(
 #[allow(clippy::too_many_arguments)]
 async fn tick(
     name: &Arc<str>,
-    cfg: &StoreSourceConfig,
     rules: &Rules,
     store: &Arc<dyn StateStore>,
     router: &Arc<Router>,
@@ -183,10 +166,13 @@ async fn tick(
         if !parts.contains_key(&p) {
             let closed = match get_int(store, &p, CLOSED_THROUGH).await? {
                 Some(c) => c,
-                None => match get_int(store, &p, FIRST).await? {
-                    Some(f) => f.max(rules.since.unwrap_or(i64::MIN)).div_euclid(rules.span) * rules.span,
-                    None => continue,
-                },
+                None => {
+                    let first = store.range(EVENTS_NS, &p, "ev:", "ev:~", 1).await?;
+                    match first.first().and_then(|e| ts_of_key(&e.key)) {
+                        Some(f) => f.div_euclid(rules.span) * rules.span,
+                        None => continue,
+                    }
+                }
             };
             parts.insert(
                 p.clone(),
@@ -205,7 +191,7 @@ async fn tick(
         // Skip a stretch with nothing in it in one step.
         if state.pending.is_empty() && state.next < due_end {
             let first = store
-                .range(&cfg.namespace, &p, &ev_bound(state.next), &ev_bound(due_end), 1)
+                .range(EVENTS_NS, &p, &ev_bound(state.next), &ev_bound(due_end), 1)
                 .await?;
             let target = match first.first().and_then(|e| ts_of_key(&e.key)) {
                 Some(t) => t.div_euclid(rules.span) * rules.span,
@@ -231,7 +217,7 @@ async fn tick(
             // Recorded before the read, so a record stored from now on for
             // this window is marked late by the sink rather than lost.
             set_int(store, &p, READ_THROUGH, end).await?;
-            let rows = read(store, &cfg.namespace, &p, start, end).await?;
+            let rows = read(store, EVENTS_NS, &p, start, end).await?;
             if rows.is_empty() {
                 state.pending.insert(start, true);
                 drop(permit);
@@ -271,7 +257,7 @@ async fn tick(
         for m in &markers {
             keys.push(m.key.clone());
             let StateValue::Str(ev) = &m.value else { continue };
-            if let Some(StateValue::Str(line)) = store.get(&cfg.namespace, &p, ev).await? {
+            if let Some(StateValue::Str(line)) = store.get(EVENTS_NS, &p, ev).await? {
                 rows.push(line);
             }
         }

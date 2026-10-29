@@ -32,20 +32,17 @@ use serde_json::Value;
 
 use crate::state::{StateStore, StateValue};
 
+pub const EVENTS_NS: &str = "events";
+pub const INDEX_NS: &str = "recent:events";
+pub const TIME_FIELD: &str = "ts";
+
 pub const WINDOWS_NS: &str = "windows";
 pub const WATERMARK: &str = "watermark";
 pub const LAST_ARRIVAL: &str = "last_arrival";
-pub const FIRST: &str = "first";
 pub const READ_THROUGH: &str = "read_through";
 pub const CLOSED_THROUGH: &str = "closed_through";
 pub const LATE_PREFIX: &str = "late:";
-
 pub const INDEXED: &str = "indexed";
-
-/// Where a store namespace's history index lives.
-pub fn index_ns(ns: &str) -> String {
-    format!("recent:{ns}")
-}
 
 /// The index keys of one scope value: `<scope>\x1f<value>\x1f`, then the
 /// record's key, so they sort by the record's time.

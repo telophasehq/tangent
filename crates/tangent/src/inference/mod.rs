@@ -74,12 +74,6 @@ fn model(cfg: &InferenceConfig) -> Result<DynModel<Completion>> {
 
 impl InferenceNode {
     pub fn new(name: Arc<str>, cfg: InferenceConfig, config_dir: &Path) -> Result<Self> {
-        if cfg.context.as_ref().is_some_and(|c| !c.window.is_empty()) {
-            bail!(
-                "inference node {name}: context.window is gone; a scope's history is its latest records however \
-                 long ago (context.max_events), kept by the store sink's `recent`"
-            );
-        }
         let prompt_path = resolve(config_dir, &cfg.prompt_file);
         let prompt = std::fs::read_to_string(&prompt_path)
             .with_context(|| format!("reading prompt {}", prompt_path.display()))?;
@@ -282,7 +276,7 @@ impl InferenceNode {
         let cfg = self.cfg.context.as_ref()?;
         let before = records
             .iter()
-            .filter_map(|v| crate::windows::time_of_value(v, &cfg.time))
+            .filter_map(|v| crate::windows::time_of_value(v, crate::windows::TIME_FIELD))
             .min()?;
         // What came before the request's records: the store also holds what
         // arrived while their buffer waited to be judged.
@@ -317,12 +311,12 @@ impl InferenceNode {
                 // reads the partition's rows, any other its index.
                 let whole = key == part;
                 let (ns, from, to) = if whole {
-                    (cfg.namespace.clone(), "ev:".to_string(), bound.clone())
+                    (crate::windows::EVENTS_NS, "ev:".to_string(), bound.clone())
                 } else {
                     let prefix = crate::windows::index_prefix(scope, &key);
-                    (crate::windows::index_ns(&cfg.namespace), format!("{prefix}ev:"), format!("{prefix}{bound}"))
+                    (crate::windows::INDEX_NS, format!("{prefix}ev:"), format!("{prefix}{bound}"))
                 };
-                let entries = match store.range_rev(&ns, part, &from, &to, cfg.max_events + shown.len()).await {
+                let entries = match store.range_rev(ns, part, &from, &to, cfg.max_events + shown.len()).await {
                     Ok(entries) => entries,
                     Err(e) => {
                         tracing::warn!(node = %self.name, "reading context: {e:#}");
@@ -341,7 +335,7 @@ impl InferenceNode {
                         (e.key, text)
                     } else {
                         let StateValue::Str(row) = e.value else { continue };
-                        let Ok(Some(StateValue::Str(text))) = store.get(&cfg.namespace, part, &row).await else { continue };
+                        let Ok(Some(StateValue::Str(text))) = store.get(crate::windows::EVENTS_NS, part, &row).await else { continue };
                         (row, text)
                     };
                     if shown.contains(&row) {
@@ -363,7 +357,7 @@ impl InferenceNode {
                     "recent": recent.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
                 })
                 .to_string();
-                if bytes + line.len() > cfg.max_bytes && lines.len() > 1 {
+                if bytes + line.len() > 40_000 && lines.len() > 1 {
                     break;
                 }
                 bytes += line.len();
@@ -1083,11 +1077,10 @@ mod tests {
         recent.insert("actor".to_string(), "_norm.actor".to_string());
         recent.insert("org".to_string(), "_norm.org".to_string());
         let sink = crate::sinks::store::StoreSink::new(
-            &tangent_shared::sinks::store::StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent },
+            &tangent_shared::sinks::store::StoreSinkConfig { retain_secs: 2_592_000, recent },
             Arc::clone(&store),
             Some(tangent_shared::runtime::PartitionConfig { key: vec!["_norm.org".into()], separator: "|".into(), retain_ms: None, time: None }),
-        )
-        .unwrap();
+        );
         let mut payload = bytes::BytesMut::new();
         for (ts, actor, kind) in [
             (t0 - 14 * 86_400_000, "a", "weeks.ago"),
@@ -1109,13 +1102,9 @@ mod tests {
         scopes.insert("actor".to_string(), "_norm.actor".to_string());
         scopes.insert("org".to_string(), "_norm.org".to_string());
         cfg.context = Some(ContextConfig {
-            namespace: "events".into(),
             scopes,
-            window: BTreeMap::new(),
             max_events: 3,
-            max_bytes: 40_000,
             fields: vec!["ts".into(), "_norm.kind".into()],
-            time: "ts".into(),
         });
         let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
         let part: Arc<str> = Arc::from("acme");

@@ -48,9 +48,9 @@ sources:
 
   buffer:                       # the stored records, read back a buffer at a time as each closes
     type: store
-    buffer: 5m                  # how long records gather before they are judged; a verdict comes buffer + late after its record
-    late: 20m                   # CloudTrail reports up to about fifteen minutes late
-    grace: 2m                   # after a start, let the sources catch up before closing anything
+    buffer_secs: 300            # how long records gather before they are judged; a verdict comes buffer + late after its record
+    late_secs: 1200             # CloudTrail reports up to about fifteen minutes late
+    grace_secs: 120             # after a start, let the sources catch up before closing anything
 
 plugins:
   cloudtrail:                 # CloudTrail records: `_norm`, and the record trimmed to what it means
@@ -134,7 +134,7 @@ inference:
 sinks:
   store:                        # every normalized, enriched record, per partition: what windows and history are read from
     type: store
-    retain: 30d
+    retain_secs: 2592000
     recent: { actor: _norm.actor, org: _norm.org }   # history is read by these: each record indexed by its actor; the org is the partition itself
   alerts:                       # what a person should look at
     type: file

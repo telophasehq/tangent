@@ -102,45 +102,17 @@ pub struct InferenceConfig {
     pub extra: Map<String, Value>,
 }
 
-/// What history a request is read with, from a `store` sink's records.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ContextConfig {
-    /// Where the `store` sink keeps records.
-    #[serde(default = "crate::sinks::store::default_namespace")]
-    pub namespace: String,
-    /// A view per scope: the latest records whose `field` has the value one
-    /// of the request's records has, e.g. `{actor: _norm.actor, org:
-    /// _norm.org}`, read from the `store` sink's `recent` lists, which must
-    /// keep the same scopes.
-    pub scopes: BTreeMap<String, String>,
-    /// Gone: a view is a scope's latest records however long ago, not a span
-    /// of time. Set, the node refuses to start and says so.
-    #[serde(default, alias = "spans")]
-    pub window: BTreeMap<String, String>,
-    /// Records per view: the latest before the request's records.
+    pub scopes: BTreeMap<String, String>, // scope: field, as the store sink's `recent`
     #[serde(default = "default_max_events")]
-    pub max_events: usize,
-    /// The whole context stops at about this many bytes; the busiest keys
-    /// come first.
-    #[serde(default = "default_context_bytes")]
-    pub max_bytes: usize,
-    /// The fields of a history line, as dotted paths; the whole record when
-    /// empty.
+    pub max_events: usize, // per scope
     #[serde(default)]
     pub fields: Vec<String>,
-    /// The field holding a record's own time.
-    #[serde(default = "default_time_field")]
-    pub time: String,
 }
 
 const fn default_max_events() -> usize {
     20
-}
-const fn default_context_bytes() -> usize {
-    40_000
-}
-fn default_time_field() -> String {
-    "ts".into()
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]

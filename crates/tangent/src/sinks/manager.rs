@@ -106,7 +106,7 @@ impl SinkManager {
                     sinks.insert(Arc::clone(&name), SinkEntry::Other { sink: bh });
                 }
                 SinkKind::Store(scfg) => {
-                    let sink = store_sink::StoreSink::new(scfg, Arc::clone(&store), partition.clone())?;
+                    let sink = store_sink::StoreSink::new(scfg, Arc::clone(&store), partition.clone());
                     sinks.insert(Arc::clone(&name), SinkEntry::Other { sink });
                 }
             }
