@@ -64,13 +64,6 @@ pub struct InferenceConfig {
     #[serde(default = "default_batch_bytes")]
     pub batch_bytes: usize,
 
-    /// How long the worker lets a batch fill towards `batch` records before
-    /// judging what it has (1 s by default). A node's `batch` is what sets
-    /// the worker's batch, not the runtime's byte and age limits, which only
-    /// bound memory: records wait this long at most for company.
-    #[serde(default = "default_batch_age_ms")]
-    pub batch_age_ms: u64,
-
     /// History to read the records with: before a request, the node reads
     /// the stored records that came before the request's earliest one, from
     /// the request's partition, and writes them once ahead of the records,
@@ -191,9 +184,6 @@ const fn default_batch() -> usize {
 }
 const fn default_batch_bytes() -> usize {
     32_768
-}
-const fn default_batch_age_ms() -> u64 {
-    1_000
 }
 const fn default_timeout_ms() -> u64 {
     30_000
