@@ -22,8 +22,16 @@
 //! A scope's latest records before a time, however long ago, are one
 //! newest-first range of it. A scope that is the partition itself (the org of
 //! an org-partitioned store) needs no index: the partition's rows are its
-//! history. `indexed` (namespace `windows`) marks a partition whose rows
-//! written before the index existed have been indexed.
+//! history. `indexed:<scope>\x1f<field>` (namespace `windows`) marks a
+//! partition whose rows written before that scope was indexed have been.
+//!
+//! Novelty: the namespace `seen:<store namespace>` holds, under
+//! `<scope>\x1f<value>\x1f<field>\x1f<its value>`, the earliest and latest
+//! record time a scope value was seen with a value of one of its fields, and
+//! `follow:<store namespace>` a scope value's window of records following
+//! its latest new one. `remembered:<scope>\x1f<scope field>\x1f<field>`
+//! (namespace `windows`) marks a partition whose rows written before that
+//! field was remembered have been read for it.
 
 use std::sync::Arc;
 
@@ -40,8 +48,17 @@ pub const READ_THROUGH: &str = "read_through";
 pub const CLOSED_THROUGH: &str = "closed_through";
 pub const LATE_PREFIX: &str = "late:";
 
-pub const INDEXED: &str = "indexed";
-pub const REMEMBERED: &str = "remembered";
+/// Marks a partition whose older rows were indexed by one scope.
+pub fn indexed_marker(scope: &str, field: &str) -> String {
+    format!("indexed:{scope}\u{1f}{field}")
+}
+
+/// Marks a partition whose older rows were read for one field of one scope:
+/// a field or scope listed later is read for alone, and a scope read from a
+/// different field is a new one.
+pub fn remembered_marker(scope: &str, scope_field: &str, field: &str) -> String {
+    format!("remembered:{scope}\u{1f}{scope_field}\u{1f}{field}")
+}
 
 /// Where a store namespace's history index lives.
 pub fn index_ns(ns: &str) -> String {
@@ -52,6 +69,12 @@ pub fn index_ns(ns: &str) -> String {
 /// has had, the novelty a record is marked by.
 pub fn seen_ns(ns: &str) -> String {
     format!("seen:{ns}")
+}
+
+/// Where a store namespace's follow windows live: per scope value, the
+/// record time of its latest new record and how many have followed it.
+pub fn follow_ns(ns: &str) -> String {
+    format!("follow:{ns}")
 }
 
 /// The index keys of one scope value: `<scope>\x1f<value>\x1f`, then the

@@ -31,11 +31,21 @@ pub struct StoreSinkConfig {
     /// What is new, per scope of `recent`: the fields whose values each
     /// scope value is remembered to have had (`{actor: [_norm.kind,
     /// _facts.ip.org], org: [_norm.actor]}`). A record with a value its
-    /// scope has not had within `retain` is stored with `_novel`, which
-    /// scope and fields: `{"actor": ["_norm.kind"]}`. A record that has
-    /// none is what its scopes do every day.
+    /// scope has not had within `retain` before the record's own time is
+    /// stored with `_novel`, which scope and fields:
+    /// `{"actor": ["_norm.kind"]}`. A record that has none is what its
+    /// scopes do every day. A record with no value for any of these fields
+    /// cannot be told either way and is marked `{"_": ["unscoped"]}`, so a
+    /// source the config does not cover is still judged.
     #[serde(default)]
     pub novel: BTreeMap<String, Vec<String>>,
+    /// How long, in record time, a scope value's records after a new one
+    /// are marked too (`1h`): `{"actor": ["follows"]}`, at most 50 a
+    /// window, so the session that something new begins is judged whole,
+    /// not only its first record. Not for a scope that is the partition,
+    /// whose every record would follow. Off without it.
+    #[serde(default)]
+    pub follow: Option<String>,
 }
 
 pub fn default_namespace() -> String {
