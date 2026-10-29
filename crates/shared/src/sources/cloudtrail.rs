@@ -5,7 +5,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 /// management events (IAM, STS, console logins, bucket policy changes),
 /// about fifteen minutes behind, two requests a second. With `queue_url`,
 /// the notifications of a trail's S3 delivery are consumed instead: every
-/// event, data events included, gzipped files every few minutes.
+/// event, data events included, gzipped files every few minutes. An
+/// organization trail is read this way: one bucket for every account and
+/// region, usually the log archive account's (`bucket_role`).
 ///
 /// Records are emitted as CloudTrail writes them, plus `source: cloudtrail`
 /// and `ts` (the event time).
@@ -30,11 +32,20 @@ pub struct CloudtrailConfig {
     /// most). Afterwards the source resumes from where it stopped.
     #[serde(default = "default_since")]
     pub since: String,
-    /// An SQS queue receiving the S3 event notifications of a trail's
-    /// delivery bucket. Set, the source reads the delivered files instead of
-    /// polling `LookupEvents`.
+    /// An SQS queue told of each file the trail delivers: S3 event
+    /// notifications on the trail's bucket (straight, through SNS or through
+    /// EventBridge), or the trail's own SNS notifications. With Control
+    /// Tower, the trail notifies the audit account's
+    /// `aws-controltower-AllConfigNotifications` topic, which AWS Config
+    /// shares; its messages are skipped. Set, the source reads the delivered
+    /// files instead of polling `LookupEvents`.
     #[serde(default)]
     pub queue_url: Option<String>,
+    /// A role to assume for reading the trail's bucket when it is another
+    /// account's (an organization trail's is the log archive account's).
+    /// The queue is read with the source's own credentials.
+    #[serde(default)]
+    pub bucket_role: Option<String>,
 }
 
 const fn default_interval_secs() -> u64 {
