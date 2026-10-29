@@ -158,8 +158,6 @@ fn profile() -> &'static Profile {
     })
 }
 
-
-
 fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
     if let Some(direct) = v.get(path) {
         return Some(direct);
@@ -193,11 +191,10 @@ fn principal(p: &Profile, actor: &str) -> &'static str {
     }
 }
 
-/// What the profile knows about this record, and the notes a model reads it
-/// with. The second element is (sentence, class); only the sentences go on.
-fn facts_of(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, String)>) {
+/// What the profile knows about this record, and the notes a model reads it with.
+fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>, Vec<String>) {
     let mut facts = Map::new();
-    let mut reasons: Vec<(String, String)> = Vec::new();
+    let mut notes = Vec::new();
     let source = rec["source"].as_str().unwrap_or("");
     let kind = lookup(rec, "_norm.kind").and_then(text).unwrap_or_default();
     let actor = lookup(rec, "_norm.actor").and_then(text);
@@ -206,15 +203,15 @@ fn facts_of(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, Strin
 
     if p.watch.contains(&kind) {
         facts.insert("watch".into(), json!(true));
-        reasons.push((format!("{kind} is a kind the org watches every time"), format!("watch:{kind}")));
+        notes.push(format!("{kind} is a kind the org watches every time"));
     }
     if rec["userIdentity"]["type"].as_str() == Some("Root") {
         facts.insert("root".into(), json!(true));
-        reasons.push(("AWS root credentials used".into(), "root".into()));
+        notes.push("AWS root credentials used".into());
     }
     if rec["requestParameters"].to_string().contains("0.0.0.0/0") {
         facts.insert("world_open".into(), json!(true));
-        reasons.push(("opened to 0.0.0.0/0".into(), "world".into()));
+        notes.push("opened to 0.0.0.0/0".into());
     }
 
     // The principal: known to the profile, or nobody it knows.
@@ -225,25 +222,21 @@ fn facts_of(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, Strin
     if let (Some(a), Some(w)) = (&actor, who) {
         facts.insert("principal".into(), json!(w));
         if w == "unknown" {
-            reasons.push((
-                format!("principal {a} is nobody the org profile knows"),
-                format!("principal:{a}"),
-            ));
+            notes.push(format!("principal {a} is nobody the org profile knows"));
         }
     }
 
     // The address, as `enrich` described it.
-    if let Some(ip) = rec["_ip"][&p.ip_field].as_object() {
-        facts.insert("ip".into(), Value::Object(ip.clone()));
+    if let Some(Value::Object(ip)) = ip {
         let ours = ip.get("ours").and_then(Value::as_bool).unwrap_or(false);
         let addr = ip.get("ip").and_then(Value::as_str).unwrap_or("?");
         let desc = ip.get("org").and_then(Value::as_str).unwrap_or("unknown network");
         let scope = actor.clone().unwrap_or_else(|| kind.clone());
         if ip.get("tor").and_then(Value::as_bool) == Some(true) {
-            reasons.push((format!("{addr} is a Tor exit ({desc})"), format!("ip:tor:{scope}")));
+            notes.push(format!("{addr} is a Tor exit ({desc})"));
         }
         if ip.get("vpn").and_then(Value::as_bool) == Some(true) && !ours {
-            reasons.push((format!("{addr} is a VPN address ({desc})"), format!("ip:vpn:{scope}")));
+            notes.push(format!("{addr} is a VPN address ({desc})"));
         }
         let hosting = ip.get("hosting").and_then(Value::as_str);
         let country = ip.get("country").and_then(Value::as_str);
@@ -252,16 +245,10 @@ fn facts_of(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, Strin
             // A person: hosting or a country the org is not in is worth a look.
             Some("member") | Some("unknown") if !ours => {
                 if let Some(h) = hosting {
-                    reasons.push((
-                        format!("{scope} acting from {h} hosting, {addr} ({desc})"),
-                        format!("ip:hosting:{scope}"),
-                    ));
+                    notes.push(format!("{scope} acting from {h} hosting, {addr} ({desc})"));
                 }
                 if foreign {
-                    reasons.push((
-                        format!("{scope} acting from {}, {addr} ({desc})", country.unwrap_or("?")),
-                        format!("ip:country:{scope}"),
-                    ));
+                    notes.push(format!("{scope} acting from {}, {addr} ({desc})", country.unwrap_or("?")));
                 }
             }
             // A service runs in the org's cloud, or from its own addresses.
@@ -270,12 +257,9 @@ fn facts_of(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, Strin
                     || country.unwrap_or("an unknown network").to_string(),
                     |h| format!("{h} hosting"),
                 );
-                reasons.push((
-                    format!(
-                        "service {scope} acting from {where_}, {addr} ({desc}), not the org's {}",
-                        p.cloud.as_deref().unwrap_or("cloud")
-                    ),
-                    format!("ip:service:{scope}"),
+                notes.push(format!(
+                    "service {scope} acting from {where_}, {addr} ({desc}), not the org's {}",
+                    p.cloud.as_deref().unwrap_or("cloud")
                 ));
             }
             // A key calls from the networks the org expects it from.
@@ -289,14 +273,12 @@ fn facts_of(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, Strin
                 });
                 facts.insert("key_known_network".into(), json!(known));
                 if !known {
-                    reasons.push((
-                        format!("key {scope} used from {addr} ({desc}), outside the networks it calls from"),
-                        format!("ip:key:{scope}"),
-                    ));
+                    notes.push(format!("key {scope} used from {addr} ({desc}), outside the networks it calls from"));
                 }
             }
             _ => {}
         }
+        facts.insert("ip".into(), Value::Object(ip));
     }
 
     // Where the request went.
@@ -308,10 +290,7 @@ fn facts_of(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, Strin
         facts.insert("dest_known".into(), json!(known));
         if !known {
             let by = actor.clone().unwrap_or_else(|| source.to_string());
-            reasons.push((
-                format!("{by} talked to {d}, not a host this org's systems talk to"),
-                format!("dest:{d}"),
-            ));
+            notes.push(format!("{by} talked to {d}, not a host this org's systems talk to"));
         }
     }
 
@@ -320,13 +299,10 @@ fn facts_of(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, Strin
         if p.sensitive.iter().any(|s| t == s || t.contains(s.as_str())) {
             facts.insert("sensitive_target".into(), json!(true));
             let by = actor.clone().unwrap_or_else(|| source.to_string());
-            reasons.push((
-                format!("{by} touched {t}, which the org marks sensitive"),
-                format!("sensitive:{by}:{t}"),
-            ));
+            notes.push(format!("{by} touched {t}, which the org marks sensitive"));
         }
     }
-    (facts, reasons)
+    (facts, notes)
 }
 
 impl Guest for Component {
@@ -350,8 +326,14 @@ impl Guest for Component {
         let mut out = Vec::new();
         for lv in input {
             let mut rec: Value = serde_json::from_str(&lv.log()).map_err(|e| e.to_string())?;
-            let (mut facts, notes) = facts_of(p, &rec);
-            let notes: Vec<String> = notes.into_iter().map(|(text, _)| text).collect();
+            let Some(m) = rec.as_object_mut() else {
+                return Err("record is not a JSON object".to_string());
+            };
+            let ip = m.get_mut("_ip").and_then(Value::as_object_mut).and_then(|i| i.remove(&p.ip_field));
+            if m.get("_ip").and_then(Value::as_object).is_some_and(Map::is_empty) {
+                m.remove("_ip");
+            }
+            let (mut facts, notes) = facts_of(p, &rec, ip);
             facts.insert("notes".into(), json!(notes));
             rec["_facts"] = Value::Object(facts);
             out.extend(serde_json::to_vec(&rec).map_err(|e| e.to_string())?);
