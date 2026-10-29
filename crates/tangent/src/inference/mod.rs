@@ -19,16 +19,21 @@ use rig_core::operation::Completion;
 use rig_core::providers::openai::{OpenAIConfig, Route};
 use rig_core::{schemars, DynModel};
 use serde_json::{json, Map, Value};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tangent_shared::inference::{Backend, ContextConfig, InferenceConfig};
 
-use crate::state::{StateStore, StateValue};
+use crate::state::{Entry, StateStore, StateValue};
 use tokio::sync::Semaphore;
 
 /// Records judged together: one partition, one window.
 type GroupKey = (Arc<str>, String);
+
+/// A request: its partition, the records' places in the order given, the
+/// records, and the rows they were read from when each says (`_key`).
+type Job = (Arc<str>, Vec<usize>, Vec<Value>, Option<HashSet<String>>);
 
 pub struct InferenceNode {
     pub name: Arc<str>,
@@ -132,16 +137,25 @@ impl InferenceNode {
     /// Records with their partitions through the model: grouped by
     /// partition and by buffer (`_buffer.from`, when the records came from a
     /// `store` source), each group in requests of `batch`, each request read
-    /// with the history before its earliest record when `context` is set and
-    /// a store is given. The annotated records, in the order given.
+    /// with the history before its earliest record, and the rest of its
+    /// buffer, when `context` is set and a store is given. The annotated
+    /// records, in the order given.
     pub async fn annotate_in(
         &self,
         records: Vec<(Value, Arc<str>)>,
         store: Option<Arc<dyn StateStore>>,
     ) -> Vec<Value> {
         let n = records.len();
+        // The row a `store` source read each record from (`_key`) tells a
+        // request's own records from the rest of their buffer. The model,
+        // and what comes after the node, see the record without it.
+        let mut rows: Vec<Option<String>> = Vec::with_capacity(n);
         let mut groups: Vec<(GroupKey, Vec<(usize, Value)>)> = Vec::new();
-        for (i, (v, part)) in records.into_iter().enumerate() {
+        for (i, (mut v, part)) in records.into_iter().enumerate() {
+            rows.push(match v.as_object_mut().and_then(|m| m.remove("_key")) {
+                Some(Value::String(k)) => Some(k),
+                _ => None,
+            });
             let window = v
                 .get("_buffer")
                 .and_then(|s| s.get("from"))
@@ -154,7 +168,7 @@ impl InferenceNode {
                 None => groups.push((key, vec![(i, v)])),
             }
         }
-        let mut jobs: Vec<(Arc<str>, Vec<usize>, Vec<Value>)> = Vec::new();
+        let mut jobs: Vec<Job> = Vec::new();
         for ((part, _), group) in groups {
             let (ids, values): (Vec<usize>, Vec<Value>) = group.into_iter().unzip();
             let chunks = if self.cfg.batch <= 1 {
@@ -166,15 +180,16 @@ impl InferenceNode {
             for chunk in chunks {
                 let these = ids[at..at + chunk.len()].to_vec();
                 at += chunk.len();
-                jobs.push((Arc::clone(&part), these, chunk));
+                let own = these.iter().map(|&i| rows[i].clone()).collect();
+                jobs.push((Arc::clone(&part), these, chunk, own));
             }
         }
-        let done = futures::future::join_all(jobs.into_iter().map(|(part, ids, chunk)| {
+        let done = futures::future::join_all(jobs.into_iter().map(|(part, ids, chunk, own)| {
             let store = store.clone();
             async move {
                 let _permit = self.sem.acquire().await.expect("semaphore is never closed");
                 let context = match &store {
-                    Some(st) => self.context_for(st, &part, &chunk).await,
+                    Some(st) => self.context_for(st, &part, &chunk, own).await,
                     None => None,
                 };
                 let out = if self.cfg.batch <= 1 {
@@ -280,35 +295,62 @@ impl InferenceNode {
     /// keys the request's records carry, busiest first), each the latest
     /// `max_events` records before the request's earliest one, however long
     /// ago, read newest first from the `store` sink's index (or, for a scope
-    /// that is the partition, the partition's rows); each line the configured
-    /// fields, a record shown once across views. None without `context`, a
-    /// time, or history.
+    /// that is the partition, the partition's rows). When the request knows
+    /// its own rows (`own`, from the records' `_key`), each key also gets the
+    /// rest of its buffer: its first `max_events` records from the earliest
+    /// one to the buffer's end (`_buffer.to`, else the latest record) that
+    /// are not the request's. Each line the configured fields, a record shown
+    /// once across views. None without `context`, a time, or history.
     async fn context_for(
         &self,
         store: &Arc<dyn StateStore>,
         part: &str,
         records: &[Value],
+        own: Option<HashSet<String>>,
     ) -> Option<String> {
         let cfg = self.cfg.context.as_ref()?;
-        let before = records
+        let times: Vec<i64> = records
             .iter()
             .filter_map(|v| crate::windows::time_of_value(v, &cfg.time))
-            .min()?;
+            .collect();
+        let (before, latest) = (*times.iter().min()?, *times.iter().max()?);
         // What came before the request's records: the store also holds what
         // arrived while their buffer waited to be judged.
         let bound = crate::windows::ev_bound(before);
-        let mut shown: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut lines = vec![format!(
-            "History before these records, one JSON object per line: `scope` and `key` say whose \
-             (a record's own fields name them: {}), `recent` is their latest {} records before these, \
-             however long ago, oldest first:",
-            cfg.scopes
-                .iter()
-                .map(|(scope, field)| format!("`{field}` for {scope}"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            cfg.max_events
-        )];
+        // The rest of their buffer: from the earliest record on, the
+        // request's own rows left out, which only their keys tell apart.
+        let buffer_end = records
+            .iter()
+            .filter_map(|v| crate::windows::time_of_value(v, "_buffer.to"))
+            .max();
+        let rest_end = own
+            .is_some()
+            .then(|| crate::windows::ev_bound(buffer_end.unwrap_or(i64::MIN).max(latest + 1)));
+        // The request's own records are shown as themselves.
+        let mut shown: HashSet<String> = own.unwrap_or_default();
+        let whose = cfg
+            .scopes
+            .iter()
+            .map(|(scope, field)| format!("`{field}` for {scope}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut lines = vec![match &rest_end {
+            None => format!(
+                "History before these records, one JSON object per line: `scope` and `key` say whose \
+                 (a record's own fields name them: {whose}), `recent` is their latest {n} records before these, \
+                 however long ago, oldest first:",
+                n = cfg.max_events
+            ),
+            Some(_) => format!(
+                "History before these records and the rest of their buffer, one JSON object per line: `scope` \
+                 and `key` say whose (a record's own fields name them: {whose}); `recent` is their latest {n} \
+                 records before these, however long ago, and `rest_of_buffer` the rest of their buffer, not judged \
+                 here: their first {n} records other than these from the earliest of these to {until}; each oldest \
+                 first:",
+                n = cfg.max_events,
+                until = if buffer_end.is_some() { "the end of the buffer" } else { "the latest of these" },
+            ),
+        }];
         let mut bytes = lines[0].len();
         for (scope, field) in &cfg.scopes {
             // The keys this request's records carry, busiest first.
@@ -321,66 +363,99 @@ impl InferenceNode {
                 }
             }
             keys.sort_by_key(|k| std::cmp::Reverse(k.1));
-            for (key, _) in keys {
-                // Newest first, before the request's records: a scope that is
-                // the partition itself (the org of an org-partitioned store)
-                // reads the partition's rows, any other its index.
+            'keys: for (key, _) in keys {
+                // A scope that is the partition itself (the org of an
+                // org-partitioned store) reads the partition's rows, any
+                // other its index.
                 let whole = key == part;
-                let (ns, from, to) = if whole {
-                    (cfg.namespace.clone(), "ev:".to_string(), bound.clone())
+                let (ns, prefix) = if whole {
+                    (cfg.namespace.clone(), String::new())
                 } else {
-                    let prefix = crate::windows::index_prefix(scope, &key);
-                    (crate::windows::index_ns(&cfg.namespace), format!("{prefix}ev:"), format!("{prefix}{bound}"))
+                    (crate::windows::index_ns(&cfg.namespace), crate::windows::index_prefix(scope, &key))
                 };
-                let entries = match store.range_rev(&ns, part, &from, &to, cfg.max_events + shown.len()).await {
-                    Ok(entries) => entries,
-                    Err(e) => {
-                        tracing::warn!(node = %self.name, "reading context: {e:#}");
-                        return None;
-                    }
-                };
-                // Until the view is full; a record another view showed, or one
-                // past its retention, is skipped.
-                let mut recent: Vec<(i64, Value)> = Vec::new();
-                for e in entries {
-                    if recent.len() >= cfg.max_events {
-                        break;
-                    }
-                    let (row, text) = if whole {
-                        let StateValue::Str(text) = e.value else { continue };
-                        (e.key, text)
-                    } else {
-                        let StateValue::Str(row) = e.value else { continue };
-                        let Ok(Some(StateValue::Str(text))) = store.get(&cfg.namespace, part, &row).await else { continue };
-                        (row, text)
+                // Newest first, before the request's records; then, oldest
+                // first, the rest of their buffer.
+                for rest in [false, true] {
+                    let limit = cfg.max_events + shown.len();
+                    let entries = match (rest, &rest_end) {
+                        (false, _) => {
+                            store.range_rev(&ns, part, &format!("{prefix}ev:"), &format!("{prefix}{bound}"), limit).await
+                        }
+                        (true, Some(end)) => {
+                            store.range(&ns, part, &format!("{prefix}{bound}"), &format!("{prefix}{end}"), limit).await
+                        }
+                        (true, None) => break,
                     };
-                    if shown.contains(&row) {
+                    let entries = match entries {
+                        Ok(entries) => entries,
+                        Err(e) => {
+                            tracing::warn!(node = %self.name, "reading context: {e:#}");
+                            return None;
+                        }
+                    };
+                    let mut view = self.view_rows(store, cfg, part, entries, whole, &mut shown).await;
+                    if view.is_empty() {
                         continue;
                     }
-                    let (Ok(v), Some(ts)) = (serde_json::from_str::<Value>(&text), crate::windows::ts_of_key(&row)) else { continue };
-                    shown.insert(row);
-                    recent.push((ts, self.history_line(&v, cfg)));
+                    if !rest {
+                        view.reverse();
+                    }
+                    let name = if rest { "rest_of_buffer" } else { "recent" };
+                    let line = json!({
+                        "scope": scope,
+                        "key": key,
+                        "from": crate::windows::iso(view[0].0),
+                        "to": crate::windows::iso(view[view.len() - 1].0),
+                        name: view.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+                    })
+                    .to_string();
+                    if bytes + line.len() > cfg.max_bytes && lines.len() > 1 {
+                        break 'keys;
+                    }
+                    bytes += line.len();
+                    lines.push(line);
                 }
-                if recent.is_empty() {
-                    continue;
-                }
-                recent.reverse();
-                let line = json!({
-                    "scope": scope,
-                    "key": key,
-                    "from": crate::windows::iso(recent[0].0),
-                    "to": crate::windows::iso(recent[recent.len() - 1].0),
-                    "recent": recent.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
-                })
-                .to_string();
-                if bytes + line.len() > cfg.max_bytes && lines.len() > 1 {
-                    break;
-                }
-                bytes += line.len();
-                lines.push(line);
             }
         }
         (lines.len() > 1).then(|| lines.join("\n"))
+    }
+
+    /// A view's records from `entries`, in the order read (the partition's
+    /// rows when `whole`, else index entries naming them), as (time, history
+    /// line), until the view is full; a record already shown, or one past
+    /// its retention, is skipped.
+    async fn view_rows(
+        &self,
+        store: &Arc<dyn StateStore>,
+        cfg: &ContextConfig,
+        part: &str,
+        entries: Vec<Entry>,
+        whole: bool,
+        shown: &mut HashSet<String>,
+    ) -> Vec<(i64, Value)> {
+        let mut out = Vec::new();
+        for e in entries {
+            if out.len() >= cfg.max_events {
+                break;
+            }
+            let StateValue::Str(value) = e.value else { continue };
+            // A partition's row is the record; an index entry names its row.
+            let (row, text) = if whole { (e.key, Some(value)) } else { (value, None) };
+            if shown.contains(&row) {
+                continue;
+            }
+            let text = match text {
+                Some(text) => text,
+                None => match store.get(&cfg.namespace, part, &row).await {
+                    Ok(Some(StateValue::Str(text))) => text,
+                    _ => continue,
+                },
+            };
+            let (Ok(v), Some(ts)) = (serde_json::from_str::<Value>(&text), crate::windows::ts_of_key(&row)) else { continue };
+            shown.insert(row);
+            out.push((ts, self.history_line(&v, cfg)));
+        }
+        out
     }
 
     /// A stored record as one line of history: the configured fields, or
@@ -1214,6 +1289,156 @@ mod tests {
         let kinds: Vec<&str> = org["recent"].as_array().unwrap().iter().map(|r| r["_norm.kind"].as_str().unwrap()).collect();
         assert_eq!(kinds, ["weeks.ago", "export"], "the org's latest, without what the actors' views showed: {org}");
         assert!(!user.contains("later"), "nothing at or after the earliest record");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A `novel` filter hands the judge only some of a buffer's records: the
+    /// rest of it (what came between and after them) is shown beside them,
+    /// and the row keys that tell the two apart never reach the model.
+    #[tokio::test]
+    async fn a_request_is_read_with_the_rest_of_its_buffer() {
+        use crate::sinks::manager::Sink;
+        use crate::state::lru::LruStore;
+        use tangent_shared::runtime::StateConfig;
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("rest-of-buffer");
+        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
+        let mut recent = BTreeMap::new();
+        recent.insert("actor".to_string(), "_norm.actor".to_string());
+        recent.insert("org".to_string(), "_norm.org".to_string());
+        let sink = crate::sinks::store::StoreSink::new(
+            &tangent_shared::sinks::store::StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent, novel: Default::default() },
+            Arc::clone(&store),
+            Some(tangent_shared::runtime::PartitionConfig { key: vec!["_norm.org".into()], separator: "|".into(), retain_ms: None, time: None }),
+        )
+        .unwrap();
+        // The buffer is 13:00 to 13:05. a creates a user (judged), then does
+        // four things it has done before; c does something new (judged); b
+        // goes on after the last judged record, and again in the next buffer.
+        let t0 = 1_793_106_000_000i64; // 2026-10-27T13:00:00Z
+        let mut payload = bytes::BytesMut::new();
+        for (ts, actor, kind) in [
+            (t0 - 3_600_000, "a", "login"),
+            (t0 - 60_000, "d", "export"),
+            (t0, "a", "create.user"),
+            (t0 + 10_000, "a", "attach.policy"),
+            (t0 + 20_000, "a", "create.key"),
+            (t0 + 30_000, "a", "list.users"),
+            (t0 + 40_000, "a", "get.secret"),
+            (t0 + 60_000, "c", "new.thing"),
+            (t0 + 120_000, "b", "tail"),
+            (t0 + 400_000, "b", "next.buffer"),
+        ] {
+            let row = json!({"ts": crate::windows::iso(ts), "_norm": {"actor": actor, "org": "acme", "kind": kind}});
+            payload.extend_from_slice(format!("{row}\n").as_bytes());
+        }
+        sink.write(crate::sinks::manager::SinkWrite { sink_name: Arc::from("store"), payload, s3: None }).await.unwrap();
+        // The judged records as the store source emits them, after the filter.
+        let buffer = json!({"from": crate::windows::iso(t0), "to": crate::windows::iso(t0 + 300_000)});
+        let judged: Vec<Value> = store
+            .range("events", "acme", &crate::windows::ev_bound(t0), &crate::windows::ev_bound(t0 + 300_000), 100)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter_map(|e| {
+                let StateValue::Str(text) = e.value else { return None };
+                let mut v: Value = serde_json::from_str(&text).unwrap();
+                ["create.user", "new.thing"].contains(&v["_norm"]["kind"].as_str()?).then(|| {
+                    v["_key"] = json!(e.key);
+                    v["_buffer"] = buffer.clone();
+                    v
+                })
+            })
+            .collect();
+        assert_eq!(judged.len(), 2);
+
+        let mut cfg = stub::config(&url);
+        cfg.batch = 8;
+        let mut scopes = BTreeMap::new();
+        scopes.insert("actor".to_string(), "_norm.actor".to_string());
+        scopes.insert("org".to_string(), "_norm.org".to_string());
+        cfg.context = Some(ContextConfig {
+            namespace: "events".into(),
+            scopes,
+            window: BTreeMap::new(),
+            max_events: 3,
+            max_bytes: 40_000,
+            fields: vec!["ts".into(), "_norm.kind".into()],
+            time: "ts".into(),
+        });
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let part: Arc<str> = Arc::from("acme");
+        // A request's views: scope, key, which view, and its records' kinds.
+        let views = |body: &str| -> Vec<(String, String, String, Vec<String>)> {
+            let req: Value = serde_json::from_str(body).unwrap();
+            let user = match &req["messages"][1]["content"] {
+                Value::String(s) => s.clone(),
+                other => other[0]["text"].as_str().unwrap_or_default().to_string(),
+            };
+            user.lines()
+                .filter(|l| l.starts_with("{\"scope\""))
+                .map(|l| {
+                    let v: Value = serde_json::from_str(l).unwrap();
+                    let which = if v.get("rest_of_buffer").is_some() { "rest_of_buffer" } else { "recent" };
+                    let kinds = v[which].as_array().unwrap().iter().map(|r| r["_norm.kind"].as_str().unwrap().to_string()).collect();
+                    (v["scope"].as_str().unwrap().to_string(), v["key"].as_str().unwrap().to_string(), which.to_string(), kinds)
+                })
+                .collect()
+        };
+        let view = |scope: &str, key: &str, which: &str, kinds: &[&str]| {
+            (scope.to_string(), key.to_string(), which.to_string(), kinds.iter().map(|k| k.to_string()).collect::<Vec<_>>())
+        };
+        let outs = node
+            .annotate_in(judged.iter().map(|v| (v.clone(), Arc::clone(&part))).collect(), Some(Arc::clone(&store)))
+            .await;
+        assert!(outs.iter().all(|o| o.get("_key").is_none() && o.get("_buffer").is_some()), "the row key goes no further: {outs:?}");
+        let body = seen.lock().await[0].clone();
+        assert!(!body.contains("_key") && !body.contains("ev:"), "the row keys never reach the model: {body}");
+        assert_eq!(body.matches("create.user").count(), 1, "a judged record is not shown again: {body}");
+        assert_eq!(body.matches("new.thing").count(), 1, "{body}");
+        assert_eq!(
+            views(&body),
+            [
+                view("actor", "a", "recent", &["login"]),
+                // The first three of a's four, oldest first.
+                view("actor", "a", "rest_of_buffer", &["attach.policy", "create.key", "list.users"]),
+                view("org", "acme", "recent", &["export"]),
+                // What a's view did not show, and b's after the last judged
+                // record; not the next buffer's.
+                view("org", "acme", "rest_of_buffer", &["get.secret", "tail"]),
+            ],
+            "{body}"
+        );
+
+        // Late records have no buffer: the rest ends at the latest of them.
+        let late: Vec<(Value, Arc<str>)> = judged
+            .iter()
+            .map(|v| {
+                let mut v = v.clone();
+                v.as_object_mut().unwrap().remove("_buffer");
+                v["_late"] = json!(true);
+                (v, Arc::clone(&part))
+            })
+            .collect();
+        node.annotate_in(late, Some(Arc::clone(&store))).await;
+        let body = seen.lock().await[1].clone();
+        assert!(views(&body).contains(&view("org", "acme", "rest_of_buffer", &["get.secret"])), "{body}");
+        assert!(body.contains("to the latest of these"), "{body}");
+
+        // Records that do not say their rows have no rest of buffer: their
+        // own rows could not be told from the rest.
+        let unkeyed: Vec<(Value, Arc<str>)> = judged
+            .iter()
+            .map(|v| {
+                let mut v = v.clone();
+                v.as_object_mut().unwrap().remove("_key");
+                (v, Arc::clone(&part))
+            })
+            .collect();
+        node.annotate_in(unkeyed, Some(Arc::clone(&store))).await;
+        let body = seen.lock().await[2].clone();
+        assert!(!body.contains("rest_of_buffer"), "{body}");
+        assert!(body.contains("History before these records, one JSON object per line"), "the history as before: {body}");
         let _ = std::fs::remove_dir_all(dir);
     }
 

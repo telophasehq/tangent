@@ -1,6 +1,8 @@
 //! The `store` source: what a `store` sink kept, read back from the state
 //! store a buffer at a time as each closes. See `tangent_shared::sources::store` for
-//! the rules and `crate::windows` for the bookkeeping.
+//! the rules and `crate::windows` for the bookkeeping. Each record carries
+//! the key of the row it was read from (`_key`), so a judge can tell the
+//! records it was handed from the rest of their buffer.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -272,7 +274,7 @@ async fn tick(
             keys.push(m.key.clone());
             let StateValue::Str(ev) = &m.value else { continue };
             if let Some(StateValue::Str(line)) = store.get(&cfg.namespace, &p, ev).await? {
-                rows.push(line);
+                rows.push((ev.clone(), line));
             }
         }
         if rows.is_empty() {
@@ -299,14 +301,14 @@ async fn tick(
     Ok(())
 }
 
-/// A window's records, in time order.
+/// A window's records, in time order: (row key, record).
 async fn read(
     store: &Arc<dyn StateStore>,
     ns: &str,
     part: &str,
     start: i64,
     end: i64,
-) -> Result<Vec<String>> {
+) -> Result<Vec<(String, String)>> {
     let end_key = ev_bound(end);
     let mut from = ev_bound(start);
     let mut out = Vec::new();
@@ -319,7 +321,7 @@ async fn read(
             from = format!("{}!", last.key);
         }
         out.extend(page.into_iter().filter_map(|e| match e.value {
-            StateValue::Str(s) => Some(s),
+            StateValue::Str(s) => Some((e.key, s)),
             _ => None,
         }));
         if n < PAGE {
@@ -328,12 +330,14 @@ async fn read(
     }
 }
 
-/// One frame per record, each with `mark` applied.
-fn frames(rows: &[String], mark: impl Fn(&mut serde_json::Map<String, Value>)) -> Vec<BytesMut> {
+/// One frame per record, each with its row's key (`_key`) and `mark`
+/// applied.
+fn frames(rows: &[(String, String)], mark: impl Fn(&mut serde_json::Map<String, Value>)) -> Vec<BytesMut> {
     rows.iter()
-        .filter_map(|line| {
+        .filter_map(|(key, line)| {
             let mut v: Value = serde_json::from_str(line).ok()?;
             if let Some(m) = v.as_object_mut() {
+                m.insert("_key".into(), Value::String(key.clone()));
                 mark(m);
             }
             let mut b = BytesMut::from(serde_json::to_vec(&v).ok()?.as_slice());
@@ -386,6 +390,47 @@ async fn finish(
                 }
             }
             Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sinks::manager::{Sink, SinkWrite};
+    use crate::state::lru::LruStore;
+    use tangent_shared::runtime::{PartitionConfig, StateConfig};
+    use tangent_shared::sinks::store::StoreSinkConfig;
+
+    #[tokio::test]
+    async fn records_carry_the_row_they_were_read_from() {
+        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
+        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new(), novel: BTreeMap::new() };
+        let partition = PartitionConfig { key: vec!["_norm.org".into()], separator: "|".into(), retain_ms: None, time: None };
+        let sink = crate::sinks::store::StoreSink::new(&cfg, Arc::clone(&store), Some(partition)).unwrap();
+        let mut payload = BytesMut::new();
+        for (ts, n) in [("2026-10-27T13:03:00Z", 2), ("2026-10-27T13:01:00Z", 1), ("2026-10-27T13:06:00Z", 3)] {
+            payload.extend_from_slice(format!("{}\n", json!({"ts": ts, "_norm": {"org": "acme"}, "n": n})).as_bytes());
+        }
+        sink.write(SinkWrite { sink_name: Arc::from("store"), payload, s3: None }).await.unwrap();
+
+        // 13:00 to 13:05, as `tick` reads and frames it.
+        let (start, end) = (1_793_106_000_000, 1_793_106_300_000);
+        let rows = read(&store, "events", "acme", start, end).await.unwrap();
+        let buffer = json!({"from": iso(start), "to": iso(end)});
+        let out: Vec<Value> = frames(&rows, |m| {
+            m.insert("_buffer".into(), buffer.clone());
+        })
+        .iter()
+        .map(|f| serde_json::from_slice(f).unwrap())
+        .collect();
+        assert_eq!(out.iter().map(|v| v["n"].as_i64().unwrap()).collect::<Vec<_>>(), [1, 2], "the buffer's records, in time order");
+        for v in &out {
+            let key = v["_key"].as_str().unwrap_or_else(|| panic!("no _key on {v}"));
+            let Some(StateValue::Str(text)) = store.get("events", "acme", key).await.unwrap() else { panic!("no row {key}") };
+            let stored: Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(stored["n"], v["n"], "the row it was read from");
+            assert_eq!(v["_buffer"], buffer);
         }
     }
 }
