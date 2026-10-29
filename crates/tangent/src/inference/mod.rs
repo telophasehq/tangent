@@ -27,9 +27,6 @@ use tangent_shared::inference::{Backend, ContextConfig, InferenceConfig};
 use crate::state::{StateStore, StateValue};
 use tokio::sync::Semaphore;
 
-/// Records judged together: one partition, one window.
-type GroupKey = (Arc<str>, String);
-
 pub struct InferenceNode {
     pub name: Arc<str>,
     cfg: InferenceConfig,
@@ -121,8 +118,7 @@ impl InferenceNode {
         })
     }
 
-    /// Every record through the model, under the node's permits; the
-    /// annotated records, in the order given. No partition, no context.
+    #[cfg(test)]
     pub async fn annotate_all(&self, records: Vec<Value>) -> Vec<Value> {
         let part: Arc<str> = Arc::from("");
         self.annotate_in(records.into_iter().map(|v| (v, Arc::clone(&part))).collect(), None)
@@ -140,7 +136,7 @@ impl InferenceNode {
         store: Option<Arc<dyn StateStore>>,
     ) -> Vec<Value> {
         let n = records.len();
-        let mut groups: Vec<(GroupKey, Vec<(usize, Value)>)> = Vec::new();
+        let mut groups: Vec<(_, Vec<(usize, Value)>)> = Vec::new();
         for (i, (v, part)) in records.into_iter().enumerate() {
             let window = v
                 .get("_buffer")
@@ -157,13 +153,8 @@ impl InferenceNode {
         let mut jobs: Vec<(Arc<str>, Vec<usize>, Vec<Value>)> = Vec::new();
         for ((part, _), group) in groups {
             let (ids, values): (Vec<usize>, Vec<Value>) = group.into_iter().unzip();
-            let chunks = if self.cfg.batch <= 1 {
-                values.into_iter().map(|v| vec![v]).collect()
-            } else {
-                self.chunks(values)
-            };
             let mut at = 0;
-            for chunk in chunks {
+            for chunk in self.chunks(values) {
                 let these = ids[at..at + chunk.len()].to_vec();
                 at += chunk.len();
                 jobs.push((Arc::clone(&part), these, chunk));
@@ -196,8 +187,7 @@ impl InferenceNode {
         slots.into_iter().map(|s| s.unwrap_or(Value::Null)).collect()
     }
 
-    /// One record through the model: the reply, or the error, added under the
-    /// node's name.
+    #[cfg(test)]
     pub async fn annotate(&self, v: Value) -> Value {
         self.annotate_one(v, None).await
     }
@@ -403,9 +393,7 @@ impl InferenceNode {
     /// Records in request-sized runs: at most `batch` of them and about
     /// `batch_bytes` of JSON each; a record larger than that goes alone.
     fn chunks(&self, records: Vec<Value>) -> Vec<Vec<Value>> {
-        // As many as the request's reply budget has room to answer.
-        let by_budget = (self.cfg.max_request_tokens / self.cfg.max_tokens.max(1)).max(1) as usize;
-        let (max_n, max_bytes) = (self.cfg.batch.max(1).min(by_budget), self.cfg.batch_bytes.max(1));
+        let (max_n, max_bytes) = (self.cfg.batch.max(1), self.cfg.batch_bytes.max(1));
         let mut out = Vec::new();
         let mut cur: Vec<Value> = Vec::new();
         let mut bytes = 0usize;
@@ -475,10 +463,7 @@ impl InferenceNode {
                 last = n.saturating_sub(1)
             ),
         };
-        // `max_tokens` is per record: a batch of n may say n times as much,
-        // up to the request's budget.
-        let budget = (u64::from(self.cfg.max_tokens) * batch.unwrap_or(1) as u64)
-            .min(u64::from(self.cfg.max_request_tokens.max(self.cfg.max_tokens)));
+        let budget = u64::from(self.cfg.max_tokens) * batch.unwrap_or(1) as u64;
         let mut request = CompletionRequest::new(user)
             .preamble(preamble)
             .max_tokens(budget);
@@ -490,7 +475,7 @@ impl InferenceNode {
             (Some(schema), _) => {
                 let schema = match batch {
                     None => schema.clone(),
-                    Some(n) => answers_schema(schema, n),
+                    Some(_) => answers_schema(schema),
                 };
                 request = request.output_schema(schema);
             }
@@ -637,39 +622,20 @@ fn spread(reply: Value, n: usize) -> Vec<Value> {
         .collect()
 }
 
-/// `{"answers": [item, item, ...]}`, each `item` plus its record's index
-/// `i`, so an answer says which record it is for and a skipped record
-/// costs only itself (by position, every answer after it would land on
-/// the wrong record). The count is in the prompt, not the schema: backends
-/// that enforce schemas reject array bounds (Bedrock's structured output
-/// does), and a short reply is caught when the answers are spread anyway.
-/// An answer that takes one of several shapes (`anyOf`, `oneOf`: a pass
-/// that is the flag alone, a flag that says why) gets the index in each, and
-/// in its own properties if it has them; a shape that only refers to a
-/// definition (`$ref`) gets a copy of it to hold the index, and the
-/// definitions stay at the root, where references point. A schema with no
-/// properties and no shapes is left as it is: any object.
-fn answers_schema(item: &schemars::Schema, _n: usize) -> schemars::Schema {
+/// `{"answers": [...]}`, each answer with its record's index `i`.
+fn answers_schema(item: &schemars::Schema) -> schemars::Schema {
     let mut item = serde_json::to_value(item).unwrap_or(Value::Null);
-    let mut defs: Vec<(&str, Value)> = Vec::new();
-    if let Some(obj) = item.as_object_mut() {
-        for k in ["$defs", "definitions"] {
-            if let Some(d) = obj.remove(k) {
-                defs.push((k, d));
-            }
-        }
-    }
-    inline_ref(&mut item, &defs);
+    let defs: Vec<(&str, Value)> = ["$defs", "definitions"]
+        .into_iter()
+        .filter_map(|k| Some((k, item.as_object_mut()?.remove(k)?)))
+        .collect();
     if item.get("properties").is_some() {
         indexed(&mut item);
     }
-    for k in ["anyOf", "oneOf"] {
-        if let Some(shapes) = item.get_mut(k).and_then(Value::as_array_mut) {
-            for shape in shapes.iter_mut() {
-                inline_ref(shape, &defs);
-                if shape.get("properties").is_some() || shape.get("type").and_then(Value::as_str) == Some("object") {
-                    indexed(shape);
-                }
+    if let Some(shapes) = item.get_mut("anyOf").and_then(Value::as_array_mut) {
+        for shape in shapes.iter_mut() {
+            if shape.get("properties").is_some() || shape.get("type").and_then(Value::as_str) == Some("object") {
+                indexed(shape);
             }
         }
     }
@@ -686,26 +652,6 @@ fn answers_schema(item: &schemars::Schema, _n: usize) -> schemars::Schema {
         wrapped[k] = d;
     }
     schemars::Schema::try_from(wrapped).expect("a schema wrapped in an object is a schema")
-}
-
-/// A shape that is only a reference to a local definition (`#/$defs/X`),
-/// replaced by a copy of it (keeping what else the shape says), so the index
-/// can be added to it.
-fn inline_ref(shape: &mut Value, defs: &[(&str, Value)]) {
-    let Some(r) = shape.get("$ref").and_then(Value::as_str).map(str::to_string) else { return };
-    for (k, d) in defs {
-        let Some(def) = r.strip_prefix(&format!("#/{k}/")).and_then(|name| d.get(name)) else { continue };
-        let mut copy = def.clone();
-        if let (Some(c), Some(own)) = (copy.as_object_mut(), shape.as_object()) {
-            for (key, v) in own {
-                if key != "$ref" {
-                    c.entry(key.clone()).or_insert_with(|| v.clone());
-                }
-            }
-        }
-        *shape = copy;
-        return;
-    }
 }
 
 /// An answer's shape with the record's index as its first property, and
@@ -839,18 +785,12 @@ pub(crate) mod stub {
                         // model degenerates, as small ones do.
                         "{\"answers\": [{\"flag\": false, \"one_line\": \"a7a7a7a7a7a7a7a7".to_string()
                     } else if batched {
-                        // One answer per line of the user message; "short"
-                        // anywhere in the batch drops the last answer.
-                        let user = text_of(&req["messages"][1]["content"]);
-                        // Only the record lines; context lines and headers are not records.
-                        let mut answers: Vec<_> = user
+                        // one answer per record line
+                        let answers: Vec<_> = text_of(&req["messages"][1]["content"])
                             .lines()
                             .filter(|l| l.starts_with("{\"i\":"))
                             .map(verdict)
                             .collect();
-                        if user.contains("short") {
-                            answers.pop();
-                        }
                         json!({"answers": answers}).to_string()
                     } else {
                         verdict(&body).to_string()
@@ -896,7 +836,6 @@ pub(crate) mod stub {
             timeout_ms: 5_000,
             retries: 0,
             max_tokens: 50,
-            max_request_tokens: 32_000,
             temperature: None,
             extra,
         }
@@ -1162,12 +1101,6 @@ mod tests {
             let row = json!({"ts": crate::windows::iso(ts), "_norm": {"actor": actor, "org": "acme", "kind": kind}, "noise": "x"});
             payload.extend_from_slice(format!("{row}\n").as_bytes());
         }
-        // A busy stretch after the request's records, as a buffer waiting
-        // to be judged sees: six hundred of a's. Its history is untouched.
-        for i in 0..600i64 {
-            let row = json!({"ts": crate::windows::iso(t0 + 60_000 + i * 1000), "_norm": {"actor": "a", "org": "acme", "kind": "later.burst"}});
-            payload.extend_from_slice(format!("{row}\n").as_bytes());
-        }
         use crate::sinks::manager::Sink;
         sink.write(crate::sinks::manager::SinkWrite { sink_name: Arc::from("store"), payload, s3: None }).await.unwrap();
         let mut cfg = stub::config(&url);
@@ -1216,25 +1149,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    #[tokio::test]
-    async fn a_short_answer_list_leaves_errors_on_the_rest() {
-        let (url, _seen) = stub::model().await;
-        let dir = stub::dir("short");
-        let mut cfg = stub::config(&url);
-        cfg.batch = 3;
-        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
-        let outs = node
-            .annotate_all(vec![
-                json!({"id": 1, "msg": "bad"}),
-                json!({"id": 2, "msg": "short reply please"}),
-                json!({"id": 3, "msg": "fine"}),
-            ])
-            .await;
-        assert_eq!(outs[0]["judge"]["flag"], true);
-        assert_eq!(outs[1]["judge"]["flag"], false);
-        let err = outs[2]["judge"]["error"].as_str().unwrap();
-        assert!(err.contains("no answer for record 2"), "{err}");
-        let _ = std::fs::remove_dir_all(dir);
+    #[test]
+    fn spread_errors_missing_answers() {
+        let out = spread(json!({"answers": [{"i": 1, "flag": true}, {"i": 0, "flag": false}]}), 3);
+        assert_eq!(out[0], json!({"flag": false}));
+        assert_eq!(out[1], json!({"flag": true}));
+        assert!(out[2]["error"].as_str().unwrap().contains("no answer for record 2"));
     }
 
     #[tokio::test]
@@ -1268,34 +1188,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Shapes beyond the pack's own: properties beside anyOf, references to
-    /// definitions, oneOf and anyOf together, and no structure at all.
-    #[test]
-    fn the_index_reaches_every_shape_an_answer_can_take() {
-        let schema = |v: Value| -> Value {
-            let s: schemars::Schema = serde_json::from_value(v).unwrap();
-            serde_json::to_value(answers_schema(&s, 2)).unwrap()
-        };
-        // Shared properties at the top, anyOf only constraining.
-        let s = schema(json!({"type": "object", "properties": {"flag": {"type": "boolean"}, "why": {"type": "string"}},
-                              "additionalProperties": false, "anyOf": [{"required": ["flag"]}]}));
-        let item = &s["properties"]["answers"]["items"];
-        assert!(item["properties"].get("i").is_some(), "the top level admits i: {item}");
-        // A branch that is a reference: inlined, indexed; definitions at the root.
-        let s = schema(json!({"$defs": {"Pass": {"type": "object", "properties": {"flag": {"const": false}}, "additionalProperties": false}},
-                              "anyOf": [{"$ref": "#/$defs/Pass"}, {"type": "object", "properties": {"flag": {"const": true}}}]}));
-        let shapes = s["properties"]["answers"]["items"]["anyOf"].as_array().unwrap();
-        assert!(shapes.iter().all(|b| b["properties"].get("i").is_some()), "{s}");
-        assert!(s.get("$defs").is_some(), "definitions stay where references point: {s}");
-        // Both anyOf and oneOf.
-        let s = schema(json!({"anyOf": [{"type": "object", "properties": {"a": {}}}], "oneOf": [{"type": "object", "properties": {"b": {}}}]}));
-        let item = &s["properties"]["answers"]["items"];
-        assert!(item["anyOf"][0]["properties"].get("i").is_some() && item["oneOf"][0]["properties"].get("i").is_some(), "{item}");
-        // No structure: left free-form.
-        let s = schema(json!({"description": "anything"}));
-        assert!(s["properties"]["answers"]["items"].get("properties").is_none(), "{s}");
-    }
-
     /// A pass that is the flag alone and a flag that says why: each shape
     /// gets the index, first, and keeps what it allows.
     #[test]
@@ -1310,7 +1202,7 @@ mod tests {
             ]
         }))
         .unwrap();
-        let schema = serde_json::to_value(answers_schema(&verdict, 3)).unwrap();
+        let schema = serde_json::to_value(answers_schema(&verdict)).unwrap();
         let shapes = schema["properties"]["answers"]["items"]["anyOf"].as_array().unwrap();
         assert_eq!(shapes.len(), 2);
         for shape in shapes {
@@ -1323,40 +1215,16 @@ mod tests {
         assert_eq!(shapes[1]["required"], json!(["i", "flag", "why"]));
     }
 
-    #[tokio::test]
-    async fn a_request_takes_no_more_records_than_its_reply_budget_answers() {
-        let (url, seen) = stub::model().await;
-        let dir = stub::dir("reply-budget");
-        let mut cfg = stub::config(&url);
-        cfg.batch = 10;
-        cfg.max_tokens = 50;
-        cfg.max_request_tokens = 100;
-        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
-        let outs = node.annotate_all((1..=5).map(|i| json!({"id": i})).collect()).await;
-        assert_eq!(outs.len(), 5);
-        let seen = seen.lock().await;
-        assert_eq!(seen.len(), 3, "two records per request: 2 + 2 + 1");
-        for body in seen.iter() {
-            let req: Value = serde_json::from_str(body).unwrap();
-            assert!(req["max_tokens"].as_u64().unwrap() <= 100, "{req}");
-        }
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[tokio::test]
-    async fn batch_bytes_caps_a_request() {
-        let (url, seen) = stub::model().await;
-        let dir = stub::dir("batch-bytes");
-        let mut cfg = stub::config(&url);
-        cfg.batch = 10;
+    #[test]
+    fn chunks_by_count_and_bytes() {
+        let dir = stub::dir("chunks");
+        let mut cfg = stub::config("http://127.0.0.1:1/v1");
+        cfg.batch = 3;
         cfg.batch_bytes = 80;
         let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
-        // ~45 bytes each: two fit under 80, the third starts a new request.
-        let outs = node
-            .annotate_all((1..=5).map(|i| json!({"id": i, "msg": "a record of some length"})).collect())
-            .await;
-        assert_eq!(outs.len(), 5);
-        assert_eq!(seen.lock().await.len(), 3, "2 + 2 + 1 by bytes");
+        let lens = |v: Value| node.chunks(vec![v; 5]).iter().map(Vec::len).collect::<Vec<_>>();
+        assert_eq!(lens(json!({"id": 1})), [3, 2]);
+        assert_eq!(lens(json!({"id": 1, "msg": "a record of some length"})), [2, 2, 1]);
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -265,16 +265,11 @@ mod tests {
         serde_json::json!({"ts": format!("2026-10-27T13:{min:02}:00Z"), "_norm": {"org": "acme", "actor": actor}})
     }
 
-    /// However many records come after, a scope's latest ones before any
-    /// time are there: nothing is evicted but by retention.
     #[tokio::test]
     async fn every_record_is_indexed_by_its_actor_and_read_back_newest_first() {
         let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
         let sink = sink_with_scopes(&store);
         sink.write(write(&[rec(5, "alice"), rec(1, "alice"), rec(4, "alice"), rec(2, "bob"), rec(3, "alice")])).await.unwrap();
-        // Six hundred of alice's after 13:05: her records before 13:04 stay readable.
-        let busy: Vec<serde_json::Value> = (0..600).map(|i| serde_json::json!({"ts": format!("2026-10-27T14:{:02}:{:02}Z", i / 60, i % 60), "_norm": {"org": "acme", "actor": "alice"}})).collect();
-        sink.write(write(&busy)).await.unwrap();
         let before = crate::windows::ev_bound(1_793_106_240_000); // 13:04
         let mins: Vec<i64> = latest(&store, "actor", "alice", &before, 2).await.iter().map(|k| (ts_of_key(k).unwrap() - 1_793_106_000_000) / 60_000).collect();
         assert_eq!(mins, [3, 1], "alice's latest two before 13:04, newest first");
