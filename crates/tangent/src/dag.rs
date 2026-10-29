@@ -105,27 +105,6 @@ impl DagRuntime {
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
 
-        // A history scope this pipeline's store sink does not list would be
-        // read empty, quietly. (Without a store sink here, the store is
-        // another pipeline's to fill.)
-        let stores: Vec<&tangent_shared::sinks::store::StoreSinkConfig> = cfg
-            .sinks
-            .values()
-            .filter_map(|s| match &s.kind {
-                tangent_shared::sinks::common::SinkKind::Store(st) => Some(st),
-                _ => None,
-            })
-            .collect();
-        let listed: std::collections::BTreeSet<&str> =
-            stores.iter().flat_map(|st| st.recent.keys().map(String::as_str)).collect();
-        for (name, node) in &cfg.inference {
-            for scope in node.context.iter().flat_map(|c| c.scopes.keys()) {
-                if !stores.is_empty() && !listed.contains(scope.as_str()) {
-                    tracing::warn!(node = %name, scope, "no store sink keeps this scope's latest records (`recent`); its history will be empty");
-                }
-            }
-        }
-
         // Every worker hosts every plugin and every inference node, and walks
         // the DAG for the records it is handed.
         let pool = Arc::new(

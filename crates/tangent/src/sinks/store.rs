@@ -105,10 +105,7 @@ impl Sink for StoreSink {
         let now = now_ms() as i64;
         // Per partition: (record time, key) of what this write stored.
         let mut stored: BTreeMap<String, Vec<(i64, String)>> = BTreeMap::new();
-        for line in req.payload[..].split(|b: &u8| *b == b'\n') {
-            if line.iter().all(u8::is_ascii_whitespace) {
-                continue;
-            }
+        for line in crate::inference::lines(&req.payload) {
             let v: Value = match serde_json::from_slice(line) {
                 Ok(v) => v,
                 Err(e) => {

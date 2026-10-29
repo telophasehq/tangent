@@ -30,6 +30,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use serde_json::Value;
 
+use crate::inference::lookup;
+use crate::sources::poll::parse_time;
 use crate::state::{StateStore, StateValue};
 
 pub const EVENTS_NS: &str = "events";
@@ -98,25 +100,8 @@ pub async fn set_int(
         .await
 }
 
-/// A record's own time from `field`: RFC 3339, or epoch seconds or
-/// milliseconds, as a number or a string.
 pub fn time_of_value(v: &Value, field: &str) -> Option<i64> {
-    let x = v.get(field).or_else(|| {
-        let mut cur = v;
-        for seg in field.split('.') {
-            cur = cur.get(seg)?;
-        }
-        Some(cur)
-    })?;
-    let epoch = |n: f64| if n.abs() > 1e11 { n as i64 } else { (n * 1000.0) as i64 };
-    match x {
-        Value::String(s) => chrono::DateTime::parse_from_rfc3339(s.trim())
-            .map(|t| t.timestamp_millis())
-            .ok()
-            .or_else(|| s.trim().parse::<f64>().ok().map(epoch)),
-        Value::Number(n) => n.as_f64().map(epoch),
-        _ => None,
-    }
+    lookup(v, field).and_then(parse_time).map(|t| t.timestamp_millis())
 }
 
 /// Epoch milliseconds as RFC 3339, to the second.

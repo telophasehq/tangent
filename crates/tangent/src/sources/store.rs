@@ -17,15 +17,13 @@ use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
+use crate::sources::poll::frame;
 use crate::state::{now_ms, StateStore, StateValue};
 use crate::windows::{
     ev_bound, get_int, iso, set_int, ts_of_key, CLOSED_THROUGH, EVENTS_NS, LAST_ARRIVAL,
     LATE_PREFIX, READ_THROUGH, WATERMARK, WINDOWS_NS,
 };
 use crate::worker::Ack;
-
-/// Rows read per range call.
-const PAGE: usize = 5_000;
 
 struct Rules {
     span: i64,
@@ -217,7 +215,15 @@ async fn tick(
             // Recorded before the read, so a record stored from now on for
             // this window is marked late by the sink rather than lost.
             set_int(store, &p, READ_THROUGH, end).await?;
-            let rows = read(store, EVENTS_NS, &p, start, end).await?;
+            let rows: Vec<String> = store
+                .range(EVENTS_NS, &p, &ev_bound(start), &ev_bound(end), i64::MAX as usize)
+                .await?
+                .into_iter()
+                .filter_map(|e| match e.value {
+                    StateValue::Str(s) => Some(s),
+                    _ => None,
+                })
+                .collect();
             if rows.is_empty() {
                 state.pending.insert(start, true);
                 drop(permit);
@@ -285,35 +291,6 @@ async fn tick(
     Ok(())
 }
 
-/// A window's records, in time order.
-async fn read(
-    store: &Arc<dyn StateStore>,
-    ns: &str,
-    part: &str,
-    start: i64,
-    end: i64,
-) -> Result<Vec<String>> {
-    let end_key = ev_bound(end);
-    let mut from = ev_bound(start);
-    let mut out = Vec::new();
-    loop {
-        let page = store.range(ns, part, &from, &end_key, PAGE).await?;
-        let n = page.len();
-        if let Some(last) = page.last() {
-            // The next key after `last`: every key has the same shape, so
-            // anything greater differs at a character `!` sorts below.
-            from = format!("{}!", last.key);
-        }
-        out.extend(page.into_iter().filter_map(|e| match e.value {
-            StateValue::Str(s) => Some(s),
-            _ => None,
-        }));
-        if n < PAGE {
-            return Ok(out);
-        }
-    }
-}
-
 /// One frame per record, each with `mark` applied.
 fn frames(rows: &[String], mark: impl Fn(&mut serde_json::Map<String, Value>)) -> Vec<BytesMut> {
     rows.iter()
@@ -322,9 +299,7 @@ fn frames(rows: &[String], mark: impl Fn(&mut serde_json::Map<String, Value>)) -
             if let Some(m) = v.as_object_mut() {
                 mark(m);
             }
-            let mut b = BytesMut::from(serde_json::to_vec(&v).ok()?.as_slice());
-            b.extend_from_slice(b"\n");
-            Some(b)
+            frame(&v).ok()
         })
         .collect()
 }
