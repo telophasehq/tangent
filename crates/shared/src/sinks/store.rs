@@ -42,8 +42,10 @@ pub struct StoreSinkConfig {
     /// How long, in record time, a scope value's records after a new one
     /// are marked too (`1h`): `{"actor": ["follows"]}`, at most 50 a
     /// window, so the session that something new begins is judged whole,
-    /// not only its first record. Not for a scope that is the partition,
-    /// whose every record would follow. Off without it.
+    /// not only its first record. A window covers the records that reach
+    /// the sink with its new one or after: one that came before is not
+    /// marked. Not for a scope that is the partition, whose every record
+    /// would follow. Off without it.
     #[serde(default)]
     pub follow: Option<String>,
 }

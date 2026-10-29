@@ -26,8 +26,9 @@
 //! partition whose rows written before that scope was indexed have been.
 //!
 //! Novelty: the namespace `seen:<store namespace>` holds, under
-//! `<scope>\x1f<value>\x1f<field>\x1f<its value>`, the earliest and latest
-//! record time a scope value was seen with a value of one of its fields, and
+//! `<scope>\x1f<value>\x1f<field>\x1f<its value>`, the runs of record time
+//! (four at most, each its earliest and latest sighting) over which a scope
+//! value was seen with a value of one of its fields, and
 //! `follow:<store namespace>` a scope value's window of records following
 //! its latest new one. `remembered:<scope>\x1f<scope field>\x1f<field>`
 //! (namespace `windows`) marks a partition whose rows written before that

@@ -3,7 +3,7 @@
 //! marked with what is new for its scopes, and the bookkeeping the `store`
 //! source closes windows by.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -56,25 +56,70 @@ struct NovelScope {
     follow: bool,
 }
 
-/// A seen entry: the earliest and latest record time a scope value had one
-/// value of a field, over its current run of sightings, none of them more
-/// than `retain` after the one before.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// How many runs of sightings a seen entry keeps. Records do not arrive in
+/// time order: a source can run months behind another, and its records
+/// fall in a run of their own beside the later one.
+const RUNS: usize = 4;
+
+/// A seen entry: the runs of record time over which a scope value had one
+/// value of a field, oldest first, each its earliest and latest sighting
+/// with no gap in it more than `retain`. A sighting is new when no run
+/// holds it or ends within `retain` before it, so a run that arrives after
+/// a later one is new at its first record, not at each of them.
+#[derive(Clone, Debug, Default, PartialEq)]
 struct Seen {
-    first: i64,
-    last: i64,
+    runs: Vec<(i64, i64)>,
 }
 
 impl Seen {
     /// An entry as stored; one from before record time was kept (a clock
     /// time) reads as none, and the rows it came from are read again first.
     fn read(v: Option<StateValue>) -> Option<Self> {
-        let Some(StateValue::Json(j)) = v else { return None };
-        Some(Self { first: j.get("first")?.as_i64()?, last: j.get("last")?.as_i64()? })
+        let Some(StateValue::Json(Value::Array(runs))) = v else { return None };
+        let runs = runs
+            .iter()
+            .map(|r| Some((r.get(0)?.as_i64()?, r.get(1)?.as_i64()?)))
+            .collect::<Option<_>>()?;
+        Some(Self { runs })
     }
 
     fn value(&self) -> StateValue {
-        StateValue::Json(serde_json::json!({"first": self.first, "last": self.last}))
+        StateValue::Json(serde_json::json!(self.runs.iter().map(|(f, l)| [f, l]).collect::<Vec<_>>()))
+    }
+
+    /// A sighting at `ts`: whether it is new, and whether the entry moved
+    /// enough to be written again.
+    fn sight(&mut self, ts: i64, retain: i64) -> (bool, bool) {
+        if let Some(run) = self.runs.iter_mut().find(|(first, last)| *first <= ts && ts - *last <= retain) {
+            if ts - run.1 <= GRAIN_MS {
+                return (false, false);
+            }
+            run.1 = ts;
+            self.join(retain, ts);
+            return (false, true);
+        }
+        self.runs.push((ts, ts));
+        self.join(retain, ts);
+        (true, true)
+    }
+
+    /// Runs in time order, those less than `retain` apart joined, and the
+    /// oldest dropped past `RUNS`, never the one holding `ts`: what is
+    /// dropped is only marked again.
+    fn join(&mut self, retain: i64, ts: i64) {
+        self.runs.sort();
+        let mut runs: Vec<(i64, i64)> = Vec::with_capacity(self.runs.len());
+        for (first, last) in self.runs.drain(..) {
+            match runs.last_mut() {
+                Some(run) if first - run.1 <= retain => run.1 = run.1.max(last),
+                _ => runs.push((first, last)),
+            }
+        }
+        while runs.len() > RUNS {
+            let (first, last) = runs[0];
+            runs.remove(if first <= ts && ts <= last { 1 } else { 0 });
+        }
+        self.runs = runs;
     }
 }
 
@@ -142,6 +187,12 @@ pub struct StoreSink {
     /// written) and its first reading of older rows happen under this, one
     /// at a time.
     bookkeeping: tokio::sync::Mutex<HashSet<String>>,
+    /// Per partition, held by a write with novelty from deciding its marks
+    /// to writing what it learned: a write reads what the one before it
+    /// learned, so writes side by side neither mark one value twice nor
+    /// miss a follow window. With SQLite, one connection runs them one at a
+    /// time anyway.
+    turns: std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl StoreSink {
@@ -189,6 +240,7 @@ impl StoreSink {
             novel,
             follow_ms,
             bookkeeping: tokio::sync::Mutex::new(HashSet::new()),
+            turns: Default::default(),
         }))
     }
 
@@ -210,8 +262,9 @@ impl StoreSink {
     /// What of one record, at `ts`, its scopes had not had within `retain`
     /// before it, by scope, read through what `learned` holds; what the
     /// record shows is added there. With `follow`, a scope value's records
-    /// within it after its new one are marked `follows`. A record with no
-    /// value for any field of any scope is `unscoped`.
+    /// within it after its new one are marked `follows`, those that reach
+    /// the sink with or after it: one that came before is stored already. A
+    /// record with no value for any field of any scope is `unscoped`.
     async fn check(
         &self,
         part: &str,
@@ -260,27 +313,15 @@ impl StoreSink {
         Ok(new)
     }
 
-    /// Whether a sighting at `ts` of one seen key is new: it has no entry,
-    /// or its latest sighting is more than `retain` before `ts`, or its
-    /// earliest is after `ts` (a first sighting arriving after a later one,
-    /// which stays marked too). Record time decides, not arrival or the
-    /// clock, so a replayed year forgets as a real one would.
+    /// Whether a sighting at `ts` of one seen key is new: no run of its
+    /// entry holds `ts` or ends within `retain` before it. A first sighting
+    /// arriving after a later one is new, and the later one stays marked
+    /// too. Record time decides, not arrival or the clock, so a replayed
+    /// year forgets as a real one would.
     async fn sighted(&self, part: &str, at: String, ts: i64, learned: &mut Learned) -> Result<bool> {
         let (seen, changed) = cached(&mut learned.seen, &*self.store, &seen_ns(&self.ns), part, at, Seen::read).await?;
-        let retain = self.retain_ms as i64;
-        let (new, next) = match *seen {
-            None => (true, Some(Seen { first: ts, last: ts })),
-            Some(s) if ts - s.last > retain => (true, Some(Seen { first: ts, last: ts })),
-            // Earlier by more than `retain`, it is a run of its own: the
-            // later one is kept, and its neighbours are marked too.
-            Some(s) if ts < s.first => (true, (s.first - ts <= retain).then_some(Seen { first: ts, ..s })),
-            Some(s) if ts - s.last > GRAIN_MS => (false, Some(Seen { last: ts, ..s })),
-            Some(_) => (false, None),
-        };
-        if next.is_some() {
-            *seen = next;
-            *changed = true;
-        }
+        let (new, moved) = seen.get_or_insert_with(Seen::default).sight(ts, self.retain_ms as i64);
+        *changed |= moved;
         Ok(new)
     }
 
@@ -406,10 +447,17 @@ impl Sink for StoreSink {
 
         // What is new, in record time order: of a write's sightings of a
         // value, the earliest is the one marked. Only read here; what the
-        // records show is written after they are.
+        // records show is written after they are, before the partition's
+        // next write reads it. Turns are taken in partition order, so two
+        // writes never each hold one the other waits for.
         let mut learned: BTreeMap<String, Learned> = BTreeMap::new();
         let mut marks = vec![Map::new(); records.len()];
+        let mut turns = Vec::new();
         if !self.novel.is_empty() {
+            for part in records.iter().map(|(part, ..)| part).collect::<BTreeSet<_>>() {
+                let turn = Arc::clone(self.turns.lock().expect("turns").entry(part.clone()).or_default());
+                turns.push(turn.lock_owned().await);
+            }
             let mut order: Vec<usize> = (0..records.len()).collect();
             order.sort_by_key(|&i| records[i].1);
             for i in order {
@@ -472,6 +520,7 @@ impl Sink for StoreSink {
         for (part, l) in learned {
             self.commit(&part, l).await?;
         }
+        drop(turns);
         SINK_OBJECTS_TOTAL.inc();
         SINK_BYTES_TOTAL.inc_by(req.payload.len() as u64);
         Ok(())
@@ -706,6 +755,43 @@ mod tests {
         );
     }
 
+    /// A source running months behind another (a worker's records reaching
+    /// the partition's owner late) sends a run of its own: its first record
+    /// is new, not each of them.
+    #[tokio::test]
+    async fn a_run_arriving_after_a_later_one_is_new_once() {
+        let store = lru();
+        let sink = sink_with_novelty(&store);
+        let days = [100, 0, 101, 1, 102, 2, 103, 3];
+        each(&sink, &days.map(|d| at(Y2020 + d * DAY, "alice", "Describe", "10.0.0.1"))).await;
+        let all = json!({"actor": ["_norm.kind", "_norm.ip"], "org": ["_norm.actor"]});
+        let null = serde_json::Value::Null;
+        assert_eq!(
+            novelty(&store).await,
+            [all.clone(), null.clone(), null.clone(), null.clone(), all, null.clone(), null.clone(), null],
+            "days 0 to 3, arriving behind days 100 to 103: day 0 and day 100"
+        );
+    }
+
+    /// Runs less than `retain` apart join; past four, the oldest is dropped,
+    /// never the one a sighting is in, and is only new again.
+    #[test]
+    fn runs_join_and_the_oldest_is_dropped() {
+        let retain = 30 * DAY;
+        let mut seen = Seen::default();
+        for d in [120, 80, 40, 0] {
+            assert_eq!(seen.sight(d * DAY, retain), (true, true), "day {d}");
+        }
+        assert_eq!(seen.sight(60 * DAY, retain), (false, true), "day 60 is within 30 days of day 40");
+        assert_eq!(seen.runs, [(0, 0), (40 * DAY, 80 * DAY), (120 * DAY, 120 * DAY)], "and joins it to day 80");
+        assert_eq!(seen.sight(70 * DAY, retain), (false, false), "inside a run: nothing to write");
+        seen.sight(200 * DAY, retain);
+        seen.sight(300 * DAY, retain);
+        assert_eq!(seen.runs[0], (40 * DAY, 80 * DAY), "day 0 dropped");
+        assert_eq!(seen.sight(0, retain), (true, true), "so new again");
+        assert_eq!(seen.runs, [(0, 0), (120 * DAY, 120 * DAY), (200 * DAY, 200 * DAY), (300 * DAY, 300 * DAY)]);
+    }
+
     /// A busy value's entry moves a minute at a time: not a write a record.
     #[tokio::test]
     async fn a_busy_value_is_written_once_a_minute() {
@@ -716,10 +802,10 @@ mod tests {
         sink.write(write(&[at(t, "alice", "Describe", "10.0.0.1")])).await.unwrap();
         sink.write(write(&[at(t + 30_000, "alice", "Describe", "10.0.0.1")])).await.unwrap();
         let entry = Seen::read(store.get(&seen_ns("events"), "acme", &key).await.unwrap());
-        assert_eq!(entry, Some(Seen { first: t, last: t }), "30 s on: not written");
+        assert_eq!(entry, Some(Seen { runs: vec![(t, t)] }), "30 s on: not written");
         sink.write(write(&[at(t + 90_000, "alice", "Describe", "10.0.0.1")])).await.unwrap();
         let entry = Seen::read(store.get(&seen_ns("events"), "acme", &key).await.unwrap());
-        assert_eq!(entry, Some(Seen { first: t, last: t + 90_000 }));
+        assert_eq!(entry, Some(Seen { runs: vec![(t, t + 90_000)] }));
     }
 
     /// What rows stored before novelty was remembered had is not new.
@@ -840,21 +926,36 @@ mod tests {
         assert!(marks[51..].iter().all(serde_json::Value::is_null));
     }
 
-    /// A store whose `n`th record write fails, once: a disk filling up.
-    struct Flaky {
+    /// A store whose `fail_at`th record write fails, once (a disk filling
+    /// up), and whose write of a record with a `slow` field waits for
+    /// `release` (a write still in flight while others run).
+    struct Probe {
         inner: LruStore,
         writes: AtomicUsize,
         fail_at: usize,
+        held: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+    }
+
+    fn probe(fail_at: usize) -> Arc<Probe> {
+        let inner = LruStore::new(StateConfig::default()).unwrap();
+        Arc::new(Probe { inner, writes: AtomicUsize::new(0), fail_at, held: Default::default(), release: Default::default() })
     }
 
     #[async_trait]
-    impl StateStore for Flaky {
+    impl StateStore for Probe {
         async fn get(&self, ns: &str, partition: &str, key: &str) -> Result<Option<StateValue>> {
             self.inner.get(ns, partition, key).await
         }
         async fn set(&self, ns: &str, partition: &str, key: &str, value: &StateValue, ttl_ms: Option<u64>) -> Result<()> {
-            if ns == "events" && self.writes.fetch_add(1, Ordering::SeqCst) == self.fail_at {
-                anyhow::bail!("disk full");
+            if ns == "events" {
+                if self.writes.fetch_add(1, Ordering::SeqCst) == self.fail_at {
+                    anyhow::bail!("disk full");
+                }
+                if matches!(value, StateValue::Str(t) if t.contains("\"slow\"")) {
+                    self.held.notify_one();
+                    self.release.notified().await;
+                }
             }
             self.inner.set(ns, partition, key, value, ttl_ms).await
         }
@@ -888,8 +989,7 @@ mod tests {
     /// same marks: nothing is remembered until its records are stored.
     #[tokio::test]
     async fn a_write_tried_again_marks_the_same_records() {
-        let inner = LruStore::new(StateConfig::default()).unwrap();
-        let store: Arc<dyn StateStore> = Arc::new(Flaky { inner, writes: AtomicUsize::new(0), fail_at: 1 });
+        let store: Arc<dyn StateStore> = probe(1);
         let sink = sink_with_novelty(&store);
         let payload = || write(&[act(1, "alice", "Describe", "10.0.0.1"), act(2, "alice", "Describe", "5.6.7.8")]);
         assert!(sink.write(payload()).await.is_err(), "the second record's write fails");
@@ -899,6 +999,65 @@ mod tests {
             novelty(&store).await,
             [first.clone(), first, json!({"actor": ["_norm.ip"]})],
             "13:01 twice (stored by both tries), and 13:02, the record in flight, still marked"
+        );
+    }
+
+    /// `rec` with a `slow` field: its write waits until the probe releases it.
+    fn slow(mut rec: serde_json::Value) -> serde_json::Value {
+        rec["slow"] = json!(true);
+        rec
+    }
+
+    /// Writes `a`, holds it in flight while `then` is sent to the same
+    /// partition, and lets it finish: `then` waits its turn.
+    async fn beside(store: &Arc<Probe>, sink: &Arc<StoreSink>, a: serde_json::Value, then: serde_json::Value) {
+        let first = tokio::spawn({
+            let sink = Arc::clone(sink);
+            async move { sink.write(write(&[slow(a)])).await }
+        });
+        store.held.notified().await;
+        let second = tokio::spawn({
+            let sink = Arc::clone(sink);
+            async move { sink.write(write(&[then])).await }
+        });
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!second.is_finished(), "a write waits for the one before it");
+        store.release.notify_one();
+        first.await.unwrap().unwrap();
+        second.await.unwrap().unwrap();
+    }
+
+    /// A record written while a new one is still in flight follows it: its
+    /// write reads the window once the new one's write has written it.
+    #[tokio::test]
+    async fn a_record_written_beside_a_new_one_follows_it() {
+        let probe = probe(usize::MAX);
+        let store: Arc<dyn StateStore> = probe.clone();
+        let sink = novelty_sink(&store, &[("actor", &["_norm.ip"])], Some("1h"));
+        each(&sink, &[at(Y2020 - DAY, "alice", "Describe", "10.0.0.1")]).await;
+        beside(&probe, &sink, at(Y2020, "alice", "Describe", "5.6.7.8"), at(Y2020 + 10 * MIN, "alice", "Describe", "10.0.0.1")).await;
+        assert_eq!(novelty(&store).await[1..], [json!({"actor": ["_norm.ip"]}), json!({"actor": ["follows"]})]);
+    }
+
+    /// Two writes side by side: the second reads what the first saw, so a
+    /// value is new once, and the first does not write over the second's
+    /// sightings.
+    #[tokio::test]
+    async fn writes_side_by_side_read_what_the_one_before_saw() {
+        let probe = probe(usize::MAX);
+        let store: Arc<dyn StateStore> = probe.clone();
+        let sink = novelty_sink(&store, &[("actor", &["_norm.kind"])], None);
+        beside(&probe, &sink, at(Y2020, "alice", "Describe", "10.0.0.1"), at(Y2020 + MIN, "alice", "Describe", "10.0.0.1")).await;
+        beside(&probe, &sink, at(Y2020 + DAY, "alice", "Describe", "10.0.0.1"), at(Y2020 + 100 * DAY, "alice", "Describe", "10.0.0.1")).await;
+        each(&sink, &[at(Y2020 + 101 * DAY, "alice", "Describe", "10.0.0.1")]).await;
+        let new = json!({"actor": ["_norm.kind"]});
+        let null = serde_json::Value::Null;
+        assert_eq!(
+            novelty(&store).await,
+            [new.clone(), null.clone(), null.clone(), new, null],
+            "day 0; a minute on, written beside it; day 1; day 100, written beside day 1; day 101"
         );
     }
 
