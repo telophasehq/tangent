@@ -148,10 +148,20 @@ impl Seen {
 
 /// A follow window: the record time of a new record of a scope value, and
 /// how many of the value's records since have been marked as following it.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// `touched` orders the windows by when one last started or was followed,
+/// in arrival order, for choosing which to drop; it is not part of what a
+/// window is, so two windows compare equal without it.
+#[derive(Clone, Copy, Debug)]
 struct Window {
     start: i64,
     count: i64,
+    touched: i64,
+}
+
+impl PartialEq for Window {
+    fn eq(&self, other: &Self) -> bool {
+        (self.start, self.count) == (other.start, other.count)
+    }
 }
 
 /// A scope value's follow windows, in start order.
@@ -163,7 +173,13 @@ impl Windows {
     /// (`{start, count}`) reads as a list of one.
     fn read(v: Option<StateValue>) -> Option<Self> {
         let Some(StateValue::Json(j)) = v else { return None };
-        let one = |w: &Value| Some(Window { start: w.get("start")?.as_i64()?, count: w.get("count")?.as_i64()? });
+        let one = |w: &Value| {
+            Some(Window {
+                start: w.get("start")?.as_i64()?,
+                count: w.get("count")?.as_i64()?,
+                touched: w.get("touched").and_then(Value::as_i64).unwrap_or(0),
+            })
+        };
         match j.as_array() {
             Some(ws) => ws.iter().map(one).collect::<Option<_>>().map(Self),
             None => one(&j).map(|w| Self(vec![w])),
@@ -171,7 +187,8 @@ impl Windows {
     }
 
     fn value(&self) -> StateValue {
-        let ws: Vec<Value> = self.0.iter().map(|w| serde_json::json!({"start": w.start, "count": w.count})).collect();
+        let ws: Vec<Value> =
+            self.0.iter().map(|w| serde_json::json!({"start": w.start, "count": w.count, "touched": w.touched})).collect();
         StateValue::Json(Value::Array(ws))
     }
 
@@ -181,33 +198,45 @@ impl Windows {
     /// records once (see `commit` for the windows it only followed).
     ///
     /// Past `FOLLOW_WINDOWS` one is dropped, never this one: a full one
-    /// first, which marks nothing more; else the one starting nearest after
-    /// another, whose records mostly follow that one instead. Not the
+    /// first, which marks nothing more; else one starting within `follow`
+    /// of the one before it, the nearest, whose records then follow that
+    /// one; else the one least recently started or followed. Not the
     /// earliest for being earliest: that is often a source running behind,
     /// whose records are still to come.
-    fn start(&mut self, ts: i64) {
+    fn start(&mut self, ts: i64, follow: i64) {
         self.0.retain(|w| w.start != ts);
-        self.0.push(Window { start: ts, count: 0 });
+        self.0.push(Window { start: ts, count: 0, touched: 0 });
         self.0.sort_by_key(|w| w.start);
+        let at = self.0.iter().position(|w| w.start == ts).expect("just added");
+        self.touch(at);
         while self.0.len() > FOLLOW_WINDOWS {
             let ws = &self.0;
-            let after = |i: usize| if i == 0 { i64::MAX } else { ws[i].start - ws[i - 1].start };
+            let gap = |i: usize| if i == 0 { i64::MAX } else { ws[i].start - ws[i - 1].start };
             let i = (0..ws.len())
                 .filter(|&i| ws[i].start != ts)
-                .min_by_key(|&i| (ws[i].count < FOLLOW_CAP, after(i)))
+                .min_by_key(|&i| {
+                    let crowded = gap(i) <= follow;
+                    (ws[i].count < FOLLOW_CAP, !crowded, if crowded { gap(i) } else { ws[i].touched })
+                })
                 .expect("more windows than one");
             self.0.remove(i);
         }
+    }
+
+    /// Marks window `i` the most recently started or followed.
+    fn touch(&mut self, i: usize) {
+        self.0[i].touched = self.0.iter().map(|w| w.touched).max().unwrap_or(0) + 1;
     }
 
     /// Whether a record at `ts` with nothing new follows a window: the
     /// latest that starts at or before it, within `follow`, with room. It
     /// is counted there.
     fn follow(&mut self, ts: i64, follow: i64) -> bool {
-        let Some(w) = self.0.iter_mut().rev().find(|w| w.start <= ts && ts - w.start <= follow && w.count < FOLLOW_CAP) else {
+        let Some(i) = self.0.iter().rposition(|w| w.start <= ts && ts - w.start <= follow && w.count < FOLLOW_CAP) else {
             return false;
         };
-        w.count += 1;
+        self.0[i].count += 1;
+        self.touch(i);
         true
     }
 }
@@ -366,7 +395,7 @@ impl StoreSink {
                 let windows = windows.get_or_insert_with(Windows::default);
                 if !marks.is_empty() {
                     // Something new starts a window at its own time.
-                    windows.start(ts);
+                    windows.start(ts, follow);
                     *changed = true;
                 } else if windows.follow(ts, follow) {
                     *changed = true;
@@ -900,7 +929,7 @@ mod tests {
     fn older_entries_read_as_one_run_and_one_window() {
         let entry = |j: serde_json::Value| Some(StateValue::Json(j));
         assert_eq!(Seen::read(entry(json!({"first": 1, "last": 2}))), Some(Seen { runs: vec![(1, 2)] }));
-        assert_eq!(Windows::read(entry(json!({"start": 1, "count": 3}))), Some(Windows(vec![Window { start: 1, count: 3 }])));
+        assert_eq!(Windows::read(entry(json!({"start": 1, "count": 3}))), Some(Windows(vec![Window { start: 1, count: 3, touched: 0 }])));
         assert_eq!(Seen::read(Some(StateValue::Int(1))), None, "a clock time: the rows are read again");
     }
 
@@ -1093,12 +1122,27 @@ mod tests {
         let mins = |ws: &Windows| ws.0.iter().map(|w| w.start / MIN).collect::<Vec<_>>();
         let mut ws = Windows::default();
         for m in [0, 100, 200, 300, 400, 500, 600, 610, 611] {
-            ws.start(m * MIN);
+            ws.start(m * MIN, 60 * MIN);
         }
         assert_eq!(mins(&ws), [0, 100, 200, 300, 400, 500, 600, 611], "610, ten minutes after 600; 611, a minute after it, just started");
         ws.0[2].count = FOLLOW_CAP;
-        ws.start(700 * MIN);
+        ws.start(700 * MIN, 60 * MIN);
         assert_eq!(mins(&ws), [0, 100, 300, 400, 500, 600, 611, 700], "200, full");
+    }
+
+    /// A stream running behind keeps its latest window when its two new
+    /// values are more than `follow` apart and the stream ahead opens more:
+    /// the least recently used window goes, not the later of the two.
+    #[tokio::test]
+    async fn a_lagging_stream_keeps_its_latest_window_past_follow() {
+        let store = lru();
+        let sink = novelty_sink(&store, &[("actor", &["_norm.ip"])], Some("1h"));
+        let ahead = |d: i64| at(Y2020 + d * DAY, "alice", "Describe", &format!("10.0.{d}.1"));
+        each(&sink, &[ahead(90), at(Y2020, "alice", "Describe", "5.6.7.8"), at(Y2020 + 120 * MIN, "alice", "Describe", "5.6.7.9")]).await;
+        each(&sink, &(91..97).map(ahead).collect::<Vec<_>>()).await;
+        each(&sink, &[at(Y2020 + 130 * MIN, "alice", "Describe", "5.6.7.9")]).await;
+        let (new, follows) = (json!({"actor": ["_norm.ip"]}), json!({"actor": ["follows"]}));
+        assert_eq!(novelty(&store).await[..3], [new.clone(), new, follows], "day 0 at 00:00 and 02:00, then 02:10 after days 90 to 96");
     }
 
     /// A stream running behind keeps its window, however many new values
@@ -1276,7 +1320,7 @@ mod tests {
         assert!(sink.write(payload()).await.is_err());
         sink.write(payload()).await.unwrap();
         let windows = Windows::read(store.get(&follow_ns("events"), "acme", &index_prefix("actor", "alice")).await.unwrap());
-        assert_eq!(windows.unwrap().0, [Window { start: t - DAY, count: 0 }, Window { start: t, count: 2 }]);
+        assert_eq!(windows.unwrap().0, [Window { start: t - DAY, count: 0, touched: 0 }, Window { start: t, count: 2, touched: 0 }]);
     }
 
     /// On a backend that writes all or none, as SQLite does, a write that
@@ -1305,7 +1349,11 @@ mod tests {
         let windows = Windows::read(store.get(&follow_ns("events"), "acme", &index_prefix("actor", "alice")).await.unwrap());
         assert_eq!(
             windows.unwrap().0,
-            [Window { start: t - 10 * MIN, count: 0 }, Window { start: t, count: 2 }, Window { start: t + 3 * MIN, count: 0 }]
+            [
+                Window { start: t - 10 * MIN, count: 0, touched: 0 },
+                Window { start: t, count: 2, touched: 0 },
+                Window { start: t + 3 * MIN, count: 0, touched: 0 },
+            ]
         );
         let new = json!({"actor": ["_norm.ip"]});
         assert_eq!(novelty_in(&store, "globex").await, [new.clone(), new], "bob's first, stored by both tries");
