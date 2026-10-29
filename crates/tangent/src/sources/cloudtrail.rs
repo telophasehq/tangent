@@ -1,7 +1,5 @@
-//! CloudTrail, read directly: `LookupEvents` by default (nothing to set up,
-//! management events, about fifteen minutes behind), or a trail's delivered
-//! files through the SQS queue its notifications land in, when `queue_url`
-//! is set.
+//! CloudTrail, read from a trail's delivered files, through the SQS queue
+//! its notifications land in (`queue_url`).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,7 +9,7 @@ use anyhow::{bail, Context, Result};
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_sqs::Client as SQSClient;
 use bytes::{Bytes, BytesMut};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use percent_encoding::percent_decode_str;
 use serde_json::Value;
 use tangent_shared::dag::NodeRef;
@@ -21,23 +19,27 @@ use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
 use crate::sources::decoding;
-use crate::sources::poll::{frame, opt, parse_time, stamp, Poller};
+use crate::sources::poll::{frame, opt, parse_time, stamp};
 use crate::sources::sqs::SqsAck;
 use crate::state::StateStore;
 use crate::worker::Ack;
 
 const SOURCE: &str = "cloudtrail";
-/// `LookupEvents` shows an event up to about fifteen minutes after it happens.
-const LATE_MS: i64 = 20 * 60 * 1000;
 
 pub async fn run_consumer(
     name: Arc<str>,
     cfg: CloudtrailConfig,
     chunks: usize,
     router: Arc<Router>,
-    store: Arc<dyn StateStore>,
+    _store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Result<()> {
+    let Some(queue_url) = opt(&cfg.queue_url) else {
+        bail!(
+            "cloudtrail source {name}: `queue_url` is required, the queue a trail's delivery notifications \
+             land in (there is no LookupEvents polling: a poller's own calls are CloudTrail events it would read back)"
+        );
+    };
     let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
     if let Some(region) = opt(&cfg.region) {
         loader = loader.region(aws_config::Region::new(region.to_string()));
@@ -46,152 +48,16 @@ pub async fn run_consumer(
         loader = loader.profile_name(profile);
     }
     let aws = loader.load().await;
-
-    if let Some(queue_url) = opt(&cfg.queue_url) {
-        let role = opt(&cfg.bucket_role);
-        return run_delivery(
-            name,
-            queue_url.to_string(),
-            role,
-            &aws,
-            chunks,
-            router,
-            shutdown,
-        )
-        .await;
-    }
-
-    // `LookupEvents` is regional. One poller per region named, each with its
-    // own cursor; none named, the SDK's region (from `region` or the default
-    // chain) and the source's own cursor.
-    let regions: Vec<String> = cfg
-        .regions
-        .iter()
-        .map(|r| r.trim().to_string())
-        .filter(|r| !r.is_empty())
-        .collect();
-    tracing::info!(
-        source = %name,
-        since = %cfg.since,
-        regions = ?regions,
-        "cloudtrail source polling LookupEvents"
-    );
-    if regions.is_empty() {
-        let poller = Poller::new(
-            Arc::clone(&name),
-            store,
-            router,
-            Duration::milliseconds(LATE_MS),
-        );
-        let client = aws_sdk_cloudtrail::Client::new(&aws);
-        run_region(&name, &cfg, client, poller, None, shutdown).await;
-        return Ok(());
-    }
-    let runs = regions.iter().map(|region| {
-        let conf = aws_sdk_cloudtrail::config::Builder::from(&aws)
-            .region(aws_config::Region::new(region.clone()))
-            .build();
-        let poller = Poller::new(
-            Arc::clone(&name),
-            Arc::clone(&store),
-            Arc::clone(&router),
-            Duration::milliseconds(LATE_MS),
-        )
-        .scoped(region);
-        run_region(
-            &name,
-            &cfg,
-            aws_sdk_cloudtrail::Client::from_conf(conf),
-            poller,
-            Some(region.as_str()),
-            shutdown.clone(),
-        )
-    });
-    futures::future::join_all(runs).await;
-    Ok(())
-}
-
-/// The poll loop for one region (or the SDK's), until shutdown.
-async fn run_region(
-    name: &Arc<str>,
-    cfg: &CloudtrailConfig,
-    client: aws_sdk_cloudtrail::Client,
-    poller: Poller,
-    region: Option<&str>,
-    shutdown: CancellationToken,
-) {
-    let region = region.unwrap_or("default");
-    let mut ticker = tokio::time::interval(StdDuration::from_secs(cfg.interval_secs.max(10)));
-    let mut failing = false;
-    loop {
-        tokio::select! {
-            () = shutdown.cancelled() => break,
-            _ = ticker.tick() => match poll(&client, cfg, &poller).await {
-                Ok(n) => {
-                    failing = false;
-                    if n > 0 {
-                        tracing::debug!(source = %name, region, events = n, "cloudtrail poll");
-                    }
-                }
-                Err(e) if !failing => {
-                    failing = true;
-                    tracing::warn!(source = %name, region, "cloudtrail poll failed (retrying each interval): {e:#}");
-                }
-                Err(e) => tracing::debug!(source = %name, region, "cloudtrail poll failed: {e:#}"),
-            },
-        }
-    }
-}
-
-/// One pass over `LookupEvents` from the cursor (less the lateness window)
-/// to now: new events forwarded in time order, the cursor moved up.
-async fn poll(
-    client: &aws_sdk_cloudtrail::Client,
-    cfg: &CloudtrailConfig,
-    poller: &Poller,
-) -> Result<usize> {
-    let start = poller.start(&cfg.since).await;
-    let end = Utc::now();
-    let mut newest: Option<DateTime<Utc>> = None;
-    let mut out: Vec<(DateTime<Utc>, Value)> = Vec::new();
-    let mut token: Option<String> = None;
-    loop {
-        let mut req = client
-            .lookup_events()
-            .start_time(aws_sdk_cloudtrail::primitives::DateTime::from_secs(
-                start.timestamp(),
-            ))
-            .end_time(aws_sdk_cloudtrail::primitives::DateTime::from_secs(
-                end.timestamp(),
-            ))
-            .max_results(50);
-        if let Some(t) = &token {
-            req = req.next_token(t);
-        }
-        let resp = req.send().await.context("LookupEvents")?;
-        for ev in resp.events() {
-            let Some(raw) = ev.cloud_trail_event() else {
-                continue;
-            };
-            let Ok(v) = serde_json::from_str::<Value>(raw) else {
-                continue;
-            };
-            let id = ev.event_id().unwrap_or("");
-            if id.is_empty() || !poller.first_sight(id).await {
-                continue;
-            }
-            let t = parse_time(&v["eventTime"]).unwrap_or(end);
-            newest = Some(newest.map_or(t, |n| n.max(t)));
-            out.push((t, v));
-        }
-        token = resp.next_token().map(str::to_string);
-        if token.is_none() || out.len() >= 5_000 {
-            break;
-        }
-    }
-    let n = poller.emit(SOURCE, out).await?;
-    poller.finish(newest, end).await;
-    Ok(n)
+    run_delivery(
+        name,
+        queue_url.to_string(),
+        opt(&cfg.bucket_role),
+        &aws,
+        chunks,
+        router,
+        shutdown,
+    )
+    .await
 }
 
 /// How long a received message stays hidden from the queue's other readers.
