@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regenerates tests/*/{input,expected}.json from a handful of cases by running
-# each stage once: raw events → a provider's plugin or norm → enrich → facts. Run after a
+# each stage once: raw events → norm → enrich → facts. Run after a
 # plugin changes, read the diff, commit it if it is what you meant.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -10,17 +10,13 @@ CASES="cloud/root-console-login cloud/cloudtrail-stop-logging identity/impossibl
        vendor/platform-breach-env-secrets-reused negative/oncall-3am-login negative/scanner-action-usual-run data/gmail-forwarding-rule"
 
 python3 - $CASES <<'PY'
-import json, sys, os
+import json, sys
 events = []
 for c in sys.argv[1:]:
     events += [json.loads(l) for l in open(f"cases/{c}/events.ndjson") if l.strip()]
 events.sort(key=lambda e: e["ts"])
-providers = ["cloudtrail", "github_audit", "okta", "google_workspace"]
-for p in providers:
-    os.makedirs(f"tests/{p}", exist_ok=True)
-    json.dump([e for e in events if e.get("source") == p], open(f"tests/{p}/input.json", "w"), indent=1)
-json.dump([e for e in events if e.get("source") not in providers], open("tests/norm/input.json", "w"), indent=1)
-print(f"{len(events)} events from {len(sys.argv) - 1} cases, split by source")
+json.dump(events, open("tests/norm/input.json", "w"), indent=1)
+print(f"{len(events)} events from {len(sys.argv) - 1} cases")
 PY
 
 # One stage at a time, each against the real config's runtime and plugin entry.
@@ -49,19 +45,7 @@ print(f'  {sys.argv[2]}: {len(rows)} records')
   rm -f test_out.ndjson .stage.yaml .empty.json
 }
 
-for p in cloudtrail github_audit okta google_workspace; do
-  stage $p tests/$p/input.json tests/$p/expected.json
-done
 stage norm   tests/norm/input.json     tests/norm/expected.json
-# Every normalized record, in time order, is what enrich sees.
-python3 - <<'PY'
-import json
-rows = []
-for p in ["cloudtrail", "github_audit", "okta", "google_workspace", "norm"]:
-    rows += json.load(open(f"tests/{p}/expected.json"))
-rows.sort(key=lambda r: r["ts"])
-json.dump(rows, open("tests/normalized.json", "w"), indent=1)
-PY
-stage enrich tests/normalized.json     tests/facts/input.json
+stage enrich tests/norm/expected.json  tests/facts/input.json
 stage facts  tests/facts/input.json    tests/facts/expected.json
 echo "fixtures written; now: make test"

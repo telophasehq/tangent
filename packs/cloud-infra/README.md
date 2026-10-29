@@ -5,16 +5,12 @@ in batches; a person reads what it flags. Install, point your logs at it, fill i
 your company, run.
 
 ```
-CloudTrail ──▶ cloudtrail ─┐
-GitHub audit log ──▶ github_audit ─┤
-Okta ──▶ okta ─┼──▶ enrich ──▶ facts ──▶ store          (ingest)
-Google Workspace ──▶ google_workspace ─┤
-CI, anything else (TCP) ──▶ norm ─┘
+CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ facts ──▶ store   (ingest)
 
 store ──▶ buffer ──▶ judge ──▶ flagged ──▶ alerts.ndjson   (judgment)
 ```
 
-- **A plugin per provider** ([providers/](providers/)) reads its source's records: it puts the shape into `_norm.{actor, org, kind, ip, country, dest, target}` and trims the record to what it means, dropping the provider's ids, hashes, protocol details and bulk, so the judge and the retained history carry a record a reader would keep. **norm** does the `_norm` half for anything else arriving over TCP (CI lines, a product's logs) and leaves those records as they came.
+- **norm** puts every source's shape into one, `_norm.{actor, org, kind, ip, country, dest, target}`, and trims the four API sources' records to what they mean: their ids, hashes, protocol details and bulk go. Anything else is left as it came.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
 - **store** keeps every normalized, enriched record under its partition for 30 days. That ends the ingest pipeline: a source is acknowledged when its records are kept, and nothing waits on a model.
@@ -29,7 +25,7 @@ On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the judge'
 ```bash
 make setup          # Rust WASM toolchain; GeoLite2, cloud ranges, Tor exits into examples/enrich/data
 $EDITOR profile/profile.yaml
-make test           # the cases through the provider plugins, norm, enrich and facts; no model needed
+make test           # the cases through norm and facts; no model needed
 make run            # listens on :9400 for NDJSON records
 ```
 
@@ -101,7 +97,7 @@ Measured 2026-10-28 with Claude Haiku 4.5 (Bedrock) judging **every record** of 
 tangent.yaml          the pipeline
 profile/profile.yaml  your company (edit this)
 judge.md              the model's brief
-providers/ norm/ facts/   the plugins, Rust, compiled to WASM by make setup; providers/common is what they share
+norm/ facts/          the plugins, Rust, compiled to WASM by make setup
 cases/                the sequences, one directory each: case.yaml + events.ndjson
 tests/                fixtures for make test
 ```

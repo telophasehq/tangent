@@ -1,5 +1,179 @@
 [
  {
+  "actor": {
+   "alternateId": "oncall-frank@acme.io",
+   "displayName": "Oncall-Frank",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "Oakland",
+    "country": "US"
+   },
+   "ipAddress": "67.180.22.4",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-14T03:05:00Z",
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-14T03:05:00Z",
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "org": "acme",
+   "kind": "user.session.start",
+   "ip": "67.180.22.4",
+   "country": "US"
+  }
+ },
+ {
+  "actor": {
+   "alternateId": "oncall-frank@acme.io",
+   "displayName": "Oncall-Frank",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "Oakland",
+    "country": "US"
+   },
+   "ipAddress": "67.180.22.4",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-18T02:48:00Z",
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-18T02:48:00Z",
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "org": "acme",
+   "kind": "user.session.start",
+   "ip": "67.180.22.4",
+   "country": "US"
+  }
+ },
+ {
+  "additionalEventData": {
+   "MFAUsed": "No"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ConsoleLogin",
+  "eventSource": "signin.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {},
+  "responseElements": {
+   "ConsoleLogin": "Success"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "98.51.100.23",
+  "ts": "2026-10-20T13:00:00Z",
+  "userAgent": "Mozilla/5.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:root",
+   "type": "Root",
+   "userName": "root"
+  },
+  "_norm": {
+   "actor": "root",
+   "org": "acme",
+   "kind": "ConsoleLogin",
+   "ip": "98.51.100.23"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "StopLogging",
+  "eventSource": "cloudtrail.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "name": "arn:aws:cloudtrail:us-west-2:111122223333:trail/org-trail"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "65.108.22.91",
+  "ts": "2026-10-20T13:00:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  },
+  "_norm": {
+   "actor": "deploy-bot",
+   "org": "acme",
+   "kind": "StopLogging",
+   "ip": "65.108.22.91"
+  }
+ },
+ {
+  "actor": {
+   "alternateId": "bob@acme.io",
+   "displayName": "Bob",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "San Francisco",
+    "country": "US"
+   },
+   "ipAddress": "73.162.14.9",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-20T13:00:00Z",
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-20T13:00:00Z",
+  "_norm": {
+   "actor": "bob@acme.io",
+   "org": "acme",
+   "kind": "user.session.start",
+   "ip": "73.162.14.9",
+   "country": "US"
+  }
+ },
+ {
   "ts": "2026-10-20T13:00:00Z",
   "source": "gha_ci",
   "repo": "acme/api",
@@ -15,6 +189,31 @@
   }
  },
  {
+  "awsRegion": "us-west-2",
+  "eventName": "GetCallerIdentity",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:00:00Z",
+  "userAgent": "aws-cli/2.22.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "org": "acme",
+   "kind": "GetCallerIdentity",
+   "ip": "185.224.128.17"
+  }
+ },
+ {
   "ts": "2026-10-20T13:00:00Z",
   "source": "gha_ci",
   "repo": "acme/api",
@@ -27,6 +226,34 @@
    "org": "acme",
    "kind": "Run aquasecurity/trivy-action@0.28.0",
    "target": "acme/api"
+  }
+ },
+ {
+  "actor": {
+   "callerType": "USER",
+   "email": "cfo@acme.io"
+  },
+  "events": [
+   {
+    "name": "EMAIL_FORWARDING_OUT_OF_DOMAIN",
+    "parameters": {
+     "email_forwarding_destination_address": "acme.finance.backup@gmail.com"
+    },
+    "type": "email_forwarding_change"
+   }
+  ],
+  "id": {
+   "applicationName": "user_accounts",
+   "time": "2026-10-20T13:00:00Z"
+  },
+  "ipAddress": "185.220.101.4",
+  "source": "google_workspace",
+  "ts": "2026-10-20T13:00:00Z",
+  "_norm": {
+   "actor": "cfo@acme.io",
+   "org": "acme",
+   "kind": "EMAIL_FORWARDING_OUT_OF_DOMAIN",
+   "ip": "185.220.101.4"
   }
  },
  {
@@ -155,6 +382,31 @@
   }
  },
  {
+  "awsRegion": "us-west-2",
+  "eventName": "ListBuckets",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:30Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:00:30Z",
+  "userAgent": "aws-cli/2.22.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "org": "acme",
+   "kind": "ListBuckets",
+   "ip": "185.224.128.17"
+  }
+ },
+ {
   "ts": "2026-10-20T13:00:30Z",
   "source": "gha_ci",
   "repo": "acme/api",
@@ -182,6 +434,322 @@
    "org": "acme",
    "kind": "Run aquasecurity/trivy-action@0.28.0",
    "target": "acme/api"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-00.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "org": "acme",
+   "kind": "GetObject",
+   "ip": "185.224.128.17",
+   "target": "acme-customer-exports"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:12Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-01.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:12Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "org": "acme",
+   "kind": "GetObject",
+   "ip": "185.224.128.17",
+   "target": "acme-customer-exports"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:24Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-02.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:24Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "org": "acme",
+   "kind": "GetObject",
+   "ip": "185.224.128.17",
+   "target": "acme-customer-exports"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:36Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-03.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:36Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "org": "acme",
+   "kind": "GetObject",
+   "ip": "185.224.128.17",
+   "target": "acme-customer-exports"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:48Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-04.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:48Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "org": "acme",
+   "kind": "GetObject",
+   "ip": "185.224.128.17",
+   "target": "acme-customer-exports"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:02:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-05.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:02:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "org": "acme",
+   "kind": "GetObject",
+   "ip": "185.224.128.17",
+   "target": "acme-customer-exports"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:02:12Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-06.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:02:12Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "org": "acme",
+   "kind": "GetObject",
+   "ip": "185.224.128.17",
+   "target": "acme-customer-exports"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:02:24Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-07.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:02:24Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "org": "acme",
+   "kind": "GetObject",
+   "ip": "185.224.128.17",
+   "target": "acme-customer-exports"
+  }
+ },
+ {
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "org": "acme",
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/payments-api",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:03:00Z",
+  "_norm": {
+   "actor": "dev-sam",
+   "org": "acme",
+   "kind": "git.clone",
+   "ip": "185.224.128.17",
+   "country": "NL",
+   "target": "acme/payments-api"
+  }
+ },
+ {
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "org": "acme",
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/billing",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:03:18Z",
+  "_norm": {
+   "actor": "dev-sam",
+   "org": "acme",
+   "kind": "git.clone",
+   "ip": "185.224.128.17",
+   "country": "NL",
+   "target": "acme/billing"
+  }
+ },
+ {
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "org": "acme",
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/infra",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:03:36Z",
+  "_norm": {
+   "actor": "dev-sam",
+   "org": "acme",
+   "kind": "git.clone",
+   "ip": "185.224.128.17",
+   "country": "NL",
+   "target": "acme/infra"
+  }
+ },
+ {
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "org": "acme",
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/web",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:03:54Z",
+  "_norm": {
+   "actor": "dev-sam",
+   "org": "acme",
+   "kind": "git.clone",
+   "ip": "185.224.128.17",
+   "country": "NL",
+   "target": "acme/web"
   }
  },
  {
@@ -362,6 +930,186 @@
    "org": "acme",
    "kind": "api_request",
    "ip": "185.224.128.17"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "GetCallerIdentity",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:11:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:11:00Z",
+  "userAgent": "aws-sdk-go/1.44",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  },
+  "_norm": {
+   "actor": "deploy-bot",
+   "org": "acme",
+   "kind": "GetCallerIdentity",
+   "ip": "185.224.128.17"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "ListBuckets",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:11:30Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:11:30Z",
+  "userAgent": "aws-sdk-go/1.44",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  },
+  "_norm": {
+   "actor": "deploy-bot",
+   "org": "acme",
+   "kind": "ListBuckets",
+   "ip": "185.224.128.17"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "ListSecrets",
+  "eventSource": "secretsmanager.amazonaws.com",
+  "eventTime": "2026-10-20T13:12:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:12:00Z",
+  "userAgent": "aws-sdk-go/1.44",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  },
+  "_norm": {
+   "actor": "deploy-bot",
+   "org": "acme",
+   "kind": "ListSecrets",
+   "ip": "185.224.128.17"
+  }
+ },
+ {
+  "awsRegion": "us-west-2",
+  "eventName": "GetSecretValue",
+  "eventSource": "secretsmanager.amazonaws.com",
+  "eventTime": "2026-10-20T13:12:30Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "secretId": "prod/db/master"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:12:30Z",
+  "userAgent": "aws-sdk-go/1.44",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  },
+  "_norm": {
+   "actor": "deploy-bot",
+   "org": "acme",
+   "kind": "GetSecretValue",
+   "ip": "185.224.128.17"
+  }
+ },
+ {
+  "actor": {
+   "alternateId": "bob@acme.io",
+   "displayName": "Bob",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "Singapore",
+    "country": "SG"
+   },
+   "ipAddress": "103.6.150.77",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-20T13:22:00Z",
+  "securityContext": {
+   "asNumber": 63949,
+   "asOrg": "Akamai Connected Cloud",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-20T13:22:00Z",
+  "_norm": {
+   "actor": "bob@acme.io",
+   "org": "acme",
+   "kind": "user.session.start",
+   "ip": "103.6.150.77",
+   "country": "SG"
+  }
+ },
+ {
+  "actor": {
+   "alternateId": "oncall-frank@acme.io",
+   "displayName": "Oncall-Frank",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "Oakland",
+    "country": "US"
+   },
+   "ipAddress": "67.180.22.4",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-22T03:12:00Z",
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-22T03:12:00Z",
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "org": "acme",
+   "kind": "user.session.start",
+   "ip": "67.180.22.4",
+   "country": "US"
   }
  },
  {

@@ -3,7 +3,7 @@
 What the judge has to catch, and what it must leave alone, written down as
 event sequences before arguing about designs. Every design question (per
 record or per window, which model, which cadence) is measured against these.
-`make test` runs seven of them through the provider plugins, norm, enrich and facts as fixtures;
+`make test` runs eight of them through norm and facts as fixtures;
 the full set is replayed inside weeks of ordinary traffic for the numbers in
 the pack's README.
 
