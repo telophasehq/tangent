@@ -15,6 +15,15 @@
 //!
 //! Nothing about a window lives only in memory: a restart reads these and
 //! carries on.
+//!
+//! History: the namespace `recent:<store namespace>` indexes every stored
+//! record by the scopes the store sink lists (`recent: {actor: _norm.actor}`),
+//! under `<scope>\x1f<value>\x1f<record key>`, kept as long as the record.
+//! A scope's latest records before a time, however long ago, are one
+//! newest-first range of it. A scope that is the partition itself (the org of
+//! an org-partitioned store) needs no index: the partition's rows are its
+//! history. `indexed` (namespace `windows`) marks a partition whose rows
+//! written before the index existed have been indexed.
 
 use std::sync::Arc;
 
@@ -30,6 +39,29 @@ pub const FIRST: &str = "first";
 pub const READ_THROUGH: &str = "read_through";
 pub const CLOSED_THROUGH: &str = "closed_through";
 pub const LATE_PREFIX: &str = "late:";
+
+pub const INDEXED: &str = "indexed";
+
+/// Where a store namespace's history index lives.
+pub fn index_ns(ns: &str) -> String {
+    format!("recent:{ns}")
+}
+
+/// The index keys of one scope value: `<scope>\x1f<value>\x1f`, then the
+/// record's key, so they sort by the record's time.
+pub fn index_prefix(scope: &str, value: &str) -> String {
+    format!("{scope}\u{1f}{value}\u{1f}")
+}
+
+/// A field's value as a scope value: a string, number or boolean.
+pub fn scope_value(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) if !s.is_empty() => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
 
 /// A stored record's key.
 pub fn ev_key(ts: i64, id: &str) -> String {

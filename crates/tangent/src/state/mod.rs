@@ -102,6 +102,18 @@ pub trait StateStore: Send + Sync {
         limit: usize,
     ) -> Result<Vec<Entry>>;
 
+    /// The same slice newest first: live entries with `from <= key < to`, in
+    /// descending key order, at most `limit`. A scope's latest records before
+    /// a time, however long ago, without reading the rest.
+    async fn range_rev(
+        &self,
+        ns: &str,
+        partition: &str,
+        from: &str,
+        to: &str,
+        limit: usize,
+    ) -> Result<Vec<Entry>>;
+
     /// Key counts per (namespace, partition), filtered by namespace when given.
     async fn counts(&self, ns: Option<&str>) -> Result<Vec<Count>>;
 
@@ -221,6 +233,19 @@ pub(crate) mod conformance {
     use super::*;
 
     pub async fn run(store: &dyn StateStore) {
+        // Ranges, both ways: from <= key < to, in key order or newest first.
+        for k in ["ev:01", "ev:02", "ev:03", "ev:04"] {
+            store.set("rng", "p", k, &StateValue::Int(1), None).await.unwrap();
+        }
+        let up: Vec<String> = store.range("rng", "p", "ev:02", "ev:04", 10).await.unwrap().into_iter().map(|e| e.key).collect();
+        assert_eq!(up, ["ev:02", "ev:03"]);
+        let down: Vec<String> = store.range_rev("rng", "p", "ev:", "ev:04", 2).await.unwrap().into_iter().map(|e| e.key).collect();
+        assert_eq!(down, ["ev:03", "ev:02"], "newest first, at most the limit");
+        assert!(store.range_rev("rng", "other", "ev:", "ev:~", 5).await.unwrap().is_empty(), "partitions are separate");
+        for k in ["ev:01", "ev:02", "ev:03", "ev:04"] {
+            store.del("rng", "p", k).await.unwrap();
+        }
+
         let v = StateValue::Str("hello".into());
         store.set("ns", "", "k", &v, None).await.unwrap();
         assert_eq!(store.get("ns", "", "k").await.unwrap(), Some(v.clone()));

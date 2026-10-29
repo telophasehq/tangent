@@ -123,14 +123,16 @@ pub struct ContextConfig {
     /// Where the `store` sink keeps records.
     #[serde(default = "crate::sinks::store::default_namespace")]
     pub namespace: String,
-    /// A view per scope: the records whose `field` has the value one of the
-    /// request's records has, e.g. `{actor: _norm.actor, org: _norm.org}`.
+    /// A view per scope: the latest records whose `field` has the value one
+    /// of the request's records has, e.g. `{actor: _norm.actor, org:
+    /// _norm.org}`, read from the `store` sink's `recent` lists, which must
+    /// keep the same scopes.
     pub scopes: BTreeMap<String, String>,
-    /// How far back each scope reads, the window of history a batch is
-    /// read with: `{actor: 24h, org: 1h}`.
-    #[serde(alias = "spans")]
+    /// Gone: a view is a scope's latest records however long ago, not a span
+    /// of time. Set, the node refuses to start and says so.
+    #[serde(default, alias = "spans")]
     pub window: BTreeMap<String, String>,
-    /// Lines per view, the latest kept.
+    /// Records per view: the latest before the request's records.
     #[serde(default = "default_max_events")]
     pub max_events: usize,
     /// The whole context stops at about this many bytes; the busiest keys

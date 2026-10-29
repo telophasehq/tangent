@@ -19,7 +19,7 @@ store ──▶ buffer ──▶ judge ──▶ flagged ──▶ alerts.ndjson
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
 - **store** keeps every normalized, enriched record under its partition for 30 days. That ends the ingest pipeline: a source is acknowledged when its records are kept, and nothing waits on a model.
 - **buffer** reads the store back five minutes of one partition's activity at a time, once the stream has moved twenty minutes past them (a quiet partition closes on the clock), so a verdict comes about twenty-five minutes after its record. Where each partition stands lives in the store too, so a restart catches up what fell due while it was down.
-- **judge** reads each buffer's records together, with the window of history before it (each actor's day, the org's hour) read once from the store, and writes a verdict per record: `flag`, `one_line`, `why`. No rule decides what the model reads; the profile is context, not a rulebook.
+- **judge** reads each buffer's records together, with the history before it (each actor's latest records and the org's, however long ago) read once from the store, and writes a verdict per record: a pass is the flag alone, a flag says why. No rule decides what the model reads; the profile is context, not a rulebook.
 - The judge is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see.
 
 On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the judge's recall and false-positive rate are in [RESULTS](#what-it-catches).

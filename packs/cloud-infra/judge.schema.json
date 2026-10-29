@@ -1,11 +1,23 @@
 {
   "title": "Verdict",
-  "type": "object",
-  "properties": {
-    "flag": { "type": "boolean" },
-    "one_line": { "type": "string", "maxLength": 160 },
-    "why": { "type": "string", "maxLength": 400 }
-  },
-  "required": ["flag", "one_line", "why"],
-  "additionalProperties": false
+  "description": "A pass is the flag alone; a flag says why.",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "flag": { "type": "boolean", "const": false }
+      },
+      "required": ["flag"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "flag": { "type": "boolean", "const": true },
+        "why": { "type": "string", "maxLength": 400 }
+      },
+      "required": ["flag", "why"],
+      "additionalProperties": false
+    }
+  ]
 }
