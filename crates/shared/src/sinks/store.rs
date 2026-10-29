@@ -44,7 +44,9 @@ pub struct StoreSinkConfig {
     /// window, so the session that something new begins is judged whole,
     /// not only its first record. A window covers the records that reach
     /// the sink with its new one or after: one that came before is not
-    /// marked. Not for a scope that is the partition, whose every record
+    /// marked. A record follows the latest new one at or before its own
+    /// time, so one arriving late, or from a source running behind, follows
+    /// its own. Not for a scope that is the partition, whose every record
     /// would follow. Off without it.
     #[serde(default)]
     pub follow: Option<String>,
