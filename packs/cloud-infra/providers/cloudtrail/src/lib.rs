@@ -95,7 +95,10 @@ fn norm_of(r: &Value) -> Norm {
 }
 
 fn trim(m: &Map<String, Value>) -> Map<String, Value> {
-    let mut out = pick(m, &["ts", "source", "eventTime", "eventSource", "eventName", "awsRegion", "sourceIPAddress", "userAgent", "errorCode", "errorMessage", "readOnly", "resources"]);
+    // `recipientAccountId` is the account the event happened in; the
+    // caller's (`userIdentity.accountId`) differs when it reaches across, and
+    // an organization trail holds every account.
+    let mut out = pick(m, &["ts", "source", "eventTime", "eventSource", "eventName", "awsRegion", "recipientAccountId", "sourceIPAddress", "userAgent", "errorCode", "errorMessage", "readOnly", "resources"]);
     if let Some(u) = obj(m.get("userIdentity")) {
         let mut id = pick(u, &["type", "userName", "arn", "accountId", "invokedBy"]);
         let uv = Value::Object(u.clone());

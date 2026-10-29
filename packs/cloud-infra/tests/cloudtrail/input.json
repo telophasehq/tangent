@@ -7,6 +7,7 @@
   "eventSource": "signin.amazonaws.com",
   "eventName": "ConsoleLogin",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "98.51.100.23",
   "userAgent": "Mozilla/5.0",
   "userIdentity": {
@@ -31,6 +32,7 @@
   "eventSource": "cloudtrail.amazonaws.com",
   "eventName": "StopLogging",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "65.108.22.91",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -52,6 +54,7 @@
   "eventSource": "sts.amazonaws.com",
   "eventName": "GetCallerIdentity",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.22.0",
   "userIdentity": {
@@ -71,6 +74,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "ListBuckets",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.22.0",
   "userIdentity": {
@@ -90,6 +94,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -112,6 +117,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -134,6 +140,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -156,6 +163,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -178,6 +186,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -200,6 +209,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -222,6 +232,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -244,6 +255,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -266,6 +278,7 @@
   "eventSource": "sts.amazonaws.com",
   "eventName": "GetCallerIdentity",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-sdk-go/1.44",
   "userIdentity": {
@@ -285,6 +298,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "ListBuckets",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-sdk-go/1.44",
   "userIdentity": {
@@ -304,6 +318,7 @@
   "eventSource": "secretsmanager.amazonaws.com",
   "eventName": "ListSecrets",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-sdk-go/1.44",
   "userIdentity": {
@@ -323,6 +338,7 @@
   "eventSource": "secretsmanager.amazonaws.com",
   "eventName": "GetSecretValue",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-sdk-go/1.44",
   "userIdentity": {

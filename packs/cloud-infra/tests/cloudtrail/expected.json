@@ -13,6 +13,7 @@
   "eventName": "ConsoleLogin",
   "eventSource": "signin.amazonaws.com",
   "eventTime": "2026-10-20T13:00:00Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {},
   "responseElements": {
    "ConsoleLogin": "Success"
@@ -39,6 +40,7 @@
   "eventName": "StopLogging",
   "eventSource": "cloudtrail.amazonaws.com",
   "eventTime": "2026-10-20T13:00:00Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {
    "name": "arn:aws:cloudtrail:us-west-2:111122223333:trail/org-trail"
   },
@@ -65,6 +67,7 @@
   "eventName": "GetCallerIdentity",
   "eventSource": "sts.amazonaws.com",
   "eventTime": "2026-10-20T13:00:00Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {},
   "responseElements": {},
   "source": "cloudtrail",
@@ -89,6 +92,7 @@
   "eventName": "ListBuckets",
   "eventSource": "s3.amazonaws.com",
   "eventTime": "2026-10-20T13:00:30Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {},
   "responseElements": {},
   "source": "cloudtrail",
@@ -114,6 +118,7 @@
   "eventName": "GetObject",
   "eventSource": "s3.amazonaws.com",
   "eventTime": "2026-10-20T13:01:00Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {
    "bucketName": "acme-customer-exports",
    "key": "exports/2026-10/part-00.parquet"
@@ -142,6 +147,7 @@
   "eventName": "GetObject",
   "eventSource": "s3.amazonaws.com",
   "eventTime": "2026-10-20T13:01:12Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {
    "bucketName": "acme-customer-exports",
    "key": "exports/2026-10/part-01.parquet"
@@ -170,6 +176,7 @@
   "eventName": "GetObject",
   "eventSource": "s3.amazonaws.com",
   "eventTime": "2026-10-20T13:01:24Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {
    "bucketName": "acme-customer-exports",
    "key": "exports/2026-10/part-02.parquet"
@@ -198,6 +205,7 @@
   "eventName": "GetObject",
   "eventSource": "s3.amazonaws.com",
   "eventTime": "2026-10-20T13:01:36Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {
    "bucketName": "acme-customer-exports",
    "key": "exports/2026-10/part-03.parquet"
@@ -226,6 +234,7 @@
   "eventName": "GetObject",
   "eventSource": "s3.amazonaws.com",
   "eventTime": "2026-10-20T13:01:48Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {
    "bucketName": "acme-customer-exports",
    "key": "exports/2026-10/part-04.parquet"
@@ -254,6 +263,7 @@
   "eventName": "GetObject",
   "eventSource": "s3.amazonaws.com",
   "eventTime": "2026-10-20T13:02:00Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {
    "bucketName": "acme-customer-exports",
    "key": "exports/2026-10/part-05.parquet"
@@ -282,6 +292,7 @@
   "eventName": "GetObject",
   "eventSource": "s3.amazonaws.com",
   "eventTime": "2026-10-20T13:02:12Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {
    "bucketName": "acme-customer-exports",
    "key": "exports/2026-10/part-06.parquet"
@@ -310,6 +321,7 @@
   "eventName": "GetObject",
   "eventSource": "s3.amazonaws.com",
   "eventTime": "2026-10-20T13:02:24Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {
    "bucketName": "acme-customer-exports",
    "key": "exports/2026-10/part-07.parquet"
@@ -337,6 +349,7 @@
   "eventName": "GetCallerIdentity",
   "eventSource": "sts.amazonaws.com",
   "eventTime": "2026-10-20T13:11:00Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {},
   "responseElements": {},
   "source": "cloudtrail",
@@ -361,6 +374,7 @@
   "eventName": "ListBuckets",
   "eventSource": "s3.amazonaws.com",
   "eventTime": "2026-10-20T13:11:30Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {},
   "responseElements": {},
   "source": "cloudtrail",
@@ -385,6 +399,7 @@
   "eventName": "ListSecrets",
   "eventSource": "secretsmanager.amazonaws.com",
   "eventTime": "2026-10-20T13:12:00Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {},
   "responseElements": {},
   "source": "cloudtrail",
@@ -409,6 +424,7 @@
   "eventName": "GetSecretValue",
   "eventSource": "secretsmanager.amazonaws.com",
   "eventTime": "2026-10-20T13:12:30Z",
+  "recipientAccountId": "111122223333",
   "requestParameters": {
    "secretId": "prod/db/master"
   },
