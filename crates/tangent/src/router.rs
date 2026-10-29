@@ -62,6 +62,8 @@ impl Ack for RefCountAck {
 
 pub struct Router {
     outs: HashMap<NodeRef, Vec<NodeRef>>,
+    /// The fields each partitioned node's records are partitioned by.
+    partitions: HashMap<NodeRef, Vec<String>>,
     pool: OnceCell<Weak<WorkerPool>>,
     sink_manager: Arc<SinkManager>,
     /// Records handed to a worker and not yet through their walk of the DAG.
@@ -70,9 +72,14 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn new(outs: HashMap<NodeRef, Vec<NodeRef>>, sink_manager: Arc<SinkManager>) -> Self {
+    pub fn new(
+        outs: HashMap<NodeRef, Vec<NodeRef>>,
+        partitions: HashMap<NodeRef, Vec<String>>,
+        sink_manager: Arc<SinkManager>,
+    ) -> Self {
         Self {
             outs,
+            partitions,
             pool: OnceCell::new(),
             sink_manager,
             in_flight: Arc::new(AtomicUsize::new(0)),
@@ -99,6 +106,11 @@ impl Router {
     /// Where records from `node` go next; nothing where the DAG ends.
     pub fn outs(&self, node: &NodeRef) -> &[NodeRef] {
         self.outs.get(node).map_or(&[], Vec::as_slice)
+    }
+
+    /// The fields `node` is partitioned by; none when it has no partition.
+    pub fn partition(&self, node: &NodeRef) -> &[String] {
+        self.partitions.get(node).map_or(&[], Vec::as_slice)
     }
 
     pub fn sinks(&self) -> &Arc<SinkManager> {
@@ -147,7 +159,7 @@ impl Router {
                 pool.dispatch(Record {
                     payload: Payload::Raw(record),
                     ack: Some(Arc::clone(&shared)),
-                    from: from.clone(),
+                    at: from.clone(),
                 })
                 .await?;
             }

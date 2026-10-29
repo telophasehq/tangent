@@ -111,6 +111,7 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     if cfg.dag.is_empty() {
         bail!("Must configure dag.");
     }
+    cfg.validate()?;
 
     if std::env::var("DEBUG").is_ok_and(|x| x == "1") {
         console_subscriber::init();

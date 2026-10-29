@@ -376,6 +376,7 @@ pub(crate) mod stub {
             max_tokens: 50,
             temperature: None,
             extra,
+            partition: None,
         }
     }
 

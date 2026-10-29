@@ -119,13 +119,13 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 workers: 1,
                 // Fresh in-process state per test: starts empty, touches no
                 // file, and never contends with a running pipeline's SQLite
-                // store. TTLs and the partition key come from the config so
-                // a stateful plugin is tested the way it runs.
+                // store. TTLs and partitions come from the config so a
+                // stateful plugin is tested the way it runs.
                 state: StateConfig {
                     backend: StateBackend::Lru,
                     ..cfg.runtime.state.clone()
                 },
-                partition: cfg.runtime.partition.clone(),
+                partitions: cfg.runtime.partitions.clone(),
                 disable_remote_calls: !opts.enable_http,
             };
 
@@ -158,6 +158,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 state_namespace: plugin_cfg.state_namespace.clone(),
                 // Relative to the test config, which sits next to the original.
                 data: plugin_cfg.data.clone(),
+                partition: plugin_cfg.partition.clone(),
             };
 
             let mut plugins = BTreeMap::new();

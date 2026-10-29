@@ -77,6 +77,9 @@ pub struct InferenceConfig {
     /// `reasoning_effort: low` for gpt-oss. These win over what the node sets.
     #[serde(default)]
     pub extra: Map<String, Value>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition: Option<String>, // a name in runtime.partitions
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]

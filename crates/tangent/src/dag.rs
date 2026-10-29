@@ -99,7 +99,19 @@ impl DagRuntime {
             outs.entry(e.from.clone()).or_default().extend(e.to.clone());
         }
 
-        let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
+        let partitions: HashMap<NodeRef, Vec<String>> = cfg
+            .plugins
+            .iter()
+            .map(|(name, p)| (NodeRef::Plugin { name: name.clone() }, &p.partition))
+            .chain(
+                cfg.inference
+                    .iter()
+                    .map(|(name, i)| (NodeRef::Inference { name: name.clone() }, &i.partition)),
+            )
+            .filter_map(|(node, p)| Some((node, cfg.runtime.partitions.get(p.as_ref()?)?.clone())))
+            .collect();
+
+        let router = Arc::new(Router::new(outs, partitions, Arc::clone(&sink_manager)));
 
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
@@ -116,23 +128,9 @@ impl DagRuntime {
                 batch_size,
                 batch_age,
                 Arc::clone(&router),
-                cfg.runtime.partition.clone(),
-                Arc::clone(&store),
             )
             .await?,
         );
-        if let Some(p) = &cfg.runtime.partition {
-            if let Some(ttl) = p.retain_ms {
-                let cap = cfg.runtime.state.max_ttl_ms;
-                if cap != 0 && ttl > cap {
-                    tracing::warn!(
-                        retain_ms = ttl,
-                        max_ttl_ms = cap,
-                        "partition.retain_ms is longer than runtime.state.max_ttl_ms; retained records will expire sooner"
-                    );
-                }
-            }
-        }
 
         router.set_pool(&pool);
 
@@ -457,7 +455,11 @@ mod tests {
             1,
         ));
 
-        let router = Arc::new(Router::new(HashMap::default(), Arc::clone(&sink_manager)));
+        let router = Arc::new(Router::new(
+            HashMap::default(),
+            HashMap::default(),
+            Arc::clone(&sink_manager),
+        ));
         let worker_pool = Arc::new(WorkerPool::new_for_test(vec![tokio::spawn(async move {})]));
 
         let runtime = DagRuntime {

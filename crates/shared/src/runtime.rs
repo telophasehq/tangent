@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -20,10 +21,9 @@ pub struct RuntimeConfig {
     #[serde(default)]
     pub state: StateConfig,
 
-    /// How the stream is partitioned. With a partition key set, a plugin's
-    /// state calls are scoped to the partition of the record it is processing.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub partition: Option<PartitionConfig>,
+    /// Fields a node can be partitioned by, by name, e.g. `org: [org_id]`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub partitions: BTreeMap<String, Vec<String>>,
 
     /// When true, the runtime will not make outbound HTTP requests from plugins.
     /// Useful for `tangent plugin test` or benchmarking to avoid external calls.
@@ -46,33 +46,6 @@ fn default_workers() -> usize {
 
 fn default_plugin_path() -> PathBuf {
     "plugins/".into()
-}
-
-/// Which fields of a record identify its partition, e.g. `[org_id]`. The
-/// values are joined with `separator`; a record with none of the fields is
-/// unpartitioned.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PartitionConfig {
-    pub key: Vec<String>,
-
-    #[serde(default = "default_separator")]
-    pub separator: String,
-
-    /// Keep every partitioned record in the state store, under its partition
-    /// in the plugins' namespace, as `ev:<epoch ms, 13 digits>:<seq>` with
-    /// this TTL (5d = 432000000). A partition's history is then a key range
-    /// plugins read with `scan`. Unset: records are not kept.
-    #[serde(default)]
-    pub retain_ms: Option<u64>,
-
-    /// The field holding a record's own time (RFC 3339 or epoch seconds or
-    /// milliseconds), which keys its retained row. Arrival time without it.
-    #[serde(default)]
-    pub time: Option<String>,
-}
-
-fn default_separator() -> String {
-    "|".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

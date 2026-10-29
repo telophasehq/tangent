@@ -457,6 +457,38 @@ impl log::Host for HostEngine {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::lru::LruStore;
+    use tangent::logs::state::Host;
+    use tangent_shared::runtime::StateConfig;
+    use wasmtime_wasi::WasiCtxBuilder;
+
+    #[tokio::test]
+    async fn state_scoped_by_value() {
+        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
+        let mut host = HostEngine::new(
+            WasiCtxBuilder::new().build(),
+            store,
+            Arc::from("plugins"),
+            Arc::new(HashMap::new()),
+            true,
+        );
+        for value in ["acme", "acme", "globex"] {
+            host.partition = Arc::from(value);
+            host.incr("count".into(), 1, None).await.unwrap();
+        }
+        host.partition = Arc::from("acme");
+        assert!(matches!(
+            host.get("count".into()).await,
+            Ok(Some(Scalar::Int(2)))
+        ));
+        host.partition = Arc::from("globex");
+        assert!(matches!(
+            host.get("count".into()).await,
+            Ok(Some(Scalar::Int(1)))
+        ));
+        host.partition = Arc::from("");
+        assert!(matches!(host.get("count".into()).await, Ok(None)));
+    }
 
     /// simd-json parses in place: a de-escaped string is written over the
     /// input, so the bytes a view was parsed from are not JSON any more once

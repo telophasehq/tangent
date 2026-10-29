@@ -110,6 +110,35 @@ impl Config {
             );
         }
 
+        let partitioned = self
+            .plugins
+            .iter()
+            .map(|(name, p)| (name, &p.partition))
+            .chain(self.inference.iter().map(|(name, i)| (name, &i.partition)));
+        for (name, partition) in partitioned {
+            if let Some(p) = partition {
+                if !self.runtime.partitions.contains_key(p) {
+                    anyhow::bail!("{name}: unknown partition {p}");
+                }
+            }
+        }
+
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_partition_fails() {
+        let mut cfg: Config = serde_yaml::from_str(
+            "runtime: {partitions: {org: [org_id]}}\nplugins: {counter: {module_type: rust, path: ., partition: org}}",
+        )
+        .unwrap();
+        cfg.validate().unwrap();
+        cfg.plugins.get_mut("counter").unwrap().partition = Some("user".into());
+        assert!(cfg.validate().is_err());
     }
 }

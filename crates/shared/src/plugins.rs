@@ -25,6 +25,9 @@ pub struct PluginConfig {
     /// for `config`: an IP database, published address ranges, an org profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<PathBuf>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition: Option<String>, // a name in runtime.partitions
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
