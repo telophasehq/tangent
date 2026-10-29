@@ -18,6 +18,7 @@ use rig_core::completion::AssistantContent;
 use rig_core::operation::Completion;
 use rig_core::providers::openai::{OpenAIConfig, Route};
 use rig_core::{schemars, DynModel};
+use secrecy::ExposeSecret;
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -55,7 +56,7 @@ fn model(cfg: &InferenceConfig) -> Result<DynModel<Completion>> {
     Ok(match cfg.backend {
         Backend::Openai => {
             // Local servers accept any key; a hosted one needs the real thing.
-            let key = cfg.api_key.clone().unwrap_or_else(|| "none".into());
+            let key = cfg.api_key.as_ref().map_or("none", |k| k.expose_secret());
             OpenAIConfig::new(key)
                 .with_base_url(cfg.url.trim_end_matches('/'))
                 .with_route(Route::Chat)

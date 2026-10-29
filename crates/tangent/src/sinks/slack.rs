@@ -9,6 +9,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use prometheus::{register_int_counter_vec, IntCounterVec};
+use secrecy::ExposeSecret;
 use serde_json::Value;
 use tangent_shared::sinks::slack::SlackConfig;
 use tokio::sync::mpsc::{self, error::TrySendError};
@@ -69,7 +70,7 @@ struct Dropped {
 
 impl SlackSink {
     pub fn new(cfg: &SlackConfig) -> Result<Arc<Self>> {
-        if !cfg.webhook_url.starts_with("https://") {
+        if !cfg.webhook_url.expose_secret().starts_with("https://") {
             return Err(anyhow!("slack sink: webhook_url must be an https URL"));
         }
         // Each reason at 0 from the start, so a rate over it has a series.
@@ -77,7 +78,7 @@ impl SlackSink {
             SLACK_DROPPED_TOTAL.with_label_values(&[reason]);
         }
         let client = reqwest::Client::builder().connect_timeout(CONNECT).build()?;
-        let poster = Poster { client, url: cfg.webhook_url.clone(), deadline: DEADLINE };
+        let poster = Poster { client, url: cfg.webhook_url.expose_secret().to_string(), deadline: DEADLINE };
         Ok(Self::start(poster, cfg.text.clone(), QUEUE, FLUSH))
     }
 

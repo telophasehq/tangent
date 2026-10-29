@@ -10,7 +10,7 @@ use tangent_shared::sources::okta::OktaConfig;
 use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
-use crate::sources::poll::{idle, next_link, opt, parse_time, Poller};
+use crate::sources::poll::{idle, next_link, opt, parse_time, secret, Poller};
 use crate::state::StateStore;
 
 const SOURCE: &str = "okta";
@@ -23,7 +23,7 @@ pub async fn run_consumer(
     store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    let (Some(org_url), Some(token)) = (opt(&cfg.org_url), opt(&cfg.token)) else {
+    let (Some(org_url), Some(token)) = (opt(&cfg.org_url), secret(&cfg.token)) else {
         idle(&name, "okta org_url or token");
         shutdown.cancelled().await;
         return Ok(());

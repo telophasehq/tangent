@@ -16,6 +16,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use tangent_shared::dag::NodeRef;
 
@@ -238,6 +239,10 @@ pub fn idle(name: &str, what: &str) {
 /// A config string from `${VAR}`: empty means unset.
 pub fn opt(s: &Option<String>) -> Option<&str> {
     s.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
+pub fn secret(s: &Option<SecretString>) -> Option<&str> {
+    s.as_ref().map(|s| s.expose_secret().trim()).filter(|s| !s.is_empty())
 }
 
 #[cfg(test)]

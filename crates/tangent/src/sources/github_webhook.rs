@@ -15,6 +15,7 @@ use http_body_util::BodyExt;
 use lazy_static::lazy_static;
 use memchr::memchr;
 use regex::Regex;
+use secrecy::ExposeSecret;
 use serde_json::{json, Value};
 use sha2::Sha256;
 use tangent_shared::dag::NodeRef;
@@ -92,7 +93,7 @@ pub async fn run_consumer(
     let fetcher_router = router.clone();
     let fetcher_shutdown = shutdown.clone();
     let fetcher_name = name.clone();
-    let fetcher_token = cfg.token.clone();
+    let fetcher_token = cfg.token.expose_secret().to_string();
 
     tokio::spawn(async move {
         if let Err(e) = run_logs_fetcher(
@@ -202,7 +203,7 @@ async fn handle_request(
         }
         let provided_sig = &provided["sha256=".len()..];
 
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+        let mut mac = HmacSha256::new_from_slice(secret.expose_secret().as_bytes())
             .map_err(|e| anyhow!("invalid HMAC key: {e}"))?;
         mac.update(&buf);
 
