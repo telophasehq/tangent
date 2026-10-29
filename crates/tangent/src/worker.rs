@@ -528,8 +528,7 @@ impl Worker {
                 };
                 if self.handoffs[owner].send(rec).is_err() {
                     self.in_flight.fetch_sub(1, Ordering::AcqRel);
-                    tracing::warn!(worker = owner, "worker is gone; record dropped");
-                    let _ = shared.ack().await;
+                    tracing::warn!(worker = owner, "worker is gone; record not acked");
                 }
             }
         }
