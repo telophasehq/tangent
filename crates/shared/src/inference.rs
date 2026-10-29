@@ -49,25 +49,12 @@ pub struct InferenceConfig {
     #[serde(default)]
     pub fields: Vec<String>,
 
-    /// Records per request. 1 (the default) sends each record on its own.
-    /// More sends up to this many records of a batch together, in order:
-    /// the user message is one JSON object per line, each with its index
-    /// `i`, and the model answers them all at once as `{"answers": [...]}`,
-    /// one object per record in the same order (an answer may carry its
-    /// `i`). With `schema_file`, each answer satisfies the schema. A record
-    /// that gets no answer lands with the error, like a failed request.
     #[serde(default = "default_batch")]
-    pub batch: usize,
+    pub batch: usize, // records per request
 
-    /// A request's records stop at this many bytes of JSON, whatever
-    /// `batch` says; one record always goes, however large.
     #[serde(default = "default_batch_bytes")]
     pub batch_bytes: usize,
 
-    /// History to read the records with: before a request, the node reads
-    /// the stored records that came before the request's earliest one, from
-    /// the request's partition, and writes them once ahead of the records,
-    /// one view per scope and key. Nothing is attached to the records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<ContextConfig>,
 

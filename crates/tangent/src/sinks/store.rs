@@ -1,7 +1,3 @@
-//! The `store` sink: every record kept in the state store under its
-//! partition, indexed by the scopes an inference node reads history by, and
-//! the bookkeeping the `store` source closes windows by.
-
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
@@ -20,18 +16,15 @@ use crate::windows::{
 };
 use crate::{SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL};
 
-/// Where a record with no partition key goes.
 const NO_PARTITION: &str = "_";
 
 pub struct StoreSink {
     store: Arc<dyn StateStore>,
     partition: Option<PartitionConfig>,
     retain_ms: u64,
-    /// (scope, field) each record is indexed by; a scope whose field is a
-    /// partition key is not: the partition is its history.
+    /// (scope, field), less the scopes that are a partition key
     indexed: Vec<(String, String)>,
-    /// Writes run side by side; a partition's window bookkeeping (read, then
-    /// written) and its first indexing happen under this, one at a time.
+    /// one write's bookkeeping at a time; the partitions indexed since the start
     bookkeeping: tokio::sync::Mutex<HashSet<String>>,
 }
 
@@ -57,8 +50,6 @@ impl StoreSink {
         })
     }
 
-    /// The index entries of one stored record: one per indexed scope it has a
-    /// value for, each holding the record's key.
     async fn index(&self, part: &str, key: &str, v: &Value) -> Result<()> {
         for (scope, field) in &self.indexed {
             if let Some(value) = crate::inference::lookup(v, field).and_then(scope_value) {
@@ -71,9 +62,7 @@ impl StoreSink {
         Ok(())
     }
 
-    /// A partition's rows stored before the index existed, indexed once: a
-    /// store written by an older version, or by a sink that listed fewer
-    /// scopes, has history for them from its first write on.
+    /// A partition's rows stored before the index, indexed once.
     async fn index_existing(&self, part: &str) -> Result<()> {
         if self.indexed.is_empty() || get_int(&self.store, part, INDEXED).await?.is_some() {
             return Ok(());
@@ -103,7 +92,7 @@ impl StoreSink {
 impl Sink for StoreSink {
     async fn write(&self, req: SinkWrite) -> Result<()> {
         let now = now_ms() as i64;
-        // Per partition: (record time, key) of what this write stored.
+        // per partition: (time, key)
         let mut stored: BTreeMap<String, Vec<(i64, String)>> = BTreeMap::new();
         for line in crate::inference::lines(&req.payload) {
             let v: Value = match serde_json::from_slice(line) {
@@ -140,8 +129,7 @@ impl Sink for StoreSink {
                 set_int(&self.store, &part, WATERMARK, max).await?;
             }
             set_int(&self.store, &part, LAST_ARRIVAL, now).await?;
-            // Read after the rows are written: a window the source read
-            // before this write did not see them, so they are marked late.
+            // read after the rows are written: a window read before missed them
             let read = get_int(&self.store, &part, READ_THROUGH).await?.unwrap_or(i64::MIN);
             let closed = get_int(&self.store, &part, CLOSED_THROUGH).await?.unwrap_or(i64::MIN);
             let seen_through = read.max(closed);
@@ -206,8 +194,7 @@ mod tests {
         assert_eq!(get_int(&store, "acme", WATERMARK).await.unwrap(), Some(1_793_106_300_000));
         assert!(get_int(&store, "globex", WATERMARK).await.unwrap().is_some(), "each partition its own");
 
-        // The source has read acme's windows up to 13:15; a record for 13:10
-        // arriving now is marked late, one for 13:20 is not.
+        // read through 13:15: 13:10 is late, 13:20 is not
         set_int(&store, "acme", READ_THROUGH, 1_793_106_900_000).await.unwrap();
         sink.write(write(&[
             serde_json::json!({"ts": "2026-10-27T13:10:00Z", "_norm": {"org": "acme"}}),
@@ -221,8 +208,6 @@ mod tests {
         assert_eq!(ts_of_key(ev), Some(1_793_106_600_000));
     }
 
-    /// The latest record keys of one scope value before `bound`, newest first,
-    /// as an inference node reads them.
     async fn latest(store: &Arc<dyn StateStore>, scope: &str, value: &str, bound: &str, n: usize) -> Vec<String> {
         let prefix = crate::windows::index_prefix(scope, value);
         store
@@ -262,7 +247,6 @@ mod tests {
         }
     }
 
-    /// Rows stored before the index existed are indexed at the first write.
     #[tokio::test]
     async fn records_stored_before_the_index_are_indexed_once() {
         let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());

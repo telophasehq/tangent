@@ -1,30 +1,3 @@
-//! What the `store` sink and the `store` source share: how a record is kept
-//! and what each partition's window bookkeeping is called.
-//!
-//! Records live in the sink's namespace under their partition, keyed
-//! `ev:<epoch ms, 13 digits>:<ulid>`, so a partition's history is a key
-//! range in time order. Per partition, the namespace `windows` holds:
-//!
-//! - `watermark`: the latest record time stored;
-//! - `last_arrival`: the clock when a record last arrived;
-//! - `first`: the earliest record time stored;
-//! - `read_through`: the end of the latest window the source has read;
-//! - `closed_through`: the end of the latest window whose records reached
-//!   their sinks, every window before it done too;
-//! - `late:<record key>`: a record stored after its window was read.
-//!
-//! Nothing about a window lives only in memory: a restart reads these and
-//! carries on.
-//!
-//! History: the namespace `recent:<store namespace>` indexes every stored
-//! record by the scopes the store sink lists (`recent: {actor: _norm.actor}`),
-//! under `<scope>\x1f<value>\x1f<record key>`, kept as long as the record.
-//! A scope's latest records before a time, however long ago, are one
-//! newest-first range of it. A scope that is the partition itself (the org of
-//! an org-partitioned store) needs no index: the partition's rows are its
-//! history. `indexed` (namespace `windows`) marks a partition whose rows
-//! written before the index existed have been indexed.
-
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -46,13 +19,11 @@ pub const CLOSED_THROUGH: &str = "closed_through";
 pub const LATE_PREFIX: &str = "late:";
 pub const INDEXED: &str = "indexed";
 
-/// The index keys of one scope value: `<scope>\x1f<value>\x1f`, then the
-/// record's key, so they sort by the record's time.
+/// `<scope>\x1f<value>\x1f`, then the record's key.
 pub fn index_prefix(scope: &str, value: &str) -> String {
     format!("{scope}\u{1f}{value}\u{1f}")
 }
 
-/// A field's value as a scope value: a string, number or boolean.
 pub fn scope_value(v: &Value) -> Option<String> {
     match v {
         Value::String(s) if !s.is_empty() => Some(s.clone()),
@@ -62,18 +33,15 @@ pub fn scope_value(v: &Value) -> Option<String> {
     }
 }
 
-/// A stored record's key.
 pub fn ev_key(ts: i64, id: &str) -> String {
     format!("ev:{ts:013}:{id}")
 }
 
-/// The first key of millisecond `ts`: ranges `[ev_bound(a), ev_bound(b))`
-/// hold the records with `a <= time < b`.
+/// `[ev_bound(a), ev_bound(b))` holds the records with `a <= time < b`.
 pub fn ev_bound(ts: i64) -> String {
     format!("ev:{:013}:", ts.max(0))
 }
 
-/// The record time in a stored key.
 pub fn ts_of_key(key: &str) -> Option<i64> {
     key.strip_prefix("ev:")?.get(..13)?.parse().ok()
 }
@@ -104,7 +72,6 @@ pub fn time_of_value(v: &Value, field: &str) -> Option<i64> {
     lookup(v, field).and_then(parse_time).map(|t| t.timestamp_millis())
 }
 
-/// Epoch milliseconds as RFC 3339, to the second.
 pub fn iso(ms: i64) -> String {
     chrono::DateTime::from_timestamp_millis(ms)
         .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))

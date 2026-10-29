@@ -102,9 +102,7 @@ pub trait StateStore: Send + Sync {
         limit: usize,
     ) -> Result<Vec<Entry>>;
 
-    /// The same slice newest first: live entries with `from <= key < to`, in
-    /// descending key order, at most `limit`. A scope's latest records before
-    /// a time, however long ago, without reading the rest.
+    /// `range`, newest first.
     async fn range_rev(
         &self,
         ns: &str,
@@ -233,7 +231,6 @@ pub(crate) mod conformance {
     use super::*;
 
     pub async fn run(store: &dyn StateStore) {
-        // Ranges, both ways: from <= key < to, in key order or newest first.
         for k in ["ev:01", "ev:02", "ev:03", "ev:04"] {
             store.set("rng", "p", k, &StateValue::Int(1), None).await.unwrap();
         }

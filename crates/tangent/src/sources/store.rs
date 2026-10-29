@@ -1,7 +1,3 @@
-//! The `store` source: what a `store` sink kept, read back from the state
-//! store a buffer at a time as each closes. See `tangent_shared::sources::store` for
-//! the rules and `crate::windows` for the bookkeeping.
-
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,7 +25,6 @@ struct Rules {
     span: i64,
     late: i64,
     idle: i64,
-    /// When set, only buffers overlapping one of these are judged.
     ranges: Vec<(i64, i64)>,
 }
 
@@ -39,15 +34,11 @@ impl Rules {
     }
 }
 
-/// One partition, as the source knows it while running. `closed` and the
-/// windows before it are durable; `next` and `pending` are rebuilt from
-/// `closed` at a start, so windows read but not done before a stop are read
-/// again (at least once).
+/// `closed` is durable; `next` and `pending` start from it again after a restart.
 struct Part {
     closed: i64,
     next: i64,
-    /// Windows read and not yet closed, by start: done or not.
-    pending: BTreeMap<i64, bool>,
+    pending: BTreeMap<i64, bool>, // start: done
     late_in_flight: HashSet<String>,
 }
 
@@ -155,7 +146,7 @@ async fn tick(
         let p = mark.partition;
         let StateValue::Int(watermark) = mark.value else { continue };
         let arrived = get_int(store, &p, LAST_ARRIVAL).await?.unwrap_or(now);
-        // A quiet partition's watermark follows the clock.
+        // a quiet partition follows the clock
         let wm = if now - arrived >= rules.idle {
             watermark.max(now - rules.late)
         } else {
@@ -184,9 +175,8 @@ async fn tick(
         }
         let state = parts.get_mut(&p).expect("just inserted");
 
-        // The windows that may close end at or before this.
         let due_end = (wm - rules.late).div_euclid(rules.span) * rules.span;
-        // Skip a stretch with nothing in it in one step.
+        // skip an empty stretch in one step
         if state.pending.is_empty() && state.next < due_end {
             let first = store
                 .range(EVENTS_NS, &p, &ev_bound(state.next), &ev_bound(due_end), 1)
@@ -212,8 +202,7 @@ async fn tick(
             }
             let Ok(permit) = Arc::clone(sem).try_acquire_owned() else { break };
             state.next = end;
-            // Recorded before the read, so a record stored from now on for
-            // this window is marked late by the sink rather than lost.
+            // before the read, so a record stored from now on is marked late, not lost
             set_int(store, &p, READ_THROUGH, end).await?;
             let rows: Vec<String> = store
                 .range(EVENTS_NS, &p, &ev_bound(start), &ev_bound(end), i64::MAX as usize)
@@ -247,7 +236,7 @@ async fn tick(
         }
         advance(store, &p, state, rules).await?;
 
-        // Records stored after their window was read.
+        // late records
         let markers = store
             .scan(Some(WINDOWS_NS), Some(&p), LATE_PREFIX, 500)
             .await?

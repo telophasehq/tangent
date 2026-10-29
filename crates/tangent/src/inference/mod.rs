@@ -119,11 +119,7 @@ impl InferenceNode {
             .await
     }
 
-    /// Records with their partitions through the model: grouped by
-    /// partition and by buffer (`_buffer.from`, when the records came from a
-    /// `store` source), each group in requests of `batch`, each request read
-    /// with the history before its earliest record when `context` is set and
-    /// a store is given. The annotated records, in the order given.
+    /// Grouped by partition and buffer, in requests of `batch`; the records in the order given.
     pub async fn annotate_in(
         &self,
         records: Vec<(Value, Arc<str>)>,
@@ -207,12 +203,7 @@ impl InferenceNode {
         attach(&self.name, v, reply)
     }
 
-    /// Several records through the model in one request: each gets its
-    /// answer, or the error, under the node's name, in the order given. A
-    /// reply that cannot be read (a model that loops until its budget, or
-    /// stops partway) is not the records' fault: the batch is split in two
-    /// and each half asked again with the same context, down to single
-    /// records, which fail on their own terms.
+    /// Several records in one request; an unreadable reply is asked again in halves.
     async fn annotate_batch(&self, records: Vec<Value>, context: Option<String>) -> Vec<Value> {
         let n = records.len();
         let start = Instant::now();
@@ -228,8 +219,7 @@ impl InferenceNode {
         };
         let answers = match self.ask(user, Some(n)).await {
             Ok(reply) => spread(reply, n),
-            // Only a reply that came back and cannot be read is the batch's
-            // fault; a request that failed outright fails the same in halves.
+            // a failed request would fail the same in halves
             Err(e) if n > 1 && e.to_string().starts_with("reply ") => {
                 tracing::warn!(
                     node = %self.name,
@@ -260,13 +250,7 @@ impl InferenceNode {
             .collect()
     }
 
-    /// The history a request is read with: one view per scope and key (the
-    /// keys the request's records carry, busiest first), each the latest
-    /// `max_events` records before the request's earliest one, however long
-    /// ago, read newest first from the `store` sink's index (or, for a scope
-    /// that is the partition, the partition's rows); each line the configured
-    /// fields, a record shown once across views. None without `context`, a
-    /// time, or history.
+    /// One view per scope and key: its latest records before the earliest of these.
     async fn context_for(
         &self,
         store: &Arc<dyn StateStore>,
@@ -278,8 +262,6 @@ impl InferenceNode {
             .iter()
             .filter_map(|v| crate::windows::time_of_value(v, crate::windows::TIME_FIELD))
             .min()?;
-        // What came before the request's records: the store also holds what
-        // arrived while their buffer waited to be judged.
         let bound = crate::windows::ev_bound(before);
         let mut shown: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut lines = vec![format!(
@@ -295,7 +277,7 @@ impl InferenceNode {
         )];
         let mut bytes = lines[0].len();
         for (scope, field) in &cfg.scopes {
-            // The keys this request's records carry, busiest first.
+            // busiest first
             let mut keys: Vec<(String, usize)> = Vec::new();
             for v in records {
                 let Some(k) = lookup(v, field).and_then(crate::windows::scope_value) else { continue };
@@ -306,9 +288,7 @@ impl InferenceNode {
             }
             keys.sort_by_key(|k| std::cmp::Reverse(k.1));
             for (key, _) in keys {
-                // Newest first, before the request's records: a scope that is
-                // the partition itself (the org of an org-partitioned store)
-                // reads the partition's rows, any other its index.
+                // a scope that is the partition reads its rows, any other the index
                 let whole = key == part;
                 let (ns, from, to) = if whole {
                     (crate::windows::EVENTS_NS, "ev:".to_string(), bound.clone())
@@ -323,8 +303,6 @@ impl InferenceNode {
                         return None;
                     }
                 };
-                // Until the view is full; a record another view showed, or one
-                // past its retention, is skipped.
                 let mut recent: Vec<(i64, Value)> = Vec::new();
                 for e in entries {
                     if recent.len() >= cfg.max_events {
@@ -367,8 +345,6 @@ impl InferenceNode {
         (lines.len() > 1).then(|| lines.join("\n"))
     }
 
-    /// A stored record as one line of history: the configured fields, or
-    /// all of it.
     fn history_line(&self, v: &Value, cfg: &ContextConfig) -> Value {
         if cfg.fields.is_empty() {
             return v.clone();
@@ -384,8 +360,7 @@ impl InferenceNode {
         Value::Object(m)
     }
 
-    /// Records in request-sized runs: at most `batch` of them and about
-    /// `batch_bytes` of JSON each; a record larger than that goes alone.
+    /// At most `batch` records and about `batch_bytes` per request.
     fn chunks(&self, records: Vec<Value>) -> Vec<Vec<Value>> {
         let (max_n, max_bytes) = (self.cfg.batch.max(1), self.cfg.batch_bytes.max(1));
         let mut out = Vec::new();
@@ -424,7 +399,6 @@ impl InferenceNode {
         serde_json::to_string_pretty(&self.view(v)).unwrap_or_default()
     }
 
-    /// One line of a batched request: the record's view with its index first.
     fn batch_line(&self, k: usize, v: &Value) -> String {
         let mut m = Map::new();
         m.insert("i".into(), json!(k));
@@ -434,11 +408,6 @@ impl InferenceNode {
         serde_json::to_string(&Value::Object(m)).unwrap_or_default()
     }
 
-    /// The request for one record (`batch` is None) or for a batch of
-    /// `n` records. The prompt says what a record's answer is; the node says
-    /// how the reply carries it: the answer alone, or every answer in
-    /// `{"answers": [...]}` behind its record's index. The schema, if any,
-    /// is wrapped the same way.
     fn request(&self, user: String, batch: Option<usize>) -> CompletionRequest {
         let preamble = match batch {
             None => format!(
@@ -517,9 +486,7 @@ impl InferenceNode {
         Ok(value)
     }
 
-    /// One request: the reply's text, or why there is none. How the model
-    /// stopped (`stop`, `length`) is logged, since a reply cut short reads as
-    /// broken JSON and the reason matters.
+    /// One request: the reply's text, or why there is none.
     async fn call(&self, user: String, batch: Option<usize>) -> Result<String> {
         let reply = tokio::time::timeout(
             Duration::from_millis(self.cfg.timeout_ms),
@@ -565,7 +532,6 @@ impl InferenceNode {
     }
 }
 
-/// The reply, or the error, under the node's name on the record.
 fn attach(name: &str, v: Value, reply: Value) -> Value {
     let mut obj = match v {
         Value::Object(m) => m,
@@ -579,9 +545,7 @@ fn attach(name: &str, v: Value, reply: Value) -> Value {
     Value::Object(obj)
 }
 
-/// A batched reply's `answers`, one per record: by each answer's `i` when
-/// they all carry one, else by position. A record whose answer is missing or
-/// not an object gets the error instead.
+/// Answers by their `i` when all carry one, else by position.
 fn spread(reply: Value, n: usize) -> Vec<Value> {
     let Some(items) = reply.get("answers").and_then(Value::as_array).cloned() else {
         let err = format!("reply has no `answers` array: {}", head(&reply.to_string(), 200));
@@ -648,8 +612,7 @@ fn answers_schema(item: &schemars::Schema) -> schemars::Schema {
     schemars::Schema::try_from(wrapped).expect("a schema wrapped in an object is a schema")
 }
 
-/// An answer's shape with the record's index as its first property, and
-/// required: the model writes which record it answers before the answer.
+/// `i` first in the shape's properties, and required.
 fn indexed(shape: &mut Value) {
     let Some(obj) = shape.as_object_mut() else {
         return;
@@ -758,7 +721,7 @@ pub(crate) mod stub {
                             json!({"flag": false, "one_line": "fine"})
                         }
                     };
-                    // A message's content is a string or a list of text parts.
+                    // a string or a list of text parts
                     let text_of = |c: &serde_json::Value| -> String {
                         match c {
                             serde_json::Value::String(s) => s.clone(),
@@ -775,8 +738,7 @@ pub(crate) mod stub {
                     let content = if body.contains("prose") {
                         "Looks fine to me, nothing to flag.".to_string()
                     } else if batched && text_of(&req["messages"][1]["content"]).matches("loop").count() >= 3 {
-                        // Three or more "loop" records in one batch: the
-                        // model degenerates, as small ones do.
+                        // three "loop" records degenerate
                         "{\"answers\": [{\"flag\": false, \"one_line\": \"a7a7a7a7a7a7a7a7".to_string()
                     } else if batched {
                         // one answer per record line
@@ -1051,7 +1013,6 @@ mod tests {
         let mut cfg = stub::config(&url);
         cfg.batch = 8;
         let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
-        // Four "loop" records in one batch degenerate; two per half do not.
         let outs = node
             .annotate_all((1..=4).map(|i| json!({"id": i, "msg": format!("loop {i} bad")})).collect())
             .await;
@@ -1068,10 +1029,6 @@ mod tests {
         let (url, seen) = stub::model().await;
         let dir = stub::dir("context");
         let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
-        // History in the partition, written as the store sink writes it: four
-        // of a's (one two weeks back, one three days back), one of b's, one of
-        // another org member's, and one after the request's records (not
-        // history).
         let t0 = 1_793_106_000_000i64; // 2026-10-27T13:00:00Z
         let mut recent = BTreeMap::new();
         recent.insert("actor".to_string(), "_norm.actor".to_string());
@@ -1177,8 +1134,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// A pass that is the flag alone and a flag that says why: each shape
-    /// gets the index, first, and keeps what it allows.
     #[test]
     fn an_answer_of_two_shapes_gets_the_index_in_each() {
         let verdict: schemars::Schema = serde_json::from_value(json!({
