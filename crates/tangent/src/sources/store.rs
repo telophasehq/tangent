@@ -405,7 +405,7 @@ mod tests {
     #[tokio::test]
     async fn records_carry_the_row_they_were_read_from() {
         let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
-        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new(), novel: BTreeMap::new() };
+        let cfg = StoreSinkConfig { namespace: "events".into(), retain: "30d".into(), time: "ts".into(), recent: BTreeMap::new(), novel: BTreeMap::new(), follow: None };
         let partition = PartitionConfig { key: vec!["_norm.org".into()], separator: "|".into(), retain_ms: None, time: None };
         let sink = crate::sinks::store::StoreSink::new(&cfg, Arc::clone(&store), Some(partition)).unwrap();
         let mut payload = BytesMut::new();

@@ -1,7 +1,7 @@
 # Your company, as the pipeline needs to know it. Every line here is a fact
 # about you that no log carries: who your people are, where they are, where
 # your services run, which hosts your systems talk to, which assets matter.
-# The gate decides from these; nothing is statistical.
+# The models read these as `_facts`; nothing is statistical.
 #
 # The values below describe the fictional company in cases/, so `make test`
 # passes out of the box. Replace them with yours before `make run`.
@@ -9,8 +9,8 @@
 org: acme                        # the one partition every one of your own infrastructure logs lands in
 own_sources: [cloudtrail, github_audit, okta, google_workspace, gha_ci, runner_egress]
 
-countries: [US]                  # where your people sign in from; a login from elsewhere reaches the judge
-cloud: aws                       # where your services run (aws, gcp, cloudflare, datacenter); a service seen elsewhere is news
+countries: [US]                  # where your people sign in from; a login from elsewhere is noted for the judge
+cloud: aws                       # where your services run (aws, gcp, cloudflare, datacenter); a service seen elsewhere is noted for the judge
 
 members:                         # people: identity-provider emails and GitHub handles
   - admin@acme.io
@@ -45,7 +45,7 @@ keys:                            # API keys and the networks each calls from
   ak_drift: [52.94.76.0/24]      # an integration, from the vendor's AWS range
   ak_c4d: [54.240.197.233]       # a customer's key, from their one AWS address
 
-hosts:                           # hosts your systems talk to; a request elsewhere reaches the judge (*.suffix allowed)
+hosts:                           # hosts your systems talk to; a request elsewhere is noted for the judge (*.suffix allowed)
   - api.github.com
   - github.com
   - registry.npmjs.org

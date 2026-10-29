@@ -162,7 +162,8 @@ pub struct ContextConfig {
     /// of time. Set, the node refuses to start and says so.
     #[serde(default, alias = "spans")]
     pub window: BTreeMap<String, String>,
-    /// Records per view: the latest before the request's records.
+    /// Records per view: the latest before the request's records, and the
+    /// first of the rest of their buffer (records the request does not hold).
     #[serde(default = "default_max_events")]
     pub max_events: usize,
     /// The whole context stops at about this many bytes; the busiest keys

@@ -28,7 +28,7 @@ store ──▶ buffer ──▶ novel ──▶ judge ──▶ flagged ──�
     slack:
       type: slack
       webhook_url: ${SLACK_WEBHOOK_URL}     # an incoming webhook's URL
-      text: "*{_norm.actor}* {_norm.kind} from {_norm.ip} ({_facts.ip.org}): {judge.why}"
+      text: "*{_norm.actor}* {_norm.kind} from {_norm.ip} ({_facts.ip.org}): {judge.why|not judged: judge.error}"
   dag:
     - from: { kind: plugin, name: flagged }
       to: [{ kind: sink, name: alerts }, { kind: sink, name: slack }]
