@@ -180,6 +180,7 @@ async fn fetch(s3: &mut S3Client, bucket: &str, key: &str) -> Result<Bytes> {
         .as_ref()
         .err()
         .and_then(|e| e.raw_response()?.headers().get("x-amz-bucket-region"))
+        .filter(|r| s3.config().region().map(|x| x.as_ref()) != Some(*r))
         .map(str::to_string);
     if let Some(region) = moved {
         let conf = s3.config().to_builder().region(aws_sdk_s3::config::Region::new(region));
