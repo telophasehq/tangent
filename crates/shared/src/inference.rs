@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::PathBuf;
+
+use crate::redact::Redacted;
 
 /// Ask a model about each record. The node sends `prompt_file` as the system
 /// message and the record (or the listed `fields`) as the user message, and
@@ -11,7 +14,7 @@ use std::path::PathBuf;
 ///
 /// The node runs inside each worker, in DAG order with the plugins, so a
 /// partition's records reach the model and leave it in order.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct InferenceConfig {
     /// Where the model is served.
     #[serde(default)]
@@ -117,6 +120,33 @@ pub struct InferenceConfig {
     pub extra: Map<String, Value>,
 }
 
+/// By hand: the startup log shows the API key as `<redacted>`.
+impl fmt::Debug for InferenceConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InferenceConfig")
+            .field("backend", &self.backend)
+            .field("url", &self.url)
+            .field("api_key", &Redacted(&self.api_key))
+            .field("model", &self.model)
+            .field("aws", &self.aws)
+            .field("prompt_file", &self.prompt_file)
+            .field("schema_file", &self.schema_file)
+            .field("fields", &self.fields)
+            .field("batch", &self.batch)
+            .field("batch_bytes", &self.batch_bytes)
+            .field("batch_age_ms", &self.batch_age_ms)
+            .field("context", &self.context)
+            .field("concurrency", &self.concurrency)
+            .field("timeout_ms", &self.timeout_ms)
+            .field("retries", &self.retries)
+            .field("max_tokens", &self.max_tokens)
+            .field("max_request_tokens", &self.max_request_tokens)
+            .field("temperature", &self.temperature)
+            .field("extra", &self.extra)
+            .finish()
+    }
+}
+
 /// What history a request is read with, from a `store` sink's records.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ContextConfig {
@@ -206,4 +236,18 @@ const fn default_max_request_tokens() -> u32 {
 }
 const fn default_max_tokens() -> u32 {
     2_000
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_hides_the_api_key() {
+        let c: InferenceConfig = serde_yaml::from_str(
+            "{model: m, prompt_file: p.md, api_key: sk-KEY, schema_file: s.json, temperature: 0.7, context: {scopes: {actor: _norm.actor}}}",
+        )
+        .unwrap();
+        crate::redact::assert_hides(&c, &["sk-KEY"]);
+    }
 }

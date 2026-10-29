@@ -12,6 +12,7 @@ use crate::sources::common::SourceConfig;
 pub mod dag;
 pub mod inference;
 pub mod plugins;
+pub mod redact;
 pub mod runtime;
 pub mod sinks;
 pub mod sources;
