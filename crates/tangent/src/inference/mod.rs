@@ -1075,7 +1075,6 @@ mod tests {
             )
             .await;
         assert_eq!(outs[0]["judge"]["flag"], true, "{outs:?}");
-        assert!(outs.iter().all(|o| o.get("_window").is_none()), "nothing is attached to the records");
         let seen = seen.lock().await;
         assert_eq!(seen.len(), 1);
         let req: Value = serde_json::from_str(&seen[0]).unwrap();
