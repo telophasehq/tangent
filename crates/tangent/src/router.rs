@@ -66,6 +66,7 @@ pub struct Router {
     outs: HashMap<NodeRef, Vec<NodeRef>>,
     /// Each partitioned node's partition: its name and fields.
     partitions: HashMap<NodeRef, (String, Vec<String>)>,
+    unscoped: Arc<str>,
     stores: HashMap<Arc<str>, StoreSink>,
     pool: OnceCell<Weak<WorkerPool>>,
     sink_manager: Arc<SinkManager>,
@@ -84,6 +85,7 @@ impl Router {
         Self {
             outs,
             partitions,
+            unscoped: Arc::from(""),
             stores,
             pool: OnceCell::new(),
             sink_manager,
@@ -121,7 +123,7 @@ impl Router {
     pub fn scope(&self, node: &NodeRef, lv: &JsonLogView) -> Arc<str> {
         match self.partitions.get(node) {
             Some((name, fields)) => partition::scope(lv, name, fields),
-            None => Arc::from(""),
+            None => Arc::clone(&self.unscoped),
         }
     }
 

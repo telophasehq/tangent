@@ -1,8 +1,8 @@
 //! Keyed state shared by everything in a pipeline: plugins (through the WIT
 //! `state` interface) and the runtime's own stateful nodes. Entries live in
 //! a namespace (`plugins`, shared by every plugin unless one is given a
-//! `state_namespace`; a runtime node's name otherwise), within a partition
-//! of the stream (empty when unpartitioned), under a key.
+//! `state_namespace`; a runtime node's name otherwise), within a record's
+//! scope (`org:acme`; empty for a node without a partition), under a key.
 //!
 //! The store is an async trait so backends can be local or networked:
 //! `sqlite` is durable on one host and queryable from outside the process

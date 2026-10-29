@@ -8,8 +8,7 @@ use std::path::PathBuf;
 /// it never drops. What happens next is a plugin's call: a plugin whose
 /// `probe` selects on `<node name>.flag` is that filter.
 ///
-/// The node runs inside each worker, in DAG order with the plugins, so a
-/// partition's records reach the model and leave it in order.
+/// With `partition:`, a scope's records reach the model in order.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct InferenceConfig {
     /// Where the model is served.

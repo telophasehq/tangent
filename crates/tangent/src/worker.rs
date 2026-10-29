@@ -350,8 +350,7 @@ impl Worker {
                 deliver(&mut deliveries, sinks, frame);
             }
 
-            // A plugin, a model or a store needs the records. History is kept
-            // before the nodes after it run, so they read it.
+            // history first, so the nodes after this one read it
             let views = match hop {
                 Hop::Views(views) => views,
                 Hop::Frames(frames) => parse(&frames),
@@ -364,8 +363,7 @@ impl Worker {
             if views.is_empty() {
                 continue;
             }
-            // A partitioned node runs here the records this worker owns; the
-            // rest go to their owners.
+            // a partitioned node runs only what this worker owns
             for to in nodes {
                 let out = if workers <= 1 || !router.partitioned(to) {
                     self.run_node(to, &views).await?
@@ -428,11 +426,7 @@ impl Worker {
 
     async fn run_node(&mut self, node: &NodeRef, views: &[JsonLogView]) -> Result<Vec<BytesMut>> {
         match node {
-            NodeRef::Plugin { name } => {
-                let scopes: Vec<Arc<str>> =
-                    views.iter().map(|lv| self.router.scope(node, lv)).collect();
-                self.run_plugin(name, views, &scopes).await
-            }
+            NodeRef::Plugin { name } => self.run_plugin(node, name, views).await,
             NodeRef::Inference { name } => run_inference(&self.inference, name, views).await,
             _ => unreachable!("only plugins and inference nodes run"),
         }
@@ -443,9 +437,9 @@ impl Worker {
     /// scope. The output frames, scopes in first-seen order.
     async fn run_plugin(
         &mut self,
+        node: &NodeRef,
         name: &Arc<str>,
         views: &[JsonLogView],
-        scopes: &[Arc<str>],
     ) -> Result<Vec<BytesMut>> {
         let Some(idx) = self
             .mappers
@@ -459,16 +453,17 @@ impl Worker {
         let mut groups: Vec<(Arc<str>, Vec<JsonLogView>, usize)> = Vec::new();
         {
             let m = &self.mappers.mappers[idx];
-            for (lv, scope) in views.iter().zip(scopes) {
+            for lv in views {
                 if !m.selectors.iter().any(|s| eval_selector(s, lv)) {
                     continue;
                 }
-                match groups.iter_mut().find(|(sc, _, _)| sc == scope) {
+                let scope = self.router.scope(node, lv);
+                match groups.iter_mut().find(|(sc, _, _)| *sc == scope) {
                     Some((_, g, bytes)) => {
                         g.push(lv.clone());
                         *bytes += lv.byte_len();
                     }
-                    None => groups.push((Arc::clone(scope), vec![lv.clone()], lv.byte_len())),
+                    None => groups.push((scope, vec![lv.clone()], lv.byte_len())),
                 }
             }
         }
