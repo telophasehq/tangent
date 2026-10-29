@@ -27,9 +27,10 @@ name, inp = sys.argv[1], sys.argv[2]
 cfg = yaml.safe_load(open("tangent.yaml"))
 plugin = cfg["plugins"][name]
 plugin["tests"] = [{"input": inp, "expected": ".empty.json"}]
+stores = {n: s for n, s in cfg["sinks"].items() if s["type"] == "store"}  # the test writes history first
 stage = {"runtime": cfg["runtime"], "plugins": {name: plugin},
          "sources": {"events": {"type": "tcp", "bind_address": "127.0.0.1:0"}},
-         "sinks": {"out": {"type": "blackhole"}},
+         "sinks": {"out": {"type": "blackhole"}, **stores},
          "dag": [{"from": {"kind": "source", "name": "events"}, "to": [{"kind": "plugin", "name": name}]},
                  {"from": {"kind": "plugin", "name": name}, "to": [{"kind": "sink", "name": "out"}]}]}
 yaml.safe_dump(stage, open(".stage.yaml", "w"), sort_keys=False)

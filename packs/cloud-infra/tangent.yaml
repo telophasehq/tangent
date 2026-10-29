@@ -10,10 +10,8 @@
 runtime:
   workers: 2
   plugins_path: plugins/
-  partition:
-    key: [_norm.org]            # your own logs all land in the one partition named in profile.yaml
-    time: ts                    # the record's own time keys its row
-    retain_ms: 2592000000       # 30 days of history per partition, read back for the judge
+  partitions:
+    org: [_norm.org]            # your own logs all land in the one partition named in profile.yaml
   state:
     backend: sqlite
     path: state.sqlite
@@ -65,12 +63,14 @@ plugins:
     module_type: rust
     path: gate
     data: profile
+    partition: org
     tests:
       - input: tests/gate/input.json
         expected: tests/gate/expected.json
-  window:                       # the actor's last day and the org's last hour, from retained rows
+  window:                       # the actor's last day and the org's last hour, from the org's history
     module_type: rust
     path: window
+    partition: org
     config:
       time: ts
       scopes: { actor: _norm.actor, org: _norm.org }
@@ -98,6 +98,10 @@ inference:
         enable_thinking: false  # local reasoning models: answer, do not think aloud
 
 sinks:
+  history:                      # every normalized record, 30 days of it per org, read back by window
+    type: store
+    time: ts                    # the record's own time keys its row
+    retain_ms: 2592000000
   alerts:                       # what a person should look at
     type: file
     path: alerts.ndjson
@@ -121,7 +125,7 @@ dag:
   - from: { kind: source, name: events }
     to: [{ kind: plugin, name: norm }]
   - from: { kind: plugin, name: norm }
-    to: [{ kind: plugin, name: enrich }]
+    to: [{ kind: plugin, name: enrich }, { kind: sink, name: history }]
   - from: { kind: plugin, name: enrich }
     to: [{ kind: plugin, name: gate }]
   - from: { kind: plugin, name: gate }

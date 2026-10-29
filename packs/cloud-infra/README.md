@@ -11,7 +11,7 @@ CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──�
 - **norm** puts every source's shape into one: `_norm.{actor, org, kind, ip, country, dest, target}`.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **gate** decides, from your profile, which records a model reads: a kind on the always-look list, a hard rule (root credentials, something opened to the world), a person on hosting or abroad, a service outside your cloud, an API key off its networks, a principal you do not know, a host your systems do not talk to, a sensitive asset. Once per reason per hour. No statistics: nothing here counts, averages or learns.
-- **window** gives the judge the actor's last day and the org's last hour, read back from the runtime's retained rows.
+- **window** gives the judge the actor's last day and the org's last hour, read back from the org's history, which the `history` sink keeps from norm's output.
 - **judge** is any OpenAI-compatible model with [judge.md](judge.md) as its brief. It adds a verdict; **flagged** keeps the ones a person should see.
 
 On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the gate sends the model about 0.4% of records; the model's recall on the cases is in [RESULTS](#what-it-catches).

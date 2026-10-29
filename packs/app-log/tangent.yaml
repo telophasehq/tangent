@@ -3,10 +3,8 @@
 runtime:
   workers: 2
   plugins_path: plugins/
-  partition:
-    key: [_norm.org]            # the customer's tenant id, as norm extracts it from each source
-    time: ts
-    retain_ms: 2592000000       # 30 days of each customer's history
+  partitions:
+    org: [_norm.org]            # the customer's tenant id, as norm extracts it from each source
   state:
     backend: sqlite
     path: state.sqlite
@@ -33,9 +31,11 @@ plugins:
     module_type: rust
     path: ../cloud-infra/gate
     data: profile               # one profile for every customer, until profiles live in the customer's partition
+    partition: org
   window:
     module_type: rust
     path: ../cloud-infra/window
+    partition: org
     config:
       time: ts
       scopes: { actor: _norm.actor, org: _norm.org }
@@ -60,6 +60,10 @@ inference:
         enable_thinking: false
 
 sinks:
+  history:                      # 30 days of each customer's history
+    type: store
+    time: ts
+    retain_ms: 2592000000
   alerts:
     type: file
     path: alerts.ndjson
@@ -75,7 +79,7 @@ dag:
   - from: { kind: source, name: events }
     to: [{ kind: plugin, name: norm }]
   - from: { kind: plugin, name: norm }
-    to: [{ kind: plugin, name: enrich }]
+    to: [{ kind: plugin, name: enrich }, { kind: sink, name: history }]
   - from: { kind: plugin, name: enrich }
     to: [{ kind: plugin, name: gate }]
   - from: { kind: plugin, name: gate }

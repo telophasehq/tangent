@@ -1,9 +1,9 @@
 //! Per-tenant counters with no tenant handling in the plugin.
 //!
-//! The config partitions the stream by `org_id`, so the runtime hands this
-//! plugin one org's records at a time and scopes every `state` call to that
-//! org. `count` is therefore "events from this org" and `seen:<event>` is
-//! "has this org done this before", with no org anywhere in the keys.
+//! The config partitions this plugin by `org_id`, so the runtime hands it
+//! one org's records at a time and scopes every `state` call to that org.
+//! `count` is therefore "events from this org" and `seen:<event>` is "has
+//! this org done this before", with no org anywhere in the keys.
 
 use serde::Serialize;
 

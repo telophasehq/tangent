@@ -1,6 +1,7 @@
-//! Reads history back for the records the gate let through. The runtime keeps
-//! every record under its partition as `ev:<time>:<seq>` (`runtime.partition`);
-//! one `scan` over the longest span gives the partition's recent rows in order.
+//! Reads history back for the records the gate let through. A `store` sink
+//! keeps every record in its org's history as `ev:<time>:<seq>`; under
+//! `partition: org`, one `scan` over the longest span gives the org's recent
+//! rows in order.
 //! For each of the record's scopes those rows are narrowed to the scope (the
 //! org is the partition itself; an actor is the rows where the scope field
 //! matches) and to the scope's own span: a day for what the actor did, an
@@ -13,7 +14,7 @@
 //!   spans: { actor: 24h, org: 1h }   # per scope; `span` for any not listed
 //!   span: 1h
 //!   max_events: 20        # the newest rows carried in full
-//! Runs in the shared plugin namespace, where the runtime keeps the rows.
+//! Runs in the shared plugin namespace, where the store sink keeps the rows.
 
 wit_bindgen::generate!({
     path: ".tangent/wit",
