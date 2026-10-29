@@ -3,7 +3,7 @@
 # it flagged. No rule decides anything.
 #
 #   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
-#   make test       the cases in cases/ through norm, facts and window; no model needed
+#   make test       eight of the cases through norm and facts; no model needed
 #   make run        the pipeline: reads CloudTrail, GitHub, Okta and Workspace for the credentials
 #                   you export (see the Makefile); anything else as NDJSON on :9400
 #
@@ -12,7 +12,7 @@ runtime:
   workers: 2
   plugins_path: plugins/
   partition:
-    key: [_norm.org]            # your own logs all land in the one partition named in profile.yaml
+    key: [_norm.org]
   state:
     backend: sqlite
     path: state.sqlite
@@ -20,100 +20,93 @@ runtime:
     max_ttl_ms: 0
 
 sources:
-  # Each API is read directly, with nothing in between; a source whose
-  # credential is empty says so once and stays idle. See the Makefile for the
-  # variables and the README for what each credential needs.
-  cloudtrail:                   # LookupEvents: management events, nothing to set up (cloudtrail:LookupEvents)
+  cloudtrail:
     type: cloudtrail
     region: ${AWS_REGION}
-    regions: ${AWS_REGIONS}     # several, comma-separated, one cursor each; include us-east-1 (IAM, STS, sign-ins land there)
+    regions: ${AWS_REGIONS}
     profile: ${AWS_PROFILE}
-    queue_url: ${CLOUDTRAIL_QUEUE_URL}   # set: a trail's delivered files, every event, through its SQS notifications
-    bucket_role: ${CLOUDTRAIL_BUCKET_ROLE}   # the role to read the trail's bucket as, when another account owns it
-  github_audit:                 # the organization's audit log (a token with read:audit_log)
+    queue_url: ${CLOUDTRAIL_QUEUE_URL}
+    bucket_role: ${CLOUDTRAIL_BUCKET_ROLE}
+  github_audit:
     type: github_audit
     org: ${GITHUB_ORG}
     token: ${GITHUB_TOKEN}
-  okta:                         # the System Log (an API token)
+  okta:
     type: okta
     org_url: ${OKTA_ORG_URL}
     token: ${OKTA_API_TOKEN}
-  google_workspace:             # login, token, drive and admin activity (a service account acting as an admin)
+  google_workspace:
     type: google_workspace
     credentials_file: ${GOOGLE_APPLICATION_CREDENTIALS}
     subject: ${GOOGLE_ADMIN_EMAIL}
-  events:                       # anything else: one JSON record per line, with a `source` field naming its shape
+  events:
     type: tcp
     bind_address: 0.0.0.0:9400
 
-  buffer:                       # the stored records, read back a buffer at a time as each closes
+  buffer:
     type: store
-    buffer_secs: 300            # how long records gather before they are judged; a verdict comes buffer + late after its record
-    late_secs: 1200             # CloudTrail reports up to about fifteen minutes late
-    grace_secs: 120             # after a start, let the sources catch up before closing anything
+    buffer_secs: 300
+    grace_secs: 120
 
 plugins:
-  norm:                         # every source's shape into _norm.{actor, org, kind, ip, country, dest, target}
+  norm:
     module_type: rust
     path: norm
     data: profile
     tests:
       - input: tests/norm/input.json
         expected: tests/norm/expected.json
-  enrich:                       # what is known about the address: country, ASN, hosting, Tor, VPN, yours
+  enrich:
     module_type: rust
     path: ../../examples/enrich
     data: ../../examples/enrich/data
     config:
       fields: [_norm.ip]
-      ours: [10.0.0.0/8]        # your own ranges: office, VPN, CI egress
-  facts:                        # what the profile knows about the record; nothing decided, nothing dropped
+      ours: [10.0.0.0/8]
+  facts:
     module_type: rust
     path: facts
     data: profile
     tests:
       - input: tests/facts/input.json
         expected: tests/facts/expected.json
-  flagged:                      # keeps what the judge flagged, and what it could not read
+  flagged:
     module_type: rust
     path: ../../examples/inference-local/flagged
 
 inference:
-  judge:                        # every record, with its facts and history: the verdict a person reads
-    backend: openai
+  judge:
     url: ${JUDGE_URL}
     model: ${JUDGE_MODEL}
     api_key: ${JUDGE_API_KEY}
     prompt_file: judge.md
-    schema_file: judge.schema.json      # the shape, enforced by the backend where it can
-    batch: 16                   # records per request, as many as fit batch_bytes; the model judges them together
-    batch_bytes: 16000          # one local model's comfortable prompt; raise it for a hosted model
-    context:                    # the history before a window, read from the store once per request
+    schema_file: judge.schema.json
+    batch: 16
+    batch_bytes: 16000
+    context:
       scopes: { actor: _norm.actor, org: _norm.org }
-      max_events: 20             # per scope: its latest records before the batch, however long ago
       fields: [ts, source, _norm.kind, _norm.actor, _norm.ip, _norm.dest, _norm.target,
                _facts.ip.country, _facts.ip.org, _facts.ip.hosting, _facts.ip.tor, _facts.ip.vpn, _facts.ip.ours,
                _facts.principal, outcome.result, errorCode]
-    max_tokens: 200             # per record; a batch may say batch times as much
-    temperature: 0.7            # sampled, never greedy: greedy decoding repeats itself and replays identically
+    max_tokens: 200
+    temperature: 0.7
     timeout_ms: 90000
     concurrency: 4
     extra:
       top_p: 0.95
       chat_template_kwargs:
-        enable_thinking: false  # local reasoning models: answer, do not think aloud
+        enable_thinking: false
 
 sinks:
-  store:                        # every normalized, enriched record, per partition: what windows and history are read from
+  store:
     type: store
-    retain_secs: 2592000
-    recent: { actor: _norm.actor, org: _norm.org }   # history is read by these: each record indexed by its actor; the org is the partition itself
-  alerts:                       # what a person should look at
+    recent: { actor: _norm.actor, org: _norm.org }
+  alerts:
     type: file
     path: alerts.ndjson
     compression:
       type: none
-  verdicts:                     # every verdict, flagged or not
+  verdicts:
     type: file
     path: verdicts.ndjson
     compression:
@@ -134,10 +127,8 @@ dag:
     to: [{ kind: plugin, name: enrich }]
   - from: { kind: plugin, name: enrich }
     to: [{ kind: plugin, name: facts }]
-  # 1. ingest: normalized, enriched, kept
   - from: { kind: plugin, name: facts }
     to: [{ kind: sink, name: store }]
-  # 2. judgment: a buffer at a time, read back from the store, with the window of history before it
   - from: { kind: source, name: buffer }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
