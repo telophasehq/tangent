@@ -1,6 +1,3 @@
-//! CloudTrail, read from a trail's delivered files, through the SQS queue
-//! its notifications land in (`queue_url`).
-
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -32,10 +29,8 @@ pub async fn run_consumer(
     router: Arc<Router>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    // There is no LookupEvents polling: a poller's own calls are CloudTrail
-    // events it would read back.
     let Some(queue_url) = opt(&cfg.queue_url) else {
-        idle(&name, "cloudtrail queue_url (the queue a trail's delivery notifications land in)");
+        idle(&name, "cloudtrail queue_url");
         shutdown.cancelled().await;
         return Ok(());
     };
@@ -126,10 +121,6 @@ pub async fn run_consumer(
     Ok(())
 }
 
-/// Every record in the files, stamped, as NDJSON. An error is a file that
-/// could not be fetched, and then nothing of the message is forwarded. A
-/// file fetched that is not a trail log is skipped: asking again would not
-/// change it.
 async fn read_files(s3: &mut S3Client, files: &[(String, String)]) -> Result<BytesMut> {
     let mut ndjson = BytesMut::new();
     for (bucket, key) in files {
@@ -199,9 +190,6 @@ async fn fetch(s3: &mut S3Client, bucket: &str, key: &str) -> Result<Bytes> {
     Ok(obj.body.collect().await.context("reading the object")?.into_bytes())
 }
 
-/// A delivered file's records with their times: decompressed (CloudTrail
-/// gzips them; the bytes say, not the name) and its `Records` taken out. An
-/// error means the file is not a trail log.
 fn records_of(raw: &[u8]) -> Result<Vec<(DateTime<Utc>, Value)>> {
     let decoding = Decoding {
         format: DecodeFormat::Json,
@@ -280,9 +268,6 @@ mod tests {
         assert!(records_of(b"\x1f\x8b\x08 not gzip").is_err());
     }
 
-    /// A bucket in another region than the client's: S3 redirects, naming
-    /// the bucket's region; the source asks there, and goes straight there
-    /// for the bucket's next file.
     #[tokio::test]
     async fn follows_s3_to_the_buckets_region() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};

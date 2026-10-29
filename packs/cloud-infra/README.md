@@ -37,7 +37,7 @@ Four sources read their APIs directly, with nothing in between. Each wakes up wh
 
 | source | export | what it reads |
 |---|---|---|
-| `cloudtrail` | AWS credentials: `AWS_PROFILE`, or the SDK's default chain; `AWS_REGION`, the queue's; `CLOUDTRAIL_QUEUE_URL`, the SQS queue told of each file a trail writes (see below), without which the source stays idle | a trail's files: every event, data events included, every account and region of an organization trail, a few minutes behind. There is no polling of `LookupEvents`: a poller's own calls are CloudTrail events, and it reads them back |
+| `cloudtrail` | AWS credentials: `AWS_PROFILE`, or the SDK's default chain; `AWS_REGION`, the queue's; `CLOUDTRAIL_QUEUE_URL`, the SQS queue told of each file a trail writes (see below), without which the source stays idle | a trail's files: every event, data events included, every account and region of an organization trail, a few minutes behind |
 | `github_audit` | `GITHUB_ORG`, `GITHUB_TOKEN` with `read:audit_log` (the audit log API is a GitHub Enterprise Cloud feature) | the organization's audit log, web and git events |
 | `okta` | `OKTA_ORG_URL` (`https://acme.okta.com`), `OKTA_API_TOKEN` from Security → API → Tokens, made by a read-only administrator | the System Log |
 | `google_workspace` | `GOOGLE_APPLICATION_CREDENTIALS`, a service account key file with domain-wide delegation for the scope `https://www.googleapis.com/auth/admin.reports.audit.readonly`; `GOOGLE_ADMIN_EMAIL`, the administrator it acts as (the Admin SDK API enabled on the project) | login, token, drive and admin activity |
