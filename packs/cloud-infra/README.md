@@ -1,8 +1,8 @@
 # cloud-infra
 
-Your own infrastructure's logs, every record read by a model in its context,
-in batches; a person reads what it flags. Install, point your logs at it, fill in one file about
-your company, run.
+Your own infrastructure's logs, every record kept; a model reads the ones that
+matter in their context, in batches, and a person reads what it flags. Install,
+point your logs at it, fill in one file about your company, run.
 
 ```
 CloudTrail ──▶ cloudtrail ─┐
@@ -17,10 +17,10 @@ store ──▶ buffer ──▶ novel ──▶ judge ──▶ flagged ──�
 - **A plugin per provider** ([providers/](providers/)) reads its source's records: it puts the shape into `_norm.{actor, org, kind, ip, country, dest, target}` and trims the record to what it means, dropping the provider's ids, hashes, protocol details and bulk, so the judge and the retained history carry a record a reader would keep. **norm** does the `_norm` half for anything else arriving over TCP (CI lines, a product's logs) and leaves those records as they came.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
-- **store** keeps every normalized, enriched record under its partition for 30 days, and marks a record `_novel` when it has something its actor or the organization has not had in that time: for the actor, a kind, a network (`_facts.ip.org`) or a destination; for the organization, an actor, a destination, a kind or a target. That ends the ingest pipeline: a source is acknowledged when its records are kept, and nothing waits on a model.
+- **store** keeps every normalized, enriched record under its partition for 30 days, and marks a record `_novel` when it has something its actor or the organization has not had in that time: for the actor, a kind, a network (`_facts.ip.org`), a country, a destination, an AWS region or an error code; for the organization, an actor, a destination, a kind or a target. For an hour after an actor's new value, its next records are marked too, at most 50 (`follow`), so the rest of the story is read with it. That ends the ingest pipeline: a source is acknowledged when its records are kept, and nothing waits on a model.
 - **buffer** reads the store back five minutes of one partition's activity at a time, once the stream has moved twenty minutes past them (a quiet partition closes on the clock), so a verdict comes about twenty-five minutes after its record. Where each partition stands lives in the store too, so a restart catches up what fell due while it was down.
-- **novel** passes only the records marked new. What an actor or the organization does every day is kept, and is history for the judge, but is never itself judged: on the corpus about 1 record in 400 is new, and on Telophase's own logs (CloudTrail, GitHub, Okta, Workspace) 47 of 19,846 in their first three hours.
-- **judge** reads each buffer's new records together, with the history before it (each actor's latest records and the org's, however long ago) read once from the store, and writes a verdict per record: a pass is the flag alone, a flag says why. No rule decides what the model reads; the profile is context, not a rulebook.
+- **novel** passes what the judge reads: a record that is new or follows a new value, and one the profile says to see every time, however usual (a watched kind, root, a rule opened to `0.0.0.0/0`, a sensitive target, a key off its networks). AWS acting on its own (`aws:<service>`, a service's own calls) is not judged. It takes `_novel` off what it passes: being new chooses what the model reads, and the model judges a record on what it is and its history. Everything else is kept, and is history for the judge, but is never itself judged.
+- **judge** reads what novel passes from each buffer together, with the history before it (each actor's latest records and the org's, however long ago) read once from the store, and writes a verdict per record: a pass is the flag alone, a flag says why. No rule decides a verdict; the profile is context, not a rulebook.
 - The judge is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see, for `alerts.ndjson` and, with a `slack` sink, a channel:
 
   ```yaml
@@ -34,6 +34,8 @@ store ──▶ buffer ──▶ novel ──▶ judge ──▶ flagged ──�
       to: [{ kind: sink, name: alerts }, { kind: sink, name: slack }]
   ```
 
+Novelty cannot see a stolen credential used from a network its owner already uses, for things its owner already does: a CI role's session taken from one GitHub-hosted runner and used from another, or an instance's role credentials used from another instance in the same cloud and region. The actor, kind, network, country and region are all familiar, so nothing is new, and unless the profile says to see that kind or target every time, the judge never reads it. Keep GuardDuty on for that.
+
 On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the judge's recall and false-positive rate are in [RESULTS](#what-it-catches).
 
 ## Install and run
@@ -41,7 +43,7 @@ On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the judge'
 ```bash
 make setup          # Rust WASM toolchain; GeoLite2, cloud ranges, Tor exits into examples/enrich/data
 $EDITOR profile/profile.yaml
-make test           # the cases through the provider plugins, norm, enrich and facts; no model needed
+make test           # the cases through the provider plugins, norm, enrich, facts and novel; no model needed
 make run            # listens on :9400 for NDJSON records
 ```
 
@@ -74,7 +76,7 @@ Anything else (CI logs, runner egress, a forwarder for a source not listed) is o
 
 #### An organization trail
 
-One trail can record every account and region in the organization into one bucket, and reading it costs no API calls that land back in CloudTrail. The source reads it through an SQS queue that is told of each file the trail writes. Any of these notifications works:
+One trail can record every account and region in the organization into one bucket. The source reads it through an SQS queue that is told of each file the trail writes. Any of these notifications works:
 
 - the trail's own SNS notifications, with the queue subscribed to the topic;
 - S3 event notifications on the bucket, straight to the queue or through SNS;
@@ -84,6 +86,8 @@ With Control Tower, the trail already notifies the audit account's `aws-controlt
 
 The source's identity needs `sqs:ReceiveMessage` and `sqs:DeleteMessage` on the queue, and `sts:AssumeRole` on the bucket role. The bucket role, or the identity itself when the bucket is its own account's, needs `s3:GetObject` on the trail's prefix, and `kms:Decrypt` if the trail encrypts its files. A message is deleted once its records are delivered. One whose file cannot be read stays on the queue and comes back in five minutes, so give the queue a redrive policy to set aside what never succeeds.
 
+Reading the trail makes calls that CloudTrail records too: the source's `AssumeRole` of the bucket role, about once an hour, and KMS `Decrypt` calls when the files are KMS-encrypted. When the trail's S3 data events cover its own bucket, every `GetObject` the source makes is an event as well, which lands in a later file, which is read in turn, and so on for as long as it runs. Leave the trail's bucket out of its data-event selectors.
+
 ## The profile
 
 [profile/profile.yaml](profile/profile.yaml) is every fact about your company that no log carries; the models read it as `_facts`:
@@ -91,14 +95,15 @@ The source's identity needs `sqs:ReceiveMessage` and `sqs:DeleteMessage` on the 
 | key | what it is | what it decides |
 |---|---|---|
 | `org`, `own_sources` | your name; which sources are your own infrastructure | all of them land in one partition, yours |
-| `countries` | where your people are | a person signing in from elsewhere reaches the judge |
-| `cloud` | where your services run | a service seen on any other hosting reaches the judge |
+| `countries` | where your people are | a person acting from elsewhere is noted for the judge |
+| `cloud` | where your services run | a service seen on any other hosting is noted for the judge |
 | `members` | people: IdP emails, GitHub handles | anyone else is a principal you do not know |
 | `services` | IAM users and roles, bots | exempt from the "person abroad" rules, held to `cloud` |
-| `keys` | API keys and the networks each calls from | a key off its networks reaches the judge |
+| `keys` | API keys and the networks each calls from | a key off its networks reaches the judge every time |
 | `about` | who an actor is, when its name does not say (`DrataAutopilotRole: "Drata, the compliance vendor: ..."`) | the judge reads it with the actor's records, in place of "nobody you know" |
-| `hosts` | hosts your systems talk to (`*.suffix` allowed) | a request anywhere else reaches the judge |
+| `hosts` | hosts your systems talk to (`*.suffix` allowed) | a request anywhere else is noted for the judge |
 | `sensitive` | buckets, repos, tables | a touch reaches the judge every time |
+| `watch` | kinds you want seen every time (`StopLogging`, `CreateAccessKey`) | each reaches the judge, however usual |
 
 The file ships filled in for the fictional company the cases describe, so `make test` passes before you touch it.
 

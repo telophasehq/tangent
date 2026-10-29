@@ -1,10 +1,11 @@
 # cloud-infra: your own infrastructure's logs. Every record is kept; a model
-# reads the new ones (something its actor or the org has not done in thirty
-# days), in batches, each with its history, and writes a verdict; a person
-# reads the ones it flagged. No rule decides anything.
+# reads the ones that matter (something its actor or the org has not done in
+# thirty days, the hour after it, and what the profile says to see every
+# time), in batches, each with its history, and writes a verdict; a person
+# reads the ones it flagged. No rule decides a verdict.
 #
 #   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
-#   make test       the cases in cases/ through norm, facts and window; no model needed
+#   make test       the cases in cases/ through the providers, norm, facts and novel; no model needed
 #   make run        the pipeline: reads CloudTrail, GitHub, Okta and Workspace for the credentials
 #                   you export (see the Makefile); anything else as NDJSON on :9400
 #
@@ -102,15 +103,18 @@ plugins:
     tests:
       - input: tests/facts/input.json
         expected: tests/facts/expected.json
-  novel:                        # keeps what is new for its actor or the org: all the judge reads
+  novel:                        # all the judge reads: what is new, and what the profile says to see every time; not AWS acting on its own
     module_type: rust
     path: ../../examples/inference-local/novel
+    tests:
+      - input: tests/novel/input.json
+        expected: tests/novel/expected.json
   flagged:                      # keeps what the judge flagged, and what it could not read
     module_type: rust
     path: ../../examples/inference-local/flagged
 
 inference:
-  judge:                        # every new record, with its facts and history: the verdict a person reads
+  judge:                        # every record novel passes, with its facts and history: the verdict a person reads
     backend: openai
     url: ${JUDGE_URL}
     model: ${JUDGE_MODEL}
@@ -140,8 +144,11 @@ sinks:
     retain: 30d
     recent: { actor: _norm.actor, org: _norm.org }   # history is read by these: each record indexed by its actor; the org is the partition itself
     novel:                      # what each scope has had in 30 days; a record with something it has not is marked `_novel`
-      actor: [_norm.kind, _facts.ip.org, _norm.dest]
+      # A familiar kind from a familiar network can still come from a new
+      # country or region, or fail in a new way; a field a source lacks is skipped.
+      actor: [_norm.kind, _facts.ip.org, _facts.ip.country, _norm.dest, awsRegion, errorCode]
       org: [_norm.actor, _norm.dest, _norm.kind, _norm.target]
+    follow: 1h                  # for an hour after an actor's new value, its next records are marked too (at most 50): the rest of the story
   alerts:                       # what a person should look at
     type: file
     path: alerts.ndjson
@@ -179,7 +186,7 @@ dag:
   # 1. ingest: normalized, enriched, kept
   - from: { kind: plugin, name: facts }
     to: [{ kind: sink, name: store }]
-  # 2. judgment: a buffer at a time, read back from the store; what is new, with the history before it
+  # 2. judgment: a buffer at a time, read back from the store; what novel passes, with the history before it
   - from: { kind: source, name: buffer }
     to: [{ kind: plugin, name: novel }]
   - from: { kind: plugin, name: novel }

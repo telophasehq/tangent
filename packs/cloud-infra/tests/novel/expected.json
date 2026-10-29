@@ -1,0 +1,451 @@
+[
+ {
+  "_buffer": {
+   "from": "2026-10-14T03:05:00Z",
+   "to": "2026-10-14T03:10:00Z"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 7922,
+    "country": "US",
+    "ip": "67.180.22.4",
+    "org": "Comcast Cable Communications, LLC",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_ip": {
+   "_norm.ip": {
+    "asn": 7922,
+    "country": "US",
+    "ip": "67.180.22.4",
+    "org": "Comcast Cable Communications, LLC",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "country": "US",
+   "ip": "67.180.22.4",
+   "kind": "user.session.start",
+   "org": "acme"
+  },
+  "actor": {
+   "alternateId": "oncall-frank@acme.io",
+   "displayName": "Oncall-Frank",
+   "type": "User"
+  },
+  "client": {
+   "geographicalContext": {
+    "city": "Oakland",
+    "country": "US"
+   },
+   "ipAddress": "67.180.22.4",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-14T03:05:00Z",
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-10-14T03:05:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 7922,
+    "country": "US",
+    "ip": "98.51.100.23",
+    "org": "Comcast Cable Communications, LLC",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [
+    "AWS root credentials used",
+    "principal root is nobody the org profile knows"
+   ],
+   "principal": "unknown",
+   "root": true
+  },
+  "_ip": {
+   "_norm.ip": {
+    "asn": 7922,
+    "country": "US",
+    "ip": "98.51.100.23",
+    "org": "Comcast Cable Communications, LLC",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "root",
+   "ip": "98.51.100.23",
+   "kind": "ConsoleLogin",
+   "org": "acme"
+  },
+  "additionalEventData": {
+   "MFAUsed": "No"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ConsoleLogin",
+  "eventSource": "signin.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {},
+  "responseElements": {
+   "ConsoleLogin": "Success"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "98.51.100.23",
+  "ts": "2026-10-20T13:00:00Z",
+  "userAgent": "Mozilla/5.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:root",
+   "type": "Root",
+   "userName": "root"
+  },
+  "_buffer": {
+   "from": "2026-10-20T13:00:00Z",
+   "to": "2026-10-20T13:05:00Z"
+  }
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 24940,
+    "country": "FI",
+    "hosting": "datacenter",
+    "ip": "65.108.22.91",
+    "org": "Hetzner Online GmbH",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [
+    "StopLogging is a kind the org watches every time",
+    "service deploy-bot acting from datacenter hosting, 65.108.22.91 (Hetzner Online GmbH), not the org's aws"
+   ],
+   "principal": "service",
+   "watch": true
+  },
+  "_ip": {
+   "_norm.ip": {
+    "asn": 24940,
+    "country": "FI",
+    "hosting": "datacenter",
+    "ip": "65.108.22.91",
+    "org": "Hetzner Online GmbH",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "deploy-bot",
+   "ip": "65.108.22.91",
+   "kind": "StopLogging",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "StopLogging",
+  "eventSource": "cloudtrail.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "name": "arn:aws:cloudtrail:us-west-2:111122223333:trail/org-trail"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "65.108.22.91",
+  "ts": "2026-10-20T13:00:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/deploy-bot",
+   "type": "IAMUser",
+   "userName": "deploy-bot"
+  },
+  "_buffer": {
+   "from": "2026-10-20T13:00:00Z",
+   "to": "2026-10-20T13:05:00Z"
+  }
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "ip": "185.224.128.17",
+    "org": "Alsycon B.V.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [
+    "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws"
+   ],
+   "principal": "service"
+  },
+  "_ip": {
+   "_norm.ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "ip": "185.224.128.17",
+    "org": "Alsycon B.V.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_late": true,
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetCallerIdentity",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetCallerIdentity",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:00:00Z",
+  "userAgent": "aws-cli/2.22.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "ip": "185.224.128.17",
+    "org": "Alsycon B.V.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [
+    "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws",
+    "railway-deploy touched acme-customer-exports, which the org marks sensitive"
+   ],
+   "principal": "service",
+   "sensitive_target": true
+  },
+  "_ip": {
+   "_norm.ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "ip": "185.224.128.17",
+    "org": "Alsycon B.V.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetObject",
+   "org": "acme",
+   "target": "acme-customer-exports"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "key": "exports/2026-10/part-00.parquet"
+  },
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:01:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  },
+  "_buffer": {
+   "from": "2026-10-20T13:00:00Z",
+   "to": "2026-10-20T13:05:00Z"
+  }
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 16509,
+    "country": "IE",
+    "hosting": "aws",
+    "ip": "54.240.197.233",
+    "org": "Amazon.com, Inc.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [
+    "opened to 0.0.0.0/0",
+    "dave acting from aws hosting, 54.240.197.233 (Amazon.com, Inc.)",
+    "dave acting from IE, 54.240.197.233 (Amazon.com, Inc.)"
+   ],
+   "principal": "member",
+   "world_open": true
+  },
+  "_ip": {
+   "_norm.ip": {
+    "asn": 16509,
+    "country": "IE",
+    "hosting": "aws",
+    "ip": "54.240.197.233",
+    "org": "Amazon.com, Inc.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "dave",
+   "ip": "54.240.197.233",
+   "kind": "ModifySecurityGroupRules",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ModifySecurityGroupRules",
+  "eventSource": "ec2.amazonaws.com",
+  "eventTime": "2026-10-20T13:01:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "ModifySecurityGroupRulesRequest": {
+    "GroupId": "sg-0a1b2c3d",
+    "SecurityGroupRule": {
+     "SecurityGroupRule": {
+      "CidrIpv4": "0.0.0.0/0",
+      "FromPort": 5432,
+      "IpProtocol": "tcp",
+      "ToPort": 5432
+     },
+     "SecurityGroupRuleId": "sgr-0e1f2a3b"
+    }
+   }
+  },
+  "responseElements": {
+   "ModifySecurityGroupRulesResponse": {
+    "return": true
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "54.240.197.233",
+  "ts": "2026-10-20T13:01:00Z",
+  "userAgent": "console.amazonaws.com",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/dave",
+   "type": "IAMUser",
+   "userName": "dave"
+  },
+  "_buffer": {
+   "from": "2026-10-20T13:00:00Z",
+   "to": "2026-10-20T13:05:00Z"
+  }
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "ip": "185.224.128.17",
+    "org": "Alsycon B.V.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_ip": {
+   "_norm.ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "ip": "185.224.128.17",
+    "org": "Alsycon B.V.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "ip": "185.224.128.17",
+   "kind": "api_request",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 1,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:06:00Z",
+  "_buffer": {
+   "from": "2026-10-20T13:05:00Z",
+   "to": "2026-10-20T13:10:00Z"
+  }
+ }
+]
