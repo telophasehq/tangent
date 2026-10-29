@@ -11,7 +11,7 @@ pub struct StoreSinkConfig {
     #[serde(default)]
     pub novel: BTreeMap<String, Vec<String>>, // scope: fields whose unseen values mark `_novel`
     #[serde(default)]
-    pub follow: Option<String>, // 1h: a value's records after a new one are marked too
+    pub follow_secs: Option<u64>, // a value's records this long after a new one are marked too
 }
 
 const fn default_retain_secs() -> u64 {

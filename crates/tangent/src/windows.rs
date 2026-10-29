@@ -19,16 +19,8 @@ pub const LAST_ARRIVAL: &str = "last_arrival";
 pub const READ_THROUGH: &str = "read_through";
 pub const CLOSED_THROUGH: &str = "closed_through";
 pub const LATE_PREFIX: &str = "late:";
-
-/// Marks a partition whose older rows were indexed by one scope.
-pub fn indexed_marker(scope: &str, field: &str) -> String {
-    format!("indexed:{scope}\u{1f}{field}")
-}
-
-/// Marks a partition whose older rows were read for one field of one scope.
-pub fn remembered_marker(scope: &str, scope_field: &str, field: &str) -> String {
-    format!("remembered:{scope}\u{1f}{scope_field}\u{1f}{field}")
-}
+pub const INDEXED: &str = "indexed";
+pub const REMEMBERED: &str = "remembered";
 
 /// `<scope>\x1f<value>\x1f`, then the record's key.
 pub fn index_prefix(scope: &str, value: &str) -> String {

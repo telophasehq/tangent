@@ -111,7 +111,7 @@ sinks:
     novel:
       actor: [_norm.kind, _facts.ip.org, _facts.ip.country, _norm.dest, awsRegion, errorCode]
       org: [_norm.actor, _norm.dest, _norm.kind, _norm.target]
-    follow: 1h
+    follow_secs: 3600
   alerts:
     type: file
     path: alerts.ndjson

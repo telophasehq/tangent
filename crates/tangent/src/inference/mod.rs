@@ -1101,7 +1101,7 @@ mod tests {
         recent.insert("actor".to_string(), "_norm.actor".to_string());
         recent.insert("org".to_string(), "_norm.org".to_string());
         let sink = crate::sinks::store::StoreSink::new(
-            &tangent_shared::sinks::store::StoreSinkConfig { retain_secs: 2_592_000, recent, novel: Default::default(), follow: None },
+            &tangent_shared::sinks::store::StoreSinkConfig { retain_secs: 2_592_000, recent, novel: Default::default(), follow_secs: None },
             Arc::clone(&store),
             Some(tangent_shared::runtime::PartitionConfig { key: vec!["_norm.org".into()], separator: "|".into(), retain_ms: None, time: None }),
         )
@@ -1177,7 +1177,7 @@ mod tests {
         recent.insert("actor".to_string(), "_norm.actor".to_string());
         recent.insert("org".to_string(), "_norm.org".to_string());
         let sink = crate::sinks::store::StoreSink::new(
-            &tangent_shared::sinks::store::StoreSinkConfig { retain_secs: 2_592_000, recent, novel: Default::default(), follow: None },
+            &tangent_shared::sinks::store::StoreSinkConfig { retain_secs: 2_592_000, recent, novel: Default::default(), follow_secs: None },
             Arc::clone(&store),
             Some(tangent_shared::runtime::PartitionConfig { key: vec!["_norm.org".into()], separator: "|".into(), retain_ms: None, time: None }),
         )
