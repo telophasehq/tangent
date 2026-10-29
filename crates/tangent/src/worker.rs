@@ -737,15 +737,15 @@ mod tests {
     use tokio::sync::Mutex;
 
     #[test]
-    fn a_partition_always_lands_on_the_same_worker() {
-        for key in ["acme", "globex", "acme|us-west-2", ""] {
-            assert_eq!(worker_for(key, 14), worker_for(key, 14));
-            assert!(worker_for(key, 14) < 14);
+    fn a_scope_always_lands_on_the_same_worker() {
+        for scope in ["org:acme", "org:globex", "org_user:acme|u1", ""] {
+            assert_eq!(worker_for(scope, 14), worker_for(scope, 14));
+            assert!(worker_for(scope, 14) < 14);
         }
         let used: std::collections::HashSet<usize> = (0..64)
-            .map(|i| worker_for(&format!("org-{i}"), 4))
+            .map(|i| worker_for(&format!("org:org-{i}"), 4))
             .collect();
-        assert_eq!(used.len(), 4, "partitions spread over the workers");
+        assert_eq!(used.len(), 4, "scopes spread over the workers");
     }
 
     #[derive(Default)]
@@ -775,6 +775,50 @@ mod tests {
         }
     }
 
+    fn new_worker(
+        id: usize,
+        router: &Arc<Router>,
+        url: &str,
+        dir: &Path,
+        handoff_rx: mpsc::UnboundedReceiver<Record>,
+        handoffs: Vec<mpsc::UnboundedSender<Record>>,
+    ) -> (Worker, mpsc::Sender<Record>) {
+        let judge: Arc<str> = Arc::from("judge");
+        let mut inference = HashMap::default();
+        inference.insert(
+            judge.clone(),
+            InferenceNode::new(judge, stub::config(url), dir).unwrap(),
+        );
+        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
+        let (tx, rx) = mpsc::channel(16);
+        let worker = Worker {
+            id,
+            rx,
+            mappers: Mappers {
+                mappers: Vec::new(),
+            },
+            engine: WasmEngine::new(store, true).unwrap(),
+            components: Vec::new(),
+            inference,
+            batch_max_size: 1 << 20,
+            batch_max_age: Duration::from_millis(20),
+            router: Arc::clone(router),
+            in_flight: router.in_flight_counter(),
+            handoff_rx,
+            handoffs,
+        };
+        (worker, tx)
+    }
+
+    async fn lines_of(sink: &RecordingSink) -> Vec<Value> {
+        let writes = sink.writes.lock().await.clone();
+        writes
+            .iter()
+            .flat_map(|w| w.lines())
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+
     /// A worker walks source → judge → sink: every record reaches the sink
     /// in order, annotated under the node's name, and its ack fires once the
     /// sink has it.
@@ -785,7 +829,9 @@ mod tests {
         let source = NodeRef::Source {
             name: Arc::from("events"),
         };
-        let judge: Arc<str> = Arc::from("judge");
+        let judge = NodeRef::Inference {
+            name: Arc::from("judge"),
+        };
         let sink_name: Arc<str> = Arc::from("out");
         let sink = Arc::new(RecordingSink::default());
         let sink_manager = Arc::new(SinkManager::for_test(
@@ -793,16 +839,9 @@ mod tests {
             1,
         ));
         let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
+        outs.insert(source.clone(), vec![judge.clone()]);
         outs.insert(
-            source.clone(),
-            vec![NodeRef::Inference {
-                name: judge.clone(),
-            }],
-        );
-        outs.insert(
-            NodeRef::Inference {
-                name: judge.clone(),
-            },
+            judge,
             vec![NodeRef::Sink {
                 name: sink_name,
                 key_prefix: None,
@@ -815,30 +854,8 @@ mod tests {
             Arc::clone(&sink_manager),
         ));
         let in_flight = router.in_flight_counter();
-        let mut inference = HashMap::default();
-        inference.insert(
-            judge.clone(),
-            InferenceNode::new(judge.clone(), stub::config(&url), &dir).unwrap(),
-        );
-        let (tx, rx) = mpsc::channel(16);
-        let handoff = mpsc::unbounded_channel();
-        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
-        let worker = Worker {
-            id: 0,
-            rx,
-            mappers: Mappers {
-                mappers: Vec::new(),
-            },
-            engine: WasmEngine::new(Arc::clone(&store), true).unwrap(),
-            components: Vec::new(),
-            inference,
-            batch_max_size: 1 << 20,
-            batch_max_age: Duration::from_millis(20),
-            router: Arc::clone(&router),
-            in_flight: Arc::clone(&in_flight),
-            handoff_rx: handoff.1,
-            handoffs: vec![handoff.0],
-        };
+        let (handoff_tx, handoff_rx) = mpsc::unbounded_channel();
+        let (worker, tx) = new_worker(0, &router, &url, &dir, handoff_rx, vec![handoff_tx]);
         let handle = tokio::spawn(worker.run());
 
         let ack = Arc::new(CountingAck::default());
@@ -869,12 +886,7 @@ mod tests {
             .await
             .unwrap();
 
-        let writes = sink.writes.lock().await.clone();
-        let lines: Vec<Value> = writes
-            .iter()
-            .flat_map(|w| w.lines())
-            .map(|l| serde_json::from_str(l).unwrap())
-            .collect();
+        let lines = lines_of(&sink).await;
         assert_eq!(
             lines
                 .iter()
@@ -894,9 +906,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Two workers and a judge partitioned by org: the record reaches worker 0
-    /// from the source, the judge runs it on worker 1, its owner, and it
-    /// reaches the sink once.
     #[tokio::test]
     async fn hands_off_to_owner() {
         let (url, seen) = stub::model().await;
@@ -923,54 +932,53 @@ mod tests {
             }],
         );
         let mut partitions = HashMap::default();
-        partitions.insert(judge, ("org".to_string(), vec!["org_id".to_string()]));
+        partitions.insert(
+            judge.clone(),
+            ("org".to_string(), vec!["org_id".to_string()]),
+        );
         let router = Arc::new(Router::new(
             outs,
             partitions,
             HashMap::default(),
             Arc::clone(&sink_manager),
         ));
-        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
-        let engines = (0..2)
-            .map(|_| WasmEngine::new(Arc::clone(&store), true).unwrap())
-            .collect();
-        let mut inference = BTreeMap::new();
-        inference.insert(Arc::from("judge"), stub::config(&url));
-        let pool = Arc::new(
-            WorkerPool::new(
-                2,
-                engines,
-                vec![Vec::new(), Vec::new()],
-                &inference,
-                &dir,
-                1 << 20,
-                Duration::from_millis(20),
-                Arc::clone(&router),
-            )
-            .await
-            .unwrap(),
-        );
-        router.set_pool(&pool);
+        let (h0, rx0) = mpsc::unbounded_channel();
+        let (h1, mut rx1) = mpsc::unbounded_channel();
+        let (mut w0, _tx0) = new_worker(0, &router, &url, &dir, rx0, vec![h0.clone(), h1.clone()]);
 
         let org = (0..)
             .map(|i| format!("org-{i}"))
             .find(|o| worker_for(&format!("org:{o}"), 2) == 1)
             .unwrap();
         let ack = Arc::new(CountingAck::default());
-        let frame = BytesMut::from(format!("{{\"id\":1,\"org_id\":\"{org}\"}}\n").as_str());
-        router
-            .forward(&source, vec![frame], vec![ack.clone() as Arc<dyn Ack>])
-            .await
-            .unwrap();
-        tokio::time::timeout(Duration::from_secs(10), async {
-            while router.in_flight() > 0 {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
+        router.in_flight_counter().fetch_add(1, Ordering::AcqRel);
+        let rec = Record {
+            payload: Payload::Raw(BytesMut::from(
+                format!("{{\"id\":1,\"org_id\":\"{org}\"}}\n").as_str(),
+            )),
+            ack: None,
+            at: source,
+        };
+        w0.flush_batch(
+            &mut vec![rec],
+            &mut vec![ack.clone() as Arc<dyn Ack>],
+            &mut 0,
+        )
         .await
-        .expect("the DAG goes quiet");
+        .unwrap();
+        let handed = rx1.try_recv().expect("handed to worker 1");
+        assert_eq!(handed.at, judge);
+        assert_eq!(router.in_flight(), 1);
+        assert!(seen.lock().await.is_empty(), "worker 0 ran no judge");
+
+        let (w1, tx1) = new_worker(1, &router, &url, &dir, rx1, vec![h0, h1]);
+        let handle = tokio::spawn(w1.run());
+        tx1.send(handed).await.unwrap();
+        drop(tx1);
+        handle.await.unwrap().unwrap();
+        assert_eq!(router.in_flight(), 0);
+        drop(w0);
         drop(router);
-        Arc::try_unwrap(pool).ok().expect("pool refs").join().await;
         Arc::try_unwrap(sink_manager)
             .ok()
             .expect("sink manager refs")
@@ -978,12 +986,7 @@ mod tests {
             .await
             .unwrap();
 
-        let writes = sink.writes.lock().await.clone();
-        let lines: Vec<Value> = writes
-            .iter()
-            .flat_map(|w| w.lines())
-            .map(|l| serde_json::from_str(l).unwrap())
-            .collect();
+        let lines = lines_of(&sink).await;
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0]["org_id"], org.as_str());
         assert!(lines[0]["judge"]["flag"].is_boolean());
