@@ -5,7 +5,9 @@
 //! prompt is a file; the user message is the record (or selected fields) as
 //! pretty JSON; the reply is added to the record under the node's name. The
 //! node adds and forwards, never drops: a failure lands as `{"error": ...}`
-//! in the same field, and a plugin downstream decides what goes on.
+//! in the same field, and a plugin downstream decides what goes on. A stop
+//! is not a failure: a signal ends the node's calls, and the records still
+//! waiting on one get no answer at all ([`Stopped`]).
 //!
 //! The reply is read as JSON and nothing else. The backend is asked to make
 //! it so: a schema (`schema_file`) through rig's structured output, or JSON
@@ -27,6 +29,7 @@ use tangent_shared::inference::{Backend, ContextConfig, InferenceConfig};
 
 use crate::state::{Entry, StateStore, StateValue};
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 
 /// Records judged together: one partition, one window.
 type GroupKey = (Arc<str>, String);
@@ -44,7 +47,24 @@ pub struct InferenceNode {
     model: DynModel<Completion>,
     /// `concurrency` permits: requests in flight from this worker.
     sem: Semaphore,
+    /// Cancelled at a stop: no call starts or is tried again after it, and
+    /// one under way ends.
+    stop: CancellationToken,
 }
+
+/// A stop ended the model call before it answered. The records get no
+/// answer rather than an error: an error reads downstream as a record the
+/// model could not judge, and at a stop every record in flight would be one.
+#[derive(Debug)]
+pub struct Stopped;
+
+impl std::fmt::Display for Stopped {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("stopped before the model answered")
+    }
+}
+
+impl std::error::Error for Stopped {}
 
 fn resolve(config_dir: &Path, file: &Path) -> PathBuf {
     if file.is_absolute() {
@@ -123,12 +143,20 @@ impl InferenceNode {
             schema,
             model,
             sem,
+            stop: CancellationToken::new(),
         })
+    }
+
+    /// The node's calls end when `stop` is cancelled, rather than finish or
+    /// try again: see [`Stopped`].
+    pub fn stops_with(mut self, stop: CancellationToken) -> Self {
+        self.stop = stop;
+        self
     }
 
     /// Every record through the model, under the node's permits; the
     /// annotated records, in the order given. No partition, no context.
-    pub async fn annotate_all(&self, records: Vec<Value>) -> Vec<Value> {
+    pub async fn annotate_all(&self, records: Vec<Value>) -> Result<Vec<Value>, Stopped> {
         let part: Arc<str> = Arc::from("");
         self.annotate_in(records.into_iter().map(|v| (v, Arc::clone(&part))).collect(), None)
             .await
@@ -139,12 +167,12 @@ impl InferenceNode {
     /// `store` source), each group in requests of `batch`, each request read
     /// with the history before its earliest record, and the rest of its
     /// buffer, when `context` is set and a store is given. The annotated
-    /// records, in the order given.
+    /// records, in the order given; none when a stop ended a call.
     pub async fn annotate_in(
         &self,
         records: Vec<(Value, Arc<str>)>,
         store: Option<Arc<dyn StateStore>>,
-    ) -> Vec<Value> {
+    ) -> Result<Vec<Value>, Stopped> {
         let n = records.len();
         // The row a `store` source read each record from (`_key`) tells a
         // request's own records from the rest of their buffer. The model,
@@ -187,37 +215,42 @@ impl InferenceNode {
         let done = futures::future::join_all(jobs.into_iter().map(|(part, ids, chunk, own)| {
             let store = store.clone();
             async move {
-                let _permit = self.sem.acquire().await.expect("semaphore is never closed");
+                let _permit = tokio::select! {
+                    biased;
+                    () = self.stop.cancelled() => return Err(Stopped),
+                    permit = self.sem.acquire() => permit.expect("semaphore is never closed"),
+                };
                 let context = match &store {
                     Some(st) => self.context_for(st, &part, &chunk, own).await,
                     None => None,
                 };
                 let out = if self.cfg.batch <= 1 {
                     let v = chunk.into_iter().next().expect("a chunk of one");
-                    vec![self.annotate_one(v, context).await]
+                    vec![self.annotate_one(v, context).await?]
                 } else {
-                    self.annotate_batch(chunk, context).await
+                    self.annotate_batch(chunk, context).await?
                 };
-                (ids, out)
+                Ok((ids, out))
             }
         }))
         .await;
         let mut slots: Vec<Option<Value>> = (0..n).map(|_| None).collect();
-        for (ids, out) in done {
+        for job in done {
+            let (ids, out) = job?;
             for (i, v) in ids.into_iter().zip(out) {
                 slots[i] = Some(v);
             }
         }
-        slots.into_iter().map(|s| s.unwrap_or(Value::Null)).collect()
+        Ok(slots.into_iter().map(|s| s.unwrap_or(Value::Null)).collect())
     }
 
     /// One record through the model: the reply, or the error, added under the
     /// node's name.
-    pub async fn annotate(&self, v: Value) -> Value {
+    pub async fn annotate(&self, v: Value) -> Result<Value, Stopped> {
         self.annotate_one(v, None).await
     }
 
-    async fn annotate_one(&self, v: Value, context: Option<String>) -> Value {
+    async fn annotate_one(&self, v: Value, context: Option<String>) -> Result<Value, Stopped> {
         let start = Instant::now();
         let user = match context {
             Some(c) => format!("{c}\n\nThe record:\n{}", self.user_message(&v)),
@@ -225,6 +258,7 @@ impl InferenceNode {
         };
         let reply = match self.ask(user, None).await {
             Ok(reply) => reply,
+            Err(e) if e.is::<Stopped>() => return Err(Stopped),
             Err(e) => {
                 tracing::warn!(node = %self.name, "inference failed: {e:#}");
                 json!({"error": format!("{e:#}")})
@@ -235,7 +269,7 @@ impl InferenceNode {
             ms = start.elapsed().as_millis() as u64,
             "inference"
         );
-        attach(&self.name, v, reply)
+        Ok(attach(&self.name, v, reply))
     }
 
     /// Several records through the model in one request: each gets its
@@ -244,7 +278,11 @@ impl InferenceNode {
     /// stops partway) is not the records' fault: the batch is split in two
     /// and each half asked again with the same context, down to single
     /// records, which fail on their own terms.
-    async fn annotate_batch(&self, records: Vec<Value>, context: Option<String>) -> Vec<Value> {
+    async fn annotate_batch(
+        &self,
+        records: Vec<Value>,
+        context: Option<String>,
+    ) -> Result<Vec<Value>, Stopped> {
         let n = records.len();
         let start = Instant::now();
         let lines = records
@@ -259,6 +297,7 @@ impl InferenceNode {
         };
         let answers = match self.ask(user, Some(n)).await {
             Ok(reply) => spread(reply, n),
+            Err(e) if e.is::<Stopped>() => return Err(Stopped),
             // Only a reply that came back and cannot be read is the batch's
             // fault; a request that failed outright fails the same in halves.
             Err(e) if n > 1 && e.to_string().starts_with("reply ") => {
@@ -269,9 +308,9 @@ impl InferenceNode {
                 );
                 let mut records = records;
                 let tail = records.split_off(n / 2);
-                let mut out = Box::pin(self.annotate_batch(records, context.clone())).await;
-                out.extend(Box::pin(self.annotate_batch(tail, context)).await);
-                return out;
+                let mut out = Box::pin(self.annotate_batch(records, context.clone())).await?;
+                out.extend(Box::pin(self.annotate_batch(tail, context)).await?);
+                return Ok(out);
             }
             Err(e) => {
                 tracing::warn!(node = %self.name, records = n, "inference failed: {e:#}");
@@ -284,11 +323,11 @@ impl InferenceNode {
             ms = start.elapsed().as_millis() as u64,
             "inference"
         );
-        records
+        Ok(records
             .into_iter()
             .zip(answers)
             .map(|(v, a)| attach(&self.name, v, a))
-            .collect()
+            .collect())
     }
 
     /// The history a request is read with: one view per scope and key (the
@@ -585,13 +624,19 @@ impl InferenceNode {
     }
 
     /// The reply as a JSON object, after `retries` more tries for a request
-    /// that got no reply.
+    /// that got no reply. A stop ends the wait for the reply, or for the next
+    /// try, with [`Stopped`]; after one, no call starts.
     async fn ask(&self, user: String, batch: Option<usize>) -> Result<Value> {
         let attempts = self.cfg.retries.saturating_add(1);
         let mut attempt = 0;
         let text = loop {
             attempt += 1;
-            match self.call(user.clone(), batch).await {
+            let reply = tokio::select! {
+                biased;
+                () = self.stop.cancelled() => return Err(Stopped.into()),
+                reply = self.call(user.clone(), batch) => reply,
+            };
+            match reply {
                 Ok(text) => break text,
                 Err(e) if attempt < attempts => {
                     let wait = Duration::from_secs(1 << (attempt - 1).min(6));
@@ -600,7 +645,11 @@ impl InferenceNode {
                         attempt,
                         "inference failed, retrying in {wait:?}: {e:#}"
                     );
-                    tokio::time::sleep(wait).await;
+                    tokio::select! {
+                        biased;
+                        () = self.stop.cancelled() => return Err(Stopped.into()),
+                        () = tokio::time::sleep(wait) => {}
+                    }
                 }
                 Err(e) => return Err(e),
             }
@@ -947,6 +996,25 @@ pub(crate) mod stub {
         (url, seen)
     }
 
+    /// A model that takes each request and never answers: its url, and how
+    /// many requests it has taken.
+    pub async fn silent() -> (String, Arc<AtomicUsize>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1", listener.local_addr().unwrap());
+        let taken = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&taken);
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                count.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let mut tmp = [0u8; 4096];
+                    while sock.read(&mut tmp).await.unwrap_or(0) > 0 {}
+                });
+            }
+        });
+        (url, taken)
+    }
+
     /// A node config against `url`, with the prompt (and a schema, when
     /// given) written under a fresh directory the caller removes.
     pub fn config(url: &str) -> tangent_shared::inference::InferenceConfig {
@@ -1014,7 +1082,7 @@ mod tests {
                 json!({"id": 2, "msg": "bad login"}),
                 json!({"id": 3, "msg": "also fine"}),
             ])
-            .await;
+            .await.unwrap();
         // Every record comes back, in order, with the verdict under the node's name.
         assert_eq!(outs.len(), 3);
         assert_eq!(
@@ -1072,7 +1140,7 @@ mod tests {
         cfg.schema_file = Some("verdict.json".into());
         cfg.temperature = Some(0.0);
         let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
-        let out = node.annotate(json!({"id": 1, "msg": "bad"})).await;
+        let out = node.annotate(json!({"id": 1, "msg": "bad"})).await.unwrap();
         assert_eq!(out["judge"]["flag"], true);
 
         let seen = seen.lock().await;
@@ -1092,7 +1160,7 @@ mod tests {
         let (url, seen) = stub::model().await;
         let dir = stub::dir("prose");
         let node = InferenceNode::new(Arc::from("judge"), stub::config(&url), &dir).unwrap();
-        let out = node.annotate(json!({"id": 7, "msg": "prose please"})).await;
+        let out = node.annotate(json!({"id": 7, "msg": "prose please"})).await.unwrap();
         assert_eq!(out["id"], 7);
         let err = out["judge"]["error"].as_str().unwrap();
         assert!(
@@ -1117,9 +1185,142 @@ mod tests {
         // Two 500s, then the verdict: three requests, one answer.
         let out = node
             .annotate(json!({"id": 3, "msg": "flaky bad link"}))
-            .await;
+            .await.unwrap();
         assert_eq!(out["judge"]["flag"], true, "{out}");
         assert_eq!(seen.lock().await.len(), 3);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A stop ends a call that waits on the model, and after it no call
+    /// starts: the records get no answer, not an error.
+    #[tokio::test]
+    async fn a_stop_ends_the_calls_and_nothing_is_asked_after() {
+        let (url, taken) = stub::silent().await;
+        let dir = stub::dir("stop");
+        let mut cfg = stub::config(&url);
+        cfg.timeout_ms = 60_000;
+        cfg.retries = 2;
+        cfg.concurrency = 1;
+        let stop = CancellationToken::new();
+        let node = Arc::new(
+            InferenceNode::new(Arc::from("judge"), cfg, &dir)
+                .unwrap()
+                .stops_with(stop.clone()),
+        );
+        let judging = tokio::spawn({
+            let node = Arc::clone(&node);
+            async move { node.annotate_all(vec![json!({"id": 1}), json!({"id": 2})]).await }
+        });
+        // The first record's call is under way; the second waits for the permit.
+        wait_for_a_request(&taken).await;
+        stop.cancel();
+        let out = tokio::time::timeout(Duration::from_secs(2), judging)
+            .await
+            .expect("the stop ends the wait for the reply")
+            .unwrap();
+        assert!(matches!(out, Err(Stopped)), "{out:?}");
+        assert!(matches!(node.annotate(json!({"id": 3})).await, Err(Stopped)));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            taken.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "no call for the records that waited or came after"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    async fn wait_for_a_request(taken: &std::sync::atomic::AtomicUsize) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while taken.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the model is asked");
+    }
+
+    /// A request of several records ends the same way.
+    #[tokio::test]
+    async fn a_stop_ends_a_batched_request() {
+        let (url, taken) = stub::silent().await;
+        let dir = stub::dir("stop-batch");
+        let mut cfg = stub::config(&url);
+        cfg.timeout_ms = 60_000;
+        cfg.batch = 4;
+        let stop = CancellationToken::new();
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir)
+            .unwrap()
+            .stops_with(stop.clone());
+        let part: Arc<str> = Arc::from("acme");
+        let records = (1..=3).map(|i| (json!({"id": i}), Arc::clone(&part))).collect();
+        tokio::spawn({
+            let (stop, taken) = (stop.clone(), Arc::clone(&taken));
+            async move {
+                wait_for_a_request(&taken).await;
+                stop.cancel();
+            }
+        });
+        let out = tokio::time::timeout(Duration::from_secs(5), node.annotate_in(records, None))
+            .await
+            .expect("the stop ends the wait for the reply");
+        assert!(matches!(out, Err(Stopped)), "{out:?}");
+        assert_eq!(taken.load(std::sync::atomic::Ordering::SeqCst), 1, "one request for the three");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A stop ends the wait for a permit: with every permit held, no call
+    /// starts and the records get no answer.
+    #[tokio::test]
+    async fn a_stop_ends_the_wait_for_a_permit() {
+        let (url, taken) = stub::silent().await;
+        let dir = stub::dir("stop-permit");
+        let mut cfg = stub::config(&url);
+        cfg.concurrency = 1;
+        let stop = CancellationToken::new();
+        let node = Arc::new(
+            InferenceNode::new(Arc::from("judge"), cfg, &dir)
+                .unwrap()
+                .stops_with(stop.clone()),
+        );
+        let held = node.sem.acquire().await.unwrap();
+        let judging = tokio::spawn({
+            let node = Arc::clone(&node);
+            async move { node.annotate_all(vec![json!({"id": 1})]).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!judging.is_finished(), "it waits for the permit");
+        stop.cancel();
+        let out = tokio::time::timeout(Duration::from_secs(2), judging)
+            .await
+            .expect("the stop ends the wait for the permit")
+            .unwrap();
+        assert!(matches!(out, Err(Stopped)), "{out:?}");
+        drop(held);
+        assert_eq!(taken.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A stop also ends the wait before the next try.
+    #[tokio::test]
+    async fn a_stop_ends_the_wait_between_tries() {
+        let dir = stub::dir("stop-retry");
+        let mut cfg = stub::config("http://127.0.0.1:1/v1");
+        cfg.retries = 6; // 63 s of waits between the tries
+        let stop = CancellationToken::new();
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir)
+            .unwrap()
+            .stops_with(stop.clone());
+        tokio::spawn({
+            let stop = stop.clone();
+            async move {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                stop.cancel();
+            }
+        });
+        let started = Instant::now();
+        let out = node.annotate(json!({"id": 1})).await;
+        assert!(matches!(out, Err(Stopped)), "{out:?}");
+        assert!(started.elapsed() < Duration::from_secs(1), "{:?}", started.elapsed());
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1134,7 +1335,7 @@ mod tests {
             &dir,
         )
         .unwrap();
-        let out = node.annotate(json!({"id": 9})).await;
+        let out = node.annotate(json!({"id": 9})).await.unwrap();
         assert_eq!(out["id"], 9);
         assert!(!out["judge"]["error"].as_str().unwrap().is_empty(), "{out}");
         let _ = std::fs::remove_dir_all(dir);
@@ -1155,7 +1356,7 @@ mod tests {
                 json!({"id": 4, "msg": "fine"}),
                 json!({"id": 5, "msg": "bad again"}),
             ])
-            .await;
+            .await.unwrap();
         assert_eq!(
             outs.iter().map(|o| o["id"].as_i64().unwrap()).collect::<Vec<_>>(),
             [1, 2, 3, 4, 5],
@@ -1197,7 +1398,7 @@ mod tests {
         // Four "loop" records in one batch degenerate; two per half do not.
         let outs = node
             .annotate_all((1..=4).map(|i| json!({"id": i, "msg": format!("loop {i} bad")})).collect())
-            .await;
+            .await.unwrap();
         assert_eq!(outs.len(), 4);
         assert!(outs.iter().all(|o| o["judge"]["flag"] == true), "every record got its answer: {outs:?}");
         assert_eq!(seen.lock().await.len(), 3, "one failed request, then one per half");
@@ -1270,7 +1471,7 @@ mod tests {
                 ],
                 Some(Arc::clone(&store)),
             )
-            .await;
+            .await.unwrap();
         assert_eq!(outs[0]["judge"]["flag"], true, "{outs:?}");
         assert!(outs.iter().all(|o| o.get("_window").is_none()), "nothing is attached to the records");
         let seen = seen.lock().await;
@@ -1390,7 +1591,7 @@ mod tests {
         };
         let outs = node
             .annotate_in(judged.iter().map(|v| (v.clone(), Arc::clone(&part))).collect(), Some(Arc::clone(&store)))
-            .await;
+            .await.unwrap();
         assert!(outs.iter().all(|o| o.get("_key").is_none() && o.get("_buffer").is_some()), "the row key goes no further: {outs:?}");
         let body = seen.lock().await[0].clone();
         assert!(!body.contains("_key") && !body.contains("ev:"), "the row keys never reach the model: {body}");
@@ -1420,7 +1621,7 @@ mod tests {
                 (v, Arc::clone(&part))
             })
             .collect();
-        node.annotate_in(late, Some(Arc::clone(&store))).await;
+        node.annotate_in(late, Some(Arc::clone(&store))).await.unwrap();
         let body = seen.lock().await[1].clone();
         assert!(views(&body).contains(&view("org", "acme", "rest_of_buffer", &["get.secret"])), "{body}");
         assert!(body.contains("to the latest of these"), "{body}");
@@ -1435,7 +1636,7 @@ mod tests {
                 (v, Arc::clone(&part))
             })
             .collect();
-        node.annotate_in(unkeyed, Some(Arc::clone(&store))).await;
+        node.annotate_in(unkeyed, Some(Arc::clone(&store))).await.unwrap();
         let body = seen.lock().await[2].clone();
         assert!(!body.contains("rest_of_buffer"), "{body}");
         assert!(body.contains("History before these records, one JSON object per line"), "the history as before: {body}");
@@ -1455,7 +1656,7 @@ mod tests {
                 json!({"id": 2, "msg": "short reply please"}),
                 json!({"id": 3, "msg": "fine"}),
             ])
-            .await;
+            .await.unwrap();
         assert_eq!(outs[0]["judge"]["flag"], true);
         assert_eq!(outs[1]["judge"]["flag"], false);
         let err = outs[2]["judge"]["error"].as_str().unwrap();
@@ -1478,7 +1679,7 @@ mod tests {
         let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
         let outs = node
             .annotate_all(vec![json!({"id": 1, "msg": "bad"}), json!({"id": 2})])
-            .await;
+            .await.unwrap();
         assert_eq!(outs[0]["judge"]["flag"], true);
         let seen = seen.lock().await;
         let req: Value = serde_json::from_str(&seen[0]).unwrap();
@@ -1558,7 +1759,7 @@ mod tests {
         cfg.max_tokens = 50;
         cfg.max_request_tokens = 100;
         let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
-        let outs = node.annotate_all((1..=5).map(|i| json!({"id": i})).collect()).await;
+        let outs = node.annotate_all((1..=5).map(|i| json!({"id": i})).collect()).await.unwrap();
         assert_eq!(outs.len(), 5);
         let seen = seen.lock().await;
         assert_eq!(seen.len(), 3, "two records per request: 2 + 2 + 1");
@@ -1580,7 +1781,7 @@ mod tests {
         // ~45 bytes each: two fit under 80, the third starts a new request.
         let outs = node
             .annotate_all((1..=5).map(|i| json!({"id": i, "msg": "a record of some length"})).collect())
-            .await;
+            .await.unwrap();
         assert_eq!(outs.len(), 5);
         assert_eq!(seen.lock().await.len(), 3, "2 + 2 + 1 by bytes");
         let _ = std::fs::remove_dir_all(dir);

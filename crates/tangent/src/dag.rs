@@ -28,6 +28,7 @@ impl DagRuntime {
         cfg: Config,
         cfg_path: &Path,
         shutdown: CancellationToken,
+        stop_models: CancellationToken,
     ) -> anyhow::Result<Self> {
         let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
         let store = state::open(&cfg.runtime.state, config_dir)?;
@@ -163,6 +164,7 @@ impl DagRuntime {
                 Arc::clone(&router),
                 cfg.runtime.partition.clone(),
                 Arc::clone(&store),
+                stop_models,
             )
             .await?,
         );
@@ -225,8 +227,11 @@ impl DagRuntime {
         }
 
         // Nothing new comes in now, but records already handed to a worker
-        // are still on their way through the DAG, a model call included.
-        // Wait for the DAG to go quiet, then take the workers down.
+        // are still on their way through the DAG. When a signal began the
+        // stop, it ended the model calls too, and records waiting on one are
+        // dropped (not acked) rather than waited for; a --once run gets here
+        // with its calls still going and waits for them. Wait for the DAG to
+        // go quiet, then take the workers down.
         tracing::info!("draining workers...");
         let quiet = timeout(worker_timeout, async {
             while router.in_flight() > 0 {

@@ -119,6 +119,9 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     tracing::info!(target = "startup", config = ?cfg);
 
     let ingest_shutdown = CancellationToken::new();
+    // Cancelled by a signal: model calls end then rather than finish, and
+    // the batches waiting on them are not delivered.
+    let stop_models = CancellationToken::new();
 
     info!(
         "Batch size: {} KiB, max age: {:?}",
@@ -126,25 +129,78 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
         cfg.batch_age_ms()
     );
 
-    let dag_runtime = DagRuntime::build(cfg, &config_path, ingest_shutdown.clone()).await?;
+    let dag_runtime = DagRuntime::build(
+        cfg,
+        &config_path,
+        ingest_shutdown.clone(),
+        stop_models.clone(),
+    )
+    .await?;
 
     #[cfg(feature = "alloc-prof")]
     jemalloc_dump("warm");
 
+    // A run stops at a signal. A --once run stops by itself, and a signal
+    // ends it at once, as it always has.
     if !opts.once {
-        wait_for_shutdown_signal().await?;
+        watch_signals(stop_models.clone())?;
+        stop_models.cancelled().await;
+        info!("received shutdown signal: sources and model calls stop now; another signal exits at once");
     }
 
     #[cfg(feature = "alloc-prof")]
     jemalloc_dump("pre_teardown");
 
-    info!("received shutdown signal...");
     ingest_shutdown.cancel();
 
     dag_runtime
         .shutdown(Duration::from_secs(120), Duration::from_secs(120))
         .await?;
 
+    Ok(())
+}
+
+/// The first SIGINT or SIGTERM cancels `stop`; a later one exits at once,
+/// whatever is still under way. One stop often comes as two signals a moment
+/// apart (a terminal's SIGINT, then a wrapper's SIGTERM), so a signal within
+/// a second of the first is the same stop.
+fn watch_signals(stop: CancellationToken) -> Result<()> {
+    let mut first: Option<std::time::Instant> = None;
+    let mut again = move || match first {
+        None => {
+            first = Some(std::time::Instant::now());
+            stop.cancel();
+        }
+        Some(at) if at.elapsed() < Duration::from_secs(1) => {}
+        Some(_) => {
+            tracing::warn!("second signal: exiting now; records still in flight are not delivered");
+            std::process::exit(130);
+        }
+    };
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut int = signal(SignalKind::interrupt())?;
+        let mut term = signal(SignalKind::terminate())?;
+        tokio::spawn(async move {
+            loop {
+                let got = tokio::select! {
+                    got = int.recv() => got,
+                    got = term.recv() => got,
+                };
+                if got.is_none() {
+                    return;
+                }
+                again();
+            }
+        });
+    }
+    #[cfg(not(unix))]
+    tokio::spawn(async move {
+        while tokio::signal::ctrl_c().await.is_ok() {
+            again();
+        }
+    });
     Ok(())
 }
 
