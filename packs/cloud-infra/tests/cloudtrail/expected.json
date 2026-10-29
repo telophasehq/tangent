@@ -439,5 +439,55 @@
    "type": "IAMUser",
    "userName": "deploy-bot"
   }
+ },
+ {
+  "_norm": {
+   "actor": "aws:resource-explorer-2",
+   "kind": "ListTargetGroups",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListTargetGroups",
+  "eventSource": "vpc-lattice.amazonaws.com",
+  "eventTime": "2026-10-20T13:05:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "source": "cloudtrail",
+  "sourceIPAddress": "resource-explorer-2.amazonaws.com",
+  "ts": "2026-10-20T13:05:00Z",
+  "userAgent": "resource-explorer-2.amazonaws.com",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSServiceRoleForResourceExplorer/resource-explorer-2",
+   "invokedBy": "resource-explorer-2.amazonaws.com",
+   "role": "AWSServiceRoleForResourceExplorer",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "aws:ecs-tasks",
+   "kind": "AssumeRole",
+   "org": "acme",
+   "target": "arn:aws:iam::111122223333:role/ecs-task"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRole",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:06:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "roleArn": "arn:aws:iam::111122223333:role/ecs-task",
+   "roleSessionName": "task-1"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "ecs-tasks.amazonaws.com",
+  "ts": "2026-10-20T13:06:00Z",
+  "userAgent": "ecs-tasks.amazonaws.com",
+  "userIdentity": {
+   "invokedBy": "ecs-tasks.amazonaws.com",
+   "type": "AWSService"
+  }
  }
 ]

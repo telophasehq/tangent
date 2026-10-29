@@ -6,7 +6,8 @@
 //! (where the people are, who the members, services and keys are, which hosts
 //! the systems talk to, which assets are sensitive, which kinds are watched)
 //! and writes what it knows:
-//!   - `principal`: `member`, `service`, `key`, or `unknown`;
+//!   - `principal`: `member`, `service`, `key`, `aws` (AWS acting on its own,
+//!     an actor `aws:<service>`), or `unknown`;
 //!   - `ip`: the address as decorated; `key_known_network` for a key;
 //!   - `dest_known`, `sensitive_target`, `watch`, `root`, `world_open`;
 //!   - `notes`: the same, in sentences a model reads.
@@ -182,7 +183,9 @@ fn text(v: &Value) -> Option<String> {
 
 /// Who the actor is to the profile.
 fn principal(p: &Profile, actor: &str) -> &'static str {
-    if p.services.contains(actor) {
+    if actor.starts_with("aws:") {
+        "aws"
+    } else if p.services.contains(actor) {
         "service"
     } else if p.members.contains(actor) {
         "member"

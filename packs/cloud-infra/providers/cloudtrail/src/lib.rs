@@ -51,7 +51,7 @@ fn actor_of(r: &Value) -> Option<String> {
             };
             let issuer = get(r, "userIdentity.sessionContext.sessionIssuer.arn").unwrap_or_default();
             if issuer.contains("/aws-service-role/") {
-                return None;
+                return Some(aws_acting(r, Some(&role)));
             }
             if role.starts_with("AWSReservedSSO_") {
                 let arn = get(r, "userIdentity.arn").unwrap_or_default();
@@ -61,12 +61,23 @@ fn actor_of(r: &Value) -> Option<String> {
             }
             Some(role)
         }
-        "AWSService" => None,
+        "AWSService" => Some(aws_acting(r, None)),
         "AWSAccount" => get(r, "userIdentity.accountId").map(|a| format!("account:{a}")),
         "Root" => get(r, "userIdentity.userName").or_else(|| Some("root".to_string())),
-        "" if get(r, "userIdentity.invokedBy").is_some() => None,
+        "" if get(r, "userIdentity.invokedBy").is_some() => Some(aws_acting(r, None)),
         _ => get(r, "userIdentity.userName").or_else(|| get(r, "userIdentity.arn")),
     }
+}
+
+/// AWS acting on its own, a service or a service-linked role's session:
+/// `aws:<service>` (`aws:resource-explorer-2`), by the service that invoked
+/// the call, else the role, so its history is its own and `facts` can say
+/// it is AWS.
+fn aws_acting(r: &Value, role: Option<&str>) -> String {
+    let by = get(r, "userIdentity.invokedBy")
+        .or_else(|| get(r, "sourceIPAddress").filter(|ip| ip.ends_with(".amazonaws.com")))
+        .map(|s| s.trim_end_matches(".amazonaws.com").to_string());
+    format!("aws:{}", by.or_else(|| role.map(str::to_string)).unwrap_or_else(|| "service".to_string()))
 }
 
 fn norm_of(r: &Value) -> Norm {

@@ -1627,5 +1627,20 @@
   "org": "acme",
   "source": "app",
   "ts": "2026-10-22T03:20:00Z"
+ },
+ {
+  "_norm": {
+   "actor": "aws:resource-explorer-2",
+   "kind": "ListTargetGroups",
+   "org": "acme"
+  },
+  "eventName": "ListTargetGroups",
+  "source": "cloudtrail",
+  "sourceIPAddress": "resource-explorer-2.amazonaws.com",
+  "ts": "2026-10-20T13:05:00Z",
+  "userIdentity": {
+   "type": "AssumedRole",
+   "invokedBy": "resource-explorer-2.amazonaws.com"
+  }
  }
 ]
