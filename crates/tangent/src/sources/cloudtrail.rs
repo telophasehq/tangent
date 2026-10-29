@@ -146,7 +146,7 @@ fn trail_files(body: &str) -> Vec<(String, String)> {
     let Ok(v) = serde_json::from_str::<Value>(body) else {
         return Vec::new();
     };
-    if let Some(url) = v.get("SubscribeURL").and_then(Value::as_str) {
+    if let (Some("SubscriptionConfirmation"), Some(url)) = (v["Type"].as_str(), v["SubscribeURL"].as_str()) {
         tracing::warn!("confirm the queue's SNS subscription: {url}");
     }
     let v = match v.get("Message").and_then(Value::as_str) {
