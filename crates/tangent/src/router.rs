@@ -12,7 +12,7 @@ use tokio::sync::OnceCell;
 use crate::{
     inference::lines,
     partition,
-    sinks::manager::SinkManager,
+    sinks::{manager::SinkManager, store::StoreSink},
     wasm::host::JsonLogView,
     worker::{Ack, Payload, Record, WorkerPool},
 };
@@ -66,6 +66,7 @@ pub struct Router {
     outs: HashMap<NodeRef, Vec<NodeRef>>,
     /// Each partitioned node's partition: its name and fields.
     partitions: HashMap<NodeRef, (String, Vec<String>)>,
+    stores: HashMap<Arc<str>, StoreSink>,
     pool: OnceCell<Weak<WorkerPool>>,
     sink_manager: Arc<SinkManager>,
     /// Records handed to a worker and not yet through their walk of the DAG.
@@ -77,11 +78,13 @@ impl Router {
     pub fn new(
         outs: HashMap<NodeRef, Vec<NodeRef>>,
         partitions: HashMap<NodeRef, (String, Vec<String>)>,
+        stores: HashMap<Arc<str>, StoreSink>,
         sink_manager: Arc<SinkManager>,
     ) -> Self {
         Self {
             outs,
             partitions,
+            stores,
             pool: OnceCell::new(),
             sink_manager,
             in_flight: Arc::new(AtomicUsize::new(0)),
@@ -122,14 +125,18 @@ impl Router {
         }
     }
 
+    pub fn store(&self, sink: &str) -> Option<&StoreSink> {
+        self.stores.get(sink)
+    }
+
     pub fn sinks(&self) -> &Arc<SinkManager> {
         &self.sink_manager
     }
 
-    /// Records from a source into the DAG. With a plugin or an inference node
-    /// among the source's outputs, each record goes to the worker pool once,
-    /// and the worker walks the DAG from the source, its sinks included; with
-    /// only sinks, the frames go to them whole, as they are.
+    /// Records from a source into the DAG. With a plugin, an inference node or
+    /// a store sink among the source's outputs, each record goes to the worker
+    /// pool once, and the worker walks the DAG from the source, its sinks
+    /// included; with only other sinks, the frames go to them whole.
     pub async fn forward(
         &self,
         from: &NodeRef,
@@ -144,9 +151,11 @@ impl Router {
             return Ok(());
         };
 
-        let needs_worker = tos
-            .iter()
-            .any(|to| matches!(to, NodeRef::Plugin { .. } | NodeRef::Inference { .. }));
+        let needs_worker = tos.iter().any(|to| match to {
+            NodeRef::Plugin { .. } | NodeRef::Inference { .. } => true,
+            NodeRef::Sink { name, .. } => self.stores.contains_key(name),
+            NodeRef::Source { .. } => false,
+        });
         if needs_worker {
             let Some(pool) = self.pool() else {
                 anyhow::bail!(

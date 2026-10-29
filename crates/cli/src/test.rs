@@ -67,6 +67,14 @@ pub async fn run(opts: TestOptions) -> Result<()> {
         }
     }
 
+    // The config's store sinks take the input first, so a plugin reads the
+    // history it would read in the pipeline.
+    let stores: Vec<(Arc<str>, SinkConfig)> = cfg
+        .sinks
+        .into_iter()
+        .filter(|(_, s)| matches!(s.kind, SinkKind::Store(_)))
+        .collect();
+
     for (name, plugin_cfg) in plugins_to_test {
         for test in plugin_cfg.tests {
             let input = config_root
@@ -129,11 +137,19 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 disable_remote_calls: !opts.enable_http,
             };
 
+            let mut to: Vec<NodeRef> = stores
+                .iter()
+                .map(|(n, _)| NodeRef::Sink {
+                    name: Arc::clone(n),
+                    key_prefix: None,
+                })
+                .collect();
+            to.push(NodeRef::Plugin { name: name.clone() });
             let entry = Edge {
                 from: NodeRef::Source {
                     name: "input".into(),
                 },
-                to: vec![NodeRef::Plugin { name: name.clone() }],
+                to,
             };
 
             let exit = Edge {
@@ -144,7 +160,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 }],
             };
 
-            let mut sinks = BTreeMap::new();
+            let mut sinks: BTreeMap<Arc<str>, SinkConfig> = stores.iter().cloned().collect();
             sinks.insert(Arc::<str>::from("out"), file_sink);
 
             let mut sources = BTreeMap::new();

@@ -65,7 +65,11 @@ impl SinkManager {
     pub async fn new(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<Self> {
         let mut sinks: HashMap<Arc<str>, SinkEntry> = HashMap::with_capacity(cfgs.len());
 
-        let total_inflight: usize = cfgs.values().map(|c| c.common.in_flight_limit).sum();
+        let total_inflight: usize = cfgs
+            .values()
+            .filter(|c| !matches!(c.kind, SinkKind::Store(_)))
+            .map(|c| c.common.in_flight_limit)
+            .sum();
 
         for (name, cfg) in cfgs {
             match &cfg.kind {
@@ -98,6 +102,7 @@ impl SinkManager {
                     let bh = blackhole::BlackholeSink::new();
                     sinks.insert(Arc::clone(&name), SinkEntry::Other { sink: bh });
                 }
+                SinkKind::Store(_) => {} // the worker writes it, in the walk
             }
         }
 

@@ -2,14 +2,20 @@ use ahash::AHashMap as HashMap;
 
 use anyhow::{anyhow, Context, Result};
 use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
-use tangent_shared::{dag::NodeRef, sources::common::SourceConfig, Config};
+use tangent_shared::{
+    dag::NodeRef, sinks::common::SinkKind, sources::common::SourceConfig, Config,
+};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    router::Router, sinks::manager::SinkManager, sources, state, state::StateStore,
-    wasm::engine::WasmEngine, worker::WorkerPool,
+    router::Router,
+    sinks::{manager::SinkManager, store::StoreSink},
+    sources, state,
+    state::StateStore,
+    wasm::engine::WasmEngine,
+    worker::WorkerPool,
 };
 
 pub struct DagRuntime {
@@ -110,7 +116,29 @@ impl DagRuntime {
             })
             .collect();
 
-        let router = Arc::new(Router::new(outs, partitions, Arc::clone(&sink_manager)));
+        let mut stores = HashMap::default();
+        for (name, sink) in &cfg.sinks {
+            let SinkKind::Store(sc) = &sink.kind else {
+                continue;
+            };
+            let cap = cfg.runtime.state.max_ttl_ms;
+            if cap != 0 && sc.retain_ms > cap {
+                tracing::warn!("sink {name}: history expires at runtime.state.max_ttl_ms");
+            }
+            let sink = StoreSink::new(
+                Arc::clone(&store),
+                cfg.runtime.partitions.clone(),
+                sc.clone(),
+            );
+            stores.insert(Arc::clone(name), sink);
+        }
+
+        let router = Arc::new(Router::new(
+            outs,
+            partitions,
+            stores,
+            Arc::clone(&sink_manager),
+        ));
 
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
@@ -455,6 +483,7 @@ mod tests {
         ));
 
         let router = Arc::new(Router::new(
+            HashMap::default(),
             HashMap::default(),
             HashMap::default(),
             Arc::clone(&sink_manager),

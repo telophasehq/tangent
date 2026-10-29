@@ -313,15 +313,16 @@ impl Worker {
         let mut handoffs: Vec<(usize, NodeRef, JsonLogView)> = Vec::new();
         while let Some((node, hop)) = queue.pop_front() {
             let outs = router.outs(&node);
-            let sinks: Vec<(Arc<str>, Option<Arc<str>>)> = outs
-                .iter()
-                .filter_map(|to| match to {
-                    NodeRef::Sink { name, key_prefix } => {
-                        Some((Arc::clone(name), key_prefix.clone()))
+            let mut sinks: Vec<(Arc<str>, Option<Arc<str>>)> = Vec::new();
+            let mut stores = Vec::new();
+            for to in outs {
+                if let NodeRef::Sink { name, key_prefix } = to {
+                    match router.store(name) {
+                        Some(store) => stores.push((name, store)),
+                        None => sinks.push((Arc::clone(name), key_prefix.clone())),
                     }
-                    _ => None,
-                })
-                .collect();
+                }
+            }
             let nodes: Vec<&NodeRef> = outs
                 .iter()
                 .filter(|to| matches!(to, NodeRef::Plugin { .. } | NodeRef::Inference { .. }))
@@ -331,7 +332,7 @@ impl Worker {
             }
 
             // Sinks take the node's output as it is: no parse, one copy at most.
-            if nodes.is_empty() {
+            if nodes.is_empty() && stores.is_empty() {
                 if !sinks.is_empty() {
                     let frame = match hop {
                         Hop::Frames(frames) => join_frames(frames),
@@ -349,15 +350,22 @@ impl Worker {
                 deliver(&mut deliveries, sinks, frame);
             }
 
-            // A plugin or a model needs the records. A partitioned node runs
-            // here the records this worker owns; the rest go to their owners.
+            // A plugin, a model or a store needs the records. History is kept
+            // before the nodes after it run, so they read it.
             let views = match hop {
                 Hop::Views(views) => views,
                 Hop::Frames(frames) => parse(&frames),
             };
+            for (name, store) in stores {
+                if let Err(e) = store.write(&views).await {
+                    tracing::warn!(sink = %name, error = %e, "store write failed");
+                }
+            }
             if views.is_empty() {
                 continue;
             }
+            // A partitioned node runs here the records this worker owns; the
+            // rest go to their owners.
             for to in nodes {
                 let out = if workers <= 1 || !router.partitioned(to) {
                     self.run_node(to, &views).await?
@@ -808,6 +816,7 @@ mod tests {
         let router = Arc::new(Router::new(
             outs,
             HashMap::default(),
+            HashMap::default(),
             Arc::clone(&sink_manager),
         ));
         let in_flight = router.in_flight_counter();
@@ -920,7 +929,12 @@ mod tests {
         );
         let mut partitions = HashMap::default();
         partitions.insert(judge, ("org".to_string(), vec!["org_id".to_string()]));
-        let router = Arc::new(Router::new(outs, partitions, Arc::clone(&sink_manager)));
+        let router = Arc::new(Router::new(
+            outs,
+            partitions,
+            HashMap::default(),
+            Arc::clone(&sink_manager),
+        ));
         let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
         let engines = (0..2)
             .map(|_| WasmEngine::new(Arc::clone(&store), true).unwrap())
