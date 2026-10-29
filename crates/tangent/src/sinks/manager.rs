@@ -65,6 +65,7 @@ impl SinkManager {
     pub async fn new(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<Self> {
         let mut sinks: HashMap<Arc<str>, SinkEntry> = HashMap::with_capacity(cfgs.len());
 
+        // a store sink takes no writes here; counting it would loosen the limit
         let total_inflight: usize = cfgs
             .values()
             .filter(|c| !matches!(c.kind, SinkKind::Store(_)))

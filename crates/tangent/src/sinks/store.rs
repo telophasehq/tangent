@@ -9,14 +9,13 @@ use crate::state::{now_ms, StateStore, StateValue, PLUGIN_NS};
 use crate::wasm::host::tangent::logs::log::Scalar;
 use crate::wasm::host::JsonLogView;
 
-/// Keeps each record in the history of every partition: in the plugins'
-/// namespace, under the record's scope, as `ev:<ms, 13 digits>:<seq>`. The
-/// worker writes it as the walk reaches it, so the nodes after it read it.
+static SEQ: AtomicU32 = AtomicU32::new(0);
+
+/// Each record into every partition's history, as ev:<ms>:<seq>.
 pub struct StoreSink {
     store: Arc<dyn StateStore>,
     partitions: BTreeMap<String, Vec<String>>,
     cfg: StoreConfig,
-    seq: AtomicU32,
 }
 
 impl StoreSink {
@@ -29,7 +28,6 @@ impl StoreSink {
             store,
             partitions,
             cfg,
-            seq: AtomicU32::new(0),
         }
     }
 
@@ -37,7 +35,7 @@ impl StoreSink {
         let ttl = Some(self.cfg.retain_ms);
         for lv in views {
             let ts = time_of(lv, self.cfg.time.as_deref()).unwrap_or_else(|| now_ms() as i64);
-            let seq = self.seq.fetch_add(1, Ordering::Relaxed) % 1_000_000;
+            let seq = SEQ.fetch_add(1, Ordering::Relaxed) % 1_000_000;
             let key = format!("ev:{ts:013}:{seq:06}");
             let value = StateValue::Str(lv.to_json());
             if self.partitions.is_empty() {
@@ -114,7 +112,7 @@ mod tests {
             host.partition = Arc::from(scope);
             let rows = host.scan("ev:".into(), "ev:~".into(), 10).await.unwrap();
             assert_eq!(rows.len(), 1, "{scope}");
-            assert_eq!(rows[0].0, "ev:1792501200000:000000");
+            assert!(rows[0].0.starts_with("ev:1792501200000:"));
             assert!(matches!(&rows[0].1, Scalar::Str(s) if s.contains("acme")));
         }
     }

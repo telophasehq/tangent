@@ -72,7 +72,7 @@ A plugin may read files too: `data: <dir>` mounts a directory, relative to the c
 
 A plugin or inference node with `partition: <name>` runs each record on the worker that owns the record's scope for it, `<name>:` and the fields' values joined with `|` (`org:acme`), and a plugin's state calls are scoped to it: "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. A node without one runs wherever the record is, its state in the scope `""`. [examples/partition](/examples/partition) counts events per org with a single `count` key.
 
-A partition's history is its records. A `store` sink keeps each record it receives in the history of every partition (of `""` when there are none): in the plugins' namespace, under the record's scope, as `ev:<epoch ms, 13 digits>:<seq>` with a TTL of `retain_ms`, timed by its `time` field (RFC 3339 or epoch) or its arrival. A plugin under `partition: org` reads its org's last hour with one `state.Scan("ev:<from>", "ev:<to>", limit)`. Where the sink sits in the DAG decides what is kept; the walk writes it before the nodes after it run, so they read it.
+A partition's history is its records. A `store` sink keeps each record it receives in the history of every partition (of `""` when there are none): in the plugins' namespace, under the record's scope, as `ev:<epoch ms, 13 digits>:<seq>` with a TTL of `retain_ms`, timed by its `time` field (RFC 3339 or epoch) or its arrival. A plugin under `partition: org` reads its org's last hour with one `state.Scan("ev:<from>", "ev:<to>", limit)`. Where the sink sits in the DAG decides what is kept; it is written before the other outputs of the node that feeds it run, so they read it.
 
 ```yaml
 sinks:

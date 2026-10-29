@@ -67,8 +67,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
         }
     }
 
-    // The config's store sinks take the input first, so a plugin reads the
-    // history it would read in the pipeline.
+    // store sinks first, so a plugin reads its history
     let stores: Vec<(Arc<str>, SinkConfig)> = cfg
         .sinks
         .into_iter()
