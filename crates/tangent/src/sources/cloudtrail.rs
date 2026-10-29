@@ -21,7 +21,6 @@ use crate::router::Router;
 use crate::sources::decoding;
 use crate::sources::poll::{frame, idle, opt, parse_time, stamp};
 use crate::sources::sqs::SqsAck;
-use crate::state::StateStore;
 use crate::worker::Ack;
 
 const SOURCE: &str = "cloudtrail";
@@ -31,7 +30,6 @@ pub async fn run_consumer(
     cfg: CloudtrailConfig,
     chunks: usize,
     router: Arc<Router>,
-    _store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Result<()> {
     // There is no LookupEvents polling: a poller's own calls are CloudTrail
@@ -49,62 +47,25 @@ pub async fn run_consumer(
         loader = loader.profile_name(profile);
     }
     let aws = loader.load().await;
-    run_delivery(
-        name,
-        queue_url.to_string(),
-        opt(&cfg.bucket_role),
-        &aws,
-        chunks,
-        router,
-        shutdown,
-    )
-    .await
-}
-
-/// How long a received message stays hidden from the queue's other readers.
-/// It is deleted once its records are all delivered; one whose file could
-/// not be fetched comes back after this and is tried again.
-const VISIBILITY_SECS: i32 = 300;
-
-/// A trail's delivery: the queue is told of each file the trail writes to
-/// its bucket; each file, gzipped `{"Records": [...]}`, is read and every
-/// record forwarded, and the message is deleted once they are all delivered.
-/// A message whose file cannot be fetched (a permission, the network, S3)
-/// stays on the queue and comes back, so a failure loses nothing; the
-/// queue's redrive policy, if it has one, sets aside what never succeeds.
-async fn run_delivery(
-    name: Arc<str>,
-    queue_url: String,
-    bucket_role: Option<&str>,
-    aws: &aws_config::SdkConfig,
-    chunks: usize,
-    router: Arc<Router>,
-    shutdown: CancellationToken,
-) -> Result<()> {
-    let sqs = SQSClient::new(aws);
-    let mut s3conf = aws_sdk_s3::config::Builder::from(aws);
-    if let Some(role) = bucket_role {
+    let sqs = SQSClient::new(&aws);
+    let mut s3conf = aws_sdk_s3::config::Builder::from(&aws);
+    if let Some(role) = opt(&cfg.bucket_role) {
         let creds = aws_config::sts::AssumeRoleProvider::builder(role)
             .session_name("tangent")
-            .configure(aws)
+            .configure(&aws)
             .build()
             .await;
         s3conf = s3conf.credentials_provider(creds);
     }
     let mut s3 = S3Client::from_conf(s3conf.build());
-    let qurl = Arc::new(queue_url);
+    let qurl = Arc::new(queue_url.to_string());
     let from = NodeRef::Source {
         name: Arc::clone(&name),
     };
-    tracing::info!(
-        source = %name,
-        queue = %qurl,
-        bucket_role = bucket_role.unwrap_or("none"),
-        "cloudtrail source reading the trail's delivery"
-    );
+    tracing::info!(source = %name, queue = %qurl, "cloudtrail source reading the trail's delivery");
 
+    let mut wait = 0;
     let mut failing = false;
-    let mut receiving = Backoff::default();
     loop {
         tokio::select! {
             () = shutdown.cancelled() => break,
@@ -113,24 +74,24 @@ async fn run_delivery(
                 .queue_url(qurl.as_str())
                 .wait_time_seconds(20)
                 .max_number_of_messages(10)
-                .visibility_timeout(VISIBILITY_SECS)
+                .visibility_timeout(300)
                 .send() => {
                 let out = match res {
                     Ok(out) => {
-                        receiving.succeeded();
+                        wait = 0;
                         out
                     }
                     Err(e) => {
-                        let e = aws_sdk_sqs::error::DisplayErrorContext(&e);
-                        let (wait, warn) = receiving.failed();
-                        if warn {
+                        let e = DisplayErrorContext(&e);
+                        if wait == 0 {
                             tracing::warn!(source = %name, "SQS ReceiveMessage: {e}; retrying, at most a minute apart");
                         } else {
-                            tracing::debug!(source = %name, "SQS ReceiveMessage: {e}; retrying in {}s", wait.as_secs());
+                            tracing::debug!(source = %name, "SQS ReceiveMessage: {e}");
                         }
+                        wait = (wait * 2).clamp(1, 60);
                         tokio::select! {
                             () = shutdown.cancelled() => break,
-                            () = tokio::time::sleep(wait) => continue,
+                            () = tokio::time::sleep(StdDuration::from_secs(wait)) => continue,
                         }
                     }
                 };
@@ -154,7 +115,7 @@ async fn run_delivery(
                         }
                         Err(e) if !failing => {
                             failing = true;
-                            tracing::warn!(source = %name, "{e:#}; the message stays on the queue and comes back in {VISIBILITY_SECS}s");
+                            tracing::warn!(source = %name, "{e:#}; the message stays on the queue and comes back in 300s");
                         }
                         Err(e) => tracing::debug!(source = %name, "{e:#}; left on the queue"),
                     }
@@ -163,29 +124,6 @@ async fn run_delivery(
         }
     }
     Ok(())
-}
-
-/// The wait before reading the queue again after a failure (an expired
-/// session, a permission, the network): a second, doubling up to a minute,
-/// and a second again once a read succeeds. Only the first failure of a run
-/// is a warning, so a session left expired overnight is one line, not
-/// thousands.
-#[derive(Debug, Default)]
-struct Backoff {
-    failures: u32,
-}
-
-impl Backoff {
-    /// A failed read: how long to wait, and whether to warn.
-    fn failed(&mut self) -> (StdDuration, bool) {
-        self.failures = self.failures.saturating_add(1);
-        let secs = 1u64 << (self.failures - 1).min(6);
-        (StdDuration::from_secs(secs.min(60)), self.failures == 1)
-    }
-
-    fn succeeded(&mut self) {
-        self.failures = 0;
-    }
 }
 
 /// Every record in the files, stamped, as NDJSON. An error is a file that
@@ -340,37 +278,6 @@ mod tests {
         assert_eq!(records_of(doc.as_bytes()).unwrap().len(), 2);
         assert!(records_of(br#"{"digestStartTime":"2026-10-28T17:00:00Z"}"#).is_err());
         assert!(records_of(b"\x1f\x8b\x08 not gzip").is_err());
-    }
-
-    #[test]
-    fn queue_failures_back_off_and_warn_once() {
-        let mut b = Backoff::default();
-        let waits: Vec<(u64, bool)> = (0..9)
-            .map(|_| b.failed())
-            .map(|(d, warn)| (d.as_secs(), warn))
-            .collect();
-        assert_eq!(
-            waits,
-            [
-                (1, true),
-                (2, false),
-                (4, false),
-                (8, false),
-                (16, false),
-                (32, false),
-                (60, false),
-                (60, false),
-                (60, false),
-            ]
-        );
-        // A read that succeeds starts the next run of failures over.
-        b.succeeded();
-        assert_eq!(b.failed(), (StdDuration::from_secs(1), true));
-        assert_eq!(b.failed(), (StdDuration::from_secs(2), false));
-        // A failure that never ends stays a minute apart.
-        b.failures = u32::MAX - 1;
-        assert_eq!(b.failed(), (StdDuration::from_secs(60), false));
-        assert_eq!(b.failed(), (StdDuration::from_secs(60), false));
     }
 
     /// A bucket in another region than the client's: S3 redirects, naming

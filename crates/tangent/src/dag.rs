@@ -319,7 +319,6 @@ fn spawn_consumers(
                         ct,
                         batch_size,
                         router,
-                        store,
                         shutdown.clone(),
                     )
                     .await
