@@ -37,6 +37,12 @@ CREATE TABLE IF NOT EXISTS state (
 CREATE INDEX IF NOT EXISTS state_expires_idx ON state(expires_at);
 ";
 
+const UPSERT: &str = "INSERT INTO state (ns, partition, key, kind, value, expires_at, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+     ON CONFLICT (ns, partition, key) DO UPDATE SET
+        kind = excluded.kind, value = excluded.value,
+        expires_at = excluded.expires_at, updated_at = excluded.updated_at";
+
 pub struct SqliteStore {
     conn: Arc<Mutex<Connection>>,
     _lock: Option<Arc<std::fs::File>>,
@@ -213,13 +219,30 @@ impl StateStore for SqliteStore {
         let (kind, raw) = to_sqlite(value)?;
         let expires_at = expires_at(&self.cfg, ttl_ms, now).map(|e| e as i64);
         self.conn.lock().execute(
-            "INSERT INTO state (ns, partition, key, kind, value, expires_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT (ns, partition, key) DO UPDATE SET
-                kind = excluded.kind, value = excluded.value,
-                expires_at = excluded.expires_at, updated_at = excluded.updated_at",
+            UPSERT,
             params![ns, partition, key, kind, raw, expires_at, now as i64],
         )?;
+        Ok(())
+    }
+
+    /// In one transaction: a failure anywhere writes none of them.
+    async fn set_many(
+        &self,
+        entries: &[(String, String, String, StateValue)],
+        ttl_ms: Option<u64>,
+    ) -> Result<()> {
+        let now = now_ms();
+        let expires_at = expires_at(&self.cfg, ttl_ms, now).map(|e| e as i64);
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        {
+            let mut st = tx.prepare_cached(UPSERT)?;
+            for (ns, partition, key, value) in entries {
+                let (kind, raw) = to_sqlite(value)?;
+                st.execute(params![ns, partition, key, kind, raw, expires_at, now as i64])?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -425,6 +448,27 @@ mod tests {
         let dir = temp_dir("conform");
         let store = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
         crate::state::conformance::run(&store).await;
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Several sets are all or none: one that fails takes the rest with it.
+    #[tokio::test]
+    async fn set_many_writes_all_or_none() {
+        let dir = temp_dir("many");
+        let store = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
+        // Another handle makes one key fail, as a full disk would.
+        Connection::open(sqlite_path(&StateConfig::default(), &dir))
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER refuse BEFORE INSERT ON state WHEN NEW.key = 'bad'
+                 BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+            )
+            .unwrap();
+        let entry = |k: &str| ("ns".to_string(), "p".to_string(), k.to_string(), StateValue::Int(1));
+        assert!(store.set_many(&[entry("good"), entry("bad")], None).await.is_err());
+        assert_eq!(store.get("ns", "p", "good").await.unwrap(), None, "written first, rolled back");
+        store.set_many(&[entry("good")], None).await.unwrap();
+        assert_eq!(store.get("ns", "p", "good").await.unwrap(), Some(StateValue::Int(1)));
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -45,8 +45,10 @@ const FOLLOW_CAP: i64 = 50;
 
 /// How many follow windows a scope value keeps. As with runs, a source
 /// running behind another has new records of its own, and a record that
-/// arrives late follows the new one before it, not only the latest.
-const FOLLOW_WINDOWS: usize = 4;
+/// arrives late follows the new one before it, not only the latest. A
+/// session can begin with several new values at once, so there is room
+/// for them beside a source running behind.
+const FOLLOW_WINDOWS: usize = 8;
 
 /// What a record following a new one of its scope value is marked with.
 const FOLLOWS: &str = "follows";
@@ -174,15 +176,27 @@ impl Windows {
     }
 
     /// A new record at `ts` starts a window there, whatever windows come
-    /// after it. One that starts there already starts again: a write tried
-    /// again after its windows were written does not count its records
-    /// twice. Past `FOLLOW_WINDOWS` the oldest is dropped, never this one.
+    /// after it. One that starts there already starts again, so a write
+    /// tried again after its windows were written counts that window's
+    /// records once (see `commit` for the windows it only followed).
+    ///
+    /// Past `FOLLOW_WINDOWS` one is dropped, never this one: a full one
+    /// first, which marks nothing more; else the one starting nearest after
+    /// another, whose records mostly follow that one instead. Not the
+    /// earliest for being earliest: that is often a source running behind,
+    /// whose records are still to come.
     fn start(&mut self, ts: i64) {
         self.0.retain(|w| w.start != ts);
         self.0.push(Window { start: ts, count: 0 });
         self.0.sort_by_key(|w| w.start);
         while self.0.len() > FOLLOW_WINDOWS {
-            self.0.remove(if self.0[0].start == ts { 1 } else { 0 });
+            let ws = &self.0;
+            let after = |i: usize| if i == 0 { i64::MAX } else { ws[i].start - ws[i - 1].start };
+            let i = (0..ws.len())
+                .filter(|&i| ws[i].start != ts)
+                .min_by_key(|&i| (ws[i].count < FOLLOW_CAP, after(i)))
+                .expect("more windows than one");
+            self.0.remove(i);
         }
     }
 
@@ -381,27 +395,38 @@ impl StoreSink {
         Ok(new)
     }
 
-    /// What a write learned, written once its records are stored. Follow
-    /// windows go first: a write that fails before its seen entries are
-    /// written still finds its values new when tried again, and starts
-    /// their windows again. An entry is kept on the clock for half a
-    /// retention past `retain`, so it outlives the record time it is new
-    /// again at; the clock only clears what is stale.
-    async fn commit(&self, part: &str, learned: Learned) -> Result<()> {
-        let ttl = Some(self.retain_ms + self.retain_ms / 2);
-        let ns = follow_ns(&self.ns);
-        for (at, (windows, changed)) in learned.windows {
-            if let (Some(w), true) = (windows, changed) {
-                self.store.set(&ns, part, &at, &w.value(), ttl).await?;
+    /// What a write learned, every partition's, written once its records
+    /// are stored, in one `set_many`. SQLite writes it in one transaction
+    /// (and the lru store cannot fail), so a write that fails and is tried
+    /// again finds none of it and decides the same again.
+    ///
+    /// A backend that writes one at a time can fail part way. Follow
+    /// windows go first, so a write that fails before its seen entries
+    /// still finds its values new when tried again, and starts their
+    /// windows again. A window it only followed counts its records twice,
+    /// though, and closes early.
+    ///
+    /// An entry is kept on the clock for half a retention past `retain`, so
+    /// it outlives the record time it is new again at; the clock only
+    /// clears what is stale.
+    async fn commit(&self, learned: impl IntoIterator<Item = (String, Learned)>) -> Result<()> {
+        let (follow, seen) = (follow_ns(&self.ns), seen_ns(&self.ns));
+        let (mut entries, mut sightings) = (Vec::new(), Vec::new());
+        for (part, l) in learned {
+            for (at, (w, changed)) in l.windows {
+                if let (Some(w), true) = (w, changed) {
+                    entries.push((follow.clone(), part.clone(), at, w.value()));
+                }
+            }
+            for (at, (s, changed)) in l.seen {
+                if let (Some(s), true) = (s, changed) {
+                    sightings.push((seen.clone(), part.clone(), at, s.value()));
+                }
             }
         }
-        let ns = seen_ns(&self.ns);
-        for (at, (seen, changed)) in learned.seen {
-            if let (Some(s), true) = (seen, changed) {
-                self.store.set(&ns, part, &at, &s.value(), ttl).await?;
-            }
-        }
-        Ok(())
+        // Every partition's windows, then every partition's seen entries.
+        entries.append(&mut sightings);
+        self.store.set_many(&entries, Some(self.retain_ms + self.retain_ms / 2)).await
     }
 
     /// A partition's rows stored before this sink indexed a scope or
@@ -448,7 +473,7 @@ impl StoreSink {
                     }
                 }
             }
-            self.commit(part, learned).await?;
+            self.commit([(part.to_string(), learned)]).await?;
         }
         if n > 0 {
             let fields: usize = remember.iter().map(|s| s.fields.len()).sum();
@@ -575,9 +600,7 @@ impl Sink for StoreSink {
         drop(held);
         // Last: a write that failed before here is tried again from what
         // the store had, and marks the same records.
-        for (part, l) in learned {
-            self.commit(&part, l).await?;
-        }
+        self.commit(learned).await?;
         drop(turns);
         SINK_OBJECTS_TOTAL.inc();
         SINK_BYTES_TOTAL.inc_by(req.payload.len() as u64);
@@ -1062,22 +1085,85 @@ mod tests {
         );
     }
 
+    /// Past eight windows a full one is dropped first, which marks nothing
+    /// more; else the one starting nearest after another. Never the one
+    /// just started, and not the earliest for being earliest.
+    #[test]
+    fn past_eight_windows_a_full_or_crowded_one_is_dropped() {
+        let mins = |ws: &Windows| ws.0.iter().map(|w| w.start / MIN).collect::<Vec<_>>();
+        let mut ws = Windows::default();
+        for m in [0, 100, 200, 300, 400, 500, 600, 610, 611] {
+            ws.start(m * MIN);
+        }
+        assert_eq!(mins(&ws), [0, 100, 200, 300, 400, 500, 600, 611], "610, ten minutes after 600; 611, a minute after it, just started");
+        ws.0[2].count = FOLLOW_CAP;
+        ws.start(700 * MIN);
+        assert_eq!(mins(&ws), [0, 100, 300, 400, 500, 600, 611, 700], "200, full");
+    }
+
+    /// A stream running behind keeps its window, however many new values
+    /// the stream ahead of it has after.
+    #[tokio::test]
+    async fn a_lagging_stream_keeps_its_window_beside_a_busy_one() {
+        let store = lru();
+        let sink = novelty_sink(&store, &[("actor", &["_norm.ip"])], Some("1h"));
+        let ahead = |d: i64| at(Y2020 + d * DAY, "alice", "Describe", &format!("10.0.{d}.1"));
+        each(&sink, &[ahead(90), ahead(91), ahead(92), at(Y2020, "alice", "Describe", "5.6.7.8")]).await;
+        each(&sink, &(93..100).map(ahead).collect::<Vec<_>>()).await;
+        each(&sink, &[at(Y2020 + 10 * MIN, "alice", "Describe", "5.6.7.8")]).await;
+        assert_eq!(
+            novelty(&store).await[..2],
+            [json!({"actor": ["_norm.ip"]}), json!({"actor": ["follows"]})],
+            "day 0 and 10 min on, around new addresses on days 90 to 99"
+        );
+    }
+
+    /// A session that begins with more new values than a value keeps
+    /// windows keeps its first: a record arriving late follows it.
+    #[tokio::test]
+    async fn a_burst_of_new_values_keeps_its_first_window() {
+        let store = lru();
+        let sink = novelty_sink(&store, &[("actor", &["_norm.kind", "_norm.ip"])], Some("1h"));
+        let t = Y2020 + 10 * DAY;
+        let kinds: Vec<_> = (1..=8).map(|i| at(t + i * MIN, "alice", &format!("Kind{i}"), "5.6.7.8")).collect();
+        each(&sink, &[at(t - DAY, "alice", "Describe", "10.0.0.1"), at(t, "alice", "Describe", "5.6.7.8")]).await;
+        each(&sink, &kinds).await;
+        each(&sink, &[at(t + MIN / 2, "alice", "Describe", "5.6.7.8")]).await;
+        assert_eq!(
+            novelty(&store).await[1..3],
+            [json!({"actor": ["_norm.ip"]}), json!({"actor": ["follows"]})],
+            "a new address, then eight new actions a minute apart; \
+             her routine half a minute after the address, arriving last"
+        );
+    }
+
     /// A store whose `fail_at`th write to `fail_ns` fails, once (a disk
     /// filling up), and whose write of a record with a `slow` field waits
-    /// for `release` (a write still in flight while others run).
+    /// for `release` (a write still in flight while others run). Its
+    /// `set_many` writes one at a time, or, `atomic`, all or none, as
+    /// SQLite's does.
     struct Probe {
         inner: LruStore,
         writes: AtomicUsize,
         fail_ns: String,
         fail_at: usize,
+        atomic: bool,
         held: tokio::sync::Notify,
         release: tokio::sync::Notify,
     }
 
-    fn probe(fail_ns: &str, fail_at: usize) -> Arc<Probe> {
+    fn probe_with(fail_ns: &str, fail_at: usize, atomic: bool) -> Arc<Probe> {
         let inner = LruStore::new(StateConfig::default()).unwrap();
         let (held, release) = Default::default();
-        Arc::new(Probe { inner, writes: AtomicUsize::new(0), fail_ns: fail_ns.to_string(), fail_at, held, release })
+        Arc::new(Probe { inner, writes: AtomicUsize::new(0), fail_ns: fail_ns.to_string(), fail_at, atomic, held, release })
+    }
+
+    fn probe(fail_ns: &str, fail_at: usize) -> Arc<Probe> {
+        probe_with(fail_ns, fail_at, false)
+    }
+
+    fn transactional(fail_ns: &str, fail_at: usize) -> Arc<Probe> {
+        probe_with(fail_ns, fail_at, true)
     }
 
     #[async_trait]
@@ -1094,6 +1180,22 @@ mod tests {
                 self.release.notified().await;
             }
             self.inner.set(ns, partition, key, value, ttl_ms).await
+        }
+        async fn set_many(&self, entries: &[(String, String, String, StateValue)], ttl_ms: Option<u64>) -> Result<()> {
+            if self.atomic {
+                let n = entries.iter().filter(|(ns, ..)| *ns == self.fail_ns).count();
+                let from = self.writes.fetch_add(n, Ordering::SeqCst);
+                if (from..from + n).contains(&self.fail_at) {
+                    anyhow::bail!("disk full");
+                }
+            }
+            for (ns, partition, key, value) in entries {
+                match self.atomic {
+                    true => self.inner.set(ns, partition, key, value, ttl_ms).await?,
+                    false => self.set(ns, partition, key, value, ttl_ms).await?,
+                }
+            }
+            Ok(())
         }
         async fn del(&self, ns: &str, partition: &str, key: &str) -> Result<bool> {
             self.inner.del(ns, partition, key).await
@@ -1160,8 +1262,9 @@ mod tests {
         );
     }
 
-    /// A write that fails after its window is written starts it again when
-    /// tried again: its records are counted once.
+    /// On a backend that writes one at a time, a write that fails after its
+    /// window is written starts it again when tried again: the window it
+    /// started counts its records once.
     #[tokio::test]
     async fn a_window_written_by_a_failed_write_counts_its_records_once() {
         // The first seen entry written is the day before's; the next fails.
@@ -1174,6 +1277,38 @@ mod tests {
         sink.write(payload()).await.unwrap();
         let windows = Windows::read(store.get(&follow_ns("events"), "acme", &index_prefix("actor", "alice")).await.unwrap());
         assert_eq!(windows.unwrap().0, [Window { start: t - DAY, count: 0 }, Window { start: t, count: 2 }]);
+    }
+
+    /// On a backend that writes all or none, as SQLite does, a write that
+    /// fails has written nothing it learned, in any partition: tried again,
+    /// a window it followed but did not start counts its records once, and
+    /// what was new is new again.
+    #[tokio::test]
+    async fn a_write_tried_again_counts_what_it_followed_once() {
+        // Seen entries 0 and 1 are the earlier writes'; this write's fail.
+        let store: Arc<dyn StateStore> = transactional(&seen_ns("events"), 2);
+        let sink = novelty_sink(&store, &[("actor", &["_norm.ip"])], Some("1h"));
+        let t = Y2020 + 10 * DAY;
+        each(&sink, &[at(t - 10 * MIN, "alice", "Describe", "10.0.0.1"), at(t, "alice", "Describe", "5.6.7.8")]).await;
+        let mut bob = at(t, "bob", "Describe", "10.0.0.1");
+        bob["_norm"]["org"] = json!("globex");
+        let payload = || {
+            write(&[
+                at(t + MIN, "alice", "Describe", "10.0.0.1"),
+                at(t + 2 * MIN, "alice", "Describe", "10.0.0.1"),
+                at(t + 3 * MIN, "alice", "Describe", "9.9.9.9"),
+                bob.clone(),
+            ])
+        };
+        assert!(sink.write(payload()).await.is_err());
+        sink.write(payload()).await.unwrap();
+        let windows = Windows::read(store.get(&follow_ns("events"), "acme", &index_prefix("actor", "alice")).await.unwrap());
+        assert_eq!(
+            windows.unwrap().0,
+            [Window { start: t - 10 * MIN, count: 0 }, Window { start: t, count: 2 }, Window { start: t + 3 * MIN, count: 0 }]
+        );
+        let new = json!({"actor": ["_norm.ip"]});
+        assert_eq!(novelty_in(&store, "globex").await, [new.clone(), new], "bob's first, stored by both tries");
     }
 
     /// `rec` with a `slow` field: its write waits until the probe releases it.

@@ -46,8 +46,10 @@ pub struct StoreSinkConfig {
     /// the sink with its new one or after: one that came before is not
     /// marked. A record follows the latest new one at or before its own
     /// time, so one arriving late, or from a source running behind, follows
-    /// its own. Not for a scope that is the partition, whose every record
-    /// would follow. Off without it.
+    /// its own. A value keeps eight windows; past that it drops one that
+    /// starts soon after another, whose records mostly follow that one. Not
+    /// for a scope that is the partition, whose every record would follow.
+    /// Off without it.
     #[serde(default)]
     pub follow: Option<String>,
 }
