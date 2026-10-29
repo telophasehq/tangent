@@ -22,7 +22,6 @@ pub enum SinkKind {
     Blackhole(blackhole::BlackholeConfig),
     #[serde(rename = "store")]
     Store(super::store::StoreSinkConfig),
-    /// A Slack channel, through an incoming webhook: one message a record.
     #[serde(rename = "slack")]
     Slack(super::slack::SlackConfig),
 }
