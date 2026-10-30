@@ -27,11 +27,17 @@ fn own() -> &'static (Option<String>, BTreeSet<String>) {
             let org = f["org"].as_str().map(str::to_string);
             let sources = f["own_sources"]
                 .as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default();
             return (org, sources);
         }
-        let org = config::get("own_org").map(|s| s.trim().trim_matches('"').to_string()).filter(|s| !s.is_empty());
+        let org = config::get("own_org")
+            .map(|s| s.trim().trim_matches('"').to_string())
+            .filter(|s| !s.is_empty());
         let sources = config::get("own_sources")
             .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
             .unwrap_or_default()
@@ -80,7 +86,10 @@ fn get(lv: &Logview, path: &str) -> Option<String> {
 /// `https://api.github.com/repos/x` -> `api.github.com`
 fn host_of(url: &str) -> String {
     let rest = url.split("://").nth(1).unwrap_or(url);
-    rest.split(['/', '?', ':']).next().unwrap_or(rest).to_string()
+    rest.split(['/', '?', ':'])
+        .next()
+        .unwrap_or(rest)
+        .to_string()
 }
 
 /// `acme/web` -> `acme`
@@ -96,7 +105,8 @@ fn cloudtrail_actor(lv: &Logview) -> Option<String> {
             let Some(role) = get(lv, "userIdentity.sessionContext.sessionIssuer.userName") else {
                 return get(lv, "userIdentity.userName").or_else(|| get(lv, "userIdentity.arn"));
             };
-            let issuer = get(lv, "userIdentity.sessionContext.sessionIssuer.arn").unwrap_or_default();
+            let issuer =
+                get(lv, "userIdentity.sessionContext.sessionIssuer.arn").unwrap_or_default();
             if issuer.contains("/aws-service-role/") {
                 return None;
             }

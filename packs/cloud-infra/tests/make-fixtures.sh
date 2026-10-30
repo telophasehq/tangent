@@ -5,7 +5,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=${TANGENT:-tangent}
-export JUDGE_URL=${JUDGE_URL:-http://localhost:8080/v1} JUDGE_MODEL=${JUDGE_MODEL:-stub} JUDGE_API_KEY=${JUDGE_API_KEY:-none}
 CASES="cloud/root-console-login cloud/cloudtrail-stop-logging identity/impossible-travel supply-chain/ci-action-tags-retargeted
        vendor/platform-breach-env-secrets-reused negative/oncall-3am-login negative/scanner-action-usual-run data/gmail-forwarding-rule"
 
@@ -24,7 +23,7 @@ stage() {  # name  input  output
   python3 - "$1" "$2" <<'PY'
 import sys, yaml
 name, inp = sys.argv[1], sys.argv[2]
-cfg = yaml.safe_load(open("tangent.yaml"))
+cfg = yaml.safe_load(open("ingest.yaml"))
 plugin = cfg["plugins"][name]
 plugin["tests"] = [{"input": inp, "expected": ".empty.json"}]
 stage = {"runtime": cfg["runtime"], "plugins": {name: plugin},

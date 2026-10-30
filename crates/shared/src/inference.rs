@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Ask a model about each record. The node sends `prompt_file` as the system
@@ -55,8 +54,8 @@ pub struct InferenceConfig {
     #[serde(default = "default_batch_bytes")]
     pub batch_bytes: usize,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context: Option<ContextConfig>,
+    #[serde(default)]
+    pub group_by: Vec<String>, // a request holds one value of these
 
     /// Requests in flight at once, per worker: the model sees at most
     /// `runtime.workers` times this from one node.
@@ -87,19 +86,6 @@ pub struct InferenceConfig {
     /// `reasoning_effort: low` for gpt-oss. These win over what the node sets.
     #[serde(default)]
     pub extra: Map<String, Value>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ContextConfig {
-    pub scopes: BTreeMap<String, String>, // scope: field, as the store sink's `recent`
-    #[serde(default = "default_max_events")]
-    pub max_events: usize, // per scope
-    #[serde(default)]
-    pub fields: Vec<String>,
-}
-
-const fn default_max_events() -> usize {
-    20
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]

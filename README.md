@@ -82,6 +82,30 @@ tangent state --config tangent.yaml scan --prefix user: --limit 50
 tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
 ```
 
+## Keeping records and reading them back
+A `sqlite` sink keeps every record once, in one table, `logs`, with a column per partition holding its fields' values joined with `|`. A `sqlite` source, in the same process or another, reads one partition back a window at a time:
+
+```yaml
+sinks:
+  logs:
+    type: sqlite
+    path: logs.sqlite
+    time: ts               # the record's own time (RFC 3339 or epoch); arrival time without it
+    retain_secs: 2592000   # 30d before the newest record
+    partitions:
+      org: [_norm.org]
+      actor: [_norm.org, _norm.actor]
+
+sources:
+  actors:
+    type: sqlite
+    path: logs.sqlite
+    partition: actor
+    window_secs: 300
+```
+
+A window is due once a record after it is stored, or once the clock is a window past its end. Its records not yet sent, late ones from earlier windows included, go on as one batch per partition value, in time order, and are marked `emitted` when the batch is through the DAG; a restart sends again what was not.
+
 ## Inference
 An `inference` node asks a model about each record. Nodes are configured under `inference:`, each with its own model and prompt, and sit in the DAG as `kind: inference`:
 
@@ -100,14 +124,12 @@ The record (or its `fields`) is the user message, and the reply, a JSON object, 
 
 The reply is read as JSON and nothing else, and the backend is asked to make it so: with `schema_file` (a JSON Schema next to the prompt) through `response_format` on an OpenAI-compatible server or structured output on Bedrock; without one, an `openai` server is put in JSON mode. A server that ignores both (mlx_lm.server does) is held to the prompt, and a reply that is not a JSON object is the error.
 
-`batch: 16` sends up to sixteen records in one request, within `batch_bytes` (32 KiB): one JSON object per line, each with its index `i`, answered as `{"answers": [...]}`. A schema is wrapped around each answer, `max_tokens` is per record, and a record with no answer lands with the error. `context` writes history ahead of the records: for each scope and key (`scopes: {actor: _norm.actor, org: _norm.org}`), the latest `max_events` records before the request's earliest one.
-
-A `store` sink keeps every record under its partition, keyed by its `ts`, for `retain_secs`, and indexes it by the scopes in `recent` for `context` to read. A `store` source reads them back a buffer at a time (`buffer_secs: 300`): a partition's buffer closes when its latest record time passes the buffer's end plus `late_secs`, or on the clock after `idle_secs` without a record. A buffer's records go on as one batch with `_buffer: {from, to}`, and a record stored after its buffer was read goes on again with `_late`. The bookkeeping lives in the store, so a restart picks up where it stopped.
+`batch: 16` sends up to sixteen records in one request, within `batch_bytes` (32 KiB): one JSON object per line, each with its index `i`, answered as `{"answers": [...]}`. A schema is wrapped around each answer, `max_tokens` is per record, and a reply that cannot be read is asked again in halves. `group_by: [_norm.actor]` keeps each request to one value of those fields.
 
 Inference nodes run inside the workers, in DAG order with the plugins: a worker hands a model the records that reached the node, waits for the replies, and carries them on, so a partition's records stay in order and nothing else moves while the model thinks. `concurrency` bounds requests in flight per worker (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold; `retries` (2) tries again, backing off, when a request got no reply at all. `temperature` is sent only when set. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
 
 ## Packs
-A pack is a pipeline a company runs as is: `tangent.yaml`, the plugins it needs, a `profile.yaml` describing the company, the model's brief, the cases it is measured against, and fixtures for `make test`. [packs/cloud-infra](/packs/cloud-infra) reads your own infrastructure's logs straight from their APIs (the `cloudtrail`, `github_audit`, `okta` and `google_workspace` sources, each with a plugin that normalizes and trims its records; CI over TCP), has a model read every record in its context, in batches, and flag what a person should see; [packs/app-log](/packs/app-log) does the same for a product's logs, partitioned per customer; [packs/edge](/packs/edge) is the plan for developer laptops.
+A pack is a pipeline a company runs as is: `ingest.yaml` and `judge.yaml`, two processes over one `logs.sqlite`, the plugins it needs, a `profile.yaml` describing the company, the model's brief, the cases it is measured against, and fixtures for `make test`. [packs/cloud-infra](/packs/cloud-infra) reads your own infrastructure's logs straight from their APIs (the `cloudtrail`, `github_audit`, `okta` and `google_workspace` sources; CI over TCP), keeps every record in SQLite, and has a model read each actor's five minutes, in batches, and flag what a person should see; [packs/app-log](/packs/app-log) does the same for a product's logs, partitioned per customer; [packs/edge](/packs/edge) is the plan for developer laptops.
 
 ## Benchmarks
 Benchmarks show end-to-end throughput with simple log transformation plugins implemented in [Rust](/examples/rust/src/lib.rs), [Go](/examples/golang/main.go), and [Python](/examples/python/mapper.py). Each plugin is compiled to WASM and run inside Tangent.

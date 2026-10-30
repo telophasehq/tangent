@@ -325,30 +325,6 @@ impl StateStore for SqliteStore {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    async fn range_rev(
-        &self,
-        ns: &str,
-        partition: &str,
-        from: &str,
-        to: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>> {
-        let now = now_ms() as i64;
-        let conn = self.conn.lock();
-        // The same index range, walked backwards.
-        let mut st = conn.prepare_cached(
-            "SELECT ns, partition, key, kind, value, expires_at, updated_at FROM state
-             WHERE ns = ?1 AND partition = ?2 AND key >= ?3 AND key < ?4
-               AND (expires_at IS NULL OR expires_at > ?5)
-             ORDER BY key DESC LIMIT ?6",
-        )?;
-        let rows = st.query_map(
-            params![ns, partition, from, to, now, limit as i64],
-            row_entry,
-        )?;
-        Ok(rows.collect::<Result<_, _>>()?)
-    }
-
     async fn counts(&self, ns: Option<&str>) -> Result<Vec<Count>> {
         let now = now_ms() as i64;
         let conn = self.conn.lock();

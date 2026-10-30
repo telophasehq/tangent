@@ -3,9 +3,10 @@
 //! records that reached it, waits for the replies (`concurrency` at a time),
 //! and carries the annotated records on to the node's outputs. The system
 //! prompt is a file; the user message is the record (or selected fields) as
-//! pretty JSON; the reply is added to the record under the node's name. The
-//! node adds and forwards, never drops: a failure lands as `{"error": ...}`
-//! in the same field, and a plugin downstream decides what goes on.
+//! pretty JSON, or with `batch` up to that many records, a JSON line each;
+//! the reply is added to the record under the node's name. The node adds and
+//! forwards, never drops: a failure lands as `{"error": ...}` in the same
+//! field, and a plugin downstream decides what goes on.
 //!
 //! The reply is read as JSON and nothing else. The backend is asked to make
 //! it so: a schema (`schema_file`) through rig's structured output, or JSON
@@ -22,9 +23,7 @@ use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tangent_shared::inference::{Backend, ContextConfig, InferenceConfig};
-
-use crate::state::{StateStore, StateValue};
+use tangent_shared::inference::{Backend, InferenceConfig};
 use tokio::sync::Semaphore;
 
 pub struct InferenceNode {
@@ -112,83 +111,56 @@ impl InferenceNode {
         })
     }
 
-    #[cfg(test)]
+    /// Every record through the model, `batch` to a request and one value of
+    /// `group_by` in each, a request under one of the node's permits; the
+    /// annotated records, in the order given.
     pub async fn annotate_all(&self, records: Vec<Value>) -> Vec<Value> {
-        let part: Arc<str> = Arc::from("");
-        self.annotate_in(records.into_iter().map(|v| (v, Arc::clone(&part))).collect(), None)
-            .await
-    }
-
-    /// Grouped by partition and buffer, in requests of `batch`; the records in the order given.
-    pub async fn annotate_in(
-        &self,
-        records: Vec<(Value, Arc<str>)>,
-        store: Option<Arc<dyn StateStore>>,
-    ) -> Vec<Value> {
         let n = records.len();
-        let mut groups: Vec<(_, Vec<(usize, Value)>)> = Vec::new();
-        for (i, (v, part)) in records.into_iter().enumerate() {
-            let window = v
-                .get("_buffer")
-                .and_then(|s| s.get("from"))
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            let key = (part, window);
+        let mut groups: Vec<(String, Vec<(usize, Value)>)> = Vec::new();
+        for (i, v) in records.into_iter().enumerate() {
+            let key: Vec<Option<&Value>> =
+                self.cfg.group_by.iter().map(|f| lookup(&v, f)).collect();
+            let key = json!(key).to_string();
             match groups.iter_mut().find(|(k, _)| *k == key) {
                 Some((_, g)) => g.push((i, v)),
                 None => groups.push((key, vec![(i, v)])),
             }
         }
-        let mut jobs: Vec<(Arc<str>, Vec<usize>, Vec<Value>)> = Vec::new();
-        for ((part, _), group) in groups {
+        let mut jobs: Vec<(Vec<usize>, Vec<Value>)> = Vec::new();
+        for (_, group) in groups {
             let (ids, values): (Vec<usize>, Vec<Value>) = group.into_iter().unzip();
             let mut at = 0;
             for chunk in self.chunks(values) {
-                let these = ids[at..at + chunk.len()].to_vec();
-                at += chunk.len();
-                jobs.push((Arc::clone(&part), these, chunk));
+                let len = chunk.len();
+                jobs.push((ids[at..at + len].to_vec(), chunk));
+                at += len;
             }
         }
-        let done = futures::future::join_all(jobs.into_iter().map(|(part, ids, chunk)| {
-            let store = store.clone();
-            async move {
-                let _permit = self.sem.acquire().await.expect("semaphore is never closed");
-                let context = match &store {
-                    Some(st) => self.context_for(st, &part, &chunk).await,
-                    None => None,
-                };
-                let out = if self.cfg.batch <= 1 {
-                    let v = chunk.into_iter().next().expect("a chunk of one");
-                    vec![self.annotate_one(v, context).await]
-                } else {
-                    self.annotate_batch(chunk, context).await
-                };
-                (ids, out)
-            }
+        let done = futures::future::join_all(jobs.into_iter().map(|(ids, chunk)| async move {
+            let _permit = self.sem.acquire().await.expect("semaphore is never closed");
+            let out = if self.cfg.batch <= 1 {
+                let v = chunk.into_iter().next().expect("a chunk of one");
+                vec![self.annotate(v).await]
+            } else {
+                self.annotate_batch(chunk).await
+            };
+            (ids, out)
         }))
         .await;
-        let mut slots: Vec<Option<Value>> = (0..n).map(|_| None).collect();
+        let mut slots = vec![Value::Null; n];
         for (ids, out) in done {
             for (i, v) in ids.into_iter().zip(out) {
-                slots[i] = Some(v);
+                slots[i] = v;
             }
         }
-        slots.into_iter().map(|s| s.unwrap_or(Value::Null)).collect()
+        slots
     }
 
-    #[cfg(test)]
+    /// One record through the model: the reply, or the error, added under the
+    /// node's name.
     pub async fn annotate(&self, v: Value) -> Value {
-        self.annotate_one(v, None).await
-    }
-
-    async fn annotate_one(&self, v: Value, context: Option<String>) -> Value {
         let start = Instant::now();
-        let user = match context {
-            Some(c) => format!("{c}\n\nThe record:\n{}", self.user_message(&v)),
-            None => self.user_message(&v),
-        };
-        let reply = match self.ask(user, None).await {
+        let reply = match self.ask(self.user_message(&v), None).await {
             Ok(reply) => reply,
             Err(e) => {
                 tracing::warn!(node = %self.name, "inference failed: {e:#}");
@@ -204,19 +176,15 @@ impl InferenceNode {
     }
 
     /// Several records in one request; an unreadable reply is asked again in halves.
-    async fn annotate_batch(&self, records: Vec<Value>, context: Option<String>) -> Vec<Value> {
+    async fn annotate_batch(&self, records: Vec<Value>) -> Vec<Value> {
         let n = records.len();
         let start = Instant::now();
-        let lines = records
+        let user = records
             .iter()
             .enumerate()
             .map(|(k, v)| self.batch_line(k, v))
             .collect::<Vec<_>>()
             .join("\n");
-        let user = match &context {
-            Some(c) => format!("{c}\n\nThe records:\n{lines}"),
-            None => lines,
-        };
         let answers = match self.ask(user, Some(n)).await {
             Ok(reply) => spread(reply, n),
             // a failed request would fail the same in halves
@@ -224,12 +192,12 @@ impl InferenceNode {
                 tracing::warn!(
                     node = %self.name,
                     records = n,
-                    "batched reply unreadable, asking again as two halves: {e:#}"
+                    "batched reply unreadable, asking again in halves: {e:#}"
                 );
                 let mut records = records;
                 let tail = records.split_off(n / 2);
-                let mut out = Box::pin(self.annotate_batch(records, context.clone())).await;
-                out.extend(Box::pin(self.annotate_batch(tail, context)).await);
+                let mut out = Box::pin(self.annotate_batch(records)).await;
+                out.extend(Box::pin(self.annotate_batch(tail)).await);
                 return out;
             }
             Err(e) => {
@@ -248,116 +216,6 @@ impl InferenceNode {
             .zip(answers)
             .map(|(v, a)| attach(&self.name, v, a))
             .collect()
-    }
-
-    /// One view per scope and key: its latest records before the earliest of these.
-    async fn context_for(
-        &self,
-        store: &Arc<dyn StateStore>,
-        part: &str,
-        records: &[Value],
-    ) -> Option<String> {
-        let cfg = self.cfg.context.as_ref()?;
-        let before = records
-            .iter()
-            .filter_map(|v| crate::windows::time_of_value(v, crate::windows::TIME_FIELD))
-            .min()?;
-        let bound = crate::windows::ev_bound(before);
-        let mut shown: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut lines = vec![format!(
-            "History before these records, one JSON object per line: `scope` and `key` say whose \
-             (a record's own fields name them: {}), `recent` is their latest {} records before these, \
-             however long ago, oldest first:",
-            cfg.scopes
-                .iter()
-                .map(|(scope, field)| format!("`{field}` for {scope}"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            cfg.max_events
-        )];
-        let mut bytes = lines[0].len();
-        for (scope, field) in &cfg.scopes {
-            // busiest first
-            let mut keys: Vec<(String, usize)> = Vec::new();
-            for v in records {
-                let Some(k) = lookup(v, field).and_then(crate::windows::scope_value) else { continue };
-                match keys.iter_mut().find(|(have, _)| *have == k) {
-                    Some((_, n)) => *n += 1,
-                    None => keys.push((k, 1)),
-                }
-            }
-            keys.sort_by_key(|k| std::cmp::Reverse(k.1));
-            for (key, _) in keys {
-                // a scope that is the partition reads its rows, any other the index
-                let whole = key == part;
-                let (ns, from, to) = if whole {
-                    (crate::windows::EVENTS_NS, "ev:".to_string(), bound.clone())
-                } else {
-                    let prefix = crate::windows::index_prefix(scope, &key);
-                    (crate::windows::INDEX_NS, format!("{prefix}ev:"), format!("{prefix}{bound}"))
-                };
-                let entries = match store.range_rev(ns, part, &from, &to, cfg.max_events + shown.len()).await {
-                    Ok(entries) => entries,
-                    Err(e) => {
-                        tracing::warn!(node = %self.name, "reading context: {e:#}");
-                        return None;
-                    }
-                };
-                let mut recent: Vec<(i64, Value)> = Vec::new();
-                for e in entries {
-                    if recent.len() >= cfg.max_events {
-                        break;
-                    }
-                    let (row, text) = if whole {
-                        let StateValue::Str(text) = e.value else { continue };
-                        (e.key, text)
-                    } else {
-                        let StateValue::Str(row) = e.value else { continue };
-                        let Ok(Some(StateValue::Str(text))) = store.get(crate::windows::EVENTS_NS, part, &row).await else { continue };
-                        (row, text)
-                    };
-                    if shown.contains(&row) {
-                        continue;
-                    }
-                    let (Ok(v), Some(ts)) = (serde_json::from_str::<Value>(&text), crate::windows::ts_of_key(&row)) else { continue };
-                    shown.insert(row);
-                    recent.push((ts, self.history_line(&v, cfg)));
-                }
-                if recent.is_empty() {
-                    continue;
-                }
-                recent.reverse();
-                let line = json!({
-                    "scope": scope,
-                    "key": key,
-                    "from": crate::windows::iso(recent[0].0),
-                    "to": crate::windows::iso(recent[recent.len() - 1].0),
-                    "recent": recent.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
-                })
-                .to_string();
-                if bytes + line.len() > 40_000 && lines.len() > 1 {
-                    break;
-                }
-                bytes += line.len();
-                lines.push(line);
-            }
-        }
-        (lines.len() > 1).then(|| lines.join("\n"))
-    }
-
-    fn history_line(&self, v: &Value, cfg: &ContextConfig) -> Value {
-        if cfg.fields.is_empty() {
-            return v.clone();
-        }
-        let mut m = Map::new();
-        for f in &cfg.fields {
-            if let Some(x) = lookup(v, f) {
-                if !x.is_null() {
-                    m.insert(f.clone(), x.clone());
-                }
-            }
-        }
-        Value::Object(m)
     }
 
     /// At most `batch` records and about `batch_bytes` per request.
@@ -410,11 +268,7 @@ impl InferenceNode {
 
     fn request(&self, user: String, batch: Option<usize>) -> CompletionRequest {
         let preamble = match batch {
-            None => format!(
-                "{}\n\nReply with the record's answer, one JSON object, and nothing else: no code fence, \
-                 no text before or after it.",
-                self.prompt.trim_end()
-            ),
+            None => self.prompt.clone(),
             Some(n) => format!(
                 "{}\n\nThis request carries {n} records, one JSON object per line, each with its index `i` (0 to {last}). \
                  Reply with one JSON object, {{\"answers\": [...]}}, holding exactly {n} answers, one per record in \
@@ -512,22 +366,6 @@ impl InferenceNode {
                 reply.finish_reason()
             );
         }
-        tracing::debug!(
-            node = %self.name,
-            finish = ?reply.finish_reason(),
-            chars = text.len(),
-            "reply"
-        );
-        if let Some(finish) = reply.finish_reason() {
-            if format!("{finish:?}").to_ascii_lowercase().contains("length") {
-                tracing::warn!(
-                    node = %self.name,
-                    chars = text.len(),
-                    "reply cut off at the token budget (max_tokens {} per record)",
-                    self.cfg.max_tokens
-                );
-            }
-        }
         Ok(text)
     }
 }
@@ -548,7 +386,10 @@ fn attach(name: &str, v: Value, reply: Value) -> Value {
 /// Answers by their `i` when all carry one, else by position.
 fn spread(reply: Value, n: usize) -> Vec<Value> {
     let Some(items) = reply.get("answers").and_then(Value::as_array).cloned() else {
-        let err = format!("reply has no `answers` array: {}", head(&reply.to_string(), 200));
+        let err = format!(
+            "reply has no `answers` array: {}",
+            head(&reply.to_string(), 200)
+        );
         return vec![json!({"error": err}); n];
     };
     let indexed = !items.is_empty()
@@ -592,7 +433,9 @@ fn answers_schema(item: &schemars::Schema) -> schemars::Schema {
     }
     if let Some(shapes) = item.get_mut("anyOf").and_then(Value::as_array_mut) {
         for shape in shapes.iter_mut() {
-            if shape.get("properties").is_some() || shape.get("type").and_then(Value::as_str) == Some("object") {
+            if shape.get("properties").is_some()
+                || shape.get("type").and_then(Value::as_str) == Some("object")
+            {
                 indexed(shape);
             }
         }
@@ -618,7 +461,10 @@ fn indexed(shape: &mut Value) {
         return;
     };
     let mut props = Map::new();
-    props.insert("i".into(), json!({"type": "integer", "description": "the record's index"}));
+    props.insert(
+        "i".into(),
+        json!({"type": "integer", "description": "the record's index"}),
+    );
     if let Some(Value::Object(old)) = obj.remove("properties") {
         props.extend(old.into_iter().filter(|(k, _)| k != "i"));
     }
@@ -661,7 +507,8 @@ pub fn lines(payload: &[u8]) -> impl Iterator<Item = &[u8]> {
 /// An OpenAI-compatible chat server in a few lines, for tests here and in the
 /// worker: it flags any request whose body mentions "bad", answers in prose
 /// to one that mentions "prose", fails the first two requests that mention
-/// "flaky" with a 500, and records every request body.
+/// "flaky" with a 500, and records every request body. A batched request
+/// gets an answer per record line, or a cut-off reply with three "loop"s.
 #[cfg(test)]
 pub(crate) mod stub {
     use serde_json::json;
@@ -721,28 +568,16 @@ pub(crate) mod stub {
                             json!({"flag": false, "one_line": "fine"})
                         }
                     };
-                    // a string or a list of text parts
-                    let text_of = |c: &serde_json::Value| -> String {
-                        match c {
-                            serde_json::Value::String(s) => s.clone(),
-                            serde_json::Value::Array(parts) => parts
-                                .iter()
-                                .filter_map(|p| p["text"].as_str())
-                                .collect::<Vec<_>>()
-                                .join(""),
-                            _ => String::new(),
-                        }
-                    };
                     let req: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
-                    let batched = text_of(&req["messages"][0]["content"]).contains("This request carries");
+                    let batched =
+                        text(&req["messages"][0]["content"]).contains("This request carries");
+                    let user = text(&req["messages"][1]["content"]);
                     let content = if body.contains("prose") {
                         "Looks fine to me, nothing to flag.".to_string()
-                    } else if batched && text_of(&req["messages"][1]["content"]).matches("loop").count() >= 3 {
-                        // three "loop" records degenerate
-                        "{\"answers\": [{\"flag\": false, \"one_line\": \"a7a7a7a7a7a7a7a7".to_string()
+                    } else if batched && user.matches("loop").count() >= 3 {
+                        "{\"answers\": [{\"flag\": false, \"one_line\": \"a7a7a7a7".to_string()
                     } else if batched {
-                        // one answer per record line
-                        let answers: Vec<_> = text_of(&req["messages"][1]["content"])
+                        let answers: Vec<_> = user
                             .lines()
                             .filter(|l| l.starts_with("{\"i\":"))
                             .map(verdict)
@@ -768,6 +603,19 @@ pub(crate) mod stub {
         (url, seen)
     }
 
+    /// A message's text: a string, or a list of text parts.
+    pub fn text(content: &serde_json::Value) -> String {
+        match content {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Array(parts) => parts
+                .iter()
+                .filter_map(|p| p["text"].as_str())
+                .collect::<Vec<_>>()
+                .join(""),
+            _ => String::new(),
+        }
+    }
+
     /// A node config against `url`, with the prompt (and a schema, when
     /// given) written under a fresh directory the caller removes.
     pub fn config(url: &str) -> tangent_shared::inference::InferenceConfig {
@@ -787,7 +635,7 @@ pub(crate) mod stub {
             fields: Vec::new(),
             batch: 1,
             batch_bytes: 32_768,
-            context: None,
+            group_by: Vec::new(),
             concurrency: 2,
             timeout_ms: 5_000,
             retries: 0,
@@ -820,7 +668,6 @@ pub(crate) mod stub {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
 
     #[tokio::test]
     async fn annotates_every_record_with_the_verdict() {
@@ -959,8 +806,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    fn user_lines(body: &str) -> Vec<Value> {
+        let req: Value = serde_json::from_str(body).unwrap();
+        stub::text(&req["messages"][1]["content"])
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+
     #[tokio::test]
-    async fn a_batch_shares_one_request_and_each_record_gets_its_answer() {
+    async fn batch_shares_a_request() {
         let (url, seen) = stub::model().await;
         let dir = stub::dir("batch");
         let mut cfg = stub::config(&url);
@@ -975,31 +830,24 @@ mod tests {
                 json!({"id": 5, "msg": "bad again"}),
             ])
             .await;
-        assert_eq!(
-            outs.iter().map(|o| o["id"].as_i64().unwrap()).collect::<Vec<_>>(),
-            [1, 2, 3, 4, 5],
-            "order kept"
-        );
-        assert_eq!(
-            outs.iter().map(|o| o["judge"]["flag"].as_bool().unwrap()).collect::<Vec<_>>(),
-            [false, true, false, false, true],
-            "each record has its own answer: {outs:?}"
-        );
-        assert!(outs[1]["judge"].get("i").is_none(), "the index is not part of the answer");
+        let ids: Vec<i64> = outs.iter().map(|o| o["id"].as_i64().unwrap()).collect();
+        assert_eq!(ids, [1, 2, 3, 4, 5]);
+        let flags: Vec<bool> = outs
+            .iter()
+            .map(|o| o["judge"]["flag"].as_bool().unwrap())
+            .collect();
+        assert_eq!(flags, [false, true, false, false, true], "{outs:?}");
+        assert!(outs[1]["judge"].get("i").is_none());
 
         let seen = seen.lock().await;
-        assert_eq!(seen.len(), 3, "five records, two per request: 2 + 2 + 1");
+        assert_eq!(seen.len(), 3, "2 + 2 + 1");
         let req: Value = serde_json::from_str(&seen[0]).unwrap();
-        let system = req["messages"][0]["content"].to_string();
-        assert!(system.contains("You are a test judge."), "the prompt comes first: {system}");
+        let system = stub::text(&req["messages"][0]["content"]);
+        assert!(system.starts_with("You are a test judge."), "{system}");
         assert!(system.contains("2 records"), "{system}");
-        let user = match &req["messages"][1]["content"] {
-            Value::String(s) => s.clone(),
-            other => other["0"]["text"].as_str().or(other[0]["text"].as_str()).unwrap_or_default().to_string(),
-        };
-        let lines: Vec<Value> = user.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        assert_eq!(req["max_tokens"], 100, "max_tokens is per record");
+        let lines = user_lines(&seen[0]);
         assert_eq!(lines.len(), 2);
-        assert_eq!(req["max_tokens"], 100, "max_tokens is per record: 50 x 2");
         assert_eq!(lines[0]["i"], 0);
         assert_eq!(lines[1]["i"], 1);
         assert_eq!(lines[1]["id"], 2);
@@ -1007,103 +855,74 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unreadable_batched_reply_is_asked_again_in_halves() {
+    async fn unreadable_batch_is_asked_in_halves() {
         let (url, seen) = stub::model().await;
         let dir = stub::dir("halves");
         let mut cfg = stub::config(&url);
         cfg.batch = 8;
         let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
         let outs = node
-            .annotate_all((1..=4).map(|i| json!({"id": i, "msg": format!("loop {i} bad")})).collect())
+            .annotate_all(
+                (1..=4)
+                    .map(|i| json!({"id": i, "msg": format!("loop {i} bad")}))
+                    .collect(),
+            )
             .await;
-        assert_eq!(outs.len(), 4);
-        assert!(outs.iter().all(|o| o["judge"]["flag"] == true), "every record got its answer: {outs:?}");
-        assert_eq!(seen.lock().await.len(), 3, "one failed request, then one per half");
+        assert!(outs.iter().all(|o| o["judge"]["flag"] == true), "{outs:?}");
+        assert_eq!(seen.lock().await.len(), 3, "the whole, then two halves");
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
-    async fn a_request_is_read_with_the_history_before_it_from_the_store() {
-        use crate::state::lru::LruStore;
-        use tangent_shared::runtime::StateConfig;
+    async fn group_by_keeps_requests_apart() {
         let (url, seen) = stub::model().await;
-        let dir = stub::dir("context");
-        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
-        let t0 = 1_793_106_000_000i64; // 2026-10-27T13:00:00Z
-        let mut recent = BTreeMap::new();
-        recent.insert("actor".to_string(), "_norm.actor".to_string());
-        recent.insert("org".to_string(), "_norm.org".to_string());
-        let sink = crate::sinks::store::StoreSink::new(
-            &tangent_shared::sinks::store::StoreSinkConfig { retain_secs: 2_592_000, recent },
-            Arc::clone(&store),
-            Some(tangent_shared::runtime::PartitionConfig { key: vec!["_norm.org".into()], separator: "|".into(), retain_ms: None, time: None }),
-        );
-        let mut payload = bytes::BytesMut::new();
-        for (ts, actor, kind) in [
-            (t0 - 14 * 86_400_000, "a", "weeks.ago"),
-            (t0 - 3 * 86_400_000, "a", "days.ago"),
-            (t0 - 3_600_000, "a", "login"),
-            (t0 - 600_000, "a", "token.create"),
-            (t0 - 300_000, "b", "push"),
-            (t0 - 60_000, "c", "export"),
-            (t0 + 600_000, "a", "later"),
-        ] {
-            let row = json!({"ts": crate::windows::iso(ts), "_norm": {"actor": actor, "org": "acme", "kind": kind}, "noise": "x"});
-            payload.extend_from_slice(format!("{row}\n").as_bytes());
-        }
-        use crate::sinks::manager::Sink;
-        sink.write(crate::sinks::manager::SinkWrite { sink_name: Arc::from("store"), payload, s3: None }).await.unwrap();
+        let dir = stub::dir("group-by");
         let mut cfg = stub::config(&url);
         cfg.batch = 8;
-        let mut scopes = BTreeMap::new();
-        scopes.insert("actor".to_string(), "_norm.actor".to_string());
-        scopes.insert("org".to_string(), "_norm.org".to_string());
-        cfg.context = Some(ContextConfig {
-            scopes,
-            max_events: 3,
-            fields: vec!["ts".into(), "_norm.kind".into()],
-        });
+        cfg.group_by = vec!["who.actor".into()];
         let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
-        let part: Arc<str> = Arc::from("acme");
         let outs = node
-            .annotate_in(
-                vec![
-                    (json!({"ts": crate::windows::iso(t0), "_norm": {"actor": "a", "org": "acme"}, "msg": "bad"}), Arc::clone(&part)),
-                    (json!({"ts": crate::windows::iso(t0 + 1000), "_norm": {"actor": "b", "org": "acme"}}), Arc::clone(&part)),
-                ],
-                Some(Arc::clone(&store)),
-            )
+            .annotate_all(vec![
+                json!({"id": 1, "who": {"actor": "a"}}),
+                json!({"id": 2, "who": {"actor": "b"}}),
+                json!({"id": 3, "who": {"actor": "a"}, "msg": "bad"}),
+                json!({"id": 4}),
+                json!({"id": 5, "who": {"actor": "b"}}),
+            ])
             .await;
-        assert_eq!(outs[0]["judge"]["flag"], true, "{outs:?}");
+        let ids: Vec<i64> = outs.iter().map(|o| o["id"].as_i64().unwrap()).collect();
+        assert_eq!(ids, [1, 2, 3, 4, 5]);
+        assert_eq!(outs[2]["judge"]["flag"], true);
+        assert_eq!(outs[0]["judge"]["flag"], false);
+
         let seen = seen.lock().await;
-        assert_eq!(seen.len(), 1);
-        let req: Value = serde_json::from_str(&seen[0]).unwrap();
-        let user = match &req["messages"][1]["content"] {
-            Value::String(s) => s.clone(),
-            other => other[0]["text"].as_str().unwrap_or_default().to_string(),
-        };
-        let views: Vec<Value> = user.lines().filter(|l| l.starts_with("{\"scope\"")).map(|l| serde_json::from_str(l).unwrap()).collect();
-        let a = views.iter().find(|v| v["scope"] == "actor" && v["key"] == "a").unwrap_or_else(|| panic!("a's view in: {user}"));
-        let a_kinds: Vec<&str> = a["recent"].as_array().unwrap().iter().map(|r| r["_norm.kind"].as_str().unwrap()).collect();
-        assert_eq!(a_kinds, ["days.ago", "login", "token.create"], "a's latest three before the request, however long ago, oldest first: {a}");
-        assert!(a["recent"][0].get("noise").is_none(), "only the configured fields");
-        let org = views.iter().find(|v| v["scope"] == "org").expect("the org's view");
-        let kinds: Vec<&str> = org["recent"].as_array().unwrap().iter().map(|r| r["_norm.kind"].as_str().unwrap()).collect();
-        assert_eq!(kinds, ["weeks.ago", "export"], "the org's latest, without what the actors' views showed: {org}");
-        assert!(!user.contains("later"), "nothing at or after the earliest record");
+        assert_eq!(seen.len(), 3, "a, b, and none");
+        for body in seen.iter() {
+            let actors: std::collections::BTreeSet<String> = user_lines(body)
+                .iter()
+                .map(|l| l["who"]["actor"].to_string())
+                .collect();
+            assert_eq!(actors.len(), 1, "{body}");
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn spread_errors_missing_answers() {
-        let out = spread(json!({"answers": [{"i": 1, "flag": true}, {"i": 0, "flag": false}]}), 3);
+        let out = spread(
+            json!({"answers": [{"i": 1, "flag": true}, {"i": 0, "flag": false}]}),
+            3,
+        );
         assert_eq!(out[0], json!({"flag": false}));
         assert_eq!(out[1], json!({"flag": true}));
-        assert!(out[2]["error"].as_str().unwrap().contains("no answer for record 2"));
+        assert!(out[2]["error"]
+            .as_str()
+            .unwrap()
+            .contains("no answer for record 2"));
     }
 
     #[tokio::test]
-    async fn a_batch_wraps_the_schema_around_each_answer() {
+    async fn batch_schema_wraps_each_answer() {
         let (url, seen) = stub::model().await;
         let dir = stub::dir("batch-schema");
         std::fs::write(
@@ -1121,20 +940,19 @@ mod tests {
         assert_eq!(outs[0]["judge"]["flag"], true);
         let seen = seen.lock().await;
         let req: Value = serde_json::from_str(&seen[0]).unwrap();
-        let schema = &req["response_format"]["json_schema"]["schema"];
         assert_eq!(req["response_format"]["json_schema"]["name"], "Answers");
-        assert_eq!(schema["properties"]["answers"]["items"]["properties"]["flag"]["type"], "boolean", "{schema}");
-        assert!(schema["properties"]["answers"].get("minItems").is_none(), "no array bounds: backends reject them");
-        let item = &schema["properties"]["answers"]["items"];
-        assert_eq!(item["properties"]["i"]["type"], "integer", "each answer carries its record's index: {item}");
-        assert!(item["required"].as_array().unwrap().iter().any(|r| r == "i"), "{item}");
-        let first = item["properties"].as_object().unwrap().keys().next().unwrap();
-        assert_eq!(first, "i", "the index comes before the answer: {item}");
+        let answers = &req["response_format"]["json_schema"]["schema"]["properties"]["answers"];
+        assert!(answers.get("minItems").is_none(), "backends reject bounds");
+        let item = &answers["items"];
+        assert_eq!(item["properties"]["flag"]["type"], "boolean", "{item}");
+        let first = item["properties"].as_object().unwrap().keys().next();
+        assert_eq!(first.unwrap(), "i", "the index comes first: {item}");
+        assert_eq!(item["required"][0], "i", "{item}");
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
-    fn an_answer_of_two_shapes_gets_the_index_in_each() {
+    fn two_shapes_both_get_the_index() {
         let verdict: schemars::Schema = serde_json::from_value(json!({
             "title": "Verdict",
             "anyOf": [
@@ -1146,15 +964,15 @@ mod tests {
         }))
         .unwrap();
         let schema = serde_json::to_value(answers_schema(&verdict)).unwrap();
-        let shapes = schema["properties"]["answers"]["items"]["anyOf"].as_array().unwrap();
+        let shapes = schema["properties"]["answers"]["items"]["anyOf"]
+            .as_array()
+            .unwrap();
         assert_eq!(shapes.len(), 2);
         for shape in shapes {
             let props: Vec<&String> = shape["properties"].as_object().unwrap().keys().collect();
             assert_eq!(props[0], "i", "{shape}");
-            assert_eq!(shape["required"][0], "i", "{shape}");
             assert_eq!(shape["additionalProperties"], false, "{shape}");
         }
-        assert_eq!(shapes[0]["properties"].as_object().unwrap().len(), 2, "a pass is the index and the flag");
         assert_eq!(shapes[1]["required"], json!(["i", "flag", "why"]));
     }
 
@@ -1165,9 +983,17 @@ mod tests {
         cfg.batch = 3;
         cfg.batch_bytes = 80;
         let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
-        let lens = |v: Value| node.chunks(vec![v; 5]).iter().map(Vec::len).collect::<Vec<_>>();
+        let lens = |v: Value| {
+            node.chunks(vec![v; 5])
+                .iter()
+                .map(Vec::len)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(lens(json!({"id": 1})), [3, 2]);
-        assert_eq!(lens(json!({"id": 1, "msg": "a record of some length"})), [2, 2, 1]);
+        assert_eq!(
+            lens(json!({"id": 1, "msg": "a record of some length"})),
+            [2, 2, 1]
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 

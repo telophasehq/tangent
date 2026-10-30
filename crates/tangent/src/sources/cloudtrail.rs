@@ -1,16 +1,12 @@
-//! CloudTrail, read directly: `LookupEvents` by default (nothing to set up,
-//! management events, about fifteen minutes behind), or a trail's delivered
-//! files through the SQS queue its notifications land in, when `queue_url`
-//! is set.
-
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
+use aws_sdk_s3::error::DisplayErrorContext;
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_sqs::Client as SQSClient;
-use bytes::BytesMut;
-use chrono::{DateTime, Duration, Utc};
+use bytes::{Bytes, BytesMut};
+use chrono::{DateTime, Utc};
 use percent_encoding::percent_decode_str;
 use serde_json::Value;
 use tangent_shared::dag::NodeRef;
@@ -20,26 +16,25 @@ use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
 use crate::sources::decoding;
-use crate::sources::poll::{frame, opt, parse_time, stamp, Poller};
+use crate::sources::poll::{frame, idle, opt, parse_time, stamp};
 use crate::sources::sqs::SqsAck;
-use crate::state::StateStore;
 use crate::worker::Ack;
 
 const SOURCE: &str = "cloudtrail";
-/// `LookupEvents` shows an event up to about fifteen minutes after it happens.
-const LATE_MS: i64 = 20 * 60 * 1000;
 
 pub async fn run_consumer(
     name: Arc<str>,
     cfg: CloudtrailConfig,
     chunks: usize,
     router: Arc<Router>,
-    store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    // app/tangent in the user agent marks our own calls in CloudTrail
-    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .app_name(aws_config::AppName::new("tangent").expect("a valid app name"));
+    let Some(queue_url) = opt(&cfg.queue_url) else {
+        idle(&name, "cloudtrail queue_url");
+        shutdown.cancelled().await;
+        return Ok(());
+    };
+    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
     if let Some(region) = opt(&cfg.region) {
         loader = loader.region(aws_config::Region::new(region.to_string()));
     }
@@ -47,200 +42,77 @@ pub async fn run_consumer(
         loader = loader.profile_name(profile);
     }
     let aws = loader.load().await;
-
-    if let Some(queue_url) = opt(&cfg.queue_url) {
-        return run_delivery(name, queue_url.to_string(), &aws, chunks, router, shutdown).await;
+    let sqs = SQSClient::new(&aws);
+    let mut s3conf = aws_sdk_s3::config::Builder::from(&aws);
+    if let Some(role) = opt(&cfg.bucket_role) {
+        let creds = aws_config::sts::AssumeRoleProvider::builder(role)
+            .session_name("tangent")
+            .configure(&aws)
+            .build()
+            .await;
+        s3conf = s3conf.credentials_provider(creds);
     }
+    let mut s3 = S3Client::from_conf(s3conf.build());
+    let qurl = Arc::new(queue_url.to_string());
+    let from = NodeRef::Source {
+        name: Arc::clone(&name),
+    };
+    tracing::info!(source = %name, queue = %qurl, "cloudtrail source reading the trail's delivery");
 
-    // `LookupEvents` is regional. One poller per region named, each with its
-    // own cursor; none named, the SDK's region (from `region` or the default
-    // chain) and the source's own cursor.
-    let regions: Vec<String> = cfg
-        .regions
-        .iter()
-        .map(|r| r.trim().to_string())
-        .filter(|r| !r.is_empty())
-        .collect();
-    tracing::info!(
-        source = %name,
-        since = %cfg.since,
-        regions = ?regions,
-        "cloudtrail source polling LookupEvents"
-    );
-    if regions.is_empty() {
-        let poller = Poller::new(
-            Arc::clone(&name),
-            store,
-            router,
-            Duration::milliseconds(LATE_MS),
-        );
-        let client = aws_sdk_cloudtrail::Client::new(&aws);
-        run_region(&name, &cfg, client, poller, None, shutdown).await;
-        return Ok(());
-    }
-    let runs = regions.iter().map(|region| {
-        let conf = aws_sdk_cloudtrail::config::Builder::from(&aws)
-            .region(aws_config::Region::new(region.clone()))
-            .build();
-        let poller = Poller::new(
-            Arc::clone(&name),
-            Arc::clone(&store),
-            Arc::clone(&router),
-            Duration::milliseconds(LATE_MS),
-        )
-        .scoped(region);
-        run_region(
-            &name,
-            &cfg,
-            aws_sdk_cloudtrail::Client::from_conf(conf),
-            poller,
-            Some(region.as_str()),
-            shutdown.clone(),
-        )
-    });
-    futures::future::join_all(runs).await;
-    Ok(())
-}
-
-/// The poll loop for one region (or the SDK's), until shutdown.
-async fn run_region(
-    name: &Arc<str>,
-    cfg: &CloudtrailConfig,
-    client: aws_sdk_cloudtrail::Client,
-    poller: Poller,
-    region: Option<&str>,
-    shutdown: CancellationToken,
-) {
-    let region = region.unwrap_or("default");
-    let mut ticker = tokio::time::interval(StdDuration::from_secs(cfg.interval_secs.max(10)));
+    let mut wait = 0;
     let mut failing = false;
     loop {
         tokio::select! {
             () = shutdown.cancelled() => break,
-            _ = ticker.tick() => match poll(&client, cfg, &poller).await {
-                Ok(n) => {
-                    failing = false;
-                    if n > 0 {
-                        tracing::debug!(source = %name, region, events = n, "cloudtrail poll");
-                    }
-                }
-                Err(e) if !failing => {
-                    failing = true;
-                    tracing::warn!(source = %name, region, "cloudtrail poll failed (retrying each interval): {e:#}");
-                }
-                Err(e) => tracing::debug!(source = %name, region, "cloudtrail poll failed: {e:#}"),
-            },
-        }
-    }
-}
-
-/// One pass over `LookupEvents` from the cursor (less the lateness window)
-/// to now: new events forwarded in time order, the cursor moved up.
-async fn poll(
-    client: &aws_sdk_cloudtrail::Client,
-    cfg: &CloudtrailConfig,
-    poller: &Poller,
-) -> Result<usize> {
-    let start = poller.start(&cfg.since).await;
-    let end = Utc::now();
-    let mut newest: Option<DateTime<Utc>> = None;
-    let mut out: Vec<(DateTime<Utc>, Value)> = Vec::new();
-    let mut token: Option<String> = None;
-    loop {
-        let mut req = client
-            .lookup_events()
-            .start_time(aws_sdk_cloudtrail::primitives::DateTime::from_secs(
-                start.timestamp(),
-            ))
-            .end_time(aws_sdk_cloudtrail::primitives::DateTime::from_secs(
-                end.timestamp(),
-            ))
-            .max_results(50);
-        if let Some(t) = &token {
-            req = req.next_token(t);
-        }
-        let resp = req.send().await.context("LookupEvents")?;
-        for ev in resp.events() {
-            let Some(raw) = ev.cloud_trail_event() else {
-                continue;
-            };
-            let Ok(v) = serde_json::from_str::<Value>(raw) else {
-                continue;
-            };
-            let id = ev.event_id().unwrap_or("");
-            if id.is_empty() || !poller.first_sight(id).await {
-                continue;
-            }
-            let t = parse_time(&v["eventTime"]).unwrap_or(end);
-            newest = Some(newest.map_or(t, |n| n.max(t)));
-            out.push((t, v));
-        }
-        token = resp.next_token().map(str::to_string);
-        if token.is_none() || out.len() >= 5_000 {
-            break;
-        }
-    }
-    let n = poller.emit(SOURCE, out).await?;
-    poller.finish(newest, end).await;
-    Ok(n)
-}
-
-/// A trail's delivery: the queue carries S3 event notifications for the
-/// trail's bucket, or the trail's own SNS notifications relayed to SQS.
-/// Each names gzipped files of `{"Records": [...]}`; every record is
-/// forwarded, and the message is deleted once they are all delivered.
-async fn run_delivery(
-    name: Arc<str>,
-    queue_url: String,
-    aws: &aws_config::SdkConfig,
-    chunks: usize,
-    router: Arc<Router>,
-    shutdown: CancellationToken,
-) -> Result<()> {
-    let sqs = SQSClient::new(aws);
-    let s3 = S3Client::new(aws);
-    let qurl = Arc::new(queue_url);
-    let from = NodeRef::Source {
-        name: Arc::clone(&name),
-    };
-    let decoding = Decoding {
-        format: DecodeFormat::Json,
-        compression: DecodeCompression::Auto,
-    };
-    tracing::info!(source = %name, queue = %qurl, "cloudtrail source reading the trail's delivery");
-
-    loop {
-        tokio::select! {
-            () = shutdown.cancelled() => break,
-            res = sqs.receive_message().queue_url(qurl.as_str()).wait_time_seconds(20).max_number_of_messages(10).send() => {
+            res = sqs
+                .receive_message()
+                .queue_url(qurl.as_str())
+                .wait_time_seconds(20)
+                .max_number_of_messages(10)
+                .visibility_timeout(300)
+                .send() => {
                 let out = match res {
-                    Ok(out) => out,
+                    Ok(out) => {
+                        wait = 0;
+                        out
+                    }
                     Err(e) => {
-                        tracing::warn!(source = %name, "SQS ReceiveMessage: {}", aws_sdk_sqs::error::DisplayErrorContext(&e));
-                        tokio::time::sleep(StdDuration::from_millis(500)).await;
-                        continue;
+                        let e = DisplayErrorContext(&e);
+                        if wait == 0 {
+                            tracing::warn!(source = %name, "SQS ReceiveMessage: {e}; retrying, at most a minute apart");
+                        } else {
+                            tracing::debug!(source = %name, "SQS ReceiveMessage: {e}");
+                        }
+                        wait = (wait * 2).clamp(1, 60);
+                        tokio::select! {
+                            () = shutdown.cancelled() => break,
+                            () = tokio::time::sleep(StdDuration::from_secs(wait)) => continue,
+                        }
                     }
                 };
                 for msg in out.messages.unwrap_or_default() {
                     let (Some(body), Some(handle)) = (msg.body(), msg.receipt_handle()) else { continue };
                     let ack: Arc<dyn Ack> = Arc::new(SqsAck::new(sqs.clone(), Arc::clone(&qurl), handle.to_string()));
-                    let mut ndjson = BytesMut::new();
-                    for (bucket, key) in objects_named(body) {
-                        match fetch(&s3, &decoding, &bucket, &key).await {
-                            Ok(records) => for (t, mut v) in records {
-                                stamp(SOURCE, t, &mut v);
-                                ndjson.extend_from_slice(&frame(&v)?);
-                            },
-                            Err(e) => tracing::warn!(source = %name, bucket, key, "trail file: {e:#}"),
+                    match read_files(&mut s3, &trail_files(body)).await {
+                        Ok(mut ndjson) => {
+                            let frames = decoding::chunk_ndjson(&mut ndjson, chunks);
+                            if frames.is_empty() {
+                                tracing::debug!(source = %name, "nothing to read; deleting the message");
+                                if let Err(e) = ack.ack().await {
+                                    tracing::warn!(source = %name, "deleting a message: {e:#}");
+                                }
+                            } else {
+                                failing = false;
+                                if let Err(e) = router.forward(&from, frames, vec![ack]).await {
+                                    tracing::error!(source = %name, "forward: {e:#}");
+                                }
+                            }
                         }
-                    }
-                    let frames = decoding::chunk_ndjson(&mut ndjson, chunks);
-                    if frames.is_empty() {
-                        if let Err(e) = ack.ack().await {
-                            tracing::warn!(source = %name, "deleting an empty message: {e}");
+                        Err(e) if !failing => {
+                            failing = true;
+                            tracing::warn!(source = %name, "{e:#}; the message stays on the queue and comes back in 300s");
                         }
-                    } else if let Err(e) = router.forward(&from, frames, vec![ack]).await {
-                        tracing::error!(source = %name, "forward: {e:#}");
+                        Err(e) => tracing::debug!(source = %name, "{e:#}; left on the queue"),
                     }
                 }
             }
@@ -249,78 +121,86 @@ async fn run_delivery(
     Ok(())
 }
 
-/// The `(bucket, key)` pairs a notification names. S3 event notifications
-/// (`Records[].s3`), CloudTrail's SNS notifications (`s3Bucket`,
-/// `s3ObjectKey[]`), either possibly inside an SNS envelope (`Message`).
-/// Digest files are not events and are skipped.
-fn objects_named(body: &str) -> Vec<(String, String)> {
+async fn read_files(s3: &mut S3Client, files: &[(String, String)]) -> Result<BytesMut> {
+    let mut ndjson = BytesMut::new();
+    for (bucket, key) in files {
+        let bytes = fetch(s3, bucket, key)
+            .await
+            .with_context(|| format!("trail file s3://{bucket}/{key} not read"))?;
+        match records_of(&bytes) {
+            Ok(records) => {
+                for (t, mut v) in records {
+                    stamp(SOURCE, t, &mut v);
+                    ndjson.extend_from_slice(&frame(&v)?);
+                }
+            }
+            Err(e) => {
+                tracing::warn!(bucket, key, "not a trail log file, skipped: {e:#}")
+            }
+        }
+    }
+    Ok(ndjson)
+}
+
+fn trail_files(body: &str) -> Vec<(String, String)> {
     let Ok(v) = serde_json::from_str::<Value>(body) else {
         return Vec::new();
     };
+    if let (Some("SubscriptionConfirmation"), Some(url)) = (v["Type"].as_str(), v["SubscribeURL"].as_str()) {
+        tracing::warn!("confirm the queue's SNS subscription: {url}");
+    }
     let v = match v.get("Message").and_then(Value::as_str) {
         Some(inner) => serde_json::from_str::<Value>(inner).unwrap_or(v),
         None => v,
     };
     let mut out = Vec::new();
-    if let Some(recs) = v.get("Records").and_then(Value::as_array) {
-        for r in recs {
-            let bucket = r.pointer("/s3/bucket/name").and_then(Value::as_str);
-            let key = r.pointer("/s3/object/key").and_then(Value::as_str);
-            if let (Some(b), Some(k)) = (bucket, key) {
-                let k = percent_decode_str(k).decode_utf8_lossy().replace('+', " ");
-                out.push((b.to_string(), k));
-            }
+    for r in v.get("Records").and_then(Value::as_array).into_iter().flatten() {
+        let created = r["eventName"].as_str().is_none_or(|e| e.starts_with("ObjectCreated"));
+        let bucket = r.pointer("/s3/bucket/name").and_then(Value::as_str);
+        let key = r.pointer("/s3/object/key").and_then(Value::as_str);
+        if let (true, Some(b), Some(k)) = (created, bucket, key) {
+            let k = percent_decode_str(&k.replace('+', " ")).decode_utf8_lossy().into_owned();
+            out.push((b.to_string(), k));
         }
     }
     if let Some(b) = v.get("s3Bucket").and_then(Value::as_str) {
-        for k in v
-            .get("s3ObjectKey")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
+        for k in v.get("s3ObjectKey").and_then(Value::as_array).into_iter().flatten() {
             if let Some(k) = k.as_str() {
                 out.push((b.to_string(), k.to_string()));
             }
         }
     }
-    out.retain(|(_, k)| !k.contains("/CloudTrail-Digest/"));
+    out.retain(|(_, k)| k.contains("/CloudTrail/") || k.contains("/CloudTrail-Insight/"));
     out
 }
 
-/// One delivered file: fetched, decompressed, its `Records` with their times.
-async fn fetch(
-    s3: &S3Client,
-    decoding: &Decoding,
-    bucket: &str,
-    key: &str,
-) -> Result<Vec<(DateTime<Utc>, Value)>> {
-    let obj = s3
-        .get_object()
-        .bucket(bucket)
-        .key(key)
-        .send()
-        .await
-        .context("GetObject")?;
-    let encoding = obj.content_encoding().map(str::to_string);
-    let bytes = obj
-        .body
-        .collect()
-        .await
-        .context("reading the object")?
-        .into_bytes();
-    let raw = BytesMut::from(bytes.as_ref());
-    let comp =
-        decoding.resolve_compression(encoding.as_deref(), Some(key), &raw[..raw.len().min(8)]);
-    let raw = decoding::decompress_bytes(&comp, raw).context("decompressing")?;
-    let v: Value = serde_json::from_slice(&raw).context("parsing")?;
-    let records = match v {
-        Value::Object(mut m) => match m.remove("Records") {
-            Some(Value::Array(a)) => a,
-            _ => vec![Value::Object(m)],
-        },
-        Value::Array(a) => a,
-        other => vec![other],
+async fn fetch(s3: &mut S3Client, bucket: &str, key: &str) -> Result<Bytes> {
+    let mut res = s3.get_object().bucket(bucket).key(key).send().await;
+    let moved = res
+        .as_ref()
+        .err()
+        .and_then(|e| e.raw_response()?.headers().get("x-amz-bucket-region"))
+        .filter(|r| s3.config().region().map(|x| x.as_ref()) != Some(*r))
+        .map(str::to_string);
+    if let Some(region) = moved {
+        let conf = s3.config().to_builder().region(aws_sdk_s3::config::Region::new(region));
+        *s3 = S3Client::from_conf(conf.build());
+        res = s3.get_object().bucket(bucket).key(key).send().await;
+    }
+    let obj = res.map_err(|e| anyhow!("GetObject: {}", DisplayErrorContext(&e)))?;
+    Ok(obj.body.collect().await.context("reading the object")?.into_bytes())
+}
+
+fn records_of(raw: &[u8]) -> Result<Vec<(DateTime<Utc>, Value)>> {
+    let decoding = Decoding {
+        format: DecodeFormat::Json,
+        compression: DecodeCompression::Auto,
+    };
+    let comp = decoding.resolve_compression(None, None, &raw[..raw.len().min(8)]);
+    let raw = decoding::decompress_bytes(&comp, BytesMut::from(raw)).context("decompressing")?;
+    let mut v: Value = serde_json::from_slice(&raw).context("parsing")?;
+    let Some(Value::Array(records)) = v.get_mut("Records").map(Value::take) else {
+        bail!("no Records");
     };
     let now = Utc::now();
     Ok(records
@@ -332,17 +212,116 @@ async fn fetch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use std::io::Write;
+
+    const LOG: &str = "AWSLogs/1/CloudTrail/us-east-1/2026/10/28/1_CloudTrail_us-east-1_20261028T1705Z_x.json.gz";
 
     #[test]
-    fn notifications_in_three_shapes() {
-        let s3_event = r#"{"Records":[{"s3":{"bucket":{"name":"trail-bucket"},"object":{"key":"AWSLogs/1/CloudTrail/us-west-2/2026/10/27/1_CloudTrail_us-west-2_20261027T1300Z_x.json.gz"}}},
-            {"s3":{"bucket":{"name":"trail-bucket"},"object":{"key":"AWSLogs/1/CloudTrail-Digest/us-west-2/2026/10/27/d.json.gz"}}}]}"#;
-        assert_eq!(objects_named(s3_event).len(), 1);
-        let sns_relayed = r#"{"Type":"Notification","Message":"{\"s3Bucket\":\"trail-bucket\",\"s3ObjectKey\":[\"AWSLogs/1/CloudTrail/a.json.gz\",\"AWSLogs/1/CloudTrail/b.json.gz\"]}"}"#;
-        let got = objects_named(sns_relayed);
+    fn notifications() {
+        let digest = "AWSLogs/1/CloudTrail-Digest/us-east-1/2026/10/28/d.json.gz";
+        let config = "AWSLogs/1/Config/us-east-1/2026/10/28/ConfigHistory/x.json.gz";
+        let sns = |m: &Value| json!({"Type": "Notification", "Message": m.to_string()});
+        let s3 = |name: &str, key: &str| json!({"eventName": name, "s3": {"bucket": {"name": "trail"}, "object": {"key": key}}});
+        let own = json!({"s3Bucket": "trail", "s3ObjectKey": [LOG, digest]});
+        let events = json!({"Records": [
+            s3("ObjectCreated:Put", "AWSLogs/1/CloudTrail/us-east-1/2026/10/28/a+b%2Bc.json.gz"),
+            s3("ObjectCreated:Put", digest),
+            s3("ObjectCreated:Put", config),
+            s3("ObjectRemoved:Delete", LOG),
+        ]});
+        let spaced = "AWSLogs/1/CloudTrail/us-east-1/2026/10/28/a b+c.json.gz";
+        for (body, want) in [
+            (own.clone(), vec![LOG]),
+            (sns(&own), vec![LOG]),
+            (events.clone(), vec![spaced]),
+            (sns(&events), vec![spaced]),
+            (sns(&json!({"messageType": "ConfigurationHistoryDeliveryCompleted", "s3Bucket": "trail", "s3ObjectKey": config})), vec![]),
+            (json!({"Service": "Amazon S3", "Event": "s3:TestEvent", "Bucket": "trail"}), vec![]),
+            (json!({"Type": "Notification", "Message": "plain text"}), vec![]),
+        ] {
+            let got = trail_files(&body.to_string());
+            assert!(got.iter().all(|(b, _)| b == "trail"), "{body}");
+            assert_eq!(got.into_iter().map(|(_, k)| k).collect::<Vec<_>>(), want, "{body}");
+        }
+        assert!(trail_files("not json").is_empty());
+    }
+
+    #[test]
+    fn a_files_records() {
+        let doc = json!({"Records": [
+            {"eventTime": "2026-10-28T17:05:01Z", "eventName": "AssumeRole"},
+            {"eventTime": "2026-10-28T17:05:02Z", "eventName": "GetObject"},
+        ]})
+        .to_string();
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gz.write_all(doc.as_bytes()).unwrap();
+        let gz = gz.finish().unwrap();
+        let got = records_of(&gz).unwrap();
         assert_eq!(got.len(), 2);
-        assert_eq!(got[0].0, "trail-bucket");
-        assert!(objects_named(r#"{"Service":"Amazon S3","Event":"s3:TestEvent"}"#).is_empty());
-        assert!(objects_named("not json").is_empty());
+        assert_eq!(
+            got[0].0,
+            DateTime::parse_from_rfc3339("2026-10-28T17:05:01Z").unwrap()
+        );
+        assert_eq!(got[1].1["eventName"], "GetObject");
+        assert_eq!(records_of(doc.as_bytes()).unwrap().len(), 2);
+        assert!(records_of(br#"{"digestStartTime":"2026-10-28T17:00:00Z"}"#).is_err());
+        assert!(records_of(b"\x1f\x8b\x08 not gzip").is_err());
+    }
+
+    #[tokio::test]
+    async fn follows_s3_to_the_buckets_region() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let signed_for = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let doc =
+            br#"{"Records":[{"eventTime":"2026-10-28T17:05:01Z","eventName":"ConsoleLogin"}]}"#;
+        let seen = Arc::clone(&signed_for);
+        tokio::spawn(async move {
+            loop {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let mut buf = vec![0u8; 16 * 1024];
+                let n = sock.read(&mut buf).await.unwrap();
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                // Credential=<key>/<date>/<region>/s3/aws4_request
+                let region = req
+                    .split("Credential=")
+                    .nth(1)
+                    .and_then(|c| c.split('/').nth(2))
+                    .unwrap_or_default()
+                    .to_string();
+                seen.lock().unwrap().push(region.clone());
+                let mut resp = if region == "us-east-1" {
+                    format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", doc.len()).into_bytes()
+                } else {
+                    b"HTTP/1.1 301 Moved Permanently\r\nx-amz-bucket-region: us-east-1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
+                };
+                if region == "us-east-1" {
+                    resp.extend_from_slice(doc);
+                }
+                sock.write_all(&resp).await.unwrap();
+            }
+        });
+
+        let conf = aws_sdk_s3::Config::builder()
+            .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
+            .region(aws_sdk_s3::config::Region::new("us-west-2"))
+            .credentials_provider(aws_sdk_s3::config::Credentials::new(
+                "AKID", "secret", None, None, "test",
+            ))
+            .endpoint_url(format!("http://{addr}"))
+            .force_path_style(true)
+            .retry_config(aws_sdk_s3::config::retry::RetryConfig::disabled())
+            .build();
+        let mut s3 = S3Client::from_conf(conf);
+        let bytes = fetch(&mut s3, "trail", LOG).await.unwrap();
+        assert_eq!(records_of(&bytes).unwrap().len(), 1);
+        fetch(&mut s3, "trail", LOG).await.unwrap();
+        assert_eq!(
+            *signed_for.lock().unwrap(),
+            ["us-west-2", "us-east-1", "us-east-1"]
+        );
     }
 }

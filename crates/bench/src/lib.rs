@@ -195,8 +195,8 @@ pub async fn run_one_payload(
                         SourceConfig::NPMRegistry(_) => unimplemented!("not implemented"),
                         SourceConfig::GithubWebhook(_) => unimplemented!("not implemented"),
                         SourceConfig::File(_) => unimplemented!("not implemented"),
+                        SourceConfig::Sqlite(_) => unimplemented!("not implemented"),
                         SourceConfig::Cloudtrail(_)
-                        | SourceConfig::Store(_)
                         | SourceConfig::GithubAudit(_)
                         | SourceConfig::Okta(_)
                         | SourceConfig::GoogleWorkspace(_) => {
