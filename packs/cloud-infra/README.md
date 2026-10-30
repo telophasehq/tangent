@@ -16,7 +16,7 @@ logs.sqlite ──▶ actors ──▶ judge ──▶ flagged ──▶ alerts.
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
 - **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two partitions: the org, and the org and actor. It keeps 30 days before the newest record. That ends ingest, one process; the judge is another, so nothing in ingest waits on a model.
 - **actors** reads `logs.sqlite` back sixteen records of one actor at a time, oldest first. A quiet actor's go once the oldest is an hour older than the newest record stored, or once nothing new has been stored for an hour. A record that arrives late waits with the actor's others. Rows are marked once their verdicts are written, so a restart sends again what the judge had not finished.
-- **judge** reads an actor's records together, sixteen to a request and never two actors in one, and writes a verdict per record: a pass is the flag alone, a flag says why. It is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see.
+- **judge** reads an actor's records together, as **actors** sends them and never two actors in one request, and writes a verdict per record: a pass is the flag alone, a flag says why. It is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see.
 
 ## Install and run
 

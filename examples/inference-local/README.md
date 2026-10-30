@@ -7,10 +7,10 @@ Nothing leaves the box.
 events ──▶ judge (inference: adds judge) ──▶ flagged (plugin: keeps judge.flag) ──▶ flagged.ndjson
 ```
 
-The `judge` node sends each record to a local OpenAI-compatible server with
-[judge.md](judge.md) as the system prompt and adds the model's JSON reply to
-the record as `judge` (the node's name). That is all an
-inference node does: it adds and forwards, it never drops. The
+The `judge` node sends the records it is handed, one per line, to a local
+OpenAI-compatible server with [judge.md](judge.md) as the system prompt and
+adds the model's answer for each to the record as `judge` (the node's name).
+That is all an inference node does: it adds and forwards, it never drops. The
 [flagged](flagged/src/lib.rs) plugin is the filter — its `probe()` selects
 records with `judge.flag == true`, or with `judge.error` (the judge could not
 read the reply, so a person should), and its body passes them through
@@ -81,7 +81,8 @@ cat flagged.ndjson
 scanner probe, the deploy and the finished step pass quietly. A small model may
 also flag Okta's 429 rate limit or a routine step on some runs, which is what
 the prompt's "do not flag" list is there to tune. With thinking off, GLM-4.7-Flash takes about 0.9 s per
-verdict on an M4 Max, and with eight in flight the pipeline does 3-4 events/s.
+verdict on an M4 Max, and with eight in flight the pipeline does 3-4 events/s
+(measured one record to a request).
 
 When the model cannot be reached or its reply cannot be read, the record still
 goes on with `{"error": ...}` as `judge`; the plugin keeps those too, so

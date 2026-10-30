@@ -51,7 +51,7 @@ cat flagged.ndjson
 ## Throughput
 
 Measured with 300 synthetic events like [events.ndjson](events.ndjson), Haiku 4.5
-through this exact node (one account, us-west-2, late 2026):
+through this node, one record to a request (one account, us-west-2, late 2026):
 
 | concurrency | events/s | p50 | p95 | errors |
 |---|---|---|---|---|
