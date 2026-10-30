@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::sinks::{blackhole, file, s3};
+use crate::sinks::{blackhole, file, s3, sqlite};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SinkConfig {
@@ -20,6 +20,8 @@ pub enum SinkKind {
     File(file::FileConfig),
     #[serde(rename = "blackhole")]
     Blackhole(blackhole::BlackholeConfig),
+    #[serde(rename = "sqlite")]
+    Sqlite(sqlite::SqliteConfig),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
