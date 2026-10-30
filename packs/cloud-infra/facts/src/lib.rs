@@ -1,25 +1,4 @@
-//! Which records a model should read, decided from context, not statistics.
-//! Upstream plugins normalized the record (`_norm`) and decorated its address
-//! (`_ip`, from `examples/enrich`: country, ASN, hosting, Tor, VPN, ours). This
-//! plugin holds the org's profile from config (where its people are, who its
-//! members, services and keys are, which hosts its systems talk to, which
-//! assets are sensitive) and passes a record when:
-//!   - its kind is on the always-look list, or a hard rule names it (root
-//!     credentials, something opened to the world);
-//!   - its address is a Tor exit or a VPN; for a person, hosting or a country
-//!     the org is not in; for a service, anywhere but the org's cloud; for one
-//!     of the org's API keys, a network it does not call from;
-//!   - its principal is nobody the profile knows;
-//!   - it talks to a host the org's systems do not talk to;
-//!   - it touches an asset the profile marks sensitive.
-//! Each reason fires once per partition per hour of stream time. The reasons
-//! and the context they rest on land under `_gate`; everything else is dropped.
-//!
-//! The profile is `profile.yaml` in the plugin's data directory (`data:`),
-//! or the same keys under `plugins.gate.config`:
-//!   countries: [US]     cloud: aws
-//!   members: [...]      services: [...]      keys: {ak_1: [1.2.3.0/24]}
-//!   hosts: [...]        sensitive: [...]     ip: _norm.ip     # the field `enrich` decorated
+//! `_facts`: what the profile (`/data/profile.yaml`, or the same keys under `config:`) says about a record.
 
 wit_bindgen::generate!({
     path: ".tangent/wit",
@@ -35,61 +14,22 @@ use ipnet::IpNet;
 
 use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
 use serde_json::{json, Map, Value};
-use tangent::logs::log::{Logview, Scalar};
-use tangent::logs::{config, state};
+use tangent::logs::config;
+use tangent::logs::log::Logview;
 
 struct Component;
 
 export!(Component);
-
-const HOUR_MS: i64 = 3_600_000;
-
-/// Kinds a person looks at every time, however usual they are.
-const WATCH: &[&str] = &[
-    // CloudTrail
-    "StopLogging",
-    "DeleteTrail",
-    "PutBucketPolicy",
-    "PutBucketPublicAccessBlock",
-    "AuthorizeSecurityGroupIngress",
-    "ModifyDBSnapshotAttribute",
-    "CreateUser",
-    "CreateAccessKey",
-    "AttachUserPolicy",
-    // Okta
-    "user.mfa.factor.deactivate",
-    "system.api_token.create",
-    // GitHub audit log
-    "protected_branch.destroy",
-    "deploy_key.create",
-    "org.update_member",
-    "org.self_hosted_runner_register",
-    "repo.rename",
-    "repo.access",
-    "pull_request_target",
-    // Google Workspace
-    "EMAIL_FORWARDING_OUT_OF_DOMAIN",
-    // the app's own audit log
-    "member.role.changed",
-    "org.settings.changed",
-    "api_key.create",
-    "org.export.started",
-    // Hiro
-    "aws_api_call",
-    "step_failed",
-];
 
 /// Sources whose `_norm.actor` is a repository or nothing, not a principal.
 const NO_PRINCIPAL: &[&str] = &["hiro", "gha_ci", "runner_egress"];
 
 struct Profile {
     countries: BTreeSet<String>,
+    watch: BTreeSet<String>,
     members: BTreeSet<String>,
     services: BTreeSet<String>,
-    /// The org's API keys and the networks each calls from (`keys: {ak_1: [1.2.3.0/24]}`;
-    /// a plain list means any network).
-    keys: BTreeMap<String, Vec<IpNet>>,
-    /// Where the org's services run (`aws`): a service seen elsewhere is news.
+    keys: BTreeMap<String, Vec<IpNet>>, // empty: any network
     cloud: Option<String>,
     hosts: BTreeSet<String>,
     sensitive: BTreeSet<String>,
@@ -142,7 +82,10 @@ fn keys_setting() -> BTreeMap<String, Vec<IpNet>> {
                 .collect();
         }
     }
-    list_setting("keys").into_iter().map(|k| (k, Vec::new())).collect()
+    list_setting("keys")
+        .into_iter()
+        .map(|k| (k, Vec::new()))
+        .collect()
 }
 
 /// `/data/profile.yaml`, when the plugin was given a data directory.
@@ -151,7 +94,7 @@ fn profile_file() -> Option<Value> {
     match serde_yaml::from_str::<Value>(&text) {
         Ok(v) => Some(v),
         Err(e) => {
-            eprintln!("gate: profile.yaml: {e}");
+            eprintln!("facts: profile.yaml: {e}");
             None
         }
     }
@@ -168,12 +111,18 @@ fn profile() -> &'static Profile {
     P.get_or_init(|| match profile_file() {
         Some(f) => Profile {
             countries: strs(&f["countries"]),
+            watch: strs(&f["watch"]),
             members: strs(&f["members"]),
             services: strs(&f["services"]),
             keys: match &f["keys"] {
                 Value::Object(m) => m
                     .iter()
-                    .map(|(k, nets)| (k.clone(), strs(nets).iter().filter_map(|n| parse_net(n)).collect()))
+                    .map(|(k, nets)| {
+                        (
+                            k.clone(),
+                            strs(nets).iter().filter_map(|n| parse_net(n)).collect(),
+                        )
+                    })
                     .collect(),
                 other => strs(other).into_iter().map(|k| (k, Vec::new())).collect(),
             },
@@ -184,6 +133,7 @@ fn profile() -> &'static Profile {
         },
         None => Profile {
             countries: list_setting("countries"),
+            watch: list_setting("watch"),
             members: list_setting("members"),
             services: list_setting("services"),
             keys: keys_setting(),
@@ -193,49 +143,6 @@ fn profile() -> &'static Profile {
             ip_field: setting("ip").unwrap_or_else(|| "_norm.ip".to_string()),
         },
     })
-}
-
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146097 + doe - 719468
-}
-
-/// `2026-10-20T13:00:00Z` (fractions and offsets allowed) as epoch ms.
-fn parse_ts(s: &str) -> Option<i64> {
-    let s = s.trim();
-    if let Ok(n) = s.parse::<f64>() {
-        return Some(if n.abs() > 1e11 { n as i64 } else { (n * 1000.0) as i64 });
-    }
-    let num = |a: usize, l: usize| s.get(a..a + l)?.parse::<i64>().ok();
-    let (y, mo, d) = (num(0, 4)?, num(5, 2)?, num(8, 2)?);
-    let (h, mi, se) = (num(11, 2)?, num(14, 2)?, num(17, 2)?);
-    let b = s.as_bytes();
-    let mut i = 19;
-    let mut ms = 0;
-    if b.get(i) == Some(&b'.') {
-        i += 1;
-        let start = i;
-        while i < b.len() && b[i].is_ascii_digit() {
-            i += 1;
-        }
-        let frac3: String = format!("{:0<3}", &s[start..i]).chars().take(3).collect();
-        ms = frac3.parse::<i64>().unwrap_or(0);
-    }
-    let offset = match b.get(i) {
-        None | Some(b'Z') | Some(b'z') => 0,
-        Some(sign @ (b'+' | b'-')) => {
-            let oh = num(i + 1, 2)?;
-            let om = num(i + 4, 2)?;
-            (oh * 3600 + om * 60) * if *sign == b'+' { 1 } else { -1 }
-        }
-        _ => return None,
-    };
-    Some((days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + se - offset) * 1000 + ms)
 }
 
 fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
@@ -271,25 +178,27 @@ fn principal(p: &Profile, actor: &str) -> &'static str {
     }
 }
 
-/// Why a model should read this record, if it should, and the context the
-/// reasons rest on.
-fn judge_worthy(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, String)>) {
+/// What the profile knows about this record, and the notes a model reads it with.
+fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>, Vec<String>) {
     let mut facts = Map::new();
-    let mut reasons: Vec<(String, String)> = Vec::new();
+    let mut notes = Vec::new();
     let source = rec["source"].as_str().unwrap_or("");
     let kind = lookup(rec, "_norm.kind").and_then(text).unwrap_or_default();
     let actor = lookup(rec, "_norm.actor").and_then(text);
     let dest = lookup(rec, "_norm.dest").and_then(text);
     let target = lookup(rec, "_norm.target").and_then(text);
 
-    if WATCH.contains(&kind.as_str()) {
-        reasons.push((format!("watch {kind}"), format!("watch:{kind}")));
+    if p.watch.contains(&kind) {
+        facts.insert("watch".into(), json!(true));
+        notes.push(format!("{kind} is a kind the org watches every time"));
     }
     if rec["userIdentity"]["type"].as_str() == Some("Root") {
-        reasons.push(("rule: AWS root credentials used".into(), "rule:root".into()));
+        facts.insert("root".into(), json!(true));
+        notes.push("AWS root credentials used".into());
     }
     if rec["requestParameters"].to_string().contains("0.0.0.0/0") {
-        reasons.push(("rule: opened to 0.0.0.0/0".into(), "rule:world".into()));
+        facts.insert("world_open".into(), json!(true));
+        notes.push("opened to 0.0.0.0/0".into());
     }
 
     // The principal: known to the profile, or nobody it knows.
@@ -300,25 +209,24 @@ fn judge_worthy(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, S
     if let (Some(a), Some(w)) = (&actor, who) {
         facts.insert("principal".into(), json!(w));
         if w == "unknown" {
-            reasons.push((
-                format!("principal {a} is nobody the org profile knows"),
-                format!("principal:{a}"),
-            ));
+            notes.push(format!("principal {a} is nobody the org profile knows"));
         }
     }
 
     // The address, as `enrich` described it.
-    if let Some(ip) = rec["_ip"][&p.ip_field].as_object() {
-        facts.insert("ip".into(), Value::Object(ip.clone()));
+    if let Some(Value::Object(ip)) = ip {
         let ours = ip.get("ours").and_then(Value::as_bool).unwrap_or(false);
         let addr = ip.get("ip").and_then(Value::as_str).unwrap_or("?");
-        let desc = ip.get("org").and_then(Value::as_str).unwrap_or("unknown network");
+        let desc = ip
+            .get("org")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown network");
         let scope = actor.clone().unwrap_or_else(|| kind.clone());
         if ip.get("tor").and_then(Value::as_bool) == Some(true) {
-            reasons.push((format!("{addr} is a Tor exit ({desc})"), format!("ip:tor:{scope}")));
+            notes.push(format!("{addr} is a Tor exit ({desc})"));
         }
         if ip.get("vpn").and_then(Value::as_bool) == Some(true) && !ours {
-            reasons.push((format!("{addr} is a VPN address ({desc})"), format!("ip:vpn:{scope}")));
+            notes.push(format!("{addr} is a VPN address ({desc})"));
         }
         let hosting = ip.get("hosting").and_then(Value::as_str);
         let country = ip.get("country").and_then(Value::as_str);
@@ -327,15 +235,12 @@ fn judge_worthy(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, S
             // A person: hosting or a country the org is not in is worth a look.
             Some("member") | Some("unknown") if !ours => {
                 if let Some(h) = hosting {
-                    reasons.push((
-                        format!("{scope} acting from {h} hosting, {addr} ({desc})"),
-                        format!("ip:hosting:{scope}"),
-                    ));
+                    notes.push(format!("{scope} acting from {h} hosting, {addr} ({desc})"));
                 }
                 if foreign {
-                    reasons.push((
-                        format!("{scope} acting from {}, {addr} ({desc})", country.unwrap_or("?")),
-                        format!("ip:country:{scope}"),
+                    notes.push(format!(
+                        "{scope} acting from {}, {addr} ({desc})",
+                        country.unwrap_or("?")
                     ));
                 }
             }
@@ -345,12 +250,9 @@ fn judge_worthy(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, S
                     || country.unwrap_or("an unknown network").to_string(),
                     |h| format!("{h} hosting"),
                 );
-                reasons.push((
-                    format!(
-                        "service {scope} acting from {where_}, {addr} ({desc}), not the org's {}",
-                        p.cloud.as_deref().unwrap_or("cloud")
-                    ),
-                    format!("ip:service:{scope}"),
+                notes.push(format!(
+                    "service {scope} acting from {where_}, {addr} ({desc}), not the org's {}",
+                    p.cloud.as_deref().unwrap_or("cloud")
                 ));
             }
             // A key calls from the networks the org expects it from.
@@ -364,28 +266,28 @@ fn judge_worthy(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, S
                 });
                 facts.insert("key_known_network".into(), json!(known));
                 if !known {
-                    reasons.push((
-                        format!("key {scope} used from {addr} ({desc}), outside the networks it calls from"),
-                        format!("ip:key:{scope}"),
+                    notes.push(format!(
+                        "key {scope} used from {addr} ({desc}), outside the networks it calls from"
                     ));
                 }
             }
             _ => {}
         }
+        facts.insert("ip".into(), Value::Object(ip));
     }
 
     // Where the request went.
     if let Some(d) = &dest {
-        let known = p.hosts.contains(d) || p.hosts.iter().any(|h| {
-            h.strip_prefix("*.")
-                .is_some_and(|suffix| d.ends_with(suffix))
-        });
+        let known = p.hosts.contains(d)
+            || p.hosts.iter().any(|h| {
+                h.strip_prefix("*.")
+                    .is_some_and(|suffix| d.ends_with(suffix))
+            });
         facts.insert("dest_known".into(), json!(known));
         if !known {
             let by = actor.clone().unwrap_or_else(|| source.to_string());
-            reasons.push((
-                format!("{by} talked to {d}, not a host this org's systems talk to"),
-                format!("dest:{d}"),
+            notes.push(format!(
+                "{by} talked to {d}, not a host this org's systems talk to"
             ));
         }
     }
@@ -395,20 +297,17 @@ fn judge_worthy(p: &Profile, rec: &Value) -> (Map<String, Value>, Vec<(String, S
         if p.sensitive.iter().any(|s| t == s || t.contains(s.as_str())) {
             facts.insert("sensitive_target".into(), json!(true));
             let by = actor.clone().unwrap_or_else(|| source.to_string());
-            reasons.push((
-                format!("{by} touched {t}, which the org marks sensitive"),
-                format!("sensitive:{by}:{t}"),
-            ));
+            notes.push(format!("{by} touched {t}, which the org marks sensitive"));
         }
     }
-    (facts, reasons)
+    (facts, notes)
 }
 
 impl Guest for Component {
     fn metadata() -> Meta {
         Meta {
-            name: "gate".to_string(),
-            version: "0.2.0".to_string(),
+            name: "facts".to_string(),
+            version: "0.1.0".to_string(),
         }
     }
 
@@ -425,25 +324,22 @@ impl Guest for Component {
         let mut out = Vec::new();
         for lv in input {
             let mut rec: Value = serde_json::from_str(&lv.log()).map_err(|e| e.to_string())?;
-            let ts = rec["ts"].as_str().and_then(parse_ts).unwrap_or(0);
-            let (facts, reasons) = judge_worthy(p, &rec);
-            let mut fresh = Vec::new();
-            for (text, class) in reasons {
-                // Once an hour of stream time: the key holds when it last fired.
-                let key = format!("gated:{class}");
-                let fired = match state::get(&key)? {
-                    Some(Scalar::Int(last)) => ts - last < HOUR_MS,
-                    _ => false,
-                };
-                if !fired {
-                    state::set(&key, &Scalar::Int(ts), None)?;
-                    fresh.push(text);
-                }
+            let Some(m) = rec.as_object_mut() else {
+                return Err("record is not a JSON object".to_string());
+            };
+            let ip = m
+                .get_mut("_ip")
+                .and_then(Value::as_object_mut)
+                .and_then(|i| i.remove(&p.ip_field));
+            if m.get("_ip")
+                .and_then(Value::as_object)
+                .is_some_and(Map::is_empty)
+            {
+                m.remove("_ip");
             }
-            if fresh.is_empty() {
-                continue;
-            }
-            rec["_gate"] = json!({"reasons": fresh, "facts": facts});
+            let (mut facts, notes) = facts_of(p, &rec, ip);
+            facts.insert("notes".into(), json!(notes));
+            rec["_facts"] = Value::Object(facts);
             out.extend(serde_json::to_vec(&rec).map_err(|e| e.to_string())?);
             out.push(b'\n');
         }

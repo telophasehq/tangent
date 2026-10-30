@@ -1,31 +1,39 @@
 # cloud-infra
 
-Your own infrastructure's logs, read by a model only when context says a
-person should look. Install, point your logs at it, fill in one file about
-your company, run.
+Your own infrastructure's logs, every record read by a model with the rest
+of its actor's five minutes; a person reads what it flags. Install, point your
+logs at it, fill in one file about your company, run.
 
 ```
-CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ gate ──▶ window ──▶ judge ──▶ alerts.ndjson
+CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ facts ──▶ logs.sqlite   (ingest)
+
+logs.sqlite ──▶ actors ──▶ judge ──▶ flagged ──▶ alerts.ndjson   (judgment)
+                             └──▶ verdicts.ndjson
 ```
 
-- **norm** puts every source's shape into one: `_norm.{actor, org, kind, ip, country, dest, target}`.
+- **norm** puts every source's shape into one, `_norm.{actor, org, kind, ip, country, dest, target}`, and trims the four API sources' records to what they mean: their ids, hashes, protocol details and bulk go. Anything else is left as it came.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
-- **gate** decides, from your profile, which records a model reads: a kind on the always-look list, a hard rule (root credentials, something opened to the world), a person on hosting or abroad, a service outside your cloud, an API key off its networks, a principal you do not know, a host your systems do not talk to, a sensitive asset. Once per reason per hour. No statistics: nothing here counts, averages or learns.
-- **window** gives the judge the actor's last day and the org's last hour, read back from the runtime's retained rows.
-- **judge** is any OpenAI-compatible model with [judge.md](judge.md) as its brief. It adds a verdict; **flagged** keeps the ones a person should see.
-
-On the 34 cases in [cases/](cases/) plus 38 days of ordinary traffic, the gate sends the model about 0.4% of records; the model's recall on the cases is in [RESULTS](#what-it-catches).
+- **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
+- **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two partitions: the org, and the org and actor. It keeps 30 days before the newest record. That ends ingest: nothing waits on a model.
+- **actors** reads the store back five minutes of one actor at a time, once a later record is stored or the clock is five minutes past the window. A record that arrives late goes with the actor's next window. Rows are marked once their verdicts are written, so a restart sends again what the judge had not finished.
+- **judge** reads an actor's records together, sixteen to a request and never two actors in one, and writes a verdict per record: a pass is the flag alone, a flag says why. It is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see.
 
 ## Install and run
 
 ```bash
 make setup          # Rust WASM toolchain; GeoLite2, cloud ranges, Tor exits into examples/enrich/data
 $EDITOR profile/profile.yaml
-make test           # the cases through norm, gate and window; no model needed
+make test           # the cases through norm and facts; no model needed
 make run            # listens on :9400 for NDJSON records
 ```
 
-The judge defaults to a local model on `:8080` (mlx_lm.server or llama-server). For a hosted one:
+The judge defaults to a local model on `:8080`. Serve it with llama.cpp's `llama-server`, which turns the verdict schema into a grammar: replies are always well-formed and their reasons stay short. `mlx_lm.server` accepts the schema and ignores it, and with this model about one reply in five came back unreadable.
+
+```bash
+llama-server -m GLM-4.7-Flash-Q4_K.gguf --port 8080 -np 1 -c 32768 -ngl 99 -fa on --jinja --temp 0.7 --top-p 0.95
+```
+
+For a hosted one:
 
 ```bash
 JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY make run
@@ -61,18 +69,19 @@ Reading the trail makes few calls of its own, but some land back in it: the buck
 
 ## The profile
 
-[profile/profile.yaml](profile/profile.yaml) is every fact about your company that no log carries, and it is the whole gate:
+[profile/profile.yaml](profile/profile.yaml) is every fact about your company that no log carries; the model reads it as `_facts`:
 
-| key | what it is | what it decides |
+| key | what it is | what the record gets |
 |---|---|---|
-| `org`, `own_sources` | your name; which sources are your own infrastructure | all of them land in one partition, yours |
-| `countries` | where your people are | a person signing in from elsewhere reaches the judge |
-| `cloud` | where your services run | a service seen on any other hosting reaches the judge |
-| `members` | people: IdP emails, GitHub handles | anyone else is a principal you do not know |
-| `services` | IAM users and roles, bots | exempt from the "person abroad" rules, held to `cloud` |
-| `keys` | API keys and the networks each calls from | a key off its networks reaches the judge |
-| `hosts` | hosts your systems talk to (`*.suffix` allowed) | a request anywhere else reaches the judge |
-| `sensitive` | buckets, repos, tables | a touch reaches the judge every time |
+| `org`, `own_sources` | your name; which sources are your own infrastructure | all of them are one org, yours |
+| `countries` | where your people are | a note when a person acts from elsewhere |
+| `cloud` | where your services run | a note when a service acts from any other hosting |
+| `members` | people: IdP emails, GitHub handles | `principal: member`; anyone else is `unknown` |
+| `services` | IAM users and roles, bots | `principal: service`, held to `cloud` |
+| `keys` | API keys and the networks each calls from | `principal: key`, `key_known_network` |
+| `hosts` | hosts your systems talk to (`*.suffix` allowed) | `dest_known` |
+| `sensitive` | buckets, repos, tables | `sensitive_target` |
+| `watch` | kinds a person wants seen every time | `watch` |
 
 The file ships filled in for the fictional company the cases describe, so `make test` passes before you touch it.
 
@@ -80,17 +89,17 @@ The file ships filled in for the fictional company the cases describe, so `make 
 
 [cases/](cases/) holds 34 sequences as the real sources write them, 28 that should flag and 6 that must not. Half follow disclosed compromises of 2025 and 2026 ([cases/README.md](cases/README.md) has the table and sources): TeamPCP's Trivy and LiteLLM, the axios hijack, nx/s1ngularity, Shai-Hulud's second wave, tj-actions/changed-files, Railway's environment-variable breach, Vercel via Context.ai. The rest are the classics: root login, CloudTrail stopped, a bucket made public, MFA off, impossible travel, a Gmail forwarding rule, a branch protection removed.
 
-Measured with a local 30B model as judge over the cases and 38 days of synthetic ordinary traffic: 0.4% of records reach the model, 38 of the 40 positives across both packs are flagged, 2 of 11 negatives, 3 ordinary records in 38 days. The two misses are a mass push by a personal access token (a member, a home address, nothing contextual about one push) and a typosquatted dependency (nothing about one PR is new). The negatives that flag are an admin's monthly export, which is on the always-look list, and a key rotation that the local model misreads.
+This shape, an actor's five minutes without history, is not measured yet. The two before it, over the cases of both packs and 38 days of synthetic ordinary traffic: a judge reading every record in batches with each org's history as context (Claude Haiku 4.5) flagged 38 to 39 of the 40 positives, 1 of 11 negatives and 13 of 16,199 ordinary records; a rulebook gate in front of a local 30B judge, 38 of 40 and 2 of 11.
 
-`make test` runs the cases through norm, gate and window and compares with [tests/](tests/); it needs no model and runs in CI.
+`make test` runs the cases through norm and facts and compares with [tests/](tests/); it needs no model and runs in CI.
 
 ## Files
 
 ```
 tangent.yaml          the pipeline
 profile/profile.yaml  your company (edit this)
-judge.md              the model's brief
-norm/ gate/ window/   the plugins, Rust, compiled to WASM by make setup
+judge.md              the model's brief, judge.schema.json the verdict's shape
+norm/ facts/          the plugins, Rust, compiled to WASM by make setup
 cases/                the sequences, one directory each: case.yaml + events.ndjson
 tests/                fixtures for make test
 ```
