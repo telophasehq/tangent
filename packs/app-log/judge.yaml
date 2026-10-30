@@ -9,6 +9,7 @@ sources:
   actors:
     type: sqlite
     path: logs.sqlite
+    table: logs
     partition: actor
     batch_size: 40
     timeout_secs: 3600
