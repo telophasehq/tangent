@@ -83,15 +83,15 @@ tangent state --config tangent.yaml sql "select partition, count(*) from state g
 ```
 
 ## Keeping records and reading them back
-A `sqlite` sink keeps every record once, in one table, `logs`, with a column per partition holding its fields' values joined with `|`. A `sqlite` source, in the same process or another, reads one partition back in batches, each of one partition value:
+A `sqlite` sink keeps every record once, in its `table`, with a column per partition field holding the field's value as text, NULL without it. A partition is an index on its fields and the record's time, `<table>_<partition>`; `pending` and `at` are taken by the table's own indexes. A `sqlite` source, in the same process or another, reads one partition back in batches, each of one partition value; it takes the partition's fields from that index:
 
 ```yaml
 sinks:
   logs:
     type: sqlite
     path: logs.sqlite
+    table: logs
     time: ts               # the record's own time (RFC 3339 or epoch); arrival time without it
-    retain_secs: 2592000   # 30d before the newest record
     partitions:
       org: [_norm.org]
       actor: [_norm.org, _norm.actor]
@@ -100,12 +100,13 @@ sources:
   actors:
     type: sqlite
     path: logs.sqlite
+    table: logs
     partition: actor
     batch_size: 40         # every batch is a partition value's latest 40 records
     timeout_secs: 3600     # send by then even if fewer than 40 are new
 ```
 
-A partition value's records not yet sent go oldest first, `batch_size` to a batch, one batch of a value at a time. Fewer wait until the oldest is `timeout_secs` older than the newest record stored, so a replay of old logs goes as live ones do, or until nothing new has been stored for `timeout_secs`; then they go topped up to `batch_size` with the value's latest records already sent, which carry `"_context": true`. A batch's new records are marked `emitted` when it is through the DAG, and the value's next batch goes then; a restart sends again what was not.
+A partition value's records not yet sent go oldest first, `batch_size` to a batch, one batch of a value at a time. Fewer wait until the oldest is `timeout_secs` older than the newest record stored, so a replay of old logs goes as live ones do, or until nothing new has been stored for `timeout_secs`; then they go topped up to `batch_size` with the value's latest records already sent, which carry `"_context": true`. A batch's new records get the time it is through the DAG in `emitted`, NULL until then, and the value's next batch goes then; a restart sends again what was not. Nothing is deleted: the table grows, and trimming it is the operator's job.
 
 ## Inference
 An `inference` node asks a model about each record. Nodes are configured under `inference:`, each with its own model and prompt, and sit in the DAG as `kind: inference`:
