@@ -120,10 +120,10 @@ fn acked(sent: &mut HashSet<i64>, unacked: &mut usize, ids: Vec<i64>) {
     *unacked -= 1;
 }
 
-/// Ids of each partition value's pending rows, oldest first, in groups of
-/// `max_events`; the rest too once its oldest is `timeout_secs` older than
-/// the newest row, or nothing has been stored for `timeout_secs`. Groups go in
-/// order of their first row.
+/// Ids of the first `max_events` pending rows, oldest first, of each partition
+/// value with none in flight; fewer once its oldest is `timeout_secs` older
+/// than the newest row, or nothing has been stored for `timeout_secs`. Groups
+/// go in order of their first row.
 fn due(
     conn: &Mutex<Connection>,
     read: &str,
@@ -151,30 +151,28 @@ fn due(
     let old = newest - cfg.timeout_secs as i64 * 1000;
 
     let mut parts: BTreeMap<String, Vec<(i64, i64)>> = BTreeMap::new(); // at, id
+    let mut busy: HashSet<String> = HashSet::new(); // values with a group in flight
     let mut st = conn.prepare_cached(read)?;
     let mut rows = st.query([])?;
     while let Some(r) = rows.next()? {
         let id: i64 = r.get(0)?;
+        let key: Option<String> = r.get(1)?;
+        let key = key.unwrap_or_default();
         if sent.contains(&id) {
+            busy.insert(key);
             continue;
         }
-        let key: Option<String> = r.get(1)?;
         let at: i64 = r.get(2)?;
-        parts
-            .entry(key.unwrap_or_default())
-            .or_default()
-            .push((at, id));
+        parts.entry(key).or_default().push((at, id));
     }
 
     let mut groups: Vec<(i64, Vec<i64>)> = Vec::new(); // first at, ids
-    for rows in parts.into_values() {
-        let oldest = rows[0].0;
-        for chunk in rows.chunks(cfg.max_events) {
-            if chunk.len() < cfg.max_events && !idle && oldest > old {
-                break;
-            }
-            groups.push((chunk[0].0, chunk.iter().map(|r| r.1).collect()));
+    for (key, rows) in parts {
+        let chunk = &rows[..rows.len().min(cfg.max_events)];
+        if busy.contains(&key) || (chunk.len() < cfg.max_events && !idle && rows[0].0 > old) {
+            continue;
         }
+        groups.push((chunk[0].0, chunk.iter().map(|r| r.1).collect()));
     }
     groups.sort_by_key(|g| g.0);
     Ok(groups.into_iter().map(|g| g.1).collect())
@@ -335,6 +333,25 @@ mod tests {
                 group(&[(T0 + 5, "b"), (T0 + 6, "b"), (T0 + 7, "b")]),
             ]
         );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn one_group_of_a_value_in_flight() {
+        let path = path("one");
+        let a: Vec<(i64, &str)> = (1..=6).map(|k| (T0 + k, "a")).collect();
+        insert(&path, &a);
+        let down = Arc::new(RecordingSink {
+            down: true,
+            ..Default::default()
+        });
+        let (stop, h) = start(&path, &down, 3600);
+        writes(&down, 1).await;
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let got = down.writes.lock().await.clone();
+        stop.cancel();
+        h.await.unwrap().unwrap();
+        assert!(got.iter().all(|w| *w == group(&a[..3])), "{got:?}");
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
