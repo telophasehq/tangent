@@ -239,9 +239,9 @@ impl InferenceNode {
 
     fn request(&self, user: String, n: usize) -> CompletionRequest {
         let preamble = format!(
-            "{}\n\nThis request carries {n} records, one JSON object per line, each with its index `i` (0 to {last}). \
-             Reply with one JSON object, {{\"answers\": [...]}}, holding exactly {n} answers, one per record in \
-             the same order, each the record's answer with its index first: {{\"i\": k, ...}}. Keep going through \
+            "{}\n\nThe records are one JSON object per line, each with its index `i`. Reply with one JSON object, \
+             {{\"answers\": [...]}}, holding one answer per record, {n} in all, in the same order, each the \
+             record's answer with its index first: {{\"i\": k, ...}}. Keep going through \
              every record: the reply is not finished until the answer with \"i\": {last} is written, then close \
              the array and the object. The reply is the JSON object itself: no code fence, no text before or \
              after it.",
@@ -660,7 +660,7 @@ mod tests {
         assert_eq!(req["messages"][0]["role"], "system");
         let system = stub::text(&req["messages"][0]["content"]);
         assert!(system.starts_with("You are a test judge."), "{system}");
-        assert!(system.contains("3 records"), "{system}");
+        assert!(system.contains("3 in all"), "{system}");
         assert_eq!(req["messages"][1]["role"], "user");
         let lines = user_lines(&seen[0]);
         assert_eq!(lines.len(), 3);

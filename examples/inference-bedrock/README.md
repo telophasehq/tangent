@@ -15,8 +15,10 @@ inference:
     model: us.anthropic.claude-haiku-4-5-20251001-v1:0
     aws: { region: us-west-2 }
     prompt_file: judge.md
+    batch_bytes: 4000
+    max_tokens: 300
     concurrency: 8
-    timeout_ms: 30000
+    timeout_ms: 60000
 plugins:
   flagged:
     module_type: rust
@@ -47,24 +49,3 @@ tangent run --config tangent.yaml
 nc localhost 9000 < events.ndjson
 cat flagged.ndjson
 ```
-
-## Throughput
-
-Measured with 300 synthetic events like [events.ndjson](events.ndjson), Haiku 4.5
-through this node, one record to a request (one account, us-west-2, late 2026):
-
-| concurrency | events/s | p50 | p95 | errors |
-|---|---|---|---|---|
-| 8 | 5.75 | 1.37 s | 1.79 s | 0 |
-| 32 | 17.9 | 1.38 s | 3.97 s | 0 |
-| 64 | 21.2 | 1.39 s | 3.23 s | 0 |
-
-A verdict takes about 1.4 s whatever the load, so throughput is
-`concurrency / 1.4 s` until an account quota binds: this account allows
-10,000 requests and 5,000,000 tokens per minute for Haiku 4.5, and with the
-whole record in the prompt (~1,000 tokens) tokens bind first, at roughly 80
-events/s. Trim what the model sees with `fields:` to raise that. All 300 runs
-flagged exactly the two intended event types and nothing else.
-
-At 21 events/s Haiku costs about $0.03 per second, which is why a judge like this
-sits behind a cheaper first pass rather than reading a raw stream.
