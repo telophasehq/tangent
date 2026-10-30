@@ -54,7 +54,7 @@ pub fn open(
     if let Some(bad) = partitions.keys().find(|p| !plain(p)) {
         bail!("partition name {bad:?}: letters, digits and _ only");
     }
-    let mut seen = BTreeSet::from(["pending".to_string()]);
+    let mut seen = BTreeSet::from(["pending", "at"].map(String::from));
     if let Some(p) = partitions
         .keys()
         .find(|p| !seen.insert(p.to_ascii_lowercase()))
@@ -79,7 +79,8 @@ pub fn open(
             record TEXT NOT NULL,
             emitted INTEGER
         );
-        CREATE INDEX IF NOT EXISTS \"{table}_pending\" ON \"{table}\"(at) WHERE emitted IS NULL;"
+        CREATE INDEX IF NOT EXISTS \"{table}_pending\" ON \"{table}\"(at) WHERE emitted IS NULL;
+        CREATE INDEX IF NOT EXISTS \"{table}_at\" ON \"{table}\"(at);"
     ))?;
     let have: Vec<String> = conn
         .prepare("SELECT name FROM pragma_table_info(?1)")?
@@ -283,7 +284,7 @@ mod tests {
         let none = BTreeMap::new();
         assert!(open(&path, "logs\"", &none).is_err());
         assert!(open(&path, "", &none).is_err());
-        for p in ["a b", "pending", "Pending"] {
+        for p in ["a b", "pending", "Pending", "AT"] {
             let partitions = BTreeMap::from([(p.to_string(), vec!["x".to_string()])]);
             assert!(open(&path, "logs", &partitions).is_err());
         }

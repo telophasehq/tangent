@@ -60,7 +60,10 @@ pub async fn run_consumer(
     if cfg.batch_size == 0 || cfg.timeout_secs == 0 {
         bail!("batch_size and timeout_secs must be positive");
     }
-    if cfg.partition.eq_ignore_ascii_case("pending") {
+    if ["pending", "at"]
+        .iter()
+        .any(|r| r.eq_ignore_ascii_case(&cfg.partition))
+    {
         bail!("{}_{} is the table's own index", cfg.table, cfg.partition);
     }
     // the sink, maybe another process started later, adds the partition's columns and index
@@ -72,8 +75,7 @@ pub async fn run_consumer(
     };
     let (tx, mut rx) = mpsc::unbounded_channel::<Vec<i64>>();
     let mut stored = Stored {
-        id: 0,
-        at: None,
+        id: None,
         since: Instant::now(),
     };
     let mut sent: HashSet<i64> = HashSet::new(); // rows of unacked groups
@@ -171,10 +173,9 @@ fn partition(conn: &Connection, cfg: &SqliteConfig) -> Result<Option<Partition>>
     }))
 }
 
-/// The newest id and time stored, and since when.
+/// The newest id stored, and since when.
 struct Stored {
-    id: i64,
-    at: Option<i64>,
+    id: Option<i64>,
     since: Instant,
 }
 
@@ -195,23 +196,20 @@ fn due(
     sent: &HashSet<i64>,
 ) -> Result<Vec<(Vec<i64>, Vec<i64>)>> {
     let conn = conn.lock();
-    let (last, at): (Option<i64>, Option<i64>) = conn.query_row(
-        &format!(
-            "SELECT max(id), max(at) FROM \"{}\" WHERE id > ?1",
-            cfg.table
-        ),
-        [stored.id],
+    let t = &cfg.table;
+    let (last, newest): (Option<i64>, Option<i64>) = conn.query_row(
+        &format!("SELECT (SELECT max(id) FROM \"{t}\"), (SELECT max(at) FROM \"{t}\")"),
+        [],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    if let Some(last) = last {
+    if last != stored.id {
         *stored = Stored {
             id: last,
-            at: stored.at.max(at),
             since: Instant::now(),
         };
     }
     let idle = stored.since.elapsed() >= Duration::from_secs(cfg.timeout_secs);
-    let Some(newest) = stored.at else {
+    let Some(newest) = newest else {
         return Ok(Vec::new());
     };
     let old = newest - cfg.timeout_secs as i64 * 1000;
