@@ -11,12 +11,14 @@ setup:
 	./setup.sh
 
 compile: setup
-	$(TANGENT) plugin compile --config tangent.yaml
+	$(TANGENT) plugin compile --config ingest.yaml
+	$(TANGENT) plugin compile --config judge.yaml
 
 test: compile
-	$(TANGENT) plugin test --config tangent.yaml
+	$(TANGENT) plugin test --config ingest.yaml
 
+# Two processes over one logs.sqlite, so ingest never waits on the model.
 run: compile
-	$(TANGENT) run --config tangent.yaml
+	$(TANGENT) run --config judge.yaml & $(TANGENT) run --config ingest.yaml
 
 .PHONY: setup compile test run

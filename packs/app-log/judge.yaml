@@ -1,19 +1,11 @@
-# app-log: the product's logs, judged per customer. Same plugins as cloud-infra;
-# the customer's tenant id is the org, so each customer's actors are their own.
+# app-log, judge: cloud-infra's judge, over each customer's actors.
 runtime:
   workers: 1
   plugins_path: plugins/
   state:
-    backend: sqlite
-    path: state.sqlite
-    default_ttl_ms: 0
-    max_ttl_ms: 0
+    backend: lru
 
 sources:
-  events:
-    type: tcp
-    bind_address: 0.0.0.0:9401
-
   actors:
     type: sqlite
     path: logs.sqlite
@@ -21,20 +13,6 @@ sources:
     window_secs: 300
 
 plugins:
-  norm:
-    module_type: rust
-    path: ../cloud-infra/norm
-    data: profile
-  enrich:
-    module_type: rust
-    path: ../../examples/enrich
-    data: ../../examples/enrich/data
-    config:
-      fields: [_norm.ip]
-  facts:
-    module_type: rust
-    path: ../cloud-infra/facts
-    data: profile
   flagged:
     module_type: rust
     path: ../../examples/inference-local/flagged
@@ -59,13 +37,6 @@ inference:
         enable_thinking: false
 
 sinks:
-  logs:
-    type: sqlite
-    path: logs.sqlite
-    time: ts
-    partitions:
-      org: [_norm.org]
-      actor: [_norm.org, _norm.actor]
   alerts:
     type: file
     path: alerts.ndjson
@@ -78,14 +49,6 @@ sinks:
       type: none
 
 dag:
-  - from: { kind: source, name: events }
-    to: [{ kind: plugin, name: norm }]
-  - from: { kind: plugin, name: norm }
-    to: [{ kind: plugin, name: enrich }]
-  - from: { kind: plugin, name: enrich }
-    to: [{ kind: plugin, name: facts }]
-  - from: { kind: plugin, name: facts }
-    to: [{ kind: sink, name: logs }]
   - from: { kind: source, name: actors }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }

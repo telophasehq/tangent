@@ -5,17 +5,17 @@ of its actor's five minutes; a person reads what it flags. Install, point your
 logs at it, fill in one file about your company, run.
 
 ```
-CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ facts ──▶ logs.sqlite   (ingest)
+CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ facts ──▶ logs.sqlite   (ingest.yaml)
 
-logs.sqlite ──▶ actors ──▶ judge ──▶ flagged ──▶ alerts.ndjson   (judgment)
+logs.sqlite ──▶ actors ──▶ judge ──▶ flagged ──▶ alerts.ndjson   (judge.yaml)
                              └──▶ verdicts.ndjson
 ```
 
 - **norm** puts every source's shape into one, `_norm.{actor, org, kind, ip, country, dest, target}`, and trims the four API sources' records to what they mean: their ids, hashes, protocol details and bulk go. Anything else is left as it came.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
-- **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two partitions: the org, and the org and actor. It keeps 30 days before the newest record. That ends ingest: nothing waits on a model.
-- **actors** reads the store back five minutes of one actor at a time, once a later record is stored or the clock is five minutes past the window. A record that arrives late goes with the actor's next window. Rows are marked once their verdicts are written, so a restart sends again what the judge had not finished.
+- **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two partitions: the org, and the org and actor. It keeps 30 days before the newest record. That ends ingest, one process; the judge is another, so nothing in ingest waits on a model.
+- **actors** reads `logs.sqlite` back five minutes of one actor at a time, once a later record is stored or the clock is five minutes past the window. A record that arrives late goes with the actor's next window. Rows are marked once their verdicts are written, so a restart sends again what the judge had not finished.
 - **judge** reads an actor's records together, sixteen to a request and never two actors in one, and writes a verdict per record: a pass is the flag alone, a flag says why. It is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see.
 
 ## Install and run
@@ -24,7 +24,7 @@ logs.sqlite ──▶ actors ──▶ judge ──▶ flagged ──▶ alerts.
 make setup          # Rust WASM toolchain; GeoLite2, cloud ranges, Tor exits into examples/enrich/data
 $EDITOR profile/profile.yaml
 make test           # the cases through norm and facts; no model needed
-make run            # listens on :9400 for NDJSON records
+make run            # ingest and the judge, two processes; listens on :9400 for NDJSON records
 ```
 
 The judge defaults to a local model on `:8080`. Serve it with llama.cpp's `llama-server`, which turns the verdict schema into a grammar: replies are always well-formed and their reasons stay short. `mlx_lm.server` accepts the schema and ignores it, and with this model about one reply in five came back unreadable.
@@ -96,7 +96,8 @@ This shape, an actor's five minutes without history, is not measured yet. The tw
 ## Files
 
 ```
-tangent.yaml          the pipeline
+ingest.yaml           the sources into logs.sqlite
+judge.yaml            logs.sqlite through the model
 profile/profile.yaml  your company (edit this)
 judge.md              the model's brief, judge.schema.json the verdict's shape
 norm/ facts/          the plugins, Rust, compiled to WASM by make setup
