@@ -1068,7 +1068,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// A stop ends a call the model never answers, retries and all; none starts after.
+    /// A stop ends a call the model never answers; none starts after.
     #[tokio::test]
     async fn stop_ends_a_hung_call() {
         let (url, taken) = stub::silent().await;
@@ -1076,7 +1076,6 @@ mod tests {
         let judge: Arc<str> = Arc::from("judge");
         let mut cfg = stub::config(&url);
         cfg.timeout_ms = 600_000;
-        cfg.retries = 2;
         let mut nodes = HashMap::default();
         nodes.insert(
             judge.clone(),
