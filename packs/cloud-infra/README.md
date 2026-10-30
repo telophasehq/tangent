@@ -11,9 +11,9 @@ logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged �
                                        └──▶ verdicts.ndjson
 ```
 
-- **norm** puts every source's shape into one, `_norm.{actor, org, kind, ip, country, dest, target}`, and trims the four API sources' records to what they mean: their ids, hashes, protocol details and bulk go. Anything else is left as it came.
+- **norm** puts every source's shape into one, `_norm.{actor, org, kind, ip, country, dest, target}`, and trims the four API sources' records to what they mean: their ids, hashes, protocol details and bulk go. Anything else is left as it came. AWS acting on its own is the actor `aws:<service>`, named only from fields AWS writes.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
-- **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
+- **facts** writes what your profile knows about the record, and decides nothing: whether the actor is AWS itself, a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
 - **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two partitions: the org, and the org and actor. It keeps 30 days before the newest record. That ends ingest, one process; the judge is another, so nothing in ingest waits on a model.
 - **actors** reads `logs.sqlite` back forty records of one actor at a time, oldest first. A quiet actor's go once the oldest is an hour older than the newest record stored, or once nothing new has been stored for an hour, topped up to forty with the actor's latest records already judged, marked `_context`. A record that arrives late waits with the actor's others. Rows are marked once their verdicts are written, and only then do the actor's next go; a restart sends again what the judge had not finished.
 - **judge** reads an actor's records together, as **actors** sends them and never two actors in one request, and writes a verdict per record: a pass is the flag alone, a flag says why. It is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **fresh** drops the `_context` records, judged before; **flagged** keeps the verdicts a person should see.
@@ -79,6 +79,7 @@ Reading the trail makes few calls of its own, but some land back in it: the buck
 | `members` | people: IdP emails, GitHub handles | `principal: member`; anyone else is `unknown` |
 | `services` | IAM users and roles, bots | `principal: service`, held to `cloud` |
 | `keys` | API keys and the networks each calls from | `principal: key`, `key_known_network` |
+| `about` | who an actor is, when its name does not say | `about`, in place of the "nobody it knows" note |
 | `hosts` | hosts your systems talk to (`*.suffix` allowed) | `dest_known` |
 | `sensitive` | buckets, repos, tables | `sensitive_target` |
 | `watch` | kinds a person wants seen every time | `watch` |

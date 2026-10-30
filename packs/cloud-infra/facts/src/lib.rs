@@ -31,6 +31,7 @@ struct Profile {
     services: BTreeSet<String>,
     keys: BTreeMap<String, Vec<IpNet>>, // empty: any network
     cloud: Option<String>,
+    about: BTreeMap<String, String>, // actor: who it is
     hosts: BTreeSet<String>,
     sensitive: BTreeSet<String>,
     ip_field: String,
@@ -127,6 +128,7 @@ fn profile() -> &'static Profile {
                 other => strs(other).into_iter().map(|k| (k, Vec::new())).collect(),
             },
             cloud: f["cloud"].as_str().map(str::to_string),
+            about: serde_json::from_value(f["about"].clone()).unwrap_or_default(),
             hosts: strs(&f["hosts"]),
             sensitive: strs(&f["sensitive"]),
             ip_field: f["ip"].as_str().unwrap_or("_norm.ip").to_string(),
@@ -138,6 +140,9 @@ fn profile() -> &'static Profile {
             services: list_setting("services"),
             keys: keys_setting(),
             cloud: setting("cloud"),
+            about: setting("about")
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default(),
             hosts: list_setting("hosts"),
             sensitive: list_setting("sensitive"),
             ip_field: setting("ip").unwrap_or_else(|| "_norm.ip".to_string()),
@@ -166,8 +171,10 @@ fn text(v: &Value) -> Option<String> {
 }
 
 /// Who the actor is to the profile.
-fn principal(p: &Profile, actor: &str) -> &'static str {
-    if p.services.contains(actor) {
+fn principal(p: &Profile, actor: &str, aws: bool) -> &'static str {
+    if aws {
+        "aws"
+    } else if p.services.contains(actor) {
         "service"
     } else if p.members.contains(actor) {
         "member"
@@ -201,14 +208,21 @@ fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>,
         notes.push("opened to 0.0.0.0/0".into());
     }
 
+    let about = actor.as_ref().and_then(|a| p.about.get(a));
+    if let (Some(a), Some(s)) = (&actor, about) {
+        facts.insert("about".into(), json!(s));
+        notes.push(format!("{a} is {s}"));
+    }
+
     // The principal: known to the profile, or nobody it knows.
+    let aws = rec["_norm"]["aws"] == true; // norm's mark: an `aws:` name could be anyone's
     let who = actor
         .as_deref()
         .filter(|_| !NO_PRINCIPAL.contains(&source))
-        .map(|a| principal(p, a));
+        .map(|a| principal(p, a, aws));
     if let (Some(a), Some(w)) = (&actor, who) {
         facts.insert("principal".into(), json!(w));
-        if w == "unknown" {
+        if w == "unknown" && about.is_none() {
             notes.push(format!("principal {a} is nobody the org profile knows"));
         }
     }

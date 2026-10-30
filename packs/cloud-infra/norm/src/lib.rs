@@ -55,6 +55,8 @@ export!(Component);
 struct Norm {
     #[serde(skip_serializing_if = "Option::is_none")]
     actor: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    aws: bool, // AWS acting on its own
     #[serde(skip_serializing_if = "Option::is_none")]
     org: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -97,7 +99,7 @@ fn org_of_repo(repo: &str) -> Option<String> {
     repo.split('/').next().map(str::to_string)
 }
 
-/// a role session is its role, an SSO session its person, AWS acting for you nobody
+/// a role session is its role, an SSO session its person
 fn cloudtrail_actor(lv: &Logview) -> Option<String> {
     let kind = get(lv, "userIdentity.type").unwrap_or_default();
     match kind.as_str() {
@@ -105,11 +107,6 @@ fn cloudtrail_actor(lv: &Logview) -> Option<String> {
             let Some(role) = get(lv, "userIdentity.sessionContext.sessionIssuer.userName") else {
                 return get(lv, "userIdentity.userName").or_else(|| get(lv, "userIdentity.arn"));
             };
-            let issuer =
-                get(lv, "userIdentity.sessionContext.sessionIssuer.arn").unwrap_or_default();
-            if issuer.contains("/aws-service-role/") {
-                return None;
-            }
             if role.starts_with("AWSReservedSSO_") {
                 let arn = get(lv, "userIdentity.arn").unwrap_or_default();
                 if let Some(session) = arn.rsplit('/').next().filter(|s| !s.is_empty()) {
@@ -118,12 +115,40 @@ fn cloudtrail_actor(lv: &Logview) -> Option<String> {
             }
             Some(role)
         }
-        "AWSService" => None,
         "AWSAccount" => get(lv, "userIdentity.accountId").map(|a| format!("account:{a}")),
         "Root" => get(lv, "userIdentity.userName").or_else(|| Some("root".to_string())),
-        "" if get(lv, "userIdentity.invokedBy").is_some() => None,
         _ => get(lv, "userIdentity.userName").or_else(|| get(lv, "userIdentity.arn")),
     }
+}
+
+/// The service, when AWS acted on its own; only fields AWS writes are read.
+fn aws_acting(lv: &Logview) -> Option<String> {
+    match get(lv, "userIdentity.type").unwrap_or_default().as_str() {
+        "AssumedRole" => linked_service(&get(lv, "userIdentity.sessionContext.sessionIssuer.arn")?),
+        "AWSService" => invoker(lv),
+        "" if get(lv, "userIdentity.invokedBy").is_some_and(|by| !by.is_empty()) => invoker(lv),
+        _ => None,
+    }
+}
+
+/// `:role/aws-service-role/<service>.amazonaws.com/...`, as the path's prefix only
+fn linked_service(arn: &str) -> Option<String> {
+    let (_, path) = arn.split_once(":role/")?;
+    let service = path.strip_prefix("aws-service-role/")?.split('/').next();
+    named(service.map(str::to_string))
+}
+
+fn invoker(lv: &Logview) -> Option<String> {
+    named(get(lv, "userIdentity.invokedBy"))
+        .or_else(|| named(get(lv, "sourceIPAddress").filter(|ip| ip.ends_with(".amazonaws.com"))))
+        .or_else(|| get(lv, "requestParameters.roleArn").and_then(|arn| linked_service(&arn)))
+        .or_else(|| named(get(lv, "eventSource")))
+}
+
+/// without `.amazonaws.com`; `AWS Internal` names nothing
+fn named(s: Option<String>) -> Option<String> {
+    s.map(|s| s.strip_suffix(".amazonaws.com").unwrap_or(&s).to_string())
+        .filter(|s| !s.is_empty() && s != "AWS Internal")
 }
 
 fn norm(lv: &Logview, source: &str) -> Norm {
@@ -145,7 +170,11 @@ fn norm(lv: &Logview, source: &str) -> Norm {
             n.target = get(lv, "repo");
         }
         "cloudtrail" => {
-            n.actor = cloudtrail_actor(lv);
+            let aws = aws_acting(lv);
+            n.aws = aws.is_some();
+            n.actor = aws
+                .map(|s| format!("aws:{s}"))
+                .or_else(|| cloudtrail_actor(lv));
             n.org = get(lv, "userIdentity.accountId");
             n.kind = get(lv, "eventName");
             // an AWS service or the SSO broker is not the caller's address
