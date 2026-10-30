@@ -61,16 +61,8 @@ pub async fn run_consumer(
     if cfg.window_secs == 0 {
         bail!("window_secs must be positive");
     }
-    let conn = open(&cfg.path, &[])?;
-    let n: i64 = conn.query_row(
-        "SELECT count(*) FROM pragma_table_info('logs') WHERE name = ?1",
-        [&cfg.partition],
-        |r| r.get(0),
-    )?;
-    if n == 0 {
-        bail!("{} has no partition {}", cfg.path.display(), cfg.partition);
-    }
-    let conn = Arc::new(Mutex::new(conn));
+    // the sink, maybe another process started later, adds the partition column
+    let conn = Arc::new(Mutex::new(open(&cfg.path, &[])?));
     let read = format!(
         "SELECT id, \"{}\", record FROM logs WHERE emitted = 0 AND at < ?1 ORDER BY at, id",
         cfg.partition
@@ -331,6 +323,7 @@ mod tests {
                 group(&[(T0 + W + 1, "a")]),
             ]
         );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[tokio::test]
@@ -351,6 +344,7 @@ mod tests {
                 group(&[(T0 + 5, "a"), (T0 + W + 1, "a")]),
             ]
         );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[tokio::test]
@@ -383,5 +377,6 @@ mod tests {
         stop.cancel();
         h.await.unwrap().unwrap();
         assert_eq!(got, [group(&[(T0 + W + 1, "b")])], "acked: not again");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }
