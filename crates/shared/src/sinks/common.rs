@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::sinks::{blackhole, file, s3};
+use crate::sinks::{blackhole, file, s3, slack, sqlite};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SinkConfig {
@@ -20,12 +20,10 @@ pub enum SinkKind {
     File(file::FileConfig),
     #[serde(rename = "blackhole")]
     Blackhole(blackhole::BlackholeConfig),
-    /// The state store, per partition: what windows are read from.
-    #[serde(rename = "store")]
-    Store(super::store::StoreSinkConfig),
-    /// A Slack channel, through an incoming webhook: one message a record.
+    #[serde(rename = "sqlite")]
+    Sqlite(sqlite::SqliteConfig),
     #[serde(rename = "slack")]
-    Slack(super::slack::SlackConfig),
+    Slack(slack::SlackConfig),
 }
 
 #[derive(Debug, Deserialize, Serialize)]

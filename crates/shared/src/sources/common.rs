@@ -9,8 +9,8 @@ use crate::sources::msk::MSKConfig;
 use crate::sources::npm_registry::NpmRegistryConfig;
 use crate::sources::okta::OktaConfig;
 use crate::sources::socket::SocketConfig;
+use crate::sources::sqlite::SqliteConfig;
 use crate::sources::sqs::SQSConfig;
-use crate::sources::store::StoreSourceConfig;
 use crate::sources::tcp::TcpConfig;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -40,9 +40,8 @@ pub enum SourceConfig {
     Okta(OktaConfig),
     #[serde(rename = "google_workspace")]
     GoogleWorkspace(GoogleWorkspaceConfig),
-    /// Windows of what a `store` sink kept, read back as they close.
-    #[serde(rename = "store")]
-    Store(StoreSourceConfig),
+    #[serde(rename = "sqlite")]
+    Sqlite(SqliteConfig),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -1635,13 +1635,169 @@
    "kind": "ListTargetGroups",
    "org": "acme"
   },
+  "awsRegion": "us-west-2",
   "eventName": "ListTargetGroups",
+  "eventSource": "vpc-lattice.amazonaws.com",
+  "eventTime": "2026-10-20T13:05:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
   "source": "cloudtrail",
   "sourceIPAddress": "resource-explorer-2.amazonaws.com",
   "ts": "2026-10-20T13:05:00Z",
+  "userAgent": "resource-explorer-2.amazonaws.com",
   "userIdentity": {
-   "type": "AssumedRole",
-   "invokedBy": "resource-explorer-2.amazonaws.com"
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSServiceRoleForResourceExplorer/resource-explorer-2",
+   "invokedBy": "resource-explorer-2.amazonaws.com",
+   "role": "AWSServiceRoleForResourceExplorer",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "aws:ecs-tasks",
+   "aws": true,
+   "kind": "AssumeRole",
+   "org": "acme",
+   "target": "arn:aws:iam::111122223333:role/ecs-task"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRole",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:06:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "roleArn": "arn:aws:iam::111122223333:role/ecs-task",
+   "roleSessionName": "task-1"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "ecs-tasks.amazonaws.com",
+  "ts": "2026-10-20T13:06:00Z",
+  "userAgent": "ecs-tasks.amazonaws.com",
+  "userIdentity": {
+   "invokedBy": "ecs-tasks.amazonaws.com",
+   "type": "AWSService"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.9",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "foo",
+   "ip": "203.0.113.9",
+   "kind": "ListBuckets",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListBuckets",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:07:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.9",
+  "ts": "2026-10-20T13:07:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/foo/foo-session",
+   "role": "foo",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "asn": 16509,
+    "country": "US",
+    "hosting": "aws",
+    "ip": "52.94.76.10",
+    "org": "Amazon.com, Inc.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "aws:resource-explorer-2",
+   "aws": true,
+   "ip": "52.94.76.10",
+   "kind": "ListPolicyStores",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListPolicyStores",
+  "eventSource": "verifiedpermissions.amazonaws.com",
+  "eventTime": "2026-10-20T13:08:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "source": "cloudtrail",
+  "sourceIPAddress": "52.94.76.10",
+  "ts": "2026-10-20T13:08:00Z",
+  "userAgent": "aws-sdk-java/2.25.0 exec-env/AWS_ECS_FARGATE",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSServiceRoleForResourceExplorer/resource-explorer-2",
+   "role": "AWSServiceRoleForResourceExplorer",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "aws:ecr",
+   "aws": true,
+   "kind": "PolicyExecutionEvent",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "PolicyExecutionEvent",
+  "eventSource": "ecr.amazonaws.com",
+  "eventTime": "2026-10-20T13:09:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "source": "cloudtrail",
+  "sourceIPAddress": "AWS Internal",
+  "ts": "2026-10-20T13:09:00Z",
+  "userAgent": "AWS Internal",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "invokedBy": "AWS Internal"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "aws:organizations",
+   "aws": true,
+   "kind": "AssumeRole",
+   "org": "acme",
+   "target": "arn:aws:iam::111122223333:role/aws-service-role/organizations.amazonaws.com/AWSServiceRoleForOrganizations"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRole",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:10:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "roleArn": "arn:aws:iam::111122223333:role/aws-service-role/organizations.amazonaws.com/AWSServiceRoleForOrganizations",
+   "roleSessionName": "ASLRP-SLRCreationManager"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "AWS Internal",
+  "ts": "2026-10-20T13:10:00Z",
+  "userAgent": "AWS Internal",
+  "userIdentity": {
+   "invokedBy": "AWS Internal",
+   "type": "AWSService"
   }
  },
  {

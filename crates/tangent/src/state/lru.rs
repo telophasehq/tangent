@@ -185,20 +185,6 @@ impl StateStore for LruStore {
         Ok(out)
     }
 
-    async fn range_rev(
-        &self,
-        ns: &str,
-        partition: &str,
-        from: &str,
-        to: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>> {
-        let mut out = self.range(ns, partition, from, to, usize::MAX).await?;
-        out.reverse();
-        out.truncate(limit);
-        Ok(out)
-    }
-
     async fn counts(&self, ns: Option<&str>) -> Result<Vec<Count>> {
         let now = now_ms();
         let mut acc: BTreeMap<(String, String), u64> = BTreeMap::new();

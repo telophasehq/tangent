@@ -69,21 +69,6 @@ pub trait StateStore: Send + Sync {
         ttl_ms: Option<u64>,
     ) -> Result<()>;
 
-    /// Several `set`s, each `(ns, partition, key, value)`, all with `ttl_ms`.
-    /// A backend that can writes them all or none (SQLite, in one
-    /// transaction), so entries that depend on each other are not left
-    /// half written. This one writes them in order and stops at a failure.
-    async fn set_many(
-        &self,
-        entries: &[(String, String, String, StateValue)],
-        ttl_ms: Option<u64>,
-    ) -> Result<()> {
-        for (ns, partition, key, value) in entries {
-            self.set(ns, partition, key, value, ttl_ms).await?;
-        }
-        Ok(())
-    }
-
     async fn del(&self, ns: &str, partition: &str, key: &str) -> Result<bool>;
 
     /// Add `by` to an integer entry (missing counts as 0); returns the new value.
@@ -109,18 +94,6 @@ pub trait StateStore: Send + Sync {
     /// key order, at most `limit`: the slice a plugin reads a scope's history
     /// with when keys start with their time.
     async fn range(
-        &self,
-        ns: &str,
-        partition: &str,
-        from: &str,
-        to: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>>;
-
-    /// The same slice newest first: live entries with `from <= key < to`, in
-    /// descending key order, at most `limit`. A scope's latest records before
-    /// a time, however long ago, without reading the rest.
-    async fn range_rev(
         &self,
         ns: &str,
         partition: &str,
@@ -248,19 +221,6 @@ pub(crate) mod conformance {
     use super::*;
 
     pub async fn run(store: &dyn StateStore) {
-        // Ranges, both ways: from <= key < to, in key order or newest first.
-        for k in ["ev:01", "ev:02", "ev:03", "ev:04"] {
-            store.set("rng", "p", k, &StateValue::Int(1), None).await.unwrap();
-        }
-        let up: Vec<String> = store.range("rng", "p", "ev:02", "ev:04", 10).await.unwrap().into_iter().map(|e| e.key).collect();
-        assert_eq!(up, ["ev:02", "ev:03"]);
-        let down: Vec<String> = store.range_rev("rng", "p", "ev:", "ev:04", 2).await.unwrap().into_iter().map(|e| e.key).collect();
-        assert_eq!(down, ["ev:03", "ev:02"], "newest first, at most the limit");
-        assert!(store.range_rev("rng", "other", "ev:", "ev:~", 5).await.unwrap().is_empty(), "partitions are separate");
-        for k in ["ev:01", "ev:02", "ev:03", "ev:04"] {
-            store.del("rng", "p", k).await.unwrap();
-        }
-
         let v = StateValue::Str("hello".into());
         store.set("ns", "", "k", &v, None).await.unwrap();
         assert_eq!(store.get("ns", "", "k").await.unwrap(), Some(v.clone()));
@@ -384,13 +344,6 @@ pub(crate) mod conformance {
 
         assert!(store.del("ns", "p1", "n").await.unwrap());
         assert!(!store.del("ns", "p1", "n").await.unwrap());
-
-        // Several at once, across partitions.
-        let many = |p: &str, v: i64| ("many".to_string(), p.to_string(), "k".to_string(), StateValue::Int(v));
-        store.set_many(&[many("a", 1), many("b", 2)], None).await.unwrap();
-        assert_eq!(store.get("many", "a", "k").await.unwrap(), Some(StateValue::Int(1)));
-        assert_eq!(store.get("many", "b", "k").await.unwrap(), Some(StateValue::Int(2)));
-
         store.reset().await.unwrap();
         assert!(store.scan(None, None, "", 10).await.unwrap().is_empty());
     }

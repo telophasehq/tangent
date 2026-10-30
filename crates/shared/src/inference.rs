@@ -1,20 +1,18 @@
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
-use std::fmt;
 use std::path::PathBuf;
 
-use crate::redact::Redacted;
-
 /// Ask a model about each record. The node sends `prompt_file` as the system
-/// message and the record (or the listed `fields`) as the user message, and
-/// adds the reply to the record under the node's name. It adds and forwards;
-/// it never drops. What happens next is a plugin's call: a plugin whose
-/// `probe` selects on `<node name>.flag` is that filter.
+/// message and the records it is handed (or their listed `fields`), a JSON
+/// line each, as the user message, and adds each record's answer to it under
+/// the node's name. It adds and forwards; it never drops. What happens next
+/// is a plugin's call: a plugin whose `probe` selects on `<node name>.flag`
+/// is that filter.
 ///
 /// The node runs inside each worker, in DAG order with the plugins, so a
 /// partition's records reach the model and leave it in order.
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct InferenceConfig {
     /// Where the model is served.
     #[serde(default)]
@@ -25,8 +23,8 @@ pub struct InferenceConfig {
     pub url: String,
 
     /// Bearer token for the `openai` backend, e.g. "${OPENAI_API_KEY}".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub api_key: Option<SecretString>,
 
     /// Model id as the backend knows it, e.g. `mlx-community/GLM-4.7-Flash-4bit`
     /// or `us.anthropic.claude-haiku-4-5-20251001-v1:0`.
@@ -52,34 +50,11 @@ pub struct InferenceConfig {
     #[serde(default)]
     pub fields: Vec<String>,
 
-    /// Records per request. 1 (the default) sends each record on its own.
-    /// More sends up to this many records of a batch together, in order:
-    /// the user message is one JSON object per line, each with its index
-    /// `i`, and the model answers them all at once as `{"answers": [...]}`,
-    /// one object per record in the same order (an answer may carry its
-    /// `i`). With `schema_file`, each answer satisfies the schema. A record
-    /// that gets no answer lands with the error, like a failed request.
-    #[serde(default = "default_batch")]
-    pub batch: usize,
-
-    /// A request's records stop at this many bytes of JSON, whatever
-    /// `batch` says; one record always goes, however large.
     #[serde(default = "default_batch_bytes")]
-    pub batch_bytes: usize,
+    pub batch_bytes: usize, // a request past this is split
 
-    /// How long the worker lets a batch fill towards `batch` records before
-    /// judging what it has (1 s by default). A node's `batch` is what sets
-    /// the worker's batch, not the runtime's byte and age limits, which only
-    /// bound memory: records wait this long at most for company.
-    #[serde(default = "default_batch_age_ms")]
-    pub batch_age_ms: u64,
-
-    /// History to read the records with: before a request, the node reads
-    /// the stored records that came before the request's earliest one, from
-    /// the request's partition, and writes them once ahead of the records,
-    /// one view per scope and key. Nothing is attached to the records.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context: Option<ContextConfig>,
+    #[serde(default)]
+    pub group_by: Vec<String>, // a request holds one value of these
 
     /// Requests in flight at once, per worker: the model sees at most
     /// `runtime.workers` times this from one node.
@@ -98,16 +73,8 @@ pub struct InferenceConfig {
     #[serde(default = "default_retries")]
     pub retries: u32,
 
-    /// The reply's budget, per record: a batched request may say `batch`
-    /// times as much, up to `max_request_tokens`.
     #[serde(default = "default_max_tokens")]
-    pub max_tokens: u32,
-
-    /// A request's whole reply budget. Models cap their output (Claude Haiku
-    /// at 64k tokens), so a request takes at most this over `max_tokens`
-    /// records, whatever `batch` says.
-    #[serde(default = "default_max_request_tokens")]
-    pub max_request_tokens: u32,
+    pub max_tokens: u32, // per record
 
     /// Sent only when set; the model's default otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -118,75 +85,6 @@ pub struct InferenceConfig {
     /// `reasoning_effort: low` for gpt-oss. These win over what the node sets.
     #[serde(default)]
     pub extra: Map<String, Value>,
-}
-
-/// By hand: the startup log shows the API key as `<redacted>`.
-impl fmt::Debug for InferenceConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InferenceConfig")
-            .field("backend", &self.backend)
-            .field("url", &self.url)
-            .field("api_key", &Redacted(&self.api_key))
-            .field("model", &self.model)
-            .field("aws", &self.aws)
-            .field("prompt_file", &self.prompt_file)
-            .field("schema_file", &self.schema_file)
-            .field("fields", &self.fields)
-            .field("batch", &self.batch)
-            .field("batch_bytes", &self.batch_bytes)
-            .field("batch_age_ms", &self.batch_age_ms)
-            .field("context", &self.context)
-            .field("concurrency", &self.concurrency)
-            .field("timeout_ms", &self.timeout_ms)
-            .field("retries", &self.retries)
-            .field("max_tokens", &self.max_tokens)
-            .field("max_request_tokens", &self.max_request_tokens)
-            .field("temperature", &self.temperature)
-            .field("extra", &self.extra)
-            .finish()
-    }
-}
-
-/// What history a request is read with, from a `store` sink's records.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ContextConfig {
-    /// Where the `store` sink keeps records.
-    #[serde(default = "crate::sinks::store::default_namespace")]
-    pub namespace: String,
-    /// A view per scope: the latest records whose `field` has the value one
-    /// of the request's records has, e.g. `{actor: _norm.actor, org:
-    /// _norm.org}`, read from the `store` sink's `recent` lists, which must
-    /// keep the same scopes.
-    pub scopes: BTreeMap<String, String>,
-    /// Gone: a view is a scope's latest records however long ago, not a span
-    /// of time. Set, the node refuses to start and says so.
-    #[serde(default, alias = "spans")]
-    pub window: BTreeMap<String, String>,
-    /// Records per view: the latest before the request's records, and the
-    /// first of the rest of their buffer (records the request does not hold).
-    #[serde(default = "default_max_events")]
-    pub max_events: usize,
-    /// The whole context stops at about this many bytes; the busiest keys
-    /// come first.
-    #[serde(default = "default_context_bytes")]
-    pub max_bytes: usize,
-    /// The fields of a history line, as dotted paths; the whole record when
-    /// empty.
-    #[serde(default)]
-    pub fields: Vec<String>,
-    /// The field holding a record's own time.
-    #[serde(default = "default_time_field")]
-    pub time: String,
-}
-
-const fn default_max_events() -> usize {
-    20
-}
-const fn default_context_bytes() -> usize {
-    40_000
-}
-fn default_time_field() -> String {
-    "ts".into()
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]
@@ -217,14 +115,8 @@ fn default_url() -> String {
 const fn default_concurrency() -> usize {
     1
 }
-const fn default_batch() -> usize {
-    1
-}
 const fn default_batch_bytes() -> usize {
     32_768
-}
-const fn default_batch_age_ms() -> u64 {
-    1_000
 }
 const fn default_timeout_ms() -> u64 {
     30_000
@@ -232,23 +124,6 @@ const fn default_timeout_ms() -> u64 {
 const fn default_retries() -> u32 {
     2
 }
-const fn default_max_request_tokens() -> u32 {
-    32_000
-}
 const fn default_max_tokens() -> u32 {
     2_000
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn debug_hides_the_api_key() {
-        let c: InferenceConfig = serde_yaml::from_str(
-            "{model: m, prompt_file: p.md, api_key: sk-KEY, schema_file: s.json, temperature: 0.7, context: {scopes: {actor: _norm.actor}}}",
-        )
-        .unwrap();
-        crate::redact::assert_hides(&c, &["sk-KEY"]);
-    }
 }

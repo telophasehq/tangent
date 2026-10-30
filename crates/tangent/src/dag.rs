@@ -30,11 +30,8 @@ impl DagRuntime {
         shutdown: CancellationToken,
         stop_models: CancellationToken,
     ) -> anyhow::Result<Self> {
+        let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
         let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
-        let store = state::open(&cfg.runtime.state, config_dir)?;
-        let sink_manager = Arc::new(
-            SinkManager::new(&cfg.sinks, Arc::clone(&store), cfg.runtime.partition.clone()).await?,
-        );
         // A pipeline without plugins has no plugin directory to resolve.
         let plugin_root = if cfg.plugins.is_empty() {
             config_dir.to_path_buf()
@@ -51,6 +48,8 @@ impl DagRuntime {
         };
 
         let workers = cfg.runtime.workers;
+
+        let store = state::open(&cfg.runtime.state, config_dir)?;
 
         let mut engines: Vec<WasmEngine> = (0..workers)
             .map(|_| WasmEngine::new(Arc::clone(&store), cfg.runtime.disable_remote_calls))
@@ -105,49 +104,6 @@ impl DagRuntime {
 
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
-        // An inference node's `batch` is a record count the worker gathers
-        // towards, waiting `batch_age_ms` for it; the runtime's byte and age
-        // limits are floors, not the batch. The byte cap grows with the count
-        // so it only bounds memory.
-        let batch_records = cfg
-            .inference
-            .values()
-            .map(|n| n.batch.max(1))
-            .max()
-            .unwrap_or(1);
-        let (worker_batch_size, worker_batch_age) = if batch_records > 1 {
-            let wait = cfg
-                .inference
-                .values()
-                .filter(|n| n.batch > 1)
-                .map(|n| Duration::from_millis(n.batch_age_ms))
-                .max()
-                .unwrap_or(batch_age);
-            (batch_size.max(batch_records * 16 * 1024), batch_age.max(wait))
-        } else {
-            (batch_size, batch_age)
-        };
-
-        // A history scope this pipeline's store sink does not list would be
-        // read empty, quietly. (Without a store sink here, the store is
-        // another pipeline's to fill.)
-        let stores: Vec<&tangent_shared::sinks::store::StoreSinkConfig> = cfg
-            .sinks
-            .values()
-            .filter_map(|s| match &s.kind {
-                tangent_shared::sinks::common::SinkKind::Store(st) => Some(st),
-                _ => None,
-            })
-            .collect();
-        let listed: std::collections::BTreeSet<&str> =
-            stores.iter().flat_map(|st| st.recent.keys().map(String::as_str)).collect();
-        for (name, node) in &cfg.inference {
-            for scope in node.context.iter().flat_map(|c| c.scopes.keys()) {
-                if !stores.is_empty() && !listed.contains(scope.as_str()) {
-                    tracing::warn!(node = %name, scope, "no store sink keeps this scope's latest records (`recent`); its history will be empty");
-                }
-            }
-        }
 
         // Every worker hosts every plugin and every inference node, and walks
         // the DAG for the records it is handed.
@@ -158,9 +114,8 @@ impl DagRuntime {
                 components,
                 &cfg.inference,
                 config_dir,
-                worker_batch_size,
-                worker_batch_age,
-                batch_records,
+                batch_size,
+                batch_age,
                 Arc::clone(&router),
                 cfg.runtime.partition.clone(),
                 Arc::clone(&store),
@@ -227,11 +182,10 @@ impl DagRuntime {
         }
 
         // Nothing new comes in now, but records already handed to a worker
-        // are still on their way through the DAG. When a signal began the
-        // stop, it ended the model calls too, and records waiting on one are
-        // dropped (not acked) rather than waited for; a --once run gets here
-        // with its calls still going and waits for them. Wait for the DAG to
-        // go quiet, then take the workers down.
+        // are still on their way through the DAG. After a signal the model
+        // calls have ended, and records that were waiting on one go to no
+        // sink and are not acked; a --once run waits for its calls. Wait for
+        // the DAG to go quiet, then take the workers down.
         tracing::info!("draining workers...");
         let quiet = timeout(worker_timeout, async {
             while router.in_flight() > 0 {
@@ -369,7 +323,6 @@ fn spawn_consumers(
                         ct,
                         batch_size,
                         router,
-                        store,
                         shutdown.clone(),
                     )
                     .await
@@ -404,13 +357,13 @@ fn spawn_consumers(
                     }
                 }));
             }
-            (name, SourceConfig::Store(sc)) => {
+            (name, SourceConfig::Sqlite(sq)) => {
                 let router = router.clone();
                 handles.push(tokio::spawn(async move {
                     if let Err(e) =
-                        sources::store::run_consumer(name, sc, router, store, shutdown.clone()).await
+                        sources::sqlite::run_consumer(name, sq, router, shutdown.clone()).await
                     {
-                        tracing::error!("store source error: {e:#}");
+                        tracing::error!("sqlite source error: {e:#}");
                     }
                 }));
             }

@@ -4,8 +4,8 @@
 //! poll does not emit an event twice. Records go out stamped with `source`
 //! and `ts`, one frame each, in time order.
 //!
-//! Each API reports events some time after they happen (CloudTrail by up to
-//! fifteen minutes, say). A source names that lateness; every poll reads
+//! Each API reports events some time after they happen (Google Workspace by
+//! up to an hour, say). A source names that lateness; every poll reads
 //! from the cursor less the lateness, and the cursor ends a poll at the
 //! newest event seen or at `now - lateness`, whichever is later. An id is
 //! remembered for a few times the lateness, which is as long as a poll can
@@ -16,6 +16,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use tangent_shared::dag::NodeRef;
 
@@ -27,9 +28,6 @@ pub const SOURCES_NS: &str = "sources";
 pub struct Poller {
     pub name: Arc<str>,
     pub from: NodeRef,
-    /// The state partition the cursor and seen ids live in: the source's
-    /// name, or `name/scope` for a source that polls several things.
-    partition: Arc<str>,
     store: Arc<dyn StateStore>,
     router: Arc<Router>,
     late: Duration,
@@ -47,7 +45,6 @@ impl Poller {
             from: NodeRef::Source {
                 name: Arc::clone(&name),
             },
-            partition: Arc::clone(&name),
             name,
             store,
             router,
@@ -55,16 +52,9 @@ impl Poller {
         }
     }
 
-    /// The same source, keeping a separate cursor for `scope` (a region, say).
-    #[must_use]
-    pub fn scoped(mut self, scope: &str) -> Self {
-        self.partition = format!("{}/{scope}", self.name).into();
-        self
-    }
-
     /// Where the last poll stopped, if there was one.
     pub async fn cursor(&self) -> Option<DateTime<Utc>> {
-        match self.store.get(SOURCES_NS, &self.partition, "cursor").await {
+        match self.store.get(SOURCES_NS, &self.name, "cursor").await {
             Ok(Some(StateValue::Str(s))) => s.parse().ok(),
             _ => None,
         }
@@ -92,7 +82,7 @@ impl Poller {
             .store
             .set(
                 SOURCES_NS,
-                &self.partition,
+                &self.name,
                 "cursor",
                 &StateValue::Str(at.to_rfc3339()),
                 Some(0),
@@ -107,7 +97,7 @@ impl Poller {
     /// later poll could find it again.
     pub async fn first_sight(&self, id: &str) -> bool {
         let key = format!("seen:{id}");
-        match self.store.get(SOURCES_NS, &self.partition, &key).await {
+        match self.store.get(SOURCES_NS, &self.name, &key).await {
             Ok(Some(_)) => false,
             _ => {
                 let ttl = (self.late.num_milliseconds() * 3).max(60_000) as u64;
@@ -115,7 +105,7 @@ impl Poller {
                     .store
                     .set(
                         SOURCES_NS,
-                        &self.partition,
+                        &self.name,
                         &key,
                         &StateValue::Bool(true),
                         Some(ttl),
@@ -238,6 +228,12 @@ pub fn idle(name: &str, what: &str) {
 /// A config string from `${VAR}`: empty means unset.
 pub fn opt(s: &Option<String>) -> Option<&str> {
     s.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
+pub fn secret(s: &Option<SecretString>) -> Option<&str> {
+    s.as_ref()
+        .map(|s| s.expose_secret().trim())
+        .filter(|s| !s.is_empty())
 }
 
 #[cfg(test)]

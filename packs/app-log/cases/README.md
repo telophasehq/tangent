@@ -36,7 +36,7 @@ Most positives are sequences of lines innocent on their own
 (`alone_innocent: true` in `case.yaml`): a key created and first used
 elsewhere, a promotion and an export, a secret read and a POST no plan named,
 a tool result that reads like instructions and the step after it acting on
-something else. That is why the judge reads windows per actor and per
+something else. That is why the judge reads an actor's records together, per
 customer, not lines.
 
 The negatives are the shapes a product emits all day that look like attacks:

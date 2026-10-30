@@ -4,5 +4,5 @@ pub mod file;
 pub mod manager;
 pub mod s3;
 pub mod slack;
-pub mod store;
+pub mod sqlite;
 pub mod wal;
