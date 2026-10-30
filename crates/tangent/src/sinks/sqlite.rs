@@ -54,15 +54,17 @@ pub fn open(
     if let Some(bad) = partitions.keys().find(|p| !plain(p)) {
         bail!("partition name {bad:?}: letters, digits and _ only");
     }
-    if partitions.contains_key("pending") {
-        bail!("partition name \"pending\" is taken by {table}_pending");
+    let mut seen = BTreeSet::from(["pending".to_string()]);
+    if let Some(p) = partitions
+        .keys()
+        .find(|p| !seen.insert(p.to_ascii_lowercase()))
+    {
+        bail!("partition name {p:?} is taken by another index of {table}; names ignore case");
     }
     let fields = fields(partitions);
-    if let Some(f) = fields
-        .iter()
-        .find(|f| ["id", "at", "record", "emitted"].contains(&f.as_str()))
-    {
-        bail!("partition field {f:?} is a column of {table} already");
+    let mut seen = BTreeSet::from(["id", "at", "record", "emitted"].map(String::from));
+    if let Some(f) = fields.iter().find(|f| !seen.insert(f.to_ascii_lowercase())) {
+        bail!("partition field {f:?} is a column of {table} already; names ignore case");
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -84,7 +86,7 @@ pub fn open(
         .query_map([table], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     for f in &fields {
-        if !have.contains(f) {
+        if !have.iter().any(|h| h.eq_ignore_ascii_case(f)) {
             conn.execute_batch(&format!(
                 "ALTER TABLE \"{table}\" ADD COLUMN {} TEXT",
                 quote(f)
@@ -281,12 +283,18 @@ mod tests {
         let none = BTreeMap::new();
         assert!(open(&path, "logs\"", &none).is_err());
         assert!(open(&path, "", &none).is_err());
-        for p in ["a b", "pending"] {
+        for p in ["a b", "pending", "Pending"] {
             let partitions = BTreeMap::from([(p.to_string(), vec!["x".to_string()])]);
             assert!(open(&path, "logs", &partitions).is_err());
         }
-        let partitions = BTreeMap::from([("p".to_string(), vec!["at".to_string()])]);
+        let x = vec!["x".to_string()];
+        let partitions = BTreeMap::from([("a".to_string(), x.clone()), ("A".to_string(), x)]);
         assert!(open(&path, "logs", &partitions).is_err());
+        for f in [vec!["at"], vec!["ID"], vec!["x", "X"]] {
+            let fields = f.into_iter().map(String::from).collect();
+            let partitions = BTreeMap::from([("p".to_string(), fields)]);
+            assert!(open(&path, "logs", &partitions).is_err());
+        }
         assert!(!path.exists());
     }
 }

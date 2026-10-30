@@ -60,6 +60,9 @@ pub async fn run_consumer(
     if cfg.batch_size == 0 || cfg.timeout_secs == 0 {
         bail!("batch_size and timeout_secs must be positive");
     }
+    if cfg.partition.eq_ignore_ascii_case("pending") {
+        bail!("{}_{} is the table's own index", cfg.table, cfg.partition);
+    }
     // the sink, maybe another process started later, adds the partition's columns and index
     let conn = Arc::new(Mutex::new(open(&cfg.path, &cfg.table, &BTreeMap::new())?));
     let table: Arc<str> = Arc::from(cfg.table.as_str());
