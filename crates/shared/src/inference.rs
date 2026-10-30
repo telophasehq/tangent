@@ -48,6 +48,15 @@ pub struct InferenceConfig {
     #[serde(default)]
     pub fields: Vec<String>,
 
+    #[serde(default = "default_batch")]
+    pub batch: usize, // records per request
+
+    #[serde(default = "default_batch_bytes")]
+    pub batch_bytes: usize,
+
+    #[serde(default)]
+    pub group_by: Vec<String>, // a request holds one value of these
+
     /// Requests in flight at once, per worker: the model sees at most
     /// `runtime.workers` times this from one node.
     #[serde(default = "default_concurrency")]
@@ -66,7 +75,7 @@ pub struct InferenceConfig {
     pub retries: u32,
 
     #[serde(default = "default_max_tokens")]
-    pub max_tokens: u32,
+    pub max_tokens: u32, // per record
 
     /// Sent only when set; the model's default otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -106,6 +115,12 @@ fn default_url() -> String {
 }
 const fn default_concurrency() -> usize {
     1
+}
+const fn default_batch() -> usize {
+    1
+}
+const fn default_batch_bytes() -> usize {
+    32_768
 }
 const fn default_timeout_ms() -> u64 {
     30_000

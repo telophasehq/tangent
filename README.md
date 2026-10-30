@@ -100,6 +100,8 @@ The record (or its `fields`) is the user message, and the reply, a JSON object, 
 
 The reply is read as JSON and nothing else, and the backend is asked to make it so: with `schema_file` (a JSON Schema next to the prompt) through `response_format` on an OpenAI-compatible server or structured output on Bedrock; without one, an `openai` server is put in JSON mode. A server that ignores both (mlx_lm.server does) is held to the prompt, and a reply that is not a JSON object is the error.
 
+`batch: 16` sends up to sixteen records in one request, within `batch_bytes` (32 KiB): one JSON object per line, each with its index `i`, answered as `{"answers": [...]}`. A schema is wrapped around each answer, `max_tokens` is per record, and a reply that cannot be read is asked again in halves. `group_by: [_norm.actor]` keeps each request to one value of those fields.
+
 Inference nodes run inside the workers, in DAG order with the plugins: a worker hands a model the records that reached the node, waits for the replies, and carries them on, so a partition's records stay in order and nothing else moves while the model thinks. `concurrency` bounds requests in flight per worker (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold; `retries` (2) tries again, backing off, when a request got no reply at all. `temperature` is sent only when set. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
 
 ## Packs
