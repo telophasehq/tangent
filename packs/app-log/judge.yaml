@@ -10,7 +10,8 @@ sources:
     type: sqlite
     path: logs.sqlite
     partition: actor
-    window_secs: 300
+    batch_records: 16
+    timeout_secs: 3600
 
 plugins:
   flagged:

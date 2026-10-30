@@ -41,7 +41,7 @@ Every event also carries `ts`, so mixed sources order.
 Most positives are sequences of lines innocent on their own
 (`alone_innocent: true` in `case.yaml`): a login and a token, a role change
 and an export, a workflow push and a runner registration, a secret read and a
-POST. That is why the judge reads an actor's five minutes at a time, not lines.
+POST. That is why the judge reads an actor's records together, not lines.
 A few are single lines (root login, CloudTrail stopped, a bucket made public,
 MFA off); the judge reads those like any other, with the profile's `watch`
 and `root` facts beside them.
