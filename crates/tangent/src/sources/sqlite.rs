@@ -51,8 +51,8 @@ pub async fn run_consumer(
     router: Arc<Router>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    if cfg.batch_records == 0 || cfg.timeout_secs == 0 {
-        bail!("batch_records and timeout_secs must be positive");
+    if cfg.max_events == 0 || cfg.timeout_secs == 0 {
+        bail!("max_events and timeout_secs must be positive");
     }
     // the sink, maybe another process started later, adds the partition column
     let conn = Arc::new(Mutex::new(open(&cfg.path, &[])?));
@@ -121,7 +121,7 @@ fn acked(sent: &mut HashSet<i64>, unacked: &mut usize, ids: Vec<i64>) {
 }
 
 /// Ids of each partition value's pending rows, oldest first, in groups of
-/// `batch_records`; the rest too once its oldest is `timeout_secs` older than
+/// `max_events`; the rest too once its oldest is `timeout_secs` older than
 /// the newest row, or nothing has been stored for `timeout_secs`. Groups go in
 /// order of their first row.
 fn due(
@@ -169,8 +169,8 @@ fn due(
     let mut groups: Vec<(i64, Vec<i64>)> = Vec::new(); // first at, ids
     for rows in parts.into_values() {
         let oldest = rows[0].0;
-        for chunk in rows.chunks(cfg.batch_records) {
-            if chunk.len() < cfg.batch_records && !idle && oldest > old {
+        for chunk in rows.chunks(cfg.max_events) {
+            if chunk.len() < cfg.max_events && !idle && oldest > old {
                 break;
             }
             groups.push((chunk[0].0, chunk.iter().map(|r| r.1).collect()));
@@ -274,7 +274,7 @@ mod tests {
         let cfg = SqliteConfig {
             path: path.to_path_buf(),
             partition: "actor".into(),
-            batch_records: 3,
+            max_events: 3,
             timeout_secs,
         };
         let shutdown = CancellationToken::new();

@@ -7,7 +7,7 @@ pub struct SqliteConfig {
 
     pub partition: String, // a sqlite sink's partition
 
-    pub batch_records: usize,
+    pub max_events: usize,
 
     pub timeout_secs: u64,
 }

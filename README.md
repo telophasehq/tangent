@@ -101,11 +101,11 @@ sources:
     type: sqlite
     path: logs.sqlite
     partition: actor
-    batch_records: 16      # send a partition value's pending records once there are 16
+    max_events: 16         # send a partition value's pending records once there are 16
     timeout_secs: 3600     # or once its oldest pending record has waited this long
 ```
 
-A partition value's records not yet sent go oldest first, `batch_records` to a batch; the rest wait until there are that many, or until the oldest is `timeout_secs` older than the newest record stored, so a replay of old logs goes as live ones do. When nothing new has been stored for `timeout_secs`, everything left goes. A batch's records are marked `emitted` when it is through the DAG; a restart sends again what was not.
+A partition value's records not yet sent go oldest first, `max_events` to a batch; the rest wait until there are that many, or until the oldest is `timeout_secs` older than the newest record stored, so a replay of old logs goes as live ones do. When nothing new has been stored for `timeout_secs`, everything left goes. A batch's records are marked `emitted` when it is through the DAG; a restart sends again what was not.
 
 ## Inference
 An `inference` node asks a model about each record. Nodes are configured under `inference:`, each with its own model and prompt, and sit in the DAG as `kind: inference`:
