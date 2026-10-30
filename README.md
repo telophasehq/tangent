@@ -101,11 +101,11 @@ sources:
     type: sqlite
     path: logs.sqlite
     partition: actor
-    max_events: 16         # send a partition value's pending records once there are 16
-    timeout_secs: 3600     # or once its oldest pending record has waited this long
+    batch_size: 40         # every batch is a partition value's latest 40 records
+    timeout_secs: 3600     # send by then even if fewer than 40 are new
 ```
 
-A partition value's records not yet sent go oldest first, `max_events` to a batch, one batch of a value at a time; the rest wait until there are that many, or until the oldest is `timeout_secs` older than the newest record stored, so a replay of old logs goes as live ones do. When nothing new has been stored for `timeout_secs`, everything left goes. A batch's records are marked `emitted` when it is through the DAG, and the value's next batch goes then; a restart sends again what was not.
+A partition value's records not yet sent go oldest first, `batch_size` to a batch, one batch of a value at a time. Fewer wait until the oldest is `timeout_secs` older than the newest record stored, so a replay of old logs goes as live ones do, or until nothing new has been stored for `timeout_secs`; then they go topped up to `batch_size` with the value's latest records already sent, which carry `"_context": true`. A batch's new records are marked `emitted` when it is through the DAG, and the value's next batch goes then; a restart sends again what was not.
 
 ## Inference
 An `inference` node asks a model about each record. Nodes are configured under `inference:`, each with its own model and prompt, and sit in the DAG as `kind: inference`:
@@ -125,12 +125,12 @@ The records the node is handed are the user message, one JSON object per line (t
 
 The reply is read as JSON and nothing else, and the backend is asked to make it so: with `schema_file` (a JSON Schema next to the prompt) through `response_format` on an OpenAI-compatible server or structured output on Bedrock; without one, an `openai` server is put in JSON mode. A server that ignores both (mlx_lm.server does) is held to the prompt, and a reply that is not a JSON object is the error.
 
-A request holds the records the node is handed, or with `group_by: [_norm.actor]` those of one value of these fields, and is split past `batch_bytes` (32 KiB). A `sqlite` source hands over a partition value's records `max_events` at a time, so with `group_by` on the partition's fields a request is one of its batches. A schema is wrapped around each answer, `max_tokens` is per record, and a reply that cannot be read is asked again in halves.
+A request holds the records the node is handed, or with `group_by: [_norm.actor]` those of one value of these fields, and is split past `batch_bytes` (32 KiB). A `sqlite` source hands over a partition value's records `batch_size` at a time, so with `group_by` on the partition's fields a request is one of its batches. A schema is wrapped around each answer, `max_tokens` is per record, and a reply that cannot be read is asked again in halves.
 
 Inference nodes run inside the workers, in DAG order with the plugins: a worker hands a model the records that reached the node, waits for the replies, and carries them on, so a partition's records stay in order and nothing else moves while the model thinks. `concurrency` bounds requests in flight per worker (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold; `retries` (2) tries again, backing off, when a request got no reply at all. `temperature` is sent only when set. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
 
 ## Packs
-A pack is a pipeline a company runs as is: `ingest.yaml` and `judge.yaml`, two processes over one `logs.sqlite`, the plugins it needs, a `profile.yaml` describing the company, the model's brief, the cases it is measured against, and fixtures for `make test`. [packs/cloud-infra](/packs/cloud-infra) reads your own infrastructure's logs straight from their APIs (the `cloudtrail`, `github_audit`, `okta` and `google_workspace` sources; CI over TCP), keeps every record in SQLite, and has a model read each actor's records, sixteen at a time, and flag what a person should see; [packs/app-log](/packs/app-log) does the same for a product's logs, partitioned per customer; [packs/edge](/packs/edge) is the plan for developer laptops.
+A pack is a pipeline a company runs as is: `ingest.yaml` and `judge.yaml`, two processes over one `logs.sqlite`, the plugins it needs, a `profile.yaml` describing the company, the model's brief, the cases it is measured against, and fixtures for `make test`. [packs/cloud-infra](/packs/cloud-infra) reads your own infrastructure's logs straight from their APIs (the `cloudtrail`, `github_audit`, `okta` and `google_workspace` sources; CI over TCP), keeps every record in SQLite, and has a model read each actor's records, forty at a time, and flag what a person should see; [packs/app-log](/packs/app-log) does the same for a product's logs, partitioned per customer; [packs/edge](/packs/edge) is the plan for developer laptops.
 
 ## Benchmarks
 Benchmarks show end-to-end throughput with simple log transformation plugins implemented in [Rust](/examples/rust/src/lib.rs), [Go](/examples/golang/main.go), and [Python](/examples/python/mapper.py). Each plugin is compiled to WASM and run inside Tangent.

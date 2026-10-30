@@ -3,7 +3,7 @@
 Your product's logs, judged per customer. The same pipeline as
 [cloud-infra](../cloud-infra), with a different org: an application's audit
 log and an AI agent's logs carry a customer's tenant id, and that is the org.
-Each customer's actors are kept and judged apart, sixteen records at a time.
+Each customer's actors are kept and judged apart, forty records at a time.
 
 ```
 app audit log, agent logs ──▶ norm ──▶ enrich ──▶ facts ──▶ logs.sqlite ──▶ actors ──▶ judge ──▶ alerts.ndjson

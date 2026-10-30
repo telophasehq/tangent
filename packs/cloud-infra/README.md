@@ -7,16 +7,16 @@ logs at it, fill in one file about your company, run.
 ```
 CloudTrail, GitHub audit log, Okta, Google Workspace, CI ──▶ norm ──▶ enrich ──▶ facts ──▶ logs.sqlite   (ingest.yaml)
 
-logs.sqlite ──▶ actors ──▶ judge ──▶ flagged ──▶ alerts.ndjson   (judge.yaml)
-                             └──▶ verdicts.ndjson
+logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson   (judge.yaml)
+                                       └──▶ verdicts.ndjson
 ```
 
 - **norm** puts every source's shape into one, `_norm.{actor, org, kind, ip, country, dest, target}`, and trims the four API sources' records to what they mean: their ids, hashes, protocol details and bulk go. Anything else is left as it came.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
 - **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two partitions: the org, and the org and actor. It keeps 30 days before the newest record. That ends ingest, one process; the judge is another, so nothing in ingest waits on a model.
-- **actors** reads `logs.sqlite` back sixteen records of one actor at a time, oldest first. A quiet actor's go once the oldest is an hour older than the newest record stored, or once nothing new has been stored for an hour. A record that arrives late waits with the actor's others. Rows are marked once their verdicts are written, and only then do the actor's next go; a restart sends again what the judge had not finished.
-- **judge** reads an actor's records together, as **actors** sends them and never two actors in one request, and writes a verdict per record: a pass is the flag alone, a flag says why. It is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **flagged** keeps the verdicts a person should see.
+- **actors** reads `logs.sqlite` back forty records of one actor at a time, oldest first. A quiet actor's go once the oldest is an hour older than the newest record stored, or once nothing new has been stored for an hour, topped up to forty with the actor's latest records already judged, marked `_context`. A record that arrives late waits with the actor's others. Rows are marked once their verdicts are written, and only then do the actor's next go; a restart sends again what the judge had not finished.
+- **judge** reads an actor's records together, as **actors** sends them and never two actors in one request, and writes a verdict per record: a pass is the flag alone, a flag says why. It is any OpenAI-compatible model with [judge.md](judge.md) as its brief; **fresh** drops the `_context` records, judged before; **flagged** keeps the verdicts a person should see.
 
 ## Install and run
 
@@ -89,7 +89,7 @@ The file ships filled in for the fictional company the cases describe, so `make 
 
 [cases/](cases/) holds 34 sequences as the real sources write them, 28 that should flag and 6 that must not. Half follow disclosed compromises of 2025 and 2026 ([cases/README.md](cases/README.md) has the table and sources): TeamPCP's Trivy and LiteLLM, the axios hijack, nx/s1ngularity, Shai-Hulud's second wave, tj-actions/changed-files, Railway's environment-variable breach, Vercel via Context.ai. The rest are the classics: root login, CloudTrail stopped, a bucket made public, MFA off, impossible travel, a Gmail forwarding rule, a branch protection removed.
 
-This shape, sixteen of an actor's records without history, is not measured yet. The two before it, over the cases of both packs and 38 days of synthetic ordinary traffic: a judge reading every record in batches with each org's history as context (Claude Haiku 4.5) flagged 38 to 39 of the 40 positives, 1 of 11 negatives and 13 of 16,199 ordinary records; a rulebook gate in front of a local 30B judge, 38 of 40 and 2 of 11.
+This shape, an actor's latest forty records, is not measured yet. The two before it, over the cases of both packs and 38 days of synthetic ordinary traffic: a judge reading every record in batches with each org's history as context (Claude Haiku 4.5) flagged 38 to 39 of the 40 positives, 1 of 11 negatives and 13 of 16,199 ordinary records; a rulebook gate in front of a local 30B judge, 38 of 40 and 2 of 11.
 
 `make test` runs the cases through norm and facts and compares with [tests/](tests/); it needs no model and runs in CI.
 
@@ -100,7 +100,7 @@ ingest.yaml           the sources into logs.sqlite
 judge.yaml            logs.sqlite through the model
 profile/profile.yaml  your company (edit this)
 judge.md              the model's brief, judge.schema.json the verdict's shape
-norm/ facts/          the plugins, Rust, compiled to WASM by make setup
+norm/ facts/ fresh/   the plugins, Rust, compiled to WASM by make setup
 cases/                the sequences, one directory each: case.yaml + events.ndjson
 tests/                fixtures for make test
 ```

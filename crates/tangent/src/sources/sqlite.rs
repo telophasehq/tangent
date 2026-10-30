@@ -2,7 +2,8 @@ use anyhow::{bail, Result};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use parking_lot::Mutex;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -51,14 +52,19 @@ pub async fn run_consumer(
     router: Arc<Router>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    if cfg.max_events == 0 || cfg.timeout_secs == 0 {
-        bail!("max_events and timeout_secs must be positive");
+    if cfg.batch_size == 0 || cfg.timeout_secs == 0 {
+        bail!("batch_size and timeout_secs must be positive");
     }
     // the sink, maybe another process started later, adds the partition column
     let conn = Arc::new(Mutex::new(open(&cfg.path, &[])?));
     let read = format!(
         "SELECT id, \"{}\", at FROM logs WHERE emitted = 0 ORDER BY at, id",
         cfg.partition
+    );
+    let before = format!(
+        "SELECT id FROM logs INDEXED BY \"logs_{p}\" WHERE \"{p}\" = ?1 AND at <= ?2
+        AND emitted = 1 ORDER BY at DESC, id DESC LIMIT ?3",
+        p = cfg.partition
     );
     let from = NodeRef::Source {
         name: Arc::clone(&name),
@@ -71,7 +77,7 @@ pub async fn run_consumer(
         while let Ok(ids) = rx.try_recv() {
             acked(&mut sent, &mut unacked, ids);
         }
-        let groups = due(&conn, &read, &cfg, &mut stored, &sent).unwrap_or_else(|e| {
+        let groups = due(&conn, &read, &before, &cfg, &mut stored, &sent).unwrap_or_else(|e| {
             tracing::warn!("sqlite source {name}: {e:#}");
             Vec::new()
         });
@@ -83,14 +89,14 @@ pub async fn run_consumer(
             }
             continue;
         }
-        for ids in groups {
+        for (context, ids) in groups {
             while unacked >= 16 {
                 tokio::select! {
                     () = shutdown.cancelled() => return Ok(()),
                     Some(ids) = rx.recv() => acked(&mut sent, &mut unacked, ids),
                 }
             }
-            let frame = match frame(&conn, &ids) {
+            let frame = match frame(&conn, &context, &ids) {
                 Ok(f) => f,
                 Err(e) => {
                     tracing::warn!("sqlite source {name}: {e:#}");
@@ -120,17 +126,19 @@ fn acked(sent: &mut HashSet<i64>, unacked: &mut usize, ids: Vec<i64>) {
     *unacked -= 1;
 }
 
-/// Ids of the first `max_events` pending rows, oldest first, of each partition
-/// value with none in flight; fewer once its oldest is `timeout_secs` older
-/// than the newest row, or nothing has been stored for `timeout_secs`. Groups
-/// go in order of their first row.
+/// Ids, as (context, pending), of each partition value with none in flight:
+/// its first `batch_size` pending rows, oldest first; fewer once the oldest is
+/// `timeout_secs` older than the newest row, or nothing has been stored for
+/// `timeout_secs`, after the value's latest emitted rows before them,
+/// `batch_size` in all. Groups go in order of their first pending row.
 fn due(
     conn: &Mutex<Connection>,
     read: &str,
+    before: &str,
     cfg: &SqliteConfig,
     stored: &mut (Option<i64>, Instant),
     sent: &HashSet<i64>,
-) -> Result<Vec<Vec<i64>>> {
+) -> Result<Vec<(Vec<i64>, Vec<i64>)>> {
     let conn = conn.lock();
     let last: Option<i64> = conn.query_row("SELECT max(id) FROM logs", [], |r| r.get(0))?;
     if last != stored.0 {
@@ -166,27 +174,48 @@ fn due(
         parts.entry(key).or_default().push((at, id));
     }
 
-    let mut groups: Vec<(i64, Vec<i64>)> = Vec::new(); // first at, ids
+    let mut groups: Vec<(i64, Vec<i64>, Vec<i64>)> = Vec::new(); // first at, context, ids
+    let mut prior = conn.prepare_cached(before)?;
     for (key, rows) in parts {
-        let chunk = &rows[..rows.len().min(cfg.max_events)];
-        if busy.contains(&key) || (chunk.len() < cfg.max_events && !idle && rows[0].0 > old) {
+        if busy.contains(&key) {
             continue;
         }
-        groups.push((chunk[0].0, chunk.iter().map(|r| r.1).collect()));
+        let mut context: Vec<i64> = Vec::new();
+        if rows.len() < cfg.batch_size {
+            if !idle && rows[0].0 > old {
+                continue;
+            }
+            let n = cfg.batch_size - rows.len();
+            context = prior
+                .query_map(params![key, rows[0].0, n], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            context.reverse();
+        }
+        let ids = rows.iter().take(cfg.batch_size).map(|r| r.1).collect();
+        groups.push((rows[0].0, context, ids));
     }
     groups.sort_by_key(|g| g.0);
-    Ok(groups.into_iter().map(|g| g.1).collect())
+    Ok(groups.into_iter().map(|g| (g.1, g.2)).collect())
 }
 
-fn frame(conn: &Mutex<Connection>, ids: &[i64]) -> Result<BytesMut> {
+/// The rows' records, those of `context` with `"_context": true`.
+fn frame(conn: &Mutex<Connection>, context: &[i64], ids: &[i64]) -> Result<BytesMut> {
     let conn = conn.lock();
     let mut st = conn.prepare_cached("SELECT record FROM logs WHERE id = ?1")?;
     let mut frame = BytesMut::new();
-    for id in ids {
+    for (k, id) in context.iter().chain(ids).enumerate() {
         // the sink may have pruned it
-        let Some(record) = st.query_row([id], |r| r.get::<_, String>(0)).optional()? else {
+        let Some(mut record) = st.query_row([id], |r| r.get::<_, String>(0)).optional()? else {
             continue;
         };
+        if k < context.len() {
+            // only an object can carry the mark
+            let Ok(Value::Object(mut m)) = serde_json::from_str(&record) else {
+                continue;
+            };
+            m.insert("_context".into(), Value::Bool(true));
+            record = Value::Object(m).to_string();
+        }
         frame.extend_from_slice(record.as_bytes());
         frame.extend_from_slice(b"\n");
     }
@@ -272,7 +301,7 @@ mod tests {
         let cfg = SqliteConfig {
             path: path.to_path_buf(),
             partition: "actor".into(),
-            max_events: 3,
+            batch_size: 3,
             timeout_secs,
         };
         let shutdown = CancellationToken::new();
@@ -311,6 +340,12 @@ mod tests {
 
     fn group(rows: &[(i64, &str)]) -> String {
         rows.iter().map(|(at, a)| row(*at, a) + "\n").collect()
+    }
+
+    fn context(rows: &[(i64, &str)]) -> String {
+        rows.iter()
+            .map(|(at, a)| format!("{{\"at\":{at},\"actor\":\"{a}\",\"_context\":true}}\n"))
+            .collect()
     }
 
     #[tokio::test]
@@ -383,6 +418,35 @@ mod tests {
         stop.cancel();
         h.await.unwrap().unwrap();
         assert_eq!(got, [group(&[(T0 + 1, "b")]), group(&[(T0 + 2, "a")])]);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_quiet_value_is_topped_up_with_context() {
+        let path = path("context");
+        let a: Vec<(i64, &str)> = (1..=4).map(|k| (T0 + k, "a")).collect();
+        let b = [(T0 + 5, "b")];
+        insert(&path, &a);
+        insert(&path, &b);
+        let sink = Arc::new(RecordingSink::default());
+        let (stop, h) = start(&path, &sink, 1);
+        writes(&sink, 3).await;
+        until(|| emitted(&path) == 5).await;
+        let more = [(T0 + 6, "a"), (T0 + 7, "a"), (T0 + 8, "a")];
+        insert(&path, &more);
+        let got = writes(&sink, 4).await;
+        until(|| emitted(&path) == 8).await;
+        stop.cancel();
+        h.await.unwrap().unwrap();
+        assert_eq!(
+            got,
+            [
+                group(&a[..3]),
+                context(&a[1..3]) + &group(&a[3..]),
+                group(&b),
+                group(&more),
+            ]
+        );
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
