@@ -5,6 +5,8 @@ use std::path::PathBuf;
 pub struct SqliteConfig {
     pub path: PathBuf,
 
+    pub table: String,
+
     pub partition: String, // a sqlite sink's partition
 
     pub batch_size: usize,

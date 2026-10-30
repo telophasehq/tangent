@@ -67,6 +67,7 @@ sinks:
   logs:
     type: sqlite
     path: logs.sqlite
+    table: logs
     time: ts
     partitions:
       org: [_norm.org]
