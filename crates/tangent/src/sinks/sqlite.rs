@@ -94,16 +94,16 @@ pub fn open(
             ))?;
         }
     }
-    for (p, fields) in partitions {
+    for (p, cols) in partitions {
         let index = format!("{table}_{p}");
-        let mut want = fields.clone();
+        let mut want = cols.clone();
         want.push("at".into());
         if index_columns(&conn, &index)? != want {
-            let cols: String = fields.iter().map(|f| quote(f) + ", ").collect();
+            let on: String = cols.iter().map(|f| quote(f) + ", ").collect();
             conn.execute_batch(&format!(
                 "BEGIN;
                 DROP INDEX IF EXISTS \"{index}\";
-                CREATE INDEX \"{index}\" ON \"{table}\"({cols}at);
+                CREATE INDEX \"{index}\" ON \"{table}\"({on}at);
                 COMMIT;"
             ))?;
         }
@@ -123,7 +123,6 @@ pub fn quote(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-/// Every partition's fields, once each.
 fn fields(partitions: &BTreeMap<String, Vec<String>>) -> Vec<String> {
     let set: BTreeSet<&String> = partitions.values().flatten().collect();
     set.into_iter().cloned().collect()

@@ -133,14 +133,13 @@ pub async fn run_consumer(
     Ok(())
 }
 
-/// A sink's partition: its columns, and the reads by them.
 struct Partition {
     cols: usize,
     read: String,
     before: String,
 }
 
-/// The columns of the sink's index but at; None until the sink makes it.
+/// The reads by <table>_<partition>'s columns; None until the sink makes it.
 fn partition(conn: &Connection, cfg: &SqliteConfig) -> Result<Option<Partition>> {
     let (t, p) = (&cfg.table, &cfg.partition);
     let rows: bool =
