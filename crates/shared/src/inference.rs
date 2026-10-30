@@ -1,14 +1,14 @@
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Ask a model about each record. The node sends `prompt_file` as the system
-/// message and the record (or the listed `fields`) as the user message, and
-/// adds the reply to the record under the node's name. It adds and forwards;
-/// it never drops. What happens next is a plugin's call: a plugin whose
-/// `probe` selects on `<node name>.flag` is that filter.
+/// message and the records it is handed (or their listed `fields`), a JSON
+/// line each, as the user message, and adds each record's answer to it under
+/// the node's name. It adds and forwards; it never drops. What happens next
+/// is a plugin's call: a plugin whose `probe` selects on `<node name>.flag`
+/// is that filter.
 ///
 /// The node runs inside each worker, in DAG order with the plugins, so a
 /// partition's records reach the model and leave it in order.
@@ -50,14 +50,11 @@ pub struct InferenceConfig {
     #[serde(default)]
     pub fields: Vec<String>,
 
-    #[serde(default = "default_batch")]
-    pub batch: usize, // records per request
-
     #[serde(default = "default_batch_bytes")]
-    pub batch_bytes: usize,
+    pub batch_bytes: usize, // a request past this is split
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context: Option<ContextConfig>,
+    #[serde(default)]
+    pub group_by: Vec<String>, // a request holds one value of these
 
     /// Requests in flight at once, per worker: the model sees at most
     /// `runtime.workers` times this from one node.
@@ -90,19 +87,6 @@ pub struct InferenceConfig {
     pub extra: Map<String, Value>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ContextConfig {
-    pub scopes: BTreeMap<String, String>, // scope: field, as the store sink's `recent`
-    #[serde(default = "default_max_events")]
-    pub max_events: usize, // per scope
-    #[serde(default)]
-    pub fields: Vec<String>,
-}
-
-const fn default_max_events() -> usize {
-    20
-}
-
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Backend {
@@ -129,9 +113,6 @@ fn default_url() -> String {
     "http://localhost:8080/v1".into()
 }
 const fn default_concurrency() -> usize {
-    1
-}
-const fn default_batch() -> usize {
     1
 }
 const fn default_batch_bytes() -> usize {

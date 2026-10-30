@@ -8,6 +8,6 @@ pub mod msk;
 pub mod npm_registry;
 pub mod okta;
 pub mod socket;
+pub mod sqlite;
 pub mod sqs;
-pub mod store;
 pub mod tcp;

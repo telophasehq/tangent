@@ -1,0 +1,70 @@
+# cloud-infra, judge: a model reads each actor's latest forty records from
+# logs.sqlite and writes a verdict per new one; a person reads the ones it
+# flagged. One worker, so an actor's records reach the model together.
+runtime:
+  workers: 1
+  plugins_path: plugins/
+  state:
+    backend: lru
+
+sources:
+  actors:
+    type: sqlite
+    path: logs.sqlite
+    partition: actor
+    batch_size: 40
+    timeout_secs: 3600
+
+plugins:
+  fresh:
+    module_type: rust
+    path: fresh
+  flagged:
+    module_type: rust
+    path: ../../examples/inference-local/flagged
+
+inference:
+  judge:
+    url: ${JUDGE_URL}
+    model: ${JUDGE_MODEL}
+    api_key: ${JUDGE_API_KEY}
+    prompt_file: judge.md
+    schema_file: judge.schema.json
+    group_by: [_norm.org, _norm.actor]
+    batch_bytes: 48000
+    max_tokens: 200
+    temperature: 0.7
+    timeout_ms: 90000
+    concurrency: 4
+    extra:
+      top_p: 0.95
+      chat_template_kwargs:
+        enable_thinking: false
+
+sinks:
+  alerts:
+    type: file
+    path: alerts.ndjson
+    compression:
+      type: none
+  verdicts:
+    type: file
+    path: verdicts.ndjson
+    compression:
+      type: none
+  # slack:
+  #   type: slack
+  #   webhook_url: ${SLACK_WEBHOOK_URL}
+  #   text: "*{_norm.actor}* {_norm.kind} from {_norm.ip}: {judge.why|not judged: judge.error}"
+
+dag:
+  - from: { kind: source, name: actors }
+    to: [{ kind: inference, name: judge }]
+  - from: { kind: inference, name: judge }
+    to: [{ kind: plugin, name: fresh }]
+  - from: { kind: plugin, name: fresh }
+    to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]
+  - from: { kind: plugin, name: flagged }
+    to: [{ kind: sink, name: alerts }]
+  # - from: { kind: plugin, name: flagged }
+  #   to: [{ kind: sink, name: slack }]

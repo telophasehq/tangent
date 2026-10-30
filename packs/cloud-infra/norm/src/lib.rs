@@ -27,11 +27,17 @@ fn own() -> &'static (Option<String>, BTreeSet<String>) {
             let org = f["org"].as_str().map(str::to_string);
             let sources = f["own_sources"]
                 .as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default();
             return (org, sources);
         }
-        let org = config::get("own_org").map(|s| s.trim().trim_matches('"').to_string()).filter(|s| !s.is_empty());
+        let org = config::get("own_org")
+            .map(|s| s.trim().trim_matches('"').to_string())
+            .filter(|s| !s.is_empty());
         let sources = config::get("own_sources")
             .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
             .unwrap_or_default()
@@ -82,7 +88,10 @@ fn get(lv: &Logview, path: &str) -> Option<String> {
 /// `https://api.github.com/repos/x` -> `api.github.com`
 fn host_of(url: &str) -> String {
     let rest = url.split("://").nth(1).unwrap_or(url);
-    rest.split(['/', '?', ':']).next().unwrap_or(rest).to_string()
+    rest.split(['/', '?', ':'])
+        .next()
+        .unwrap_or(rest)
+        .to_string()
 }
 
 /// `acme/web` -> `acme`
@@ -116,25 +125,24 @@ fn cloudtrail_actor(lv: &Logview) -> Option<String> {
 fn aws_acting(lv: &Logview) -> Option<String> {
     match get(lv, "userIdentity.type").unwrap_or_default().as_str() {
         "AssumedRole" => linked_service(&get(lv, "userIdentity.sessionContext.sessionIssuer.arn")?),
-        "AWSService" => Some(invoker(lv)),
-        "" if get(lv, "userIdentity.invokedBy").is_some_and(|by| !by.is_empty()) => Some(invoker(lv)),
+        "AWSService" => invoker(lv),
+        "" if get(lv, "userIdentity.invokedBy").is_some_and(|by| !by.is_empty()) => invoker(lv),
         _ => None,
     }
 }
 
-/// `...:role/aws-service-role/<service>.amazonaws.com/...` -> the service, only as the path's prefix
+/// `:role/aws-service-role/<service>.amazonaws.com/...`, as the path's prefix only
 fn linked_service(arn: &str) -> Option<String> {
     let (_, path) = arn.split_once(":role/")?;
     let service = path.strip_prefix("aws-service-role/")?.split('/').next();
-    Some(named(service.map(str::to_string)).unwrap_or_else(|| "service".to_string()))
+    named(service.map(str::to_string))
 }
 
-fn invoker(lv: &Logview) -> String {
+fn invoker(lv: &Logview) -> Option<String> {
     named(get(lv, "userIdentity.invokedBy"))
         .or_else(|| named(get(lv, "sourceIPAddress").filter(|ip| ip.ends_with(".amazonaws.com"))))
         .or_else(|| get(lv, "requestParameters.roleArn").and_then(|arn| linked_service(&arn)))
         .or_else(|| named(get(lv, "eventSource")))
-        .unwrap_or_else(|| "service".to_string())
 }
 
 /// without `.amazonaws.com`; `AWS Internal` names nothing
@@ -164,7 +172,9 @@ fn norm(lv: &Logview, source: &str) -> Norm {
         "cloudtrail" => {
             let aws = aws_acting(lv);
             n.aws = aws.is_some();
-            n.actor = aws.map(|s| format!("aws:{s}")).or_else(|| cloudtrail_actor(lv));
+            n.actor = aws
+                .map(|s| format!("aws:{s}"))
+                .or_else(|| cloudtrail_actor(lv));
             n.org = get(lv, "userIdentity.accountId");
             n.kind = get(lv, "eventName");
             // an AWS service or the SSO broker is not the caller's address

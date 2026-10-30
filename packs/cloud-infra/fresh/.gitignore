@@ -8,4 +8,5 @@ __pycache__/
 **/.test.yaml
 **/plugins/
 state.sqlite*
+out.ndjson
 src/bindings.rs

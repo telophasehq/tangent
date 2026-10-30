@@ -14,8 +14,8 @@ use ipnet::IpNet;
 
 use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
 use serde_json::{json, Map, Value};
-use tangent::logs::log::Logview;
 use tangent::logs::config;
+use tangent::logs::log::Logview;
 
 struct Component;
 
@@ -31,8 +31,7 @@ struct Profile {
     services: BTreeSet<String>,
     keys: BTreeMap<String, Vec<IpNet>>, // empty: any network
     cloud: Option<String>,
-    /// Who an actor is, when its name does not say (`about: {DrataAutopilotRole: "Drata, ..."}`).
-    about: BTreeMap<String, String>,
+    about: BTreeMap<String, String>, // actor: who it is
     hosts: BTreeSet<String>,
     sensitive: BTreeSet<String>,
     ip_field: String,
@@ -84,14 +83,10 @@ fn keys_setting() -> BTreeMap<String, Vec<IpNet>> {
                 .collect();
         }
     }
-    list_setting("keys").into_iter().map(|k| (k, Vec::new())).collect()
-}
-
-/// `about`: a map of actor to who it is.
-fn about_setting() -> BTreeMap<String, String> {
-    setting("about")
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
+    list_setting("keys")
+        .into_iter()
+        .map(|k| (k, Vec::new()))
+        .collect()
 }
 
 /// `/data/profile.yaml`, when the plugin was given a data directory.
@@ -123,15 +118,17 @@ fn profile() -> &'static Profile {
             keys: match &f["keys"] {
                 Value::Object(m) => m
                     .iter()
-                    .map(|(k, nets)| (k.clone(), strs(nets).iter().filter_map(|n| parse_net(n)).collect()))
+                    .map(|(k, nets)| {
+                        (
+                            k.clone(),
+                            strs(nets).iter().filter_map(|n| parse_net(n)).collect(),
+                        )
+                    })
                     .collect(),
                 other => strs(other).into_iter().map(|k| (k, Vec::new())).collect(),
             },
             cloud: f["cloud"].as_str().map(str::to_string),
-            about: f["about"]
-                .as_object()
-                .map(|m| m.iter().filter_map(|(k, v)| Some((k.clone(), text(v)?))).collect())
-                .unwrap_or_default(),
+            about: serde_json::from_value(f["about"].clone()).unwrap_or_default(),
             hosts: strs(&f["hosts"]),
             sensitive: strs(&f["sensitive"]),
             ip_field: f["ip"].as_str().unwrap_or("_norm.ip").to_string(),
@@ -143,7 +140,9 @@ fn profile() -> &'static Profile {
             services: list_setting("services"),
             keys: keys_setting(),
             cloud: setting("cloud"),
-            about: about_setting(),
+            about: setting("about")
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default(),
             hosts: list_setting("hosts"),
             sensitive: list_setting("sensitive"),
             ip_field: setting("ip").unwrap_or_else(|| "_norm.ip".to_string()),
@@ -171,7 +170,7 @@ fn text(v: &Value) -> Option<String> {
     }
 }
 
-/// Who the actor is to the profile; `aws` when the record says AWS acted.
+/// Who the actor is to the profile.
 fn principal(p: &Profile, actor: &str, aws: bool) -> &'static str {
     if aws {
         "aws"
@@ -209,16 +208,14 @@ fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>,
         notes.push("opened to 0.0.0.0/0".into());
     }
 
-    // Who the profile says the actor is.
     let about = actor.as_ref().and_then(|a| p.about.get(a));
     if let (Some(a), Some(s)) = (&actor, about) {
         facts.insert("about".into(), json!(s));
         notes.push(format!("{a} is {s}"));
     }
 
-    // The principal: known to the profile, or nobody it knows. AWS acting is
-    // what norm marked; an `aws:` name alone could be anyone.
-    let aws = source == "cloudtrail" && rec["_norm"]["aws"].as_bool() == Some(true);
+    // The principal: known to the profile, or nobody it knows.
+    let aws = rec["_norm"]["aws"] == true; // norm's mark: an `aws:` name could be anyone's
     let who = actor
         .as_deref()
         .filter(|_| !NO_PRINCIPAL.contains(&source))
@@ -234,7 +231,10 @@ fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>,
     if let Some(Value::Object(ip)) = ip {
         let ours = ip.get("ours").and_then(Value::as_bool).unwrap_or(false);
         let addr = ip.get("ip").and_then(Value::as_str).unwrap_or("?");
-        let desc = ip.get("org").and_then(Value::as_str).unwrap_or("unknown network");
+        let desc = ip
+            .get("org")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown network");
         let scope = actor.clone().unwrap_or_else(|| kind.clone());
         if ip.get("tor").and_then(Value::as_bool) == Some(true) {
             notes.push(format!("{addr} is a Tor exit ({desc})"));
@@ -252,7 +252,10 @@ fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>,
                     notes.push(format!("{scope} acting from {h} hosting, {addr} ({desc})"));
                 }
                 if foreign {
-                    notes.push(format!("{scope} acting from {}, {addr} ({desc})", country.unwrap_or("?")));
+                    notes.push(format!(
+                        "{scope} acting from {}, {addr} ({desc})",
+                        country.unwrap_or("?")
+                    ));
                 }
             }
             // A service runs in the org's cloud, or from its own addresses.
@@ -277,7 +280,9 @@ fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>,
                 });
                 facts.insert("key_known_network".into(), json!(known));
                 if !known {
-                    notes.push(format!("key {scope} used from {addr} ({desc}), outside the networks it calls from"));
+                    notes.push(format!(
+                        "key {scope} used from {addr} ({desc}), outside the networks it calls from"
+                    ));
                 }
             }
             _ => {}
@@ -287,14 +292,17 @@ fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>,
 
     // Where the request went.
     if let Some(d) = &dest {
-        let known = p.hosts.contains(d) || p.hosts.iter().any(|h| {
-            h.strip_prefix("*.")
-                .is_some_and(|suffix| d.ends_with(suffix))
-        });
+        let known = p.hosts.contains(d)
+            || p.hosts.iter().any(|h| {
+                h.strip_prefix("*.")
+                    .is_some_and(|suffix| d.ends_with(suffix))
+            });
         facts.insert("dest_known".into(), json!(known));
         if !known {
             let by = actor.clone().unwrap_or_else(|| source.to_string());
-            notes.push(format!("{by} talked to {d}, not a host this org's systems talk to"));
+            notes.push(format!(
+                "{by} talked to {d}, not a host this org's systems talk to"
+            ));
         }
     }
 
@@ -333,8 +341,14 @@ impl Guest for Component {
             let Some(m) = rec.as_object_mut() else {
                 return Err("record is not a JSON object".to_string());
             };
-            let ip = m.get_mut("_ip").and_then(Value::as_object_mut).and_then(|i| i.remove(&p.ip_field));
-            if m.get("_ip").and_then(Value::as_object).is_some_and(Map::is_empty) {
+            let ip = m
+                .get_mut("_ip")
+                .and_then(Value::as_object_mut)
+                .and_then(|i| i.remove(&p.ip_field));
+            if m.get("_ip")
+                .and_then(Value::as_object)
+                .is_some_and(Map::is_empty)
+            {
                 m.remove("_ip");
             }
             let (mut facts, notes) = facts_of(p, &rec, ip);

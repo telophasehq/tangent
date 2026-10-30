@@ -29,11 +29,8 @@ impl DagRuntime {
         cfg_path: &Path,
         shutdown: CancellationToken,
     ) -> anyhow::Result<Self> {
+        let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
         let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
-        let store = state::open(&cfg.runtime.state, config_dir)?;
-        let sink_manager = Arc::new(
-            SinkManager::new(&cfg.sinks, Arc::clone(&store), cfg.runtime.partition.clone()).await?,
-        );
         // A pipeline without plugins has no plugin directory to resolve.
         let plugin_root = if cfg.plugins.is_empty() {
             config_dir.to_path_buf()
@@ -50,6 +47,8 @@ impl DagRuntime {
         };
 
         let workers = cfg.runtime.workers;
+
+        let store = state::open(&cfg.runtime.state, config_dir)?;
 
         let mut engines: Vec<WasmEngine> = (0..workers)
             .map(|_| WasmEngine::new(Arc::clone(&store), cfg.runtime.disable_remote_calls))
@@ -320,7 +319,6 @@ fn spawn_consumers(
                         ct,
                         batch_size,
                         router,
-                        store,
                         shutdown.clone(),
                     )
                     .await
@@ -355,13 +353,13 @@ fn spawn_consumers(
                     }
                 }));
             }
-            (name, SourceConfig::Store(sc)) => {
+            (name, SourceConfig::Sqlite(sq)) => {
                 let router = router.clone();
                 handles.push(tokio::spawn(async move {
                     if let Err(e) =
-                        sources::store::run_consumer(name, sc, router, store, shutdown.clone()).await
+                        sources::sqlite::run_consumer(name, sq, router, shutdown.clone()).await
                     {
-                        tracing::error!("store source error: {e:#}");
+                        tracing::error!("sqlite source error: {e:#}");
                     }
                 }));
             }

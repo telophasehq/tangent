@@ -1,5 +1,5 @@
 # One profile for every customer, for now. `org` and `own_sources` stay empty:
-# nothing is folded into one partition; each tenant id is its own.
+# nothing is folded into one org; each tenant id is its own.
 countries: [US]
 cloud: aws
 members: []

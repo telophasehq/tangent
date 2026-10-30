@@ -21,7 +21,6 @@ pub mod sinks;
 pub mod sources;
 pub mod state;
 pub mod wasm;
-pub mod windows;
 pub mod worker;
 
 /// Options for running the runtime.

@@ -182,11 +182,6 @@ pub async fn run(opts: TestOptions) -> Result<()> {
 
             let produced = read_ndjson(&out_file).context("reading produced NDJSON")?;
             let expected = read_json(&expected)?;
-            // one output line is a list of one
-            let produced = match produced {
-                Value::Object(_) if expected.is_array() => Value::Array(vec![produced]),
-                other => other,
-            };
 
             if produced.is_array() != expected.is_array() {
                 warn!("❌ test failed: output differs from expected\n");

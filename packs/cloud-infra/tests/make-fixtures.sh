@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Regenerates tests/*/{input,expected}.json from a handful of cases by running
-# each stage once: raw events → norm → enrich → facts. Run after a
-# plugin changes, read the diff, commit it if it is what you meant.
+# Regenerates tests/*/{input,expected}.json from a handful of cases and the
+# records in tests/*/extra.json by running each stage once: raw events → norm
+# → enrich → facts. Run after a plugin changes, read the diff, commit it if it
+# is what you meant.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=${TANGENT:-tangent}
-export JUDGE_URL=${JUDGE_URL:-http://localhost:8080/v1} JUDGE_MODEL=${JUDGE_MODEL:-stub} JUDGE_API_KEY=${JUDGE_API_KEY:-none}
 CASES="cloud/root-console-login cloud/cloudtrail-stop-logging identity/impossible-travel supply-chain/ci-action-tags-retargeted
        vendor/platform-breach-env-secrets-reused negative/oncall-3am-login negative/scanner-action-usual-run data/gmail-forwarding-rule"
 
@@ -15,6 +15,7 @@ events = []
 for c in sys.argv[1:]:
     events += [json.loads(l) for l in open(f"cases/{c}/events.ndjson") if l.strip()]
 events.sort(key=lambda e: e["ts"])
+events += json.load(open("tests/norm/extra.json"))
 json.dump(events, open("tests/norm/input.json", "w"), indent=1)
 print(f"{len(events)} events from {len(sys.argv) - 1} cases")
 PY
@@ -24,7 +25,7 @@ stage() {  # name  input  output
   python3 - "$1" "$2" <<'PY'
 import sys, yaml
 name, inp = sys.argv[1], sys.argv[2]
-cfg = yaml.safe_load(open("tangent.yaml"))
+cfg = yaml.safe_load(open("ingest.yaml"))
 plugin = cfg["plugins"][name]
 plugin["tests"] = [{"input": inp, "expected": ".empty.json"}]
 stage = {"runtime": cfg["runtime"], "plugins": {name: plugin},
@@ -47,5 +48,6 @@ print(f'  {sys.argv[2]}: {len(rows)} records')
 
 stage norm   tests/norm/input.json     tests/norm/expected.json
 stage enrich tests/norm/expected.json  tests/facts/input.json
+python3 -c 'import json; f = "tests/facts/input.json"; json.dump(json.load(open(f)) + json.load(open("tests/facts/extra.json")), open(f, "w"), indent=1)'
 stage facts  tests/facts/input.json    tests/facts/expected.json
 echo "fixtures written; now: make test"
