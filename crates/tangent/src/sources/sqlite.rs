@@ -529,16 +529,22 @@ mod tests {
             (T0 + 4, Some("x")),
             (T0 + 5, None),
         ];
-        for (at, org) in rows {
+        let put = |at: i64, org: Option<&str>| {
             conn.execute(
                 "INSERT INTO logs (at, record, org, actor) VALUES (?1, ?2, ?3, 'a')",
                 rusqlite::params![at, row(at, "a"), org],
             )
             .unwrap();
+        };
+        for (at, org) in rows {
+            put(at, org);
         }
         let sink = Arc::new(RecordingSink::default());
         let (stop, h) = start(&path, &sink, 1);
-        let got = writes(&sink, 3).await;
+        writes(&sink, 3).await;
+        until(|| emitted(&path) == 5).await;
+        put(T0 + 6, None);
+        let got = writes(&sink, 4).await;
         stop.cancel();
         h.await.unwrap().unwrap();
         assert_eq!(
@@ -547,6 +553,7 @@ mod tests {
                 group(&[(T0 + 1, "a"), (T0 + 4, "a")]),
                 group(&[(T0 + 2, "a")]),
                 group(&[(T0 + 3, "a"), (T0 + 5, "a")]),
+                context(&[(T0 + 3, "a"), (T0 + 5, "a")]) + &group(&[(T0 + 6, "a")]),
             ]
         );
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
