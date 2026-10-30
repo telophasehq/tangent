@@ -4,6 +4,7 @@ use bytes::BytesMut;
 use parking_lot::Mutex;
 use rusqlite::types::Value;
 use rusqlite::{params_from_iter, Connection};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,15 +21,15 @@ pub struct SqliteSink {
     conn: Mutex<Connection>,
     insert: String,
     time: Option<String>,
-    partitions: Vec<Vec<String>>,
+    fields: Vec<String>,
 }
 
 impl SqliteSink {
     pub fn new(cfg: &SqliteConfig) -> Result<Arc<Self>> {
-        let names: Vec<String> = cfg.partitions.keys().cloned().collect();
-        let conn = open(&cfg.path, &cfg.table, &names)?;
-        let cols: String = names.iter().map(|n| format!(", \"{n}\"")).collect();
-        let params: String = (0..names.len()).map(|i| format!(", ?{}", i + 3)).collect();
+        let conn = open(&cfg.path, &cfg.table, &cfg.partitions)?;
+        let fields = fields(&cfg.partitions);
+        let cols: String = fields.iter().map(|f| format!(", {}", quote(f))).collect();
+        let params: String = (0..fields.len()).map(|i| format!(", ?{}", i + 3)).collect();
         Ok(Arc::new(Self {
             conn: Mutex::new(conn),
             insert: format!(
@@ -36,21 +37,32 @@ impl SqliteSink {
                 cfg.table
             ),
             time: cfg.time.clone(),
-            partitions: cfg.partitions.values().cloned().collect(),
+            fields,
         }))
     }
 }
 
-/// The table, with a column and an index per partition.
-pub fn open(path: &Path, table: &str, partitions: &[String]) -> Result<Connection> {
+/// The table, a column per partition field, and per partition an index on its fields then at.
+pub fn open(
+    path: &Path,
+    table: &str,
+    partitions: &BTreeMap<String, Vec<String>>,
+) -> Result<Connection> {
     if !plain(table) {
         bail!("table name {table:?}: letters, digits and _ only");
     }
-    if let Some(bad) = partitions.iter().find(|p| !plain(p)) {
+    if let Some(bad) = partitions.keys().find(|p| !plain(p)) {
         bail!("partition name {bad:?}: letters, digits and _ only");
     }
-    if partitions.iter().any(|p| p == "pending") {
+    if partitions.contains_key("pending") {
         bail!("partition name \"pending\" is taken by {table}_pending");
+    }
+    let fields = fields(partitions);
+    if let Some(f) = fields
+        .iter()
+        .find(|f| ["id", "at", "record", "emitted"].contains(&f.as_str()))
+    {
+        bail!("partition field {f:?} is a column of {table} already");
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -71,15 +83,47 @@ pub fn open(path: &Path, table: &str, partitions: &[String]) -> Result<Connectio
         .prepare("SELECT name FROM pragma_table_info(?1)")?
         .query_map([table], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
-    for p in partitions {
-        if !have.contains(p) {
-            conn.execute_batch(&format!("ALTER TABLE \"{table}\" ADD COLUMN \"{p}\" TEXT"))?;
+    for f in &fields {
+        if !have.contains(f) {
+            conn.execute_batch(&format!(
+                "ALTER TABLE \"{table}\" ADD COLUMN {} TEXT",
+                quote(f)
+            ))?;
         }
-        conn.execute_batch(&format!(
-            "CREATE INDEX IF NOT EXISTS \"{table}_{p}\" ON \"{table}\"(\"{p}\", at)"
-        ))?;
+    }
+    for (p, fields) in partitions {
+        let index = format!("{table}_{p}");
+        let mut want = fields.clone();
+        want.push("at".into());
+        if index_columns(&conn, &index)? != want {
+            let cols: String = fields.iter().map(|f| quote(f) + ", ").collect();
+            conn.execute_batch(&format!(
+                "BEGIN;
+                DROP INDEX IF EXISTS \"{index}\";
+                CREATE INDEX \"{index}\" ON \"{table}\"({cols}at);
+                COMMIT;"
+            ))?;
+        }
     }
     Ok(conn)
+}
+
+/// An index's columns in order; none without the index.
+pub fn index_columns(conn: &Connection, index: &str) -> Result<Vec<String>> {
+    Ok(conn
+        .prepare("SELECT name FROM pragma_index_info(?1) ORDER BY seqno")?
+        .query_map([index], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+pub fn quote(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// Every partition's fields, once each.
+fn fields(partitions: &BTreeMap<String, Vec<String>>) -> Vec<String> {
+    let set: BTreeSet<&String> = partitions.values().flatten().collect();
+    set.into_iter().cloned().collect()
 }
 
 fn plain(name: &str) -> bool {
@@ -105,17 +149,12 @@ impl Sink for SqliteSink {
                 Value::Integer(at),
                 Value::Text(String::from_utf8_lossy(line).into_owned()),
             ];
-            for fields in &self.partitions {
-                let key: Vec<String> = fields
-                    .iter()
-                    .map(|f| {
-                        lv.lookup(f)
-                            .and_then(JsonLogView::to_scalar)
-                            .map(partition::scalar_text)
-                            .unwrap_or_default()
-                    })
-                    .collect();
-                row.push(Value::Text(key.join("|")));
+            for f in &self.fields {
+                row.push(
+                    lv.lookup(f)
+                        .and_then(JsonLogView::to_scalar)
+                        .map_or(Value::Null, |s| Value::Text(partition::scalar_text(s))),
+                );
             }
             rows.push(row);
         }
@@ -140,7 +179,6 @@ impl Sink for SqliteSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     fn dir(tag: &str) -> PathBuf {
@@ -158,7 +196,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stores_a_record_once_with_its_partitions() {
+    async fn stores_a_record_once_with_its_fields() {
         let dir = dir("once");
         let mut partitions = BTreeMap::new();
         partitions.insert("org".to_string(), vec!["_norm.org".to_string()]);
@@ -166,13 +204,13 @@ mod tests {
             "actor".to_string(),
             vec!["_norm.org".to_string(), "_norm.actor".to_string()],
         );
-        let sink = SqliteSink::new(&SqliteConfig {
+        let mut cfg = SqliteConfig {
             path: dir.join("logs.sqlite"),
             table: "logs".into(),
             time: Some("ts".into()),
             partitions,
-        })
-        .unwrap();
+        };
+        let sink = SqliteSink::new(&cfg).unwrap();
         let first = r#"{"ts":"2026-10-20T13:00:00Z","_norm":{"org":"acme","actor":"ann"}}"#;
         sink.write(write(&format!(
             "{first}\n{{\"_norm\":{{\"actor\":\"bob\"}}}}\n{{}}\n"
@@ -181,32 +219,74 @@ mod tests {
         .unwrap();
 
         let conn = Connection::open(dir.join("logs.sqlite")).unwrap();
-        let rows: Vec<(i64, String, String, String)> = conn
-            .prepare("SELECT at, record, org, actor FROM logs ORDER BY id")
+        let rows: Vec<(i64, Option<String>, Option<String>)> = conn
+            .prepare("SELECT at, \"_norm.org\", \"_norm.actor\" FROM logs ORDER BY id")
             .unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
-        assert_eq!(rows.len(), 3);
-        assert_eq!(rows[0].0, 1_792_501_200_000);
-        assert_eq!(rows[0].1, first);
+        let fields: Vec<_> = rows
+            .iter()
+            .map(|r| (r.1.as_deref(), r.2.as_deref()))
+            .collect();
         assert_eq!(
-            (rows[0].2.as_str(), rows[0].3.as_str()),
-            ("acme", "acme|ann")
+            fields,
+            [
+                (Some("acme"), Some("ann")),
+                (None, Some("bob")),
+                (None, None)
+            ]
         );
-        assert_eq!((rows[1].2.as_str(), rows[1].3.as_str()), ("", "|bob"));
-        assert_eq!((rows[2].2.as_str(), rows[2].3.as_str()), ("", "|"));
+        assert_eq!(rows[0].0, 1_792_501_200_000);
         assert!(rows[1].0 > rows[0].0, "arrival time without a ts");
+        let record: String = conn
+            .query_row("SELECT record FROM logs WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(record, first);
+        let pending: i64 = conn
+            .query_row("SELECT count(*) FROM logs WHERE emitted IS NULL", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(pending, 3);
+        let cols: i64 = conn
+            .query_row("SELECT count(*) FROM pragma_table_info('logs')", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(cols, 6, "one column per field");
+        assert_eq!(
+            index_columns(&conn, "logs_actor").unwrap(),
+            ["_norm.org", "_norm.actor", "at"]
+        );
+        assert_eq!(
+            index_columns(&conn, "logs_org").unwrap(),
+            ["_norm.org", "at"]
+        );
+
+        cfg.partitions
+            .insert("actor".to_string(), vec!["_norm.actor".to_string()]);
+        SqliteSink::new(&cfg).unwrap();
+        assert_eq!(
+            index_columns(&conn, "logs_actor").unwrap(),
+            ["_norm.actor", "at"]
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn table_and_partition_names_are_plain() {
         let path = std::env::temp_dir().join("tangent-never.sqlite");
-        assert!(open(&path, "logs\"", &[]).is_err());
-        assert!(open(&path, "", &[]).is_err());
-        assert!(open(&path, "logs", &["a b".to_string()]).is_err());
+        let none = BTreeMap::new();
+        assert!(open(&path, "logs\"", &none).is_err());
+        assert!(open(&path, "", &none).is_err());
+        for p in ["a b", "pending"] {
+            let partitions = BTreeMap::from([(p.to_string(), vec!["x".to_string()])]);
+            assert!(open(&path, "logs", &partitions).is_err());
+        }
+        let partitions = BTreeMap::from([("p".to_string(), vec!["at".to_string()])]);
+        assert!(open(&path, "logs", &partitions).is_err());
         assert!(!path.exists());
     }
 }

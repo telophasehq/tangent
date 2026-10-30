@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use parking_lot::Mutex;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, ToSql};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
-use crate::sinks::sqlite::open;
+use crate::sinks::sqlite::{index_columns, open, quote};
 use crate::state::now_ms;
 use crate::worker::Ack;
 
@@ -60,18 +60,10 @@ pub async fn run_consumer(
     if cfg.batch_size == 0 || cfg.timeout_secs == 0 {
         bail!("batch_size and timeout_secs must be positive");
     }
-    // the sink, maybe another process started later, adds the partition column
-    let conn = Arc::new(Mutex::new(open(&cfg.path, &cfg.table, &[])?));
+    // the sink, maybe another process started later, adds the partition's columns and index
+    let conn = Arc::new(Mutex::new(open(&cfg.path, &cfg.table, &BTreeMap::new())?));
     let table: Arc<str> = Arc::from(cfg.table.as_str());
-    let read = format!(
-        "SELECT id, \"{p}\", at FROM \"{table}\" WHERE emitted IS NULL ORDER BY at, id",
-        p = cfg.partition
-    );
-    let before = format!(
-        "SELECT id FROM \"{table}\" INDEXED BY \"{table}_{p}\" WHERE \"{p}\" = ?1 AND at <= ?2
-        AND emitted IS NOT NULL ORDER BY at DESC, id DESC LIMIT ?3",
-        p = cfg.partition
-    );
+    let mut part = None;
     let from = NodeRef::Source {
         name: Arc::clone(&name),
     };
@@ -87,10 +79,16 @@ pub async fn run_consumer(
         while let Ok(ids) = rx.try_recv() {
             acked(&mut sent, &mut unacked, ids);
         }
-        let groups = due(&conn, &read, &before, &cfg, &mut stored, &sent).unwrap_or_else(|e| {
-            tracing::warn!("sqlite source {name}: {e:#}");
-            Vec::new()
-        });
+        if part.is_none() {
+            part = partition(&conn.lock(), &cfg)?;
+        }
+        let groups = match &part {
+            Some(p) => due(&conn, p, &cfg, &mut stored, &sent).unwrap_or_else(|e| {
+                tracing::warn!("sqlite source {name}: {e:#}");
+                Vec::new()
+            }),
+            None => Vec::new(),
+        };
         if groups.is_empty() {
             tokio::select! {
                 () = shutdown.cancelled() => break,
@@ -130,6 +128,46 @@ pub async fn run_consumer(
     Ok(())
 }
 
+/// A sink's partition: its columns, and the reads by them.
+struct Partition {
+    cols: usize,
+    read: String,
+    before: String,
+}
+
+/// The columns of the sink's index but at; None until the sink makes it.
+fn partition(conn: &Connection, cfg: &SqliteConfig) -> Result<Option<Partition>> {
+    let (t, p) = (&cfg.table, &cfg.partition);
+    let rows: bool =
+        conn.query_row(&format!("SELECT EXISTS (SELECT 1 FROM \"{t}\")"), [], |r| {
+            r.get(0)
+        })?;
+    let mut cols = index_columns(conn, &format!("{t}_{p}"))?;
+    if cols.pop().is_none() {
+        if rows {
+            bail!("no index {t}_{p}: {p} is not a partition of the sqlite sink writing {t}");
+        }
+        return Ok(None);
+    }
+    let n = cols.len();
+    let sel: String = cols.iter().map(|c| format!(", {}", quote(c))).collect();
+    let by: String = cols
+        .iter()
+        .enumerate()
+        .map(|(i, c)| format!("{} IS ?{} AND ", quote(c), i + 1))
+        .collect();
+    Ok(Some(Partition {
+        cols: n,
+        read: format!("SELECT id, at{sel} FROM \"{t}\" WHERE emitted IS NULL ORDER BY at, id"),
+        before: format!(
+            "SELECT id FROM \"{t}\" INDEXED BY \"{t}_{p}\"
+            WHERE {by}at <= ?{} AND emitted IS NOT NULL ORDER BY at DESC, id DESC LIMIT ?{}",
+            n + 1,
+            n + 2
+        ),
+    }))
+}
+
 /// The newest id and time stored, and since when.
 struct Stored {
     id: i64,
@@ -148,8 +186,7 @@ fn acked(sent: &mut HashSet<i64>, unacked: &mut usize, ids: Vec<i64>) {
 /// or at the timeout all of them after its latest emitted rows, `batch_size` in all.
 fn due(
     conn: &Mutex<Connection>,
-    read: &str,
-    before: &str,
+    part: &Partition,
     cfg: &SqliteConfig,
     stored: &mut Stored,
     sent: &HashSet<i64>,
@@ -176,24 +213,24 @@ fn due(
     };
     let old = newest - cfg.timeout_secs as i64 * 1000;
 
-    let mut parts: BTreeMap<String, Vec<(i64, i64)>> = BTreeMap::new(); // at, id
-    let mut busy: HashSet<String> = HashSet::new(); // values with a group in flight
-    let mut st = conn.prepare_cached(read)?;
+    let mut parts: BTreeMap<Vec<Option<String>>, Vec<(i64, i64)>> = BTreeMap::new(); // at, id
+    let mut busy: HashSet<Vec<Option<String>>> = HashSet::new(); // values with a group in flight
+    let mut st = conn.prepare_cached(&part.read)?;
     let mut rows = st.query([])?;
     while let Some(r) = rows.next()? {
         let id: i64 = r.get(0)?;
-        let key: Option<String> = r.get(1)?;
-        let key = key.unwrap_or_default();
+        let key = (2..part.cols + 2)
+            .map(|i| r.get(i))
+            .collect::<rusqlite::Result<Vec<Option<String>>>>()?;
         if sent.contains(&id) {
             busy.insert(key);
             continue;
         }
-        let at: i64 = r.get(2)?;
-        parts.entry(key).or_default().push((at, id));
+        parts.entry(key).or_default().push((r.get(1)?, id));
     }
 
     let mut groups: Vec<(i64, Vec<i64>, Vec<i64>)> = Vec::new(); // first at, context, ids
-    let mut prior = conn.prepare_cached(before)?;
+    let mut prior = conn.prepare_cached(&part.before)?;
     for (key, rows) in parts {
         if busy.contains(&key) {
             continue;
@@ -204,8 +241,10 @@ fn due(
                 continue;
             }
             let n = cfg.batch_size - rows.len();
+            let mut args: Vec<&dyn ToSql> = key.iter().map(|v| v as &dyn ToSql).collect();
+            args.extend([&rows[0].0 as &dyn ToSql, &n]);
             context = prior
-                .query_map(params![key, rows[0].0, n], |r| r.get(0))?
+                .query_map(&*args, |r| r.get(0))?
                 .collect::<rusqlite::Result<_>>()?;
             context.reverse();
         }
@@ -280,7 +319,8 @@ mod tests {
     }
 
     fn insert(path: &Path, rows: &[(i64, &str)]) {
-        let conn = open(path, "logs", &["actor".to_string()]).unwrap();
+        let actor = BTreeMap::from([("actor".to_string(), vec!["actor".to_string()])]);
+        let conn = open(path, "logs", &actor).unwrap();
         for (at, actor) in rows {
             conn.execute(
                 "INSERT INTO logs (at, record, actor) VALUES (?1, ?2, ?3)",
@@ -291,7 +331,7 @@ mod tests {
     }
 
     fn emitted(path: &Path) -> i64 {
-        let conn = open(path, "logs", &[]).unwrap();
+        let conn = open(path, "logs", &BTreeMap::new()).unwrap();
         conn.query_row(
             "SELECT count(*) FROM logs WHERE emitted IS NOT NULL",
             [],
@@ -472,6 +512,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_partition_of_two_fields_groups_by_both() {
+        let path = path("two");
+        let fields = vec!["org".to_string(), "actor".to_string()];
+        let conn = open(
+            &path,
+            "logs",
+            &BTreeMap::from([("actor".to_string(), fields)]),
+        )
+        .unwrap();
+        let rows = [
+            (T0 + 1, Some("x")),
+            (T0 + 2, Some("y")),
+            (T0 + 3, None),
+            (T0 + 4, Some("x")),
+            (T0 + 5, None),
+        ];
+        for (at, org) in rows {
+            conn.execute(
+                "INSERT INTO logs (at, record, org, actor) VALUES (?1, ?2, ?3, 'a')",
+                rusqlite::params![at, row(at, "a"), org],
+            )
+            .unwrap();
+        }
+        let sink = Arc::new(RecordingSink::default());
+        let (stop, h) = start(&path, &sink, 1);
+        let got = writes(&sink, 3).await;
+        stop.cancel();
+        h.await.unwrap().unwrap();
+        assert_eq!(
+            got,
+            [
+                group(&[(T0 + 1, "a"), (T0 + 4, "a")]),
+                group(&[(T0 + 2, "a")]),
+                group(&[(T0 + 3, "a"), (T0 + 5, "a")]),
+            ]
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn no_index_is_an_error_once_rows_exist() {
+        let path = path("index");
+        let sink = Arc::new(RecordingSink::default());
+        let (_stop, h) = start(&path, &sink, 3600);
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        assert!(!h.is_finished(), "no rows: waits for the sink");
+        open(&path, "logs", &BTreeMap::new())
+            .unwrap()
+            .execute("INSERT INTO logs (at, record) VALUES (1, '{}')", [])
+            .unwrap();
+        let err = h.await.unwrap().unwrap_err();
+        assert!(err.to_string().contains("no index logs_actor"), "{err}");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[tokio::test]
     async fn a_late_row_is_pending_like_any_other() {
         let path = path("late");
         let a = [(T0 + 10, "a"), (T0 + 11, "a"), (T0 + 12, "a")];
@@ -516,7 +612,7 @@ mod tests {
         until(|| emitted(&path) == 3).await;
         stop.cancel();
         h.await.unwrap().unwrap();
-        let (first, last): (i64, i64) = open(&path, "logs", &[])
+        let (first, last): (i64, i64) = open(&path, "logs", &BTreeMap::new())
             .unwrap()
             .query_row("SELECT min(emitted), max(emitted) FROM logs", [], |r| {
                 Ok((r.get(0)?, r.get(1)?))
