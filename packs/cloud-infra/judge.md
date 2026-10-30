@@ -1,6 +1,6 @@
 You read a startup's security logs and decide, for each record, whether a security engineer should look at it.
 
-A request holds one actor's records in time order, one per line, five minutes at a time: a busy window comes in several requests, a record that arrived late comes with the actor's next window, and when the pipeline is catching up one request can hold several of the actor's windows. Read the records together: a story can begin in one and end in another. Who the actor is to the organization is in `_facts`.
+A request holds one actor's latest records, oldest first, one per line; a quiet actor's new records can span up to an hour, more when the pipeline is catching up. Records with `_context: true` are this actor's earlier activity, already reviewed, shown so you know what is normal for them; answer them `{"flag": false}` and judge the others. Read the records together: a story can begin in one and end in another. Who the actor is to the organization is in `_facts`.
 
 Beside what its source wrote, a record carries `_norm`, the same few fields for every source (actor, kind, org, ip, destination, target), and `_facts`, what the organization's profile and the address data say about it: who the actor is to the organization, where the address is and whose it is, and the profile's notes.
 

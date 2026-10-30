@@ -2,10 +2,11 @@ use anyhow::{bail, Result};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use parking_lot::Mutex;
-use rusqlite::Connection;
+use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tangent_shared::dag::NodeRef;
 use tangent_shared::sources::sqlite::SqliteConfig;
 use tokio::sync::mpsc;
@@ -13,14 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
 use crate::sinks::sqlite::open;
-use crate::state::now_ms;
 use crate::worker::Ack;
-
-/// One partition value's rows of a window, in `at` order.
-struct Group {
-    ids: Vec<i64>,
-    frame: BytesMut,
-}
 
 /// Marks a group's rows emitted once the DAG is done with them.
 struct Emitted {
@@ -58,54 +52,65 @@ pub async fn run_consumer(
     router: Arc<Router>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    if cfg.window_secs == 0 {
-        bail!("window_secs must be positive");
+    if cfg.batch_size == 0 || cfg.timeout_secs == 0 {
+        bail!("batch_size and timeout_secs must be positive");
     }
     // the sink, maybe another process started later, adds the partition column
     let conn = Arc::new(Mutex::new(open(&cfg.path, &[])?));
     let read = format!(
-        "SELECT id, \"{}\", record FROM logs WHERE emitted = 0 AND at < ?1 ORDER BY at, id",
+        "SELECT id, \"{}\", at FROM logs WHERE emitted = 0 ORDER BY at, id",
         cfg.partition
     );
-    let w = cfg.window_secs as i64 * 1000;
+    let before = format!(
+        "SELECT id FROM logs INDEXED BY \"logs_{p}\" WHERE \"{p}\" = ?1 AND at <= ?2
+        AND emitted = 1 ORDER BY at DESC, id DESC LIMIT ?3",
+        p = cfg.partition
+    );
     let from = NodeRef::Source {
         name: Arc::clone(&name),
     };
     let (tx, mut rx) = mpsc::unbounded_channel::<Vec<i64>>();
-    let mut start: Option<i64> = None;
+    let mut stored = (None, Instant::now()); // newest id, seen since
     let mut sent: HashSet<i64> = HashSet::new(); // rows of unacked groups
     let mut unacked = 0usize;
     loop {
         while let Ok(ids) = rx.try_recv() {
             acked(&mut sent, &mut unacked, ids);
         }
-        let due = window(&conn, &read, w, &mut start, &sent).unwrap_or_else(|e| {
+        let groups = due(&conn, &read, &before, &cfg, &mut stored, &sent).unwrap_or_else(|e| {
             tracing::warn!("sqlite source {name}: {e:#}");
-            None
+            Vec::new()
         });
-        let Some(groups) = due else {
+        if groups.is_empty() {
             tokio::select! {
                 () = shutdown.cancelled() => break,
                 Some(ids) = rx.recv() => acked(&mut sent, &mut unacked, ids),
                 () = tokio::time::sleep(Duration::from_secs(1)) => {}
             }
             continue;
-        };
-        for g in groups {
+        }
+        for (context, ids) in groups {
             while unacked >= 16 {
                 tokio::select! {
                     () = shutdown.cancelled() => return Ok(()),
                     Some(ids) = rx.recv() => acked(&mut sent, &mut unacked, ids),
                 }
             }
-            sent.extend(&g.ids);
+            let frame = match frame(&conn, &context, &ids) {
+                Ok(f) => f,
+                Err(e) => {
+                    tracing::warn!("sqlite source {name}: {e:#}");
+                    continue;
+                }
+            };
+            sent.extend(&ids);
             unacked += 1;
             let ack: Arc<dyn Ack> = Arc::new(Emitted {
                 conn: Arc::clone(&conn),
-                ids: g.ids,
+                ids,
                 tx: tx.clone(),
             });
-            router.forward(&from, vec![g.frame], vec![ack]).await?;
+            router.forward(&from, vec![frame], vec![ack]).await?;
         }
         if shutdown.is_cancelled() {
             break;
@@ -121,62 +126,97 @@ fn acked(sent: &mut HashSet<i64>, unacked: &mut usize, ids: Vec<i64>) {
     *unacked -= 1;
 }
 
-/// The window from `start`, when due: its unemitted rows and any earlier
-/// ones not yet sent, by partition value. `start` moves to the next window
-/// with rows.
-fn window(
+/// Ids as (context, pending) per value with none in flight: its first `batch_size` pending rows,
+/// or at the timeout all of them after its latest emitted rows, `batch_size` in all.
+fn due(
     conn: &Mutex<Connection>,
     read: &str,
-    w: i64,
-    start: &mut Option<i64>,
+    before: &str,
+    cfg: &SqliteConfig,
+    stored: &mut (Option<i64>, Instant),
     sent: &HashSet<i64>,
-) -> Result<Option<Vec<Group>>> {
+) -> Result<Vec<(Vec<i64>, Vec<i64>)>> {
     let conn = conn.lock();
-    let first = |from: i64| -> rusqlite::Result<Option<i64>> {
-        conn.query_row(
-            "SELECT min(at) FROM logs WHERE emitted = 0 AND at >= ?1",
-            [from],
-            |r| r.get(0),
-        )
-    };
-    let s = match *start {
-        Some(s) => s,
-        None => match first(i64::MIN)? {
-            Some(at) => at.div_euclid(w) * w,
-            None => return Ok(None),
-        },
-    };
-    *start = Some(s);
-    let end = s + w;
-    let newest: Option<i64> =
-        conn.query_row("SELECT max(at) FROM logs WHERE emitted = 0", [], |r| {
-            r.get(0)
-        })?;
-    // due when the data has moved past it, or the clock a window further
-    if newest.is_none_or(|n| n < end) && now_ms() as i64 <= end + w {
-        return Ok(None);
+    let last: Option<i64> = conn.query_row("SELECT max(id) FROM logs", [], |r| r.get(0))?;
+    if last != stored.0 {
+        *stored = (last, Instant::now());
     }
+    let idle = stored.1.elapsed() >= Duration::from_secs(cfg.timeout_secs);
+    let newest: Option<i64> = conn.query_row(
+        "SELECT max(m) FROM (
+            SELECT max(at) m FROM logs WHERE emitted = 0
+            UNION ALL SELECT max(at) FROM logs WHERE emitted = 1
+        )",
+        [],
+        |r| r.get(0),
+    )?;
+    let Some(newest) = newest else {
+        return Ok(Vec::new());
+    };
+    let old = newest - cfg.timeout_secs as i64 * 1000;
 
-    let mut groups: BTreeMap<String, Group> = BTreeMap::new();
+    let mut parts: BTreeMap<String, Vec<(i64, i64)>> = BTreeMap::new(); // at, id
+    let mut busy: HashSet<String> = HashSet::new(); // values with a group in flight
     let mut st = conn.prepare_cached(read)?;
-    let mut rows = st.query([end])?;
+    let mut rows = st.query([])?;
     while let Some(r) = rows.next()? {
         let id: i64 = r.get(0)?;
+        let key: Option<String> = r.get(1)?;
+        let key = key.unwrap_or_default();
         if sent.contains(&id) {
+            busy.insert(key);
             continue;
         }
-        let key: Option<String> = r.get(1)?;
-        let record: String = r.get(2)?;
-        let g = groups.entry(key.unwrap_or_default()).or_insert(Group {
-            ids: Vec::new(),
-            frame: BytesMut::new(),
-        });
-        g.ids.push(id);
-        g.frame.extend_from_slice(record.as_bytes());
-        g.frame.extend_from_slice(b"\n");
+        let at: i64 = r.get(2)?;
+        parts.entry(key).or_default().push((at, id));
     }
-    *start = Some(first(end)?.map_or(end, |at| at.div_euclid(w) * w));
-    Ok(Some(groups.into_values().collect()))
+
+    let mut groups: Vec<(i64, Vec<i64>, Vec<i64>)> = Vec::new(); // first at, context, ids
+    let mut prior = conn.prepare_cached(before)?;
+    for (key, rows) in parts {
+        if busy.contains(&key) {
+            continue;
+        }
+        let mut context: Vec<i64> = Vec::new();
+        if rows.len() < cfg.batch_size {
+            if !idle && rows[0].0 > old {
+                continue;
+            }
+            let n = cfg.batch_size - rows.len();
+            context = prior
+                .query_map(params![key, rows[0].0, n], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            context.reverse();
+        }
+        let ids = rows.iter().take(cfg.batch_size).map(|r| r.1).collect();
+        groups.push((rows[0].0, context, ids));
+    }
+    groups.sort_by_key(|g| g.0);
+    Ok(groups.into_iter().map(|g| (g.1, g.2)).collect())
+}
+
+/// The rows' records, those of `context` with `"_context": true`.
+fn frame(conn: &Mutex<Connection>, context: &[i64], ids: &[i64]) -> Result<BytesMut> {
+    let conn = conn.lock();
+    let mut st = conn.prepare_cached("SELECT record FROM logs WHERE id = ?1")?;
+    let mut frame = BytesMut::new();
+    for (k, id) in context.iter().chain(ids).enumerate() {
+        // the sink may have pruned it
+        let Some(mut record) = st.query_row([id], |r| r.get::<_, String>(0)).optional()? else {
+            continue;
+        };
+        if k < context.len() {
+            // only an object can carry the mark
+            let Ok(Value::Object(mut m)) = serde_json::from_str(&record) else {
+                continue;
+            };
+            m.insert("_context".into(), Value::Bool(true));
+            record = Value::Object(m).to_string();
+        }
+        frame.extend_from_slice(record.as_bytes());
+        frame.extend_from_slice(b"\n");
+    }
+    Ok(frame)
 }
 
 #[cfg(test)]
@@ -187,8 +227,8 @@ mod tests {
     use std::path::{Path, PathBuf};
     use tokio::task::JoinHandle;
 
-    const T0: i64 = 4_102_444_800_000; // 2100, never due by the clock
-    const W: i64 = 300_000;
+    const T0: i64 = 1_767_225_600_000;
+    const H: i64 = 3_600_000;
 
     #[derive(Default)]
     struct RecordingSink {
@@ -240,6 +280,7 @@ mod tests {
     fn start(
         path: &Path,
         sink: &Arc<RecordingSink>,
+        timeout_secs: u64,
     ) -> (CancellationToken, JoinHandle<Result<()>>) {
         let from = NodeRef::Source {
             name: Arc::from("actors"),
@@ -257,7 +298,8 @@ mod tests {
         let cfg = SqliteConfig {
             path: path.to_path_buf(),
             partition: "actor".into(),
-            window_secs: (W / 1000) as u64,
+            batch_size: 3,
+            timeout_secs,
         };
         let shutdown = CancellationToken::new();
         let h = tokio::spawn(run_consumer(
@@ -297,51 +339,131 @@ mod tests {
         rows.iter().map(|(at, a)| row(*at, a) + "\n").collect()
     }
 
-    #[tokio::test]
-    async fn one_group_per_partition_per_window() {
-        let path = path("groups");
-        insert(
-            &path,
-            &[
-                (T0 + 1, "a"),
-                (T0 + 2, "b"),
-                (T0 + 3, "a"),
-                (T0 + W + 1, "a"),
-                (T0 + 2 * W + 1, "z"),
-            ],
-        );
-        let sink = Arc::new(RecordingSink::default());
-        let (stop, h) = start(&path, &sink);
-        let got = writes(&sink, 3).await;
-        stop.cancel();
-        h.await.unwrap().unwrap();
-        assert_eq!(
-            got,
-            [
-                group(&[(T0 + 1, "a"), (T0 + 3, "a")]),
-                group(&[(T0 + 2, "b")]),
-                group(&[(T0 + W + 1, "a")]),
-            ]
-        );
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    fn context(rows: &[(i64, &str)]) -> String {
+        rows.iter()
+            .map(|(at, a)| format!("{{\"at\":{at},\"actor\":\"{a}\",\"_context\":true}}\n"))
+            .collect()
     }
 
     #[tokio::test]
-    async fn a_late_row_joins_the_next_window() {
-        let path = path("late");
-        insert(&path, &[(T0 + 1, "a"), (T0 + W + 1, "a")]);
+    async fn full_groups_go_and_the_rest_waits() {
+        let path = path("full");
+        let a = [(T0 + 1, "a"), (T0 + 2, "a"), (T0 + 3, "a"), (T0 + 4, "a")];
+        insert(&path, &a);
+        insert(&path, &[(T0 + 5, "b"), (T0 + 6, "b")]);
         let sink = Arc::new(RecordingSink::default());
-        let (stop, h) = start(&path, &sink);
+        let (stop, h) = start(&path, &sink, 3600);
         writes(&sink, 1).await;
-        insert(&path, &[(T0 + 5, "a"), (T0 + 2 * W + 1, "a")]);
+        insert(&path, &[(T0 + 7, "b")]);
         let got = writes(&sink, 2).await;
         stop.cancel();
         h.await.unwrap().unwrap();
         assert_eq!(
             got,
             [
-                group(&[(T0 + 1, "a")]),
-                group(&[(T0 + 5, "a"), (T0 + W + 1, "a")]),
+                group(&a[..3]),
+                group(&[(T0 + 5, "b"), (T0 + 6, "b"), (T0 + 7, "b")]),
+            ]
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn one_group_of_a_value_in_flight() {
+        let path = path("one");
+        let a: Vec<(i64, &str)> = (1..=6).map(|k| (T0 + k, "a")).collect();
+        insert(&path, &a);
+        let down = Arc::new(RecordingSink {
+            down: true,
+            ..Default::default()
+        });
+        let (stop, h) = start(&path, &down, 3600);
+        writes(&down, 1).await;
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let got = down.writes.lock().await.clone();
+        stop.cancel();
+        h.await.unwrap().unwrap();
+        assert!(got.iter().all(|w| *w == group(&a[..3])), "{got:?}");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_quiet_partition_goes_after_timeout_secs() {
+        let path = path("quiet");
+        let a = [(T0 + 1, "a"), (T0 + 2, "a")];
+        let b = [(T0 + H, "b"), (T0 + H, "b"), (T0 + H, "b")];
+        insert(&path, &a);
+        insert(&path, &b);
+        let sink = Arc::new(RecordingSink::default());
+        let (stop, h) = start(&path, &sink, 3600);
+        writes(&sink, 1).await;
+        insert(&path, &[(T0 + H + 1, "b")]);
+        let got = writes(&sink, 2).await;
+        stop.cancel();
+        h.await.unwrap().unwrap();
+        assert_eq!(got, [group(&b), group(&a)]);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn all_goes_when_nothing_is_stored_for_timeout_secs() {
+        let path = path("idle");
+        insert(&path, &[(T0 + 1, "b"), (T0 + 2, "a")]);
+        let sink = Arc::new(RecordingSink::default());
+        let (stop, h) = start(&path, &sink, 1);
+        let got = writes(&sink, 2).await;
+        stop.cancel();
+        h.await.unwrap().unwrap();
+        assert_eq!(got, [group(&[(T0 + 1, "b")]), group(&[(T0 + 2, "a")])]);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_quiet_value_is_topped_up_with_context() {
+        let path = path("context");
+        let a: Vec<(i64, &str)> = (1..=4).map(|k| (T0 + k, "a")).collect();
+        let b = [(T0 + 5, "b")];
+        insert(&path, &a);
+        insert(&path, &b);
+        let sink = Arc::new(RecordingSink::default());
+        let (stop, h) = start(&path, &sink, 1);
+        writes(&sink, 3).await;
+        until(|| emitted(&path) == 5).await;
+        let more = [(T0 + 6, "a"), (T0 + 7, "a"), (T0 + 8, "a")];
+        insert(&path, &more);
+        let got = writes(&sink, 4).await;
+        until(|| emitted(&path) == 8).await;
+        stop.cancel();
+        h.await.unwrap().unwrap();
+        assert_eq!(
+            got,
+            [
+                group(&a[..3]),
+                context(&a[1..3]) + &group(&a[3..]),
+                group(&b),
+                group(&more),
+            ]
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_late_row_is_pending_like_any_other() {
+        let path = path("late");
+        let a = [(T0 + 10, "a"), (T0 + 11, "a"), (T0 + 12, "a")];
+        insert(&path, &a);
+        let sink = Arc::new(RecordingSink::default());
+        let (stop, h) = start(&path, &sink, 3600);
+        writes(&sink, 1).await;
+        insert(&path, &[(T0 + 20, "a"), (T0 + 1, "a"), (T0 + 21, "a")]);
+        let got = writes(&sink, 2).await;
+        stop.cancel();
+        h.await.unwrap().unwrap();
+        assert_eq!(
+            got,
+            [
+                group(&a),
+                group(&[(T0 + 1, "a"), (T0 + 20, "a"), (T0 + 21, "a")]),
             ]
         );
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -350,33 +472,34 @@ mod tests {
     #[tokio::test]
     async fn acked_once_unacked_again_after_restart() {
         let path = path("restart");
-        insert(&path, &[(T0 + 1, "a"), (T0 + 2, "a"), (T0 + W + 1, "b")]);
-        let a = group(&[(T0 + 1, "a"), (T0 + 2, "a")]);
+        let a = [(T0 + 1, "a"), (T0 + 2, "a"), (T0 + 3, "a")];
+        insert(&path, &a);
 
         let down = Arc::new(RecordingSink {
             down: true,
             ..Default::default()
         });
-        let (stop, h) = start(&path, &down);
-        assert_eq!(writes(&down, 1).await[0], a);
+        let (stop, h) = start(&path, &down, 3600);
+        assert_eq!(writes(&down, 1).await[0], group(&a));
         stop.cancel();
         h.await.unwrap().unwrap();
         assert_eq!(emitted(&path), 0);
 
         let sink = Arc::new(RecordingSink::default());
-        let (stop, h) = start(&path, &sink);
-        assert_eq!(writes(&sink, 1).await, [a], "unacked: again");
-        until(|| emitted(&path) == 2).await;
+        let (stop, h) = start(&path, &sink, 3600);
+        assert_eq!(writes(&sink, 1).await, [group(&a)], "unacked: again");
+        until(|| emitted(&path) == 3).await;
         stop.cancel();
         h.await.unwrap().unwrap();
 
-        insert(&path, &[(T0 + 2 * W + 1, "c")]);
+        let b = [(T0 + 4, "b"), (T0 + 5, "b"), (T0 + 6, "b")];
+        insert(&path, &b);
         let sink = Arc::new(RecordingSink::default());
-        let (stop, h) = start(&path, &sink);
+        let (stop, h) = start(&path, &sink, 3600);
         let got = writes(&sink, 1).await;
         stop.cancel();
         h.await.unwrap().unwrap();
-        assert_eq!(got, [group(&[(T0 + W + 1, "b")])], "acked: not again");
+        assert_eq!(got, [group(&b)], "acked: not again");
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

@@ -1,5 +1,5 @@
-# cloud-infra, judge: a model reads each actor's five minutes from logs.sqlite,
-# in batches, and writes a verdict per record; a person reads the ones it
+# cloud-infra, judge: a model reads each actor's latest forty records from
+# logs.sqlite and writes a verdict per new one; a person reads the ones it
 # flagged. One worker, so an actor's records reach the model together.
 runtime:
   workers: 1
@@ -12,9 +12,13 @@ sources:
     type: sqlite
     path: logs.sqlite
     partition: actor
-    window_secs: 300
+    batch_size: 40
+    timeout_secs: 3600
 
 plugins:
+  fresh:
+    module_type: rust
+    path: fresh
   flagged:
     module_type: rust
     path: ../../examples/inference-local/flagged
@@ -27,8 +31,7 @@ inference:
     prompt_file: judge.md
     schema_file: judge.schema.json
     group_by: [_norm.org, _norm.actor]
-    batch: 16
-    batch_bytes: 16000
+    batch_bytes: 48000
     max_tokens: 200
     temperature: 0.7
     timeout_ms: 90000
@@ -54,6 +57,8 @@ dag:
   - from: { kind: source, name: actors }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
+    to: [{ kind: plugin, name: fresh }]
+  - from: { kind: plugin, name: fresh }
     to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]
   - from: { kind: plugin, name: flagged }
     to: [{ kind: sink, name: alerts }]

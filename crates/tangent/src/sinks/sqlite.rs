@@ -93,7 +93,7 @@ impl Sink for SqliteSink {
                     continue;
                 }
             };
-            // a time ahead of the clock would hold back every window after it
+            // a time ahead of the clock would make every partition look due
             let at = partition::time_of(&lv, self.time.as_deref()).map_or(now, |t| t.min(now));
             let mut row = vec![
                 Value::Integer(at),

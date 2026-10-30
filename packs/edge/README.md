@@ -31,7 +31,7 @@ target, and the laptop's user as the org. **enrich** answers for any host the
 process connects to. **facts** holds a profile of the laptop: which tools the
 developer uses, which publishers' extensions, which paths hold credentials.
 Every record is kept in `logs.sqlite`, and the judge reads a process tree's
-five minutes at a time, as it reads an actor's elsewhere.
+records forty at a time, as it reads an actor's elsewhere.
 
 ## What it needs
 
