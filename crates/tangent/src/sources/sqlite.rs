@@ -14,9 +14,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
 use crate::sinks::sqlite::open;
+use crate::state::now_ms;
 use crate::worker::Ack;
 
-/// Marks a group's rows emitted once the DAG is done with them.
+/// Sets a group's rows' emitted to the time the DAG is done with them.
 struct Emitted {
     conn: Arc<Mutex<Connection>>,
     table: Arc<str>,
@@ -38,10 +39,12 @@ fn mark(conn: &Mutex<Connection>, table: &str, ids: &[i64]) -> Result<()> {
     let mut conn = conn.lock();
     let tx = conn.transaction()?;
     {
-        let mut st =
-            tx.prepare_cached(&format!("UPDATE \"{table}\" SET emitted = 1 WHERE id = ?1"))?;
+        let mut st = tx.prepare_cached(&format!(
+            "UPDATE \"{table}\" SET emitted = ?1 WHERE id = ?2"
+        ))?;
+        let now = now_ms() as i64;
         for id in ids {
-            st.execute([id])?;
+            st.execute([now, *id])?;
         }
     }
     tx.commit()?;
@@ -61,19 +64,23 @@ pub async fn run_consumer(
     let conn = Arc::new(Mutex::new(open(&cfg.path, &cfg.table, &[])?));
     let table: Arc<str> = Arc::from(cfg.table.as_str());
     let read = format!(
-        "SELECT id, \"{p}\", at FROM \"{table}\" WHERE emitted = 0 ORDER BY at, id",
+        "SELECT id, \"{p}\", at FROM \"{table}\" WHERE emitted IS NULL ORDER BY at, id",
         p = cfg.partition
     );
     let before = format!(
         "SELECT id FROM \"{table}\" INDEXED BY \"{table}_{p}\" WHERE \"{p}\" = ?1 AND at <= ?2
-        AND emitted = 1 ORDER BY at DESC, id DESC LIMIT ?3",
+        AND emitted IS NOT NULL ORDER BY at DESC, id DESC LIMIT ?3",
         p = cfg.partition
     );
     let from = NodeRef::Source {
         name: Arc::clone(&name),
     };
     let (tx, mut rx) = mpsc::unbounded_channel::<Vec<i64>>();
-    let mut stored = (None, Instant::now()); // newest id, seen since
+    let mut stored = Stored {
+        id: 0,
+        at: None,
+        since: Instant::now(),
+    };
     let mut sent: HashSet<i64> = HashSet::new(); // rows of unacked groups
     let mut unacked = 0usize;
     loop {
@@ -123,6 +130,13 @@ pub async fn run_consumer(
     Ok(())
 }
 
+/// The newest id and time stored, and since when.
+struct Stored {
+    id: i64,
+    at: Option<i64>,
+    since: Instant,
+}
+
 fn acked(sent: &mut HashSet<i64>, unacked: &mut usize, ids: Vec<i64>) {
     for id in ids {
         sent.remove(&id);
@@ -137,28 +151,27 @@ fn due(
     read: &str,
     before: &str,
     cfg: &SqliteConfig,
-    stored: &mut (Option<i64>, Instant),
+    stored: &mut Stored,
     sent: &HashSet<i64>,
 ) -> Result<Vec<(Vec<i64>, Vec<i64>)>> {
     let conn = conn.lock();
-    let t = &cfg.table;
-    let last: Option<i64> =
-        conn.query_row(&format!("SELECT max(id) FROM \"{t}\""), [], |r| r.get(0))?;
-    if last != stored.0 {
-        *stored = (last, Instant::now());
-    }
-    let idle = stored.1.elapsed() >= Duration::from_secs(cfg.timeout_secs);
-    let newest: Option<i64> = conn.query_row(
+    let (last, at): (Option<i64>, Option<i64>) = conn.query_row(
         &format!(
-            "SELECT max(m) FROM (
-                SELECT max(at) m FROM \"{t}\" WHERE emitted = 0
-                UNION ALL SELECT max(at) FROM \"{t}\" WHERE emitted = 1
-            )"
+            "SELECT max(id), max(at) FROM \"{}\" WHERE id > ?1",
+            cfg.table
         ),
-        [],
-        |r| r.get(0),
+        [stored.id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    let Some(newest) = newest else {
+    if let Some(last) = last {
+        *stored = Stored {
+            id: last,
+            at: stored.at.max(at),
+            since: Instant::now(),
+        };
+    }
+    let idle = stored.since.elapsed() >= Duration::from_secs(cfg.timeout_secs);
+    let Some(newest) = stored.at else {
         return Ok(Vec::new());
     };
     let old = newest - cfg.timeout_secs as i64 * 1000;
@@ -279,9 +292,11 @@ mod tests {
 
     fn emitted(path: &Path) -> i64 {
         let conn = open(path, "logs", &[]).unwrap();
-        conn.query_row("SELECT count(*) FROM logs WHERE emitted = 1", [], |r| {
-            r.get(0)
-        })
+        conn.query_row(
+            "SELECT count(*) FROM logs WHERE emitted IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
         .unwrap()
     }
 
@@ -494,12 +509,20 @@ mod tests {
         h.await.unwrap().unwrap();
         assert_eq!(emitted(&path), 0);
 
+        let t = now_ms() as i64;
         let sink = Arc::new(RecordingSink::default());
         let (stop, h) = start(&path, &sink, 3600);
         assert_eq!(writes(&sink, 1).await, [group(&a)], "unacked: again");
         until(|| emitted(&path) == 3).await;
         stop.cancel();
         h.await.unwrap().unwrap();
+        let (first, last): (i64, i64) = open(&path, "logs", &[])
+            .unwrap()
+            .query_row("SELECT min(emitted), max(emitted) FROM logs", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert!(t <= first && last <= now_ms() as i64, "the ack time");
 
         let b = [(T0 + 4, "b"), (T0 + 5, "b"), (T0 + 6, "b")];
         insert(&path, &b);

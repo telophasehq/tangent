@@ -49,6 +49,9 @@ pub fn open(path: &Path, table: &str, partitions: &[String]) -> Result<Connectio
     if let Some(bad) = partitions.iter().find(|p| !plain(p)) {
         bail!("partition name {bad:?}: letters, digits and _ only");
     }
+    if partitions.iter().any(|p| p == "pending") {
+        bail!("partition name \"pending\" is taken by {table}_pending");
+    }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -60,9 +63,9 @@ pub fn open(path: &Path, table: &str, partitions: &[String]) -> Result<Connectio
             id INTEGER PRIMARY KEY,
             at INTEGER NOT NULL,
             record TEXT NOT NULL,
-            emitted INTEGER NOT NULL DEFAULT 0
+            emitted INTEGER
         );
-        CREATE INDEX IF NOT EXISTS \"{table}_emitted\" ON \"{table}\"(emitted, at);"
+        CREATE INDEX IF NOT EXISTS \"{table}_pending\" ON \"{table}\"(at) WHERE emitted IS NULL;"
     ))?;
     let have: Vec<String> = conn
         .prepare("SELECT name FROM pragma_table_info(?1)")?
