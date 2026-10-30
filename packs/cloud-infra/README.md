@@ -39,6 +39,23 @@ For a hosted one:
 JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY make run
 ```
 
+### Slack
+
+What **flagged** keeps can go to a channel too. Uncomment the `slack` sink and its edge in judge.yaml, and export `SLACK_WEBHOOK_URL`, an incoming webhook's URL:
+
+```yaml
+sinks:
+  slack:
+    type: slack
+    webhook_url: ${SLACK_WEBHOOK_URL}
+    text: "*{_norm.actor}* {_norm.kind} from {_norm.ip}: {judge.why|not judged: judge.error}"
+dag:
+  - from: { kind: plugin, name: flagged }
+    to: [{ kind: sink, name: slack }]
+```
+
+In `text`, `{a.b}` is the record's field (`-` when it has none) and `{x|words y}` the first of them it has, so a record the model could not judge says why. A field's value is escaped: a log line cannot mention anyone, link or start a line in the message. A post that fails is logged and dropped.
+
 ### Getting logs in
 
 Four sources read their APIs directly, with nothing in between. Each wakes up when its credential is exported (the Makefile lists the variables) and, left empty, says so once and stays idle.

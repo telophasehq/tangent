@@ -52,6 +52,10 @@ sinks:
     path: verdicts.ndjson
     compression:
       type: none
+  # slack:
+  #   type: slack
+  #   webhook_url: ${SLACK_WEBHOOK_URL}
+  #   text: "*{_norm.actor}* {_norm.kind} from {_norm.ip}: {judge.why|not judged: judge.error}"
 
 dag:
   - from: { kind: source, name: actors }
@@ -62,3 +66,5 @@ dag:
     to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]
   - from: { kind: plugin, name: flagged }
     to: [{ kind: sink, name: alerts }]
+  # - from: { kind: plugin, name: flagged }
+  #   to: [{ kind: sink, name: slack }]
