@@ -126,11 +126,8 @@ fn acked(sent: &mut HashSet<i64>, unacked: &mut usize, ids: Vec<i64>) {
     *unacked -= 1;
 }
 
-/// Ids, as (context, pending), of each partition value with none in flight:
-/// its first `batch_size` pending rows, oldest first; fewer once the oldest is
-/// `timeout_secs` older than the newest row, or nothing has been stored for
-/// `timeout_secs`, after the value's latest emitted rows before them,
-/// `batch_size` in all. Groups go in order of their first pending row.
+/// Ids as (context, pending) per value with none in flight: its first `batch_size` pending rows,
+/// or at the timeout all of them after its latest emitted rows, `batch_size` in all.
 fn due(
     conn: &Mutex<Connection>,
     read: &str,
