@@ -1,3 +1,4 @@
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,7 +14,8 @@ pub struct NpmRegistryConfig {
     #[serde(default = "default_interval_secs")]
     pub interval_secs: u64,
 
-    pub token: Option<String>,
+    #[serde(skip_serializing)]
+    pub token: Option<SecretString>,
 }
 
 fn default_interval_secs() -> u64 {

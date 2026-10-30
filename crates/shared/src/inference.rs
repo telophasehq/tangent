@@ -1,3 +1,4 @@
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::path::PathBuf;
@@ -22,8 +23,8 @@ pub struct InferenceConfig {
     pub url: String,
 
     /// Bearer token for the `openai` backend, e.g. "${OPENAI_API_KEY}".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub api_key: Option<SecretString>,
 
     /// Model id as the backend knows it, e.g. `mlx-community/GLM-4.7-Flash-4bit`
     /// or `us.anthropic.claude-haiku-4-5-20251001-v1:0`.

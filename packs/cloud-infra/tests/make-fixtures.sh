@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Regenerates tests/*/{input,expected}.json from a handful of cases by running
-# each stage once: raw events → norm → enrich → facts. Run after a
-# plugin changes, read the diff, commit it if it is what you meant.
+# Regenerates tests/*/{input,expected}.json from a handful of cases and the
+# records in tests/*/extra.json by running each stage once: raw events → norm
+# → enrich → facts. Run after a plugin changes, read the diff, commit it if it
+# is what you meant.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=${TANGENT:-tangent}
@@ -14,6 +15,7 @@ events = []
 for c in sys.argv[1:]:
     events += [json.loads(l) for l in open(f"cases/{c}/events.ndjson") if l.strip()]
 events.sort(key=lambda e: e["ts"])
+events += json.load(open("tests/norm/extra.json"))
 json.dump(events, open("tests/norm/input.json", "w"), indent=1)
 print(f"{len(events)} events from {len(sys.argv) - 1} cases")
 PY
@@ -46,5 +48,6 @@ print(f'  {sys.argv[2]}: {len(rows)} records')
 
 stage norm   tests/norm/input.json     tests/norm/expected.json
 stage enrich tests/norm/expected.json  tests/facts/input.json
+python3 -c 'import json; f = "tests/facts/input.json"; json.dump(json.load(open(f)) + json.load(open("tests/facts/extra.json")), open(f, "w"), indent=1)'
 stage facts  tests/facts/input.json    tests/facts/expected.json
 echo "fixtures written; now: make test"

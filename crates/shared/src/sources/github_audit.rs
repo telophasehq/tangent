@@ -1,3 +1,4 @@
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 /// A GitHub organization's audit log, polled from the REST API
@@ -11,8 +12,8 @@ pub struct GithubAuditConfig {
     #[serde(default)]
     pub org: Option<String>,
     /// A token with `read:audit_log`, e.g. `${GITHUB_TOKEN}`.
-    #[serde(default)]
-    pub token: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub token: Option<SecretString>,
     #[serde(default = "default_interval_secs")]
     pub interval_secs: u64,
     /// On first start, how far back to read; afterwards from the cursor.
