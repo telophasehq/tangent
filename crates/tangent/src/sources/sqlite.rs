@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use parking_lot::Mutex;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,12 +14,6 @@ use tokio_util::sync::CancellationToken;
 use crate::router::Router;
 use crate::sinks::sqlite::open;
 use crate::worker::Ack;
-
-/// Up to `batch_records` of one partition value's rows, in `at` order.
-struct Group {
-    ids: Vec<i64>,
-    frame: BytesMut,
-}
 
 /// Marks a group's rows emitted once the DAG is done with them.
 struct Emitted {
@@ -89,21 +83,28 @@ pub async fn run_consumer(
             }
             continue;
         }
-        for g in groups {
+        for ids in groups {
             while unacked >= 16 {
                 tokio::select! {
                     () = shutdown.cancelled() => return Ok(()),
                     Some(ids) = rx.recv() => acked(&mut sent, &mut unacked, ids),
                 }
             }
-            sent.extend(&g.ids);
+            let frame = match frame(&conn, &ids) {
+                Ok(f) => f,
+                Err(e) => {
+                    tracing::warn!("sqlite source {name}: {e:#}");
+                    continue;
+                }
+            };
+            sent.extend(&ids);
             unacked += 1;
             let ack: Arc<dyn Ack> = Arc::new(Emitted {
                 conn: Arc::clone(&conn),
-                ids: g.ids,
+                ids,
                 tx: tx.clone(),
             });
-            router.forward(&from, vec![g.frame], vec![ack]).await?;
+            router.forward(&from, vec![frame], vec![ack]).await?;
         }
         if shutdown.is_cancelled() {
             break;
@@ -119,16 +120,17 @@ fn acked(sent: &mut HashSet<i64>, unacked: &mut usize, ids: Vec<i64>) {
     *unacked -= 1;
 }
 
-/// Each partition value's pending rows, oldest first, in groups of
+/// Ids of each partition value's pending rows, oldest first, in groups of
 /// `batch_records`; the rest too once its oldest is `timeout_secs` older than
-/// the newest row, or nothing has been stored for `timeout_secs`.
+/// the newest row, or nothing has been stored for `timeout_secs`. Groups go in
+/// order of their first row.
 fn due(
     conn: &Mutex<Connection>,
     read: &str,
     cfg: &SqliteConfig,
     stored: &mut (Option<i64>, Instant),
     sent: &HashSet<i64>,
-) -> Result<Vec<Group>> {
+) -> Result<Vec<Vec<i64>>> {
     let conn = conn.lock();
     let last: Option<i64> = conn.query_row("SELECT max(id) FROM logs", [], |r| r.get(0))?;
     if last != stored.0 {
@@ -148,7 +150,7 @@ fn due(
     };
     let old = newest - cfg.timeout_secs as i64 * 1000;
 
-    let mut parts: BTreeMap<String, (i64, Vec<i64>)> = BTreeMap::new(); // oldest at, ids
+    let mut parts: BTreeMap<String, Vec<(i64, i64)>> = BTreeMap::new(); // at, id
     let mut st = conn.prepare_cached(read)?;
     let mut rows = st.query([])?;
     while let Some(r) = rows.next()? {
@@ -160,31 +162,37 @@ fn due(
         let at: i64 = r.get(2)?;
         parts
             .entry(key.unwrap_or_default())
-            .or_insert((at, Vec::new()))
-            .1
-            .push(id);
+            .or_default()
+            .push((at, id));
     }
 
-    let mut get = conn.prepare_cached("SELECT record FROM logs WHERE id = ?1")?;
-    let mut groups = Vec::new();
-    for (at, ids) in parts.into_values() {
-        for chunk in ids.chunks(cfg.batch_records) {
-            if chunk.len() < cfg.batch_records && !idle && at > old {
+    let mut groups: Vec<(i64, Vec<i64>)> = Vec::new(); // first at, ids
+    for rows in parts.into_values() {
+        let oldest = rows[0].0;
+        for chunk in rows.chunks(cfg.batch_records) {
+            if chunk.len() < cfg.batch_records && !idle && oldest > old {
                 break;
             }
-            let mut frame = BytesMut::new();
-            for id in chunk {
-                let record: String = get.query_row([id], |r| r.get(0))?;
-                frame.extend_from_slice(record.as_bytes());
-                frame.extend_from_slice(b"\n");
-            }
-            groups.push(Group {
-                ids: chunk.to_vec(),
-                frame,
-            });
+            groups.push((chunk[0].0, chunk.iter().map(|r| r.1).collect()));
         }
     }
-    Ok(groups)
+    groups.sort_by_key(|g| g.0);
+    Ok(groups.into_iter().map(|g| g.1).collect())
+}
+
+fn frame(conn: &Mutex<Connection>, ids: &[i64]) -> Result<BytesMut> {
+    let conn = conn.lock();
+    let mut st = conn.prepare_cached("SELECT record FROM logs WHERE id = ?1")?;
+    let mut frame = BytesMut::new();
+    for id in ids {
+        // the sink may have pruned it
+        let Some(record) = st.query_row([id], |r| r.get::<_, String>(0)).optional()? else {
+            continue;
+        };
+        frame.extend_from_slice(record.as_bytes());
+        frame.extend_from_slice(b"\n");
+    }
+    Ok(frame)
 }
 
 #[cfg(test)]
@@ -351,13 +359,13 @@ mod tests {
     #[tokio::test]
     async fn all_goes_when_nothing_is_stored_for_timeout_secs() {
         let path = path("idle");
-        insert(&path, &[(T0 + 1, "a"), (T0 + 2, "b")]);
+        insert(&path, &[(T0 + 1, "b"), (T0 + 2, "a")]);
         let sink = Arc::new(RecordingSink::default());
         let (stop, h) = start(&path, &sink, 1);
         let got = writes(&sink, 2).await;
         stop.cancel();
         h.await.unwrap().unwrap();
-        assert_eq!(got, [group(&[(T0 + 1, "a")]), group(&[(T0 + 2, "b")])]);
+        assert_eq!(got, [group(&[(T0 + 1, "b")]), group(&[(T0 + 2, "a")])]);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
