@@ -28,6 +28,7 @@ impl DagRuntime {
         cfg: Config,
         cfg_path: &Path,
         shutdown: CancellationToken,
+        stop_models: CancellationToken,
     ) -> anyhow::Result<Self> {
         let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
         let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
@@ -118,6 +119,7 @@ impl DagRuntime {
                 Arc::clone(&router),
                 cfg.runtime.partition.clone(),
                 Arc::clone(&store),
+                stop_models,
             )
             .await?,
         );
@@ -180,8 +182,10 @@ impl DagRuntime {
         }
 
         // Nothing new comes in now, but records already handed to a worker
-        // are still on their way through the DAG, a model call included.
-        // Wait for the DAG to go quiet, then take the workers down.
+        // are still on their way through the DAG. After a signal the model
+        // calls have ended, and records that were waiting on one go to no
+        // sink and are not acked; a --once run waits for its calls. Wait for
+        // the DAG to go quiet, then take the workers down.
         tracing::info!("draining workers...");
         let quiet = timeout(worker_timeout, async {
             while router.in_flight() > 0 {
