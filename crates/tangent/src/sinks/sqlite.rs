@@ -7,7 +7,6 @@ use rusqlite::{params_from_iter, Connection};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tangent_shared::runtime::PartitionConfig;
 use tangent_shared::sinks::sqlite::SqliteConfig;
 
 use crate::inference::lines;
@@ -22,7 +21,7 @@ pub struct SqliteSink {
     insert: String,
     time: Option<String>,
     retain_ms: i64,
-    partitions: Vec<PartitionConfig>,
+    partitions: Vec<Vec<String>>,
     pruned: Mutex<Option<Instant>>,
 }
 
@@ -37,16 +36,7 @@ impl SqliteSink {
             insert: format!("INSERT INTO logs (at, record{cols}) VALUES (?1, ?2{params})"),
             time: cfg.time.clone(),
             retain_ms: cfg.retain_secs as i64 * 1000,
-            partitions: cfg
-                .partitions
-                .values()
-                .map(|fields| PartitionConfig {
-                    key: fields.clone(),
-                    separator: "|".into(),
-                    retain_ms: None,
-                    time: None,
-                })
-                .collect(),
+            partitions: cfg.partitions.values().cloned().collect(),
             pruned: Mutex::new(None),
         }))
     }
@@ -109,9 +99,17 @@ impl Sink for SqliteSink {
                 Value::Integer(at),
                 Value::Text(String::from_utf8_lossy(line).into_owned()),
             ];
-            for p in &self.partitions {
-                let key = partition::key_of_view(&lv, p).map(|k| k.to_string());
-                row.push(Value::Text(key.unwrap_or_default()));
+            for fields in &self.partitions {
+                let key: Vec<String> = fields
+                    .iter()
+                    .map(|f| {
+                        lv.lookup(f)
+                            .and_then(JsonLogView::to_scalar)
+                            .map(partition::scalar_text)
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                row.push(Value::Text(key.join("|")));
             }
             rows.push(row);
         }
@@ -128,10 +126,14 @@ impl Sink for SqliteSink {
                 st.execute(params_from_iter(row))?;
             }
         }
-        // relative to the data, so a replay of old logs is kept
+        // relative to the data, so a replay is kept; through the (emitted, at) index
         if prune {
             tx.execute(
-                "DELETE FROM logs WHERE at < (SELECT max(at) FROM logs) - ?1",
+                "DELETE FROM logs WHERE emitted IN (0, 1) AND at < (
+                    SELECT max(m) FROM (
+                        SELECT max(at) m FROM logs WHERE emitted = 0
+                        UNION ALL SELECT max(at) FROM logs WHERE emitted = 1
+                    )) - ?1",
                 [self.retain_ms],
             )?;
         }
@@ -185,7 +187,7 @@ mod tests {
         .unwrap();
         let first = r#"{"ts":"2026-10-20T13:00:00Z","_norm":{"org":"acme","actor":"ann"}}"#;
         sink.write(write(&format!(
-            "{first}\n{{\"_norm\":{{\"actor\":\"bob\"}}}}\n"
+            "{first}\n{{\"_norm\":{{\"actor\":\"bob\"}}}}\n{{}}\n"
         )))
         .await
         .unwrap();
@@ -198,7 +200,7 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].0, 1_792_501_200_000);
         assert_eq!(rows[0].1, first);
         assert_eq!(
@@ -206,6 +208,7 @@ mod tests {
             ("acme", "acme|ann")
         );
         assert_eq!((rows[1].2.as_str(), rows[1].3.as_str()), ("", "|bob"));
+        assert_eq!((rows[2].2.as_str(), rows[2].3.as_str()), ("", "|"));
         assert!(rows[1].0 > rows[0].0, "arrival time without a ts");
         let _ = std::fs::remove_dir_all(dir);
     }
