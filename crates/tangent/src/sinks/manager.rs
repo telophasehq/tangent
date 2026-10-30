@@ -14,6 +14,7 @@ use tokio::time::{sleep, Instant};
 use crate::sinks::blackhole;
 use crate::sinks::file;
 use crate::sinks::s3::S3SinkItem;
+use crate::sinks::sqlite;
 use crate::INFLIGHT;
 use crate::{
     sinks::{s3, wal},
@@ -97,6 +98,10 @@ impl SinkManager {
                 SinkKind::Blackhole(_) => {
                     let bh = blackhole::BlackholeSink::new();
                     sinks.insert(Arc::clone(&name), SinkEntry::Other { sink: bh });
+                }
+                SinkKind::Sqlite(sq) => {
+                    let sink = sqlite::SqliteSink::new(sq)?;
+                    sinks.insert(Arc::clone(name), SinkEntry::Other { sink });
                 }
             }
         }

@@ -1,0 +1,23 @@
+{
+  "title": "Verdict",
+  "description": "A pass is the flag alone; a flag says why.",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "flag": { "type": "boolean", "const": false }
+      },
+      "required": ["flag"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "flag": { "type": "boolean", "const": true },
+        "why": { "type": "string", "maxLength": 400 }
+      },
+      "required": ["flag", "why"],
+      "additionalProperties": false
+    }
+  ]
+}

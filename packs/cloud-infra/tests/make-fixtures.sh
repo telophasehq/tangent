@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # Regenerates tests/*/{input,expected}.json from a handful of cases by running
-# each stage once: raw events → norm → enrich → gate → window. Run after a
+# each stage once: raw events → norm → enrich → facts. Run after a
 # plugin changes, read the diff, commit it if it is what you meant.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=${TANGENT:-tangent}
-export JUDGE_URL=${JUDGE_URL:-http://localhost:8080/v1} JUDGE_MODEL=${JUDGE_MODEL:-stub} JUDGE_API_KEY=${JUDGE_API_KEY:-none}
 CASES="cloud/root-console-login cloud/cloudtrail-stop-logging identity/impossible-travel supply-chain/ci-action-tags-retargeted
-       vendor/platform-breach-env-secrets-reused negative/oncall-3am-login negative/scanner-action-usual-run"
+       vendor/platform-breach-env-secrets-reused negative/oncall-3am-login negative/scanner-action-usual-run data/gmail-forwarding-rule"
 
 python3 - $CASES <<'PY'
 import json, sys
@@ -24,7 +23,7 @@ stage() {  # name  input  output
   python3 - "$1" "$2" <<'PY'
 import sys, yaml
 name, inp = sys.argv[1], sys.argv[2]
-cfg = yaml.safe_load(open("tangent.yaml"))
+cfg = yaml.safe_load(open("ingest.yaml"))
 plugin = cfg["plugins"][name]
 plugin["tests"] = [{"input": inp, "expected": ".empty.json"}]
 stage = {"runtime": cfg["runtime"], "plugins": {name: plugin},
@@ -46,8 +45,6 @@ print(f'  {sys.argv[2]}: {len(rows)} records')
 }
 
 stage norm   tests/norm/input.json     tests/norm/expected.json
-stage enrich tests/norm/expected.json  tests/gate/input.json
-stage gate   tests/gate/input.json     tests/gate/expected.json
-cp tests/gate/expected.json tests/window/input.json
-stage window tests/window/input.json   tests/window/expected.json
+stage enrich tests/norm/expected.json  tests/facts/input.json
+stage facts  tests/facts/input.json    tests/facts/expected.json
 echo "fixtures written; now: make test"

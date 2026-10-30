@@ -1,10 +1,9 @@
 TANGENT ?= tangent
 
-# The judge: any OpenAI-compatible endpoint. These defaults are a local model
-# (mlx_lm.server or llama-server on :8080); for a hosted one, for example
+# The judge: any OpenAI-compatible endpoint, a local model on :8080 by default. A hosted one:
 #   JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY make run
 JUDGE_URL ?= http://localhost:8080/v1
-JUDGE_MODEL ?= mlx-community/GLM-4.7-Flash-4bit
+JUDGE_MODEL ?= glm-4.7-flash
 JUDGE_API_KEY ?= none
 export JUDGE_URL JUDGE_MODEL JUDGE_API_KEY
 
@@ -27,12 +26,14 @@ setup:
 	./setup.sh
 
 compile: setup
-	$(TANGENT) plugin compile --config tangent.yaml
+	$(TANGENT) plugin compile --config ingest.yaml
+	$(TANGENT) plugin compile --config judge.yaml
 
 test: compile
-	$(TANGENT) plugin test --config tangent.yaml
+	$(TANGENT) plugin test --config ingest.yaml
 
+# Two processes over one logs.sqlite, so ingest never waits on the model.
 run: compile
-	$(TANGENT) run --config tangent.yaml
+	$(TANGENT) run --config judge.yaml & $(TANGENT) run --config ingest.yaml
 
 .PHONY: setup compile test run

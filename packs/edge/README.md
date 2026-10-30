@@ -10,7 +10,7 @@ built yet; this is the plan, so the shape is on record.
 process executions and file opens as JSON with nothing to install:
 
 ```bash
-sudo eslogger exec open | tangent run --config tangent.yaml
+sudo eslogger exec open | tangent run --config ingest.yaml
 ```
 
 That is enough for the paths that matter:
@@ -25,13 +25,13 @@ That is enough for the paths that matter:
 
 ## The pipeline
 
-The same four stages. **norm** turns `eslogger` records into `_norm` with the
+The same stages. **norm** turns `eslogger` records into `_norm` with the
 process tree as the actor (`npm → node → curl`), the file or host as the
 target, and the laptop's user as the org. **enrich** answers for any host the
-process connects to. **gate** holds a profile of the laptop: which tools the
+process connects to. **facts** holds a profile of the laptop: which tools the
 developer uses, which publishers' extensions, which paths hold credentials.
-**window** is the last minutes of the process tree. The judge reads what it
-reads elsewhere: a short sequence with context.
+Every record is kept in `logs.sqlite`, and the judge reads a process tree's
+records forty at a time, as it reads an actor's elsewhere.
 
 ## What it needs
 

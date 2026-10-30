@@ -1,0 +1,63 @@
+# app-log, judge: cloud-infra's judge, over each customer's actors.
+runtime:
+  workers: 1
+  plugins_path: plugins/
+  state:
+    backend: lru
+
+sources:
+  actors:
+    type: sqlite
+    path: logs.sqlite
+    table: logs
+    partition: actor
+    batch_size: 40
+    timeout_secs: 3600
+
+plugins:
+  fresh:
+    module_type: rust
+    path: ../cloud-infra/fresh
+  flagged:
+    module_type: rust
+    path: ../../examples/inference-local/flagged
+
+inference:
+  judge:
+    url: ${JUDGE_URL}
+    model: ${JUDGE_MODEL}
+    api_key: ${JUDGE_API_KEY}
+    prompt_file: ../cloud-infra/judge.md
+    schema_file: ../cloud-infra/judge.schema.json
+    group_by: [_norm.org, _norm.actor]
+    batch_bytes: 48000
+    max_tokens: 200
+    temperature: 0.7
+    timeout_ms: 90000
+    concurrency: 4
+    extra:
+      top_p: 0.95
+      chat_template_kwargs:
+        enable_thinking: false
+
+sinks:
+  alerts:
+    type: file
+    path: alerts.ndjson
+    compression:
+      type: none
+  verdicts:
+    type: file
+    path: verdicts.ndjson
+    compression:
+      type: none
+
+dag:
+  - from: { kind: source, name: actors }
+    to: [{ kind: inference, name: judge }]
+  - from: { kind: inference, name: judge }
+    to: [{ kind: plugin, name: fresh }]
+  - from: { kind: plugin, name: fresh }
+    to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]
+  - from: { kind: plugin, name: flagged }
+    to: [{ kind: sink, name: alerts }]

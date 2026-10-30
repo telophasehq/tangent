@@ -7,10 +7,10 @@ Nothing leaves the box.
 events ──▶ judge (inference: adds judge) ──▶ flagged (plugin: keeps judge.flag) ──▶ flagged.ndjson
 ```
 
-The `judge` node sends each record to a local OpenAI-compatible server with
-[judge.md](judge.md) as the system prompt and adds the model's JSON reply to
-the record as `judge` (the node's name). That is all an
-inference node does: it adds and forwards, it never drops. The
+The `judge` node sends the records it is handed, one per line, to a local
+OpenAI-compatible server with [judge.md](judge.md) as the system prompt and
+adds the model's answer for each to the record as `judge` (the node's name).
+That is all an inference node does: it adds and forwards, it never drops. The
 [flagged](flagged/src/lib.rs) plugin is the filter — its `probe()` selects
 records with `judge.flag == true`, or with `judge.error` (the judge could not
 read the reply, so a person should), and its body passes them through
@@ -23,6 +23,7 @@ inference:
     url: http://localhost:8080/v1
     model: mlx-community/GLM-4.7-Flash-4bit
     prompt_file: judge.md
+    batch_bytes: 4000
     concurrency: 8
     max_tokens: 300
     extra:
@@ -53,11 +54,11 @@ ollama serve
 `chat_template_kwargs.enable_thinking: false` is understood by mlx_lm and
 llama-server; without it a reasoning model spends its whole token budget
 thinking and a verdict takes minutes instead of seconds. Ollama ignores it.
-`concurrency: 8` matters even on a laptop: mlx_lm.server batches concurrent
-decodes, and on an M4 Max eight in flight finish about four times faster than
-one at a time (llama-server needs `--parallel 8` for the same; Ollama,
-`OLLAMA_NUM_PARALLEL`). `max_tokens: 300` bounds the occasional runaway reply,
-which otherwise runs to the cap and costs half a minute. See
+`batch_bytes: 4000` keeps a request to about twenty of these events, so its
+reply comes back within `timeout_ms`; `concurrency: 8` runs several such
+requests at once, and mlx_lm.server batches their decodes (llama-server needs
+`--parallel 8` for the same; Ollama, `OLLAMA_NUM_PARALLEL`). `max_tokens: 300`
+is per record and bounds the occasional runaway reply. See
 [../inference-bedrock](../inference-bedrock) for the same pipeline on a hosted
 model.
 
@@ -80,8 +81,7 @@ cat flagged.ndjson
 `flagged.ndjson`, each with the model's one-line summary and reasoning; the
 scanner probe, the deploy and the finished step pass quietly. A small model may
 also flag Okta's 429 rate limit or a routine step on some runs, which is what
-the prompt's "do not flag" list is there to tune. With thinking off, GLM-4.7-Flash takes about 0.9 s per
-verdict on an M4 Max, and with eight in flight the pipeline does 3-4 events/s.
+the prompt's "do not flag" list is there to tune.
 
 When the model cannot be reached or its reply cannot be read, the record still
 goes on with `{"error": ...}` as `judge`; the plugin keeps those too, so

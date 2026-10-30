@@ -1,14 +1,13 @@
 # app-log
 
 Your product's logs, judged per customer. The same pipeline as
-[cloud-infra](../cloud-infra), partitioned differently: an application's audit
-log and an AI agent's logs carry a customer's tenant id, and that is the
-partition. Each customer gets their own history, their own window, their own
-once-an-hour gate.
+[cloud-infra](../cloud-infra), with a different org: an application's audit
+log and an AI agent's logs carry a customer's tenant id, and that is the org.
+Each customer's actors are kept and judged apart, forty records at a time.
 
 ```
-app audit log, agent logs ──▶ norm ──▶ enrich ──▶ gate ──▶ window ──▶ judge ──▶ alerts.ndjson
-                                 (partition = the customer's tenant id)
+app audit log, agent logs ──▶ norm ──▶ enrich ──▶ facts ──▶ logs.sqlite ──▶ actors ──▶ judge ──▶ alerts.ndjson
+                                 (org = the customer's tenant id)
 ```
 
 The plugins are cloud-infra's, referenced by path; nothing is duplicated. The
@@ -25,11 +24,10 @@ scanner at the public endpoint, the vendor's 429s, the top-of-hour fan-out.
 Runs today with one profile for every customer, which is wrong in principle
 and fine for a first customer. What this pack still needs:
 
-- **Per-customer profiles.** The gate's facts (members, keys and their
+- **Per-customer profiles.** The profile's facts (members, keys and their
   networks, hosts, sensitive assets) are the customer's, not yours. They
-  belong in the customer's partition as state rows written at onboarding and
-  read by the gate with the same `get` it uses now, so a plugin never has to
-  know which customer it is serving.
+  need one profile per org, written at onboarding as `profile/<org>.yaml`
+  and picked by `facts` from the record's `_norm.org`.
 - **Direct sources** for the product's log stores, the same work as
   cloud-infra's.
 
