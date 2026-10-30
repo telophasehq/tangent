@@ -563,6 +563,24 @@ pub(crate) mod stub {
         (url, seen)
     }
 
+    /// A model that never answers: its url, and how many requests it took.
+    pub async fn silent() -> (String, Arc<AtomicUsize>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/v1", listener.local_addr().unwrap());
+        let taken = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&taken);
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                count.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let mut tmp = [0u8; 4096];
+                    while sock.read(&mut tmp).await.unwrap_or(0) > 0 {}
+                });
+            }
+        });
+        (url, taken)
+    }
+
     /// A message's text: a string, or a list of text parts.
     pub fn text(content: &serde_json::Value) -> String {
         match content {

@@ -17,6 +17,7 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::JoinHandle;
 use tokio::time::{self, Instant as TokioInstant};
+use tokio_util::sync::CancellationToken;
 use wasmtime::component::{Component, Resource};
 
 use crate::inference::{lines, InferenceNode};
@@ -182,6 +183,8 @@ pub struct Worker {
     store: Arc<dyn StateStore>,
     /// Breaks ties between records of the same millisecond in retained keys.
     seq: u32,
+    /// Cancelled by a signal: model calls end, and their groups go nowhere.
+    stop: CancellationToken,
 }
 
 /// A record and the partition it resolves to now, from its own fields;
@@ -268,7 +271,6 @@ impl Worker {
 
     pub async fn run(mut self) -> Result<()> {
         let mut batch = Vec::<Record>::new();
-        let mut acks: Vec<Arc<dyn Ack>> = Vec::with_capacity(1024);
         let mut total_size = 0usize;
 
         let mut deadline = TokioInstant::now() + self.batch_max_age;
@@ -297,21 +299,18 @@ impl Worker {
             match next {
                 Next::Closed => {
                     if !batch.is_empty() {
-                        let _ = self
-                            .flush_batch(&mut batch, &mut acks, &mut total_size)
-                            .await;
+                        let _ = self.flush_batch(&mut batch, &mut total_size).await;
                     }
                     break;
                 }
                 Next::Tick => {
                     if !batch.is_empty() {
-                        self.flush_batch(&mut batch, &mut acks, &mut total_size)
-                            .await?;
+                        self.flush_batch(&mut batch, &mut total_size).await?;
                     }
                     deadline = TokioInstant::now() + self.batch_max_age;
                     sleeper.as_mut().reset(deadline);
                 }
-                Next::Record(mut rec) => {
+                Next::Record(rec) => {
                     if batch.is_empty() {
                         deadline = TokioInstant::now() + self.batch_max_age;
                         sleeper.as_mut().reset(deadline);
@@ -320,25 +319,18 @@ impl Worker {
                     let payload_len = rec.payload.size();
 
                     if total_size + payload_len > self.batch_max_size {
-                        self.flush_batch(&mut batch, &mut acks, &mut total_size)
-                            .await?;
+                        self.flush_batch(&mut batch, &mut total_size).await?;
                         deadline = TokioInstant::now() + self.batch_max_age;
                         sleeper.as_mut().reset(deadline);
                     }
 
                     if payload_len > self.batch_max_size && batch.is_empty() {
-                        let mut single_ack: Vec<Arc<dyn Ack>> =
-                            rec.ack.take().into_iter().collect();
                         let mut single = vec![rec];
-                        self.flush_batch(&mut single, &mut single_ack, &mut total_size)
-                            .await?;
+                        self.flush_batch(&mut single, &mut total_size).await?;
                         deadline = TokioInstant::now() + self.batch_max_age;
                         sleeper.as_mut().reset(deadline);
                     } else {
                         total_size += payload_len;
-                        if let Some(a) = rec.ack.take() {
-                            acks.push(a);
-                        }
                         batch.push(rec);
                     }
                 }
@@ -374,14 +366,14 @@ impl Worker {
             .collect()
     }
 
-    /// A batch through the DAG. Each node's records go to each of its
-    /// outputs: a plugin or a model turns them into the next node's records,
-    /// a sink's share is collected and delivered when the walk is done, so
-    /// the batch's acks cover every delivery.
+    /// A batch through the DAG, a group at a time (the records that came in
+    /// from one node). Each node's records go to each of its outputs: a
+    /// plugin or a model turns them into the next node's records, a sink's
+    /// share is collected and delivered when the group's walk is done, so the
+    /// group's acks cover every delivery.
     pub async fn flush_batch(
         &mut self,
         batch: &mut Vec<Record>,
-        acks: &mut Vec<Arc<dyn Ack>>,
         total_size: &mut usize,
     ) -> Result<()> {
         if batch.is_empty() {
@@ -390,10 +382,10 @@ impl Worker {
         }
         let _done = Done(Arc::clone(&self.in_flight), batch.len());
 
-        // Parsed, and grouped by the source each record came in from.
+        // Parsed, and grouped with their acks by the source they came in from.
         let unpartitioned: Arc<str> = Arc::from("");
-        let mut entries: Vec<(NodeRef, Views)> = Vec::new();
-        for Record { payload, from, .. } in batch.drain(..) {
+        let mut entries: Vec<(NodeRef, Views, Vec<_>)> = Vec::new();
+        for Record { payload, from, ack } in batch.drain(..) {
             let (lv, part) = match payload {
                 Payload::Parsed { view, partition } => (view, partition),
                 Payload::Raw(b) => {
@@ -415,121 +407,126 @@ impl Worker {
                     tracing::warn!(error = %e, partition = %part, "retaining record failed");
                 }
             }
-            match entries.iter_mut().find(|(node, _)| *node == from) {
-                Some((_, views)) => views.push((lv, part)),
-                None => entries.push((from, vec![(lv, part)])),
+            match entries.iter_mut().find(|(node, _, _)| *node == from) {
+                Some((_, views, acks)) => {
+                    views.push((lv, part));
+                    acks.extend(ack);
+                }
+                None => entries.push((from, vec![(lv, part)], ack.into_iter().collect())),
             }
         }
-        let mut queue: VecDeque<(NodeRef, Hop)> = entries
-            .into_iter()
-            .map(|(node, views)| (node, Hop::Views(views)))
-            .collect();
 
         let router = Arc::clone(&self.router);
-        let mut deliveries: Vec<Delivery> = Vec::new();
-        let mut handoffs: Vec<(NodeRef, JsonLogView, Arc<str>)> = Vec::new();
         let retaining = self.retaining();
-        while let Some((node, hop)) = queue.pop_front() {
-            let outs = router.outs(&node);
-            let sinks: Vec<(Arc<str>, Option<Arc<str>>)> = outs
-                .iter()
-                .filter_map(|to| match to {
-                    NodeRef::Sink { name, key_prefix } => {
-                        Some((Arc::clone(name), key_prefix.clone()))
-                    }
-                    _ => None,
-                })
-                .collect();
-            let nodes: Vec<&NodeRef> = outs
-                .iter()
-                .filter(|to| matches!(to, NodeRef::Plugin { .. } | NodeRef::Inference { .. }))
-                .collect();
-            if let Some(bad) = outs.iter().find(|to| matches!(to, NodeRef::Source { .. })) {
-                tracing::warn!(from = ?node, to = ?bad, "a source is not an output; dropping");
-            }
+        'groups: for (from, views, upstream) in entries {
+            let mut queue: VecDeque<(NodeRef, Hop)> = VecDeque::from([(from, Hop::Views(views))]);
+            let mut deliveries: Vec<Delivery> = Vec::new();
+            let mut handoffs: Vec<(NodeRef, JsonLogView, Arc<str>)> = Vec::new();
+            while let Some((node, hop)) = queue.pop_front() {
+                let outs = router.outs(&node);
+                let sinks: Vec<(Arc<str>, Option<Arc<str>>)> = outs
+                    .iter()
+                    .filter_map(|to| match to {
+                        NodeRef::Sink { name, key_prefix } => {
+                            Some((Arc::clone(name), key_prefix.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                let nodes: Vec<&NodeRef> = outs
+                    .iter()
+                    .filter(|to| matches!(to, NodeRef::Plugin { .. } | NodeRef::Inference { .. }))
+                    .collect();
+                if let Some(bad) = outs.iter().find(|to| matches!(to, NodeRef::Source { .. })) {
+                    tracing::warn!(from = ?node, to = ?bad, "a source is not an output; dropping");
+                }
 
-            // Sinks take the node's output as it is: no parse, one copy at
-            // most. Parsed anyway when records are retained and some may have
-            // just entered their partition (their frame had none).
-            if nodes.is_empty() {
-                match hop {
-                    Hop::Frames(frames) => {
-                        if retaining && frames.iter().any(|(p, _)| p.is_empty()) {
-                            self.parse(&frames).await?;
+                // Sinks take the node's output as it is: no parse, one copy at
+                // most. Parsed anyway when records are retained and some may have
+                // just entered their partition (their frame had none).
+                if nodes.is_empty() {
+                    match hop {
+                        Hop::Frames(frames) => {
+                            if retaining && frames.iter().any(|(p, _)| p.is_empty()) {
+                                self.parse(&frames).await?;
+                            }
+                            if !sinks.is_empty() {
+                                deliver(&mut deliveries, sinks, join_frames(frames));
+                            }
                         }
-                        if !sinks.is_empty() {
-                            deliver(&mut deliveries, sinks, join_frames(frames));
+                        Hop::Views(views) => {
+                            if !sinks.is_empty() {
+                                deliver(&mut deliveries, sinks, frame_of(&views));
+                            }
                         }
                     }
-                    Hop::Views(views) => {
-                        if !sinks.is_empty() {
-                            deliver(&mut deliveries, sinks, frame_of(&views));
+                    continue;
+                }
+                if !sinks.is_empty() {
+                    let frame = match &hop {
+                        Hop::Frames(frames) => join_frames(frames.clone()),
+                        Hop::Views(views) => frame_of(views),
+                    };
+                    deliver(&mut deliveries, sinks, frame);
+                }
+
+                // A plugin or a model needs the records: parse now, and a record
+                // whose partition belongs to another worker goes there instead.
+                let views = match hop {
+                    Hop::Views(views) => views,
+                    Hop::Frames(frames) => self.parse(&frames).await?,
+                };
+                let views = self.keep_local(&node, views, &mut handoffs);
+                if views.is_empty() {
+                    continue;
+                }
+                for to in nodes {
+                    let out = match to {
+                        NodeRef::Plugin { name } => self.run_plugin(name, &views).await?,
+                        NodeRef::Inference { name } => {
+                            match run_inference(&self.inference, name, &views, &self.stop).await? {
+                                Some(out) => out,
+                                // stopped: the group goes nowhere and is not acked
+                                None => continue 'groups,
+                            }
                         }
+                        _ => unreachable!("sinks and sources were filtered out"),
+                    };
+                    if !out.is_empty() {
+                        queue.push_back((to.clone(), Hop::Frames(out)));
                     }
                 }
-                continue;
-            }
-            if !sinks.is_empty() {
-                let frame = match &hop {
-                    Hop::Frames(frames) => join_frames(frames.clone()),
-                    Hop::Views(views) => frame_of(views),
-                };
-                deliver(&mut deliveries, sinks, frame);
             }
 
-            // A plugin or a model needs the records: parse now, and a record
-            // whose partition belongs to another worker goes there instead.
-            let views = match hop {
-                Hop::Views(views) => views,
-                Hop::Frames(frames) => self.parse(&frames).await?,
-            };
-            let views = self.keep_local(&node, views, &mut handoffs);
-            if views.is_empty() {
-                continue;
-            }
-            for to in nodes {
-                let out = match to {
-                    NodeRef::Plugin { name } => self.run_plugin(name, &views).await?,
-                    NodeRef::Inference { name } => {
-                        run_inference(&self.inference, name, &views).await?
-                    }
-                    _ => unreachable!("sinks and sources were filtered out"),
-                };
-                if !out.is_empty() {
-                    queue.push_back((to.clone(), Hop::Frames(out)));
+            // The group's acks cover every sink delivery and every record handed
+            // to another worker, whose own walk acks it in turn.
+            let outstanding = deliveries.len() + handoffs.len();
+            if outstanding == 0 {
+                for a in upstream {
+                    let _ = a.ack().await;
                 }
-            }
-        }
-
-        // The batch's acks cover every sink delivery and every record handed
-        // to another worker, whose own walk acks it in turn.
-        let upstream = std::mem::take(acks);
-        let outstanding = deliveries.len() + handoffs.len();
-        if outstanding == 0 {
-            for a in upstream {
-                let _ = a.ack().await;
-            }
-        } else {
-            let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(upstream, outstanding));
-            for (name, key_prefix, frame) in deliveries {
-                router
-                    .sinks()
-                    .enqueue(name, key_prefix, frame, vec![Arc::clone(&shared)])
-                    .await?;
-            }
-            for (from, view, partition) in handoffs {
-                let owner = worker_for(&partition, self.handoffs.len());
-                // Counted until the owner's walk is done with it.
-                self.in_flight.fetch_add(1, Ordering::AcqRel);
-                let rec = Record {
-                    payload: Payload::Parsed { view, partition },
-                    ack: Some(Arc::clone(&shared)),
-                    from,
-                };
-                if self.handoffs[owner].send(rec).is_err() {
-                    self.in_flight.fetch_sub(1, Ordering::AcqRel);
-                    tracing::warn!(worker = owner, "worker is gone; record dropped");
-                    let _ = shared.ack().await;
+            } else {
+                let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(upstream, outstanding));
+                for (name, key_prefix, frame) in deliveries {
+                    router
+                        .sinks()
+                        .enqueue(name, key_prefix, frame, vec![Arc::clone(&shared)])
+                        .await?;
+                }
+                for (from, view, partition) in handoffs {
+                    let owner = worker_for(&partition, self.handoffs.len());
+                    // Counted until the owner's walk is done with it.
+                    self.in_flight.fetch_add(1, Ordering::AcqRel);
+                    let rec = Record {
+                        payload: Payload::Parsed { view, partition },
+                        ack: Some(Arc::clone(&shared)),
+                        from,
+                    };
+                    if self.handoffs[owner].send(rec).is_err() {
+                        self.in_flight.fetch_sub(1, Ordering::AcqRel);
+                        tracing::warn!(worker = owner, "worker is gone; record dropped");
+                        let _ = shared.ack().await;
+                    }
                 }
             }
         }
@@ -646,14 +643,16 @@ impl Worker {
 }
 
 /// `views` through inference node `name`, `concurrency` at a time: every
-/// record comes back annotated, in the order given. A free function rather
-/// than a method: the worker's guest stores are not `Sync`, so a `&Worker`
-/// cannot be held across the model's await.
+/// record comes back annotated, in the order given; none when `stop` ended
+/// the calls. A free function rather than a method: the worker's guest
+/// stores are not `Sync`, so a `&Worker` cannot be held across the model's
+/// await.
 async fn run_inference(
     nodes: &HashMap<Arc<str>, InferenceNode>,
     name: &Arc<str>,
     views: &Views,
-) -> Result<Frames> {
+    stop: &CancellationToken,
+) -> Result<Option<Frames>> {
     let Some(node) = nodes.get(name) else {
         bail!("unknown inference node {name}");
     };
@@ -661,7 +660,10 @@ async fn run_inference(
         .iter()
         .map(|(lv, _)| serde_json::from_str(&lv.to_json()).unwrap_or(serde_json::Value::Null))
         .collect();
-    let annotated = node.annotate_all(records).await;
+    let Some(annotated) = stop.run_until_cancelled(node.annotate_all(records)).await else {
+        tracing::info!(node = %name, records = views.len(), "stopped before the model answered");
+        return Ok(None);
+    };
     // One frame per run of records from the same partition, in order.
     let mut out: Frames = Vec::new();
     for (v, (_, part)) in annotated.into_iter().zip(views) {
@@ -672,7 +674,7 @@ async fn run_inference(
         frame.extend_from_slice(&serde_json::to_vec(&v)?);
         frame.extend_from_slice(b"\n");
     }
-    Ok(out)
+    Ok(Some(out))
 }
 
 pub struct WorkerPool {
@@ -696,6 +698,7 @@ impl WorkerPool {
         router: Arc<Router>,
         partition: Option<PartitionConfig>,
         store: Arc<dyn StateStore>,
+        stop: CancellationToken,
     ) -> anyhow::Result<Self> {
         let mut senders = Vec::with_capacity(size);
         let mut handles = Vec::with_capacity(size);
@@ -763,6 +766,7 @@ impl WorkerPool {
                 handoffs: handoff_tx.clone(),
                 store: Arc::clone(&store),
                 seq: 0,
+                stop: stop.clone(),
             };
             let h = tokio::spawn(async move {
                 if let Err(e) = worker.run().await {
@@ -1007,6 +1011,7 @@ mod tests {
             handoffs: vec![handoff.0],
             store,
             seq: 0,
+            stop: CancellationToken::new(),
         };
         let handle = tokio::spawn(worker.run());
 
@@ -1060,6 +1065,184 @@ mod tests {
             3,
             "every record acked once the sink had it"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A stop ends a call the model never answers, retries and all; none starts after.
+    #[tokio::test]
+    async fn stop_ends_a_hung_call() {
+        let (url, taken) = stub::silent().await;
+        let dir = stub::dir("stop-call");
+        let judge: Arc<str> = Arc::from("judge");
+        let mut cfg = stub::config(&url);
+        cfg.timeout_ms = 600_000;
+        cfg.retries = 2;
+        let mut nodes = HashMap::default();
+        nodes.insert(
+            judge.clone(),
+            InferenceNode::new(judge.clone(), cfg, &dir).unwrap(),
+        );
+        let views: Views = vec![(
+            JsonLogView::from_bytes(BytesMut::from("{\"id\":1}")).unwrap(),
+            Arc::from(""),
+        )];
+        let stop = CancellationToken::new();
+        tokio::spawn({
+            let (stop, taken) = (stop.clone(), Arc::clone(&taken));
+            async move {
+                while taken.load(Ordering::SeqCst) == 0 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                stop.cancel();
+            }
+        });
+        let out = tokio::time::timeout(
+            Duration::from_secs(2),
+            run_inference(&nodes, &judge, &views, &stop),
+        )
+        .await
+        .expect("the stop ends the call");
+        assert!(out.unwrap().is_none());
+        let again = run_inference(&nodes, &judge, &views, &stop).await;
+        assert!(again.unwrap().is_none());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            taken.load(Ordering::SeqCst),
+            1,
+            "nothing asked after the stop"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A group cut off at the model is neither delivered nor acked; another source's is.
+    #[tokio::test]
+    async fn stop_drops_only_the_stopped_group() {
+        let (url, taken) = stub::silent().await;
+        let dir = stub::dir("stop-walk");
+        let judged = NodeRef::Source {
+            name: Arc::from("actors"),
+        };
+        let ingest = NodeRef::Source {
+            name: Arc::from("ingest"),
+        };
+        let judge: Arc<str> = Arc::from("judge");
+        let sink_name: Arc<str> = Arc::from("out");
+        let to_sink = NodeRef::Sink {
+            name: sink_name.clone(),
+            key_prefix: None,
+        };
+        let sink = Arc::new(RecordingSink::default());
+        let sink_manager = Arc::new(SinkManager::for_test(
+            vec![(sink_name.clone(), sink.clone() as Arc<dyn Sink>)],
+            1,
+        ));
+        let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
+        outs.insert(
+            judged.clone(),
+            vec![
+                to_sink.clone(),
+                NodeRef::Inference {
+                    name: judge.clone(),
+                },
+            ],
+        );
+        outs.insert(
+            NodeRef::Inference {
+                name: judge.clone(),
+            },
+            vec![to_sink.clone()],
+        );
+        outs.insert(ingest.clone(), vec![to_sink]);
+        let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
+        let in_flight = router.in_flight_counter();
+        let mut cfg = stub::config(&url);
+        cfg.timeout_ms = 600_000;
+        let mut inference = HashMap::default();
+        inference.insert(
+            judge.clone(),
+            InferenceNode::new(judge.clone(), cfg, &dir).unwrap(),
+        );
+        let (tx, rx) = mpsc::channel(16);
+        let handoff = mpsc::unbounded_channel();
+        let store: Arc<dyn StateStore> =
+            Arc::new(crate::state::lru::LruStore::new(StateConfig::default()).unwrap());
+        let stop = CancellationToken::new();
+        let worker = Worker {
+            id: 0,
+            rx,
+            mappers: Mappers {
+                mappers: Vec::new(),
+            },
+            engine: WasmEngine::new(Arc::clone(&store), true).unwrap(),
+            components: Vec::new(),
+            inference,
+            batch_max_size: 1 << 20,
+            batch_max_age: Duration::from_millis(200),
+            router: Arc::clone(&router),
+            partition: None,
+            in_flight: Arc::clone(&in_flight),
+            handoff_rx: handoff.1,
+            handoffs: vec![handoff.0],
+            store,
+            seq: 0,
+            stop: stop.clone(),
+        };
+        let handle = tokio::spawn(worker.run());
+
+        let judged_ack = Arc::new(CountingAck::default());
+        let ingest_ack = Arc::new(CountingAck::default());
+        let send = |id: usize, from: &NodeRef, ack: &Arc<CountingAck>| {
+            in_flight.fetch_add(1, Ordering::AcqRel);
+            tx.send(Record {
+                payload: Payload::Raw(BytesMut::from(format!("{{\"id\":{id}}}\n").as_str())),
+                ack: Some(ack.clone() as Arc<dyn Ack>),
+                from: from.clone(),
+            })
+        };
+        // one batch: each source's record is its own group
+        send(1, &judged, &judged_ack).await.unwrap();
+        send(10, &ingest, &ingest_ack).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while taken.load(Ordering::SeqCst) == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the model is asked");
+        stop.cancel();
+        send(2, &judged, &judged_ack).await.unwrap();
+        send(11, &ingest, &ingest_ack).await.unwrap();
+        drop(tx);
+        tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("the worker does not wait on the model")
+            .unwrap()
+            .unwrap();
+        assert_eq!(router.in_flight(), 0);
+        drop(router);
+        Arc::try_unwrap(sink_manager)
+            .ok()
+            .expect("sink manager refs")
+            .join()
+            .await
+            .unwrap();
+
+        let ids: Vec<i64> = sink
+            .writes
+            .lock()
+            .await
+            .iter()
+            .flat_map(|w| w.lines())
+            .map(|l| {
+                serde_json::from_str::<Value>(l).unwrap()["id"]
+                    .as_i64()
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(ids, [10, 11]);
+        assert_eq!(ingest_ack.0.load(Ordering::SeqCst), 2);
+        assert_eq!(judged_ack.0.load(Ordering::SeqCst), 0);
+        assert_eq!(taken.load(Ordering::SeqCst), 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1123,6 +1306,7 @@ mod tests {
                     time: None,
                 }),
                 Arc::clone(&store),
+                CancellationToken::new(),
             )
             .await
             .unwrap(),

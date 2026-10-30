@@ -118,6 +118,7 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     tracing::info!(target = "startup", config = ?cfg);
 
     let ingest_shutdown = CancellationToken::new();
+    let stop_models = CancellationToken::new();
 
     info!(
         "Batch size: {} KiB, max age: {:?}",
@@ -125,13 +126,28 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
         cfg.batch_age_ms()
     );
 
-    let dag_runtime = DagRuntime::build(cfg, &config_path, ingest_shutdown.clone()).await?;
+    let dag_runtime = DagRuntime::build(
+        cfg,
+        &config_path,
+        ingest_shutdown.clone(),
+        stop_models.clone(),
+    )
+    .await?;
 
     #[cfg(feature = "alloc-prof")]
     jemalloc_dump("warm");
 
     if !opts.once {
         wait_for_shutdown_signal().await?;
+        stop_models.cancel();
+        // a signal within a second of the first is the same stop
+        tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            if wait_for_shutdown_signal().await.is_ok() {
+                tracing::warn!("second signal; exiting now");
+                std::process::exit(130);
+            }
+        });
     }
 
     #[cfg(feature = "alloc-prof")]
