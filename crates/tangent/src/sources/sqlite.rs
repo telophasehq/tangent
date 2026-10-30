@@ -19,6 +19,7 @@ use crate::worker::Ack;
 /// Marks a group's rows emitted once the DAG is done with them.
 struct Emitted {
     conn: Arc<Mutex<Connection>>,
+    table: Arc<str>,
     ids: Vec<i64>,
     tx: mpsc::UnboundedSender<Vec<i64>>,
 }
@@ -26,18 +27,19 @@ struct Emitted {
 #[async_trait]
 impl Ack for Emitted {
     async fn ack(&self) -> Result<()> {
-        let res = mark(&self.conn, &self.ids);
+        let res = mark(&self.conn, &self.table, &self.ids);
         // rows that could not be marked go again
         let _ = self.tx.send(self.ids.clone());
         res
     }
 }
 
-fn mark(conn: &Mutex<Connection>, ids: &[i64]) -> Result<()> {
+fn mark(conn: &Mutex<Connection>, table: &str, ids: &[i64]) -> Result<()> {
     let mut conn = conn.lock();
     let tx = conn.transaction()?;
     {
-        let mut st = tx.prepare_cached("UPDATE logs SET emitted = 1 WHERE id = ?1")?;
+        let mut st =
+            tx.prepare_cached(&format!("UPDATE \"{table}\" SET emitted = 1 WHERE id = ?1"))?;
         for id in ids {
             st.execute([id])?;
         }
@@ -56,13 +58,14 @@ pub async fn run_consumer(
         bail!("batch_size and timeout_secs must be positive");
     }
     // the sink, maybe another process started later, adds the partition column
-    let conn = Arc::new(Mutex::new(open(&cfg.path, &[])?));
+    let conn = Arc::new(Mutex::new(open(&cfg.path, &cfg.table, &[])?));
+    let table: Arc<str> = Arc::from(cfg.table.as_str());
     let read = format!(
-        "SELECT id, \"{}\", at FROM logs WHERE emitted = 0 ORDER BY at, id",
-        cfg.partition
+        "SELECT id, \"{p}\", at FROM \"{table}\" WHERE emitted = 0 ORDER BY at, id",
+        p = cfg.partition
     );
     let before = format!(
-        "SELECT id FROM logs INDEXED BY \"logs_{p}\" WHERE \"{p}\" = ?1 AND at <= ?2
+        "SELECT id FROM \"{table}\" INDEXED BY \"{table}_{p}\" WHERE \"{p}\" = ?1 AND at <= ?2
         AND emitted = 1 ORDER BY at DESC, id DESC LIMIT ?3",
         p = cfg.partition
     );
@@ -96,7 +99,7 @@ pub async fn run_consumer(
                     Some(ids) = rx.recv() => acked(&mut sent, &mut unacked, ids),
                 }
             }
-            let frame = match frame(&conn, &context, &ids) {
+            let frame = match frame(&conn, &table, &context, &ids) {
                 Ok(f) => f,
                 Err(e) => {
                     tracing::warn!("sqlite source {name}: {e:#}");
@@ -107,6 +110,7 @@ pub async fn run_consumer(
             unacked += 1;
             let ack: Arc<dyn Ack> = Arc::new(Emitted {
                 conn: Arc::clone(&conn),
+                table: Arc::clone(&table),
                 ids,
                 tx: tx.clone(),
             });
@@ -137,16 +141,20 @@ fn due(
     sent: &HashSet<i64>,
 ) -> Result<Vec<(Vec<i64>, Vec<i64>)>> {
     let conn = conn.lock();
-    let last: Option<i64> = conn.query_row("SELECT max(id) FROM logs", [], |r| r.get(0))?;
+    let t = &cfg.table;
+    let last: Option<i64> =
+        conn.query_row(&format!("SELECT max(id) FROM \"{t}\""), [], |r| r.get(0))?;
     if last != stored.0 {
         *stored = (last, Instant::now());
     }
     let idle = stored.1.elapsed() >= Duration::from_secs(cfg.timeout_secs);
     let newest: Option<i64> = conn.query_row(
-        "SELECT max(m) FROM (
-            SELECT max(at) m FROM logs WHERE emitted = 0
-            UNION ALL SELECT max(at) FROM logs WHERE emitted = 1
-        )",
+        &format!(
+            "SELECT max(m) FROM (
+                SELECT max(at) m FROM \"{t}\" WHERE emitted = 0
+                UNION ALL SELECT max(at) FROM \"{t}\" WHERE emitted = 1
+            )"
+        ),
         [],
         |r| r.get(0),
     )?;
@@ -196,9 +204,9 @@ fn due(
 }
 
 /// The rows' records, those of `context` with `"_context": true`.
-fn frame(conn: &Mutex<Connection>, context: &[i64], ids: &[i64]) -> Result<BytesMut> {
+fn frame(conn: &Mutex<Connection>, table: &str, context: &[i64], ids: &[i64]) -> Result<BytesMut> {
     let conn = conn.lock();
-    let mut st = conn.prepare_cached("SELECT record FROM logs WHERE id = ?1")?;
+    let mut st = conn.prepare_cached(&format!("SELECT record FROM \"{table}\" WHERE id = ?1"))?;
     let mut frame = BytesMut::new();
     for (k, id) in context.iter().chain(ids).enumerate() {
         // trimmed meanwhile
@@ -259,7 +267,7 @@ mod tests {
     }
 
     fn insert(path: &Path, rows: &[(i64, &str)]) {
-        let conn = open(path, &["actor".to_string()]).unwrap();
+        let conn = open(path, "logs", &["actor".to_string()]).unwrap();
         for (at, actor) in rows {
             conn.execute(
                 "INSERT INTO logs (at, record, actor) VALUES (?1, ?2, ?3)",
@@ -270,7 +278,7 @@ mod tests {
     }
 
     fn emitted(path: &Path) -> i64 {
-        let conn = open(path, &[]).unwrap();
+        let conn = open(path, "logs", &[]).unwrap();
         conn.query_row("SELECT count(*) FROM logs WHERE emitted = 1", [], |r| {
             r.get(0)
         })
@@ -297,6 +305,7 @@ mod tests {
         let router = Arc::new(Router::new(outs, Arc::new(SinkManager::for_test(sinks, 1))));
         let cfg = SqliteConfig {
             path: path.to_path_buf(),
+            table: "logs".into(),
             partition: "actor".into(),
             batch_size: 3,
             timeout_secs,

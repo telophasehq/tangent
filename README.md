@@ -83,13 +83,14 @@ tangent state --config tangent.yaml sql "select partition, count(*) from state g
 ```
 
 ## Keeping records and reading them back
-A `sqlite` sink keeps every record once, in one table, `logs`, with a column per partition holding its fields' values joined with `|`. A `sqlite` source, in the same process or another, reads one partition back in batches, each of one partition value:
+A `sqlite` sink keeps every record once, in its `table`, with a column per partition holding its fields' values joined with `|`. A `sqlite` source, in the same process or another, reads one partition back in batches, each of one partition value:
 
 ```yaml
 sinks:
   logs:
     type: sqlite
     path: logs.sqlite
+    table: logs
     time: ts               # the record's own time (RFC 3339 or epoch); arrival time without it
     partitions:
       org: [_norm.org]
@@ -99,6 +100,7 @@ sources:
   actors:
     type: sqlite
     path: logs.sqlite
+    table: logs
     partition: actor
     batch_size: 40         # every batch is a partition value's latest 40 records
     timeout_secs: 3600     # send by then even if fewer than 40 are new

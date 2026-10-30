@@ -6,6 +6,8 @@ use std::path::PathBuf;
 pub struct SqliteConfig {
     pub path: PathBuf,
 
+    pub table: String,
+
     #[serde(default)]
     pub time: Option<String>,
 

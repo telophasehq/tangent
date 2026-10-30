@@ -26,24 +26,27 @@ pub struct SqliteSink {
 impl SqliteSink {
     pub fn new(cfg: &SqliteConfig) -> Result<Arc<Self>> {
         let names: Vec<String> = cfg.partitions.keys().cloned().collect();
-        let conn = open(&cfg.path, &names)?;
+        let conn = open(&cfg.path, &cfg.table, &names)?;
         let cols: String = names.iter().map(|n| format!(", \"{n}\"")).collect();
         let params: String = (0..names.len()).map(|i| format!(", ?{}", i + 3)).collect();
         Ok(Arc::new(Self {
             conn: Mutex::new(conn),
-            insert: format!("INSERT INTO logs (at, record{cols}) VALUES (?1, ?2{params})"),
+            insert: format!(
+                "INSERT INTO \"{}\" (at, record{cols}) VALUES (?1, ?2{params})",
+                cfg.table
+            ),
             time: cfg.time.clone(),
             partitions: cfg.partitions.values().cloned().collect(),
         }))
     }
 }
 
-/// The logs table, with a column and an index per partition.
-pub fn open(path: &Path, partitions: &[String]) -> Result<Connection> {
-    if let Some(bad) = partitions
-        .iter()
-        .find(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
-    {
+/// The table, with a column and an index per partition.
+pub fn open(path: &Path, table: &str, partitions: &[String]) -> Result<Connection> {
+    if !plain(table) {
+        bail!("table name {table:?}: letters, digits and _ only");
+    }
+    if let Some(bad) = partitions.iter().find(|p| !plain(p)) {
         bail!("partition name {bad:?}: letters, digits and _ only");
     }
     if let Some(dir) = path.parent() {
@@ -52,28 +55,32 @@ pub fn open(path: &Path, partitions: &[String]) -> Result<Connection> {
     let conn = Connection::open(path).with_context(|| format!("opening {}", path.display()))?;
     conn.busy_timeout(Duration::from_secs(5))?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS logs (
+    conn.execute_batch(&format!(
+        "CREATE TABLE IF NOT EXISTS \"{table}\" (
             id INTEGER PRIMARY KEY,
             at INTEGER NOT NULL,
             record TEXT NOT NULL,
             emitted INTEGER NOT NULL DEFAULT 0
         );
-        CREATE INDEX IF NOT EXISTS logs_emitted ON logs(emitted, at);",
-    )?;
+        CREATE INDEX IF NOT EXISTS \"{table}_emitted\" ON \"{table}\"(emitted, at);"
+    ))?;
     let have: Vec<String> = conn
-        .prepare("SELECT name FROM pragma_table_info('logs')")?
-        .query_map([], |r| r.get(0))?
+        .prepare("SELECT name FROM pragma_table_info(?1)")?
+        .query_map([table], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     for p in partitions {
         if !have.contains(p) {
-            conn.execute_batch(&format!("ALTER TABLE logs ADD COLUMN \"{p}\" TEXT"))?;
+            conn.execute_batch(&format!("ALTER TABLE \"{table}\" ADD COLUMN \"{p}\" TEXT"))?;
         }
         conn.execute_batch(&format!(
-            "CREATE INDEX IF NOT EXISTS \"logs_{p}\" ON logs(\"{p}\", at)"
+            "CREATE INDEX IF NOT EXISTS \"{table}_{p}\" ON \"{table}\"(\"{p}\", at)"
         ))?;
     }
     Ok(conn)
+}
+
+fn plain(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 #[async_trait]
@@ -158,6 +165,7 @@ mod tests {
         );
         let sink = SqliteSink::new(&SqliteConfig {
             path: dir.join("logs.sqlite"),
+            table: "logs".into(),
             time: Some("ts".into()),
             partitions,
         })
@@ -188,5 +196,14 @@ mod tests {
         assert_eq!((rows[2].2.as_str(), rows[2].3.as_str()), ("", "|"));
         assert!(rows[1].0 > rows[0].0, "arrival time without a ts");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn table_and_partition_names_are_plain() {
+        let path = std::env::temp_dir().join("tangent-never.sqlite");
+        assert!(open(&path, "logs\"", &[]).is_err());
+        assert!(open(&path, "", &[]).is_err());
+        assert!(open(&path, "logs", &["a b".to_string()]).is_err());
+        assert!(!path.exists());
     }
 }
