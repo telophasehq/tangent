@@ -82,6 +82,30 @@ tangent state --config tangent.yaml scan --prefix user: --limit 50
 tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
 ```
 
+## Keeping records and reading them back
+A `sqlite` sink keeps every record once, in one table, `logs`, with a column per partition holding its fields' values joined with `|`. A `sqlite` source reads one partition back a window at a time:
+
+```yaml
+sinks:
+  logs:
+    type: sqlite
+    path: logs.sqlite
+    time: ts               # the record's own time (RFC 3339 or epoch); arrival time without it
+    retain_secs: 2592000   # 30d before the newest record
+    partitions:
+      org: [_norm.org]
+      actor: [_norm.org, _norm.actor]
+
+sources:
+  actors:
+    type: sqlite
+    path: logs.sqlite
+    partition: actor
+    window_secs: 300
+```
+
+A window is due once a record after it is stored, or once the clock is a window past its end. Its records not yet sent, late ones from earlier windows included, go on as one batch per partition value, in time order, and are marked `emitted` when the batch is through the DAG; a restart sends again what was not.
+
 ## Inference
 An `inference` node asks a model about each record. Nodes are configured under `inference:`, each with its own model and prompt, and sit in the DAG as `kind: inference`:
 

@@ -353,6 +353,16 @@ fn spawn_consumers(
                     }
                 }));
             }
+            (name, SourceConfig::Sqlite(sq)) => {
+                let router = router.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) =
+                        sources::sqlite::run_consumer(name, sq, router, shutdown.clone()).await
+                    {
+                        tracing::error!("sqlite source error: {e:#}");
+                    }
+                }));
+            }
             (name, SourceConfig::GoogleWorkspace(gw)) => {
                 let router = router.clone();
                 handles.push(tokio::spawn(async move {
