@@ -6,7 +6,7 @@ use rusqlite::types::Value;
 use rusqlite::{params_from_iter, Connection};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tangent_shared::sinks::sqlite::SqliteConfig;
 
 use crate::inference::lines;
@@ -20,9 +20,7 @@ pub struct SqliteSink {
     conn: Mutex<Connection>,
     insert: String,
     time: Option<String>,
-    retain_ms: i64,
     partitions: Vec<Vec<String>>,
-    pruned: Mutex<Option<Instant>>,
 }
 
 impl SqliteSink {
@@ -35,9 +33,7 @@ impl SqliteSink {
             conn: Mutex::new(conn),
             insert: format!("INSERT INTO logs (at, record{cols}) VALUES (?1, ?2{params})"),
             time: cfg.time.clone(),
-            retain_ms: cfg.retain_secs as i64 * 1000,
             partitions: cfg.partitions.values().cloned().collect(),
-            pruned: Mutex::new(None),
         }))
     }
 }
@@ -114,10 +110,6 @@ impl Sink for SqliteSink {
             rows.push(row);
         }
 
-        let prune = self
-            .pruned
-            .lock()
-            .is_none_or(|t| t.elapsed() > Duration::from_secs(3600));
         let mut conn = self.conn.lock();
         let tx = conn.transaction()?;
         {
@@ -126,21 +118,7 @@ impl Sink for SqliteSink {
                 st.execute(params_from_iter(row))?;
             }
         }
-        // relative to the data, so a replay is kept; through the (emitted, at) index
-        if prune {
-            tx.execute(
-                "DELETE FROM logs WHERE emitted IN (0, 1) AND at < (
-                    SELECT max(m) FROM (
-                        SELECT max(at) m FROM logs WHERE emitted = 0
-                        UNION ALL SELECT max(at) FROM logs WHERE emitted = 1
-                    )) - ?1",
-                [self.retain_ms],
-            )?;
-        }
         tx.commit()?;
-        if prune {
-            *self.pruned.lock() = Some(Instant::now());
-        }
 
         SINK_OBJECTS_TOTAL.inc();
         SINK_BYTES_TOTAL.inc_by(req.payload.len() as u64);
@@ -181,7 +159,6 @@ mod tests {
         let sink = SqliteSink::new(&SqliteConfig {
             path: dir.join("logs.sqlite"),
             time: Some("ts".into()),
-            retain_secs: 2_592_000,
             partitions,
         })
         .unwrap();
@@ -210,33 +187,6 @@ mod tests {
         assert_eq!((rows[1].2.as_str(), rows[1].3.as_str()), ("", "|bob"));
         assert_eq!((rows[2].2.as_str(), rows[2].3.as_str()), ("", "|"));
         assert!(rows[1].0 > rows[0].0, "arrival time without a ts");
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[tokio::test]
-    async fn retention_drops_rows_before_the_newest() {
-        let dir = dir("retain");
-        let sink = SqliteSink::new(&SqliteConfig {
-            path: dir.join("logs.sqlite"),
-            time: Some("ts".into()),
-            retain_secs: 3600,
-            partitions: BTreeMap::new(),
-        })
-        .unwrap();
-        let payload: String = ["10:00", "11:30", "12:00"]
-            .iter()
-            .map(|t| format!("{{\"ts\":\"2026-10-20T{t}:00Z\"}}\n"))
-            .collect();
-        sink.write(write(&payload)).await.unwrap();
-
-        let conn = Connection::open(dir.join("logs.sqlite")).unwrap();
-        let (n, oldest): (i64, String) = conn
-            .query_row("SELECT count(*), min(record) FROM logs", [], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
-            .unwrap();
-        assert_eq!(n, 2);
-        assert!(oldest.contains("11:30"), "{oldest}");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -201,7 +201,7 @@ fn frame(conn: &Mutex<Connection>, context: &[i64], ids: &[i64]) -> Result<Bytes
     let mut st = conn.prepare_cached("SELECT record FROM logs WHERE id = ?1")?;
     let mut frame = BytesMut::new();
     for (k, id) in context.iter().chain(ids).enumerate() {
-        // the sink may have pruned it
+        // trimmed meanwhile
         let Some(mut record) = st.query_row([id], |r| r.get::<_, String>(0)).optional()? else {
             continue;
         };
