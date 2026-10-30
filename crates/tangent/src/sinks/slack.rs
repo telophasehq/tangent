@@ -23,6 +23,7 @@ impl SlackSink {
         }
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
             .build()?;
         Ok(Arc::new(Self {
             client,
