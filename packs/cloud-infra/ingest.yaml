@@ -68,7 +68,7 @@ sinks:
     type: sqlite
     path: logs.sqlite
     table: logs
-    time: ts
+    timestamp_key: ts
     partitions:
       org: [_norm.org]
       actor: [_norm.org, _norm.actor]

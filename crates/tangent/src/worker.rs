@@ -215,7 +215,7 @@ impl Worker {
                 .expect("retain needs a partition config"),
         );
         let retain_ms = cfg.retain_ms.expect("retain needs retain_ms");
-        let ts = partition::time_of(lv, cfg.time.as_deref())
+        let ts = partition::time_of(lv, cfg.timestamp_key.as_deref())
             .unwrap_or_else(|| crate::state::now_ms() as i64);
         self.seq = self.seq.wrapping_add(1) % 1_000_000;
         self.store
@@ -1120,7 +1120,7 @@ mod tests {
                     key: vec!["judge.flag".into()],
                     separator: "|".into(),
                     retain_ms: None,
-                    time: None,
+                    timestamp_key: None,
                 }),
                 Arc::clone(&store),
             )
