@@ -8,3 +8,7 @@ plugins/
 **/test_out.ndjson
 **/.test.yaml
 state.sqlite*
+crates/compact/fuzz/target
+crates/compact/fuzz/corpus
+crates/compact/fuzz/artifacts
+crates/compact/fuzz/coverage

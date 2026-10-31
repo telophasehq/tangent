@@ -88,3 +88,4 @@ hmac = "0.12.1"
 zip = "6.0.0"
 hex = "0.4.3"
 constant_time_eq = "0.2.6"
+tangent-compact = { path = "../compact" }
