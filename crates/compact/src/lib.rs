@@ -2,7 +2,7 @@
 //! back. Lossless: [`decode`] of [`encode`] is the records, value for value.
 //!
 //! ```text
-//! # compact v2, 3 records
+//! # compacted logfmt, 3 records
 //! ## 3 records
 //! awsRegion=us-west-2
 //! source=cloudtrail
@@ -44,7 +44,7 @@ use std::ops::Range;
 use std::sync::LazyLock;
 
 /// What the model is told about the format, after the prompt.
-pub const LEGEND: &str = "The records are in compact v2. `## N records` starts a group of records. Each \
+pub const LEGEND: &str = "The records are in compacted logfmt. `## N records` starts a group of records. Each \
 `path=value` line under it is a field every record in the group has with that value (`a,b=v`: both fields). A \
 line `path(2026-09-08)` says that field's values in the rows are times of day on that date. Then each row is one \
 record: its index `i`, then its own fields as `path=value`, separated by spaces (`a,b=v`: both fields). \
@@ -705,7 +705,7 @@ pub fn encode_chunk(records: &[Value], cfg: &CompactConfig) -> Result<(String, O
     defs.sort_by_key(|(_, n)| **n);
 
     let mut out = format!(
-        "# compact v2, {} record{}\n",
+        "# compacted logfmt, {} record{}\n",
         records.len(),
         plural(records.len())
     );
@@ -1008,7 +1008,7 @@ fn read_paths(s: &str, mut at: usize) -> Result<(Vec<Path>, usize)> {
 }
 
 static HEAD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^# compact v2, ([0-9]+) records?$").unwrap());
+    LazyLock::new(|| Regex::new(r"^# compacted logfmt, ([0-9]+) records?$").unwrap());
 static GROUP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^## ([0-9]+) records?$").unwrap());
 static ALIAS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^@([0-9]+)=").unwrap());
 
@@ -1110,7 +1110,7 @@ pub fn decode(text: &str, side: Option<&str>) -> Result<Vec<Value>> {
     let mut lines = body.split('\n');
     let first = HEAD
         .captures(lines.next().unwrap_or(""))
-        .ok_or_else(|| anyhow!("not a compact v2 chunk"))?;
+        .ok_or_else(|| anyhow!("not compacted logfmt"))?;
     let count: usize = first[1].parse()?;
     let side = side.map(|s| read_side(s, &budget)).transpose()?;
     let mut aliases: Named = HashMap::new();
@@ -1419,12 +1419,12 @@ mod tests {
     fn crafted_text_is_refused() {
         let long = vec!["a"; 20_000].join(".");
         assert!(decode(
-            &format!("# compact v2, 1 record\n## 1 record\n{long}=1\n0\n# end\n"),
+            &format!("# compacted logfmt, 1 record\n## 1 record\n{long}=1\n0\n# end\n"),
             None
         )
         .is_err());
         let bomb = format!(
-            "# compact v2, 1 record\n@1=\"{}\"\n## 1 record\n0 a=[{}]\n# end\n",
+            "# compacted logfmt, 1 record\n@1=\"{}\"\n## 1 record\n0 a=[{}]\n# end\n",
             "x".repeat(10_000),
             vec!["@1"; 20_000].join(",")
         );
@@ -1434,25 +1434,25 @@ mod tests {
         let big = format!("\"{}\"", "x".repeat(100_000));
         for text in [
             format!(
-                "# compact v2, 5000 records\n@1={big}\n## 5000 records\na=@1\n{}# end\n",
+                "# compacted logfmt, 5000 records\n@1={big}\n## 5000 records\na=@1\n{}# end\n",
                 rows(5000)
             ),
             format!(
-                "# compact v2, 1 record\n## 1 record\n{}={big}\n0\n# end\n",
+                "# compacted logfmt, 1 record\n## 1 record\n{}={big}\n0\n# end\n",
                 (0..5000)
                     .map(|k| format!("a{k}"))
                     .collect::<Vec<_>>()
                     .join(",")
             ),
             format!(
-                "# compact v2, 1 record\n@1={big}\n## 1 record\n0 {}=@1\n# end\n",
+                "# compacted logfmt, 1 record\n@1={big}\n## 1 record\n0 {}=@1\n# end\n",
                 (0..5000)
                     .map(|k| format!("a{k}"))
                     .collect::<Vec<_>>()
                     .join(",")
             ),
             format!(
-                "# compact v2, 50000 records\n## 50000 records\n{}=1\n{}# end\n",
+                "# compacted logfmt, 50000 records\n## 50000 records\n{}=1\n{}# end\n",
                 vec!["a"; 128].join("."),
                 rows(50_000)
             ),
@@ -1460,7 +1460,7 @@ mod tests {
             assert!(decode(&text, None).is_err(), "{}", head(&text));
         }
         assert!(decode(
-            "# compact v2, 1 record\n## 1 record\n0 a=\u{ff11}\n# end\n",
+            "# compacted logfmt, 1 record\n## 1 record\n0 a=\u{ff11}\n# end\n",
             None
         )
         .is_ok_and(|r| r[0]["a"] == "\u{ff11}"));

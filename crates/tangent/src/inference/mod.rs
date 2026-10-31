@@ -598,7 +598,7 @@ pub(crate) mod stub {
                         "{\"answers\": [{\"flag\": false, \"one_line\": \"a7a7a7a7".to_string()
                     } else {
                         // logfmt rows are not in index order: those answers carry `i`
-                        let logfmt = user.starts_with("# compact v");
+                        let logfmt = user.starts_with("# compacted logfmt");
                         let records: Vec<String> = if logfmt {
                             tangent_compact::decode(&user, None)
                                 .map(|rs| rs.iter().map(|r| r.to_string()).collect())
@@ -809,7 +809,7 @@ mod tests {
         assert_eq!(back, records);
         let system =
             stub::text(&serde_json::from_str::<Value>(&seen[0]).unwrap()["messages"][0]["content"]);
-        assert!(system.contains("compact v2"), "{system}");
+        assert!(system.contains("compacted logfmt"), "{system}");
         let _ = std::fs::remove_dir_all(dir);
     }
 
