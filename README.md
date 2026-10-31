@@ -55,7 +55,7 @@ runtime:
     max_entries: 100000    # lru only: evict the least recently used past this
   partition:
     key: [org_id]          # fields that identify a record's partition
-    time: ts               # the record's own time (RFC 3339 or epoch); arrival time without it
+    timestamp_key: ts      # the record's own time (RFC 3339 or epoch); arrival time without it
     retain_ms: 432000000   # 5d: keep every record under its partition, keyed by its time
 ```
 
@@ -91,7 +91,7 @@ sinks:
     type: sqlite
     path: logs.sqlite
     table: logs
-    time: ts               # the record's own time (RFC 3339 or epoch); arrival time without it
+    timestamp_key: ts      # the record's own time (RFC 3339 or epoch); arrival time without it
     partitions:
       org: [_norm.org]
       actor: [_norm.org, _norm.actor]

@@ -8,8 +8,11 @@ pub struct SqliteConfig {
 
     pub table: String,
 
+    /// The field holding a record's own time (RFC 3339 or epoch), stored as
+    /// `at`: it orders a partition's rows and clocks a reader's timeout.
+    /// Arrival time without it.
     #[serde(default)]
-    pub time: Option<String>,
+    pub timestamp_key: Option<String>,
 
     #[serde(default)]
     pub partitions: BTreeMap<String, Vec<String>>, // name: fields
