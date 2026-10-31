@@ -56,7 +56,7 @@ sinks:
   # slack:
   #   type: slack
   #   webhook_url: ${SLACK_WEBHOOK_URL}
-  #   text: "*{_norm.actor}* {_norm.kind} from {_norm.ip}: {judge.why|not judged: judge.error}"
+  #   text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
 
 dag:
   - from: { kind: source, name: actors }

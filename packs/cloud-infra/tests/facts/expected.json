@@ -4,21 +4,13 @@
    "ip": {
     "asn": 7922,
     "country": "US",
-    "ip": "67.180.22.4",
-    "org": "Comcast Cable Communications, LLC",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Comcast Cable Communications, LLC"
    },
    "notes": [],
    "principal": "member"
   },
   "_norm": {
    "actor": "oncall-frank@acme.io",
-   "country": "US",
-   "ip": "67.180.22.4",
-   "kind": "user.session.start",
    "org": "acme"
   },
   "actor": {
@@ -57,21 +49,13 @@
    "ip": {
     "asn": 7922,
     "country": "US",
-    "ip": "67.180.22.4",
-    "org": "Comcast Cable Communications, LLC",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Comcast Cable Communications, LLC"
    },
    "notes": [],
    "principal": "member"
   },
   "_norm": {
    "actor": "oncall-frank@acme.io",
-   "country": "US",
-   "ip": "67.180.22.4",
-   "kind": "user.session.start",
    "org": "acme"
   },
   "actor": {
@@ -110,12 +94,7 @@
    "ip": {
     "asn": 7922,
     "country": "US",
-    "ip": "98.51.100.23",
-    "org": "Comcast Cable Communications, LLC",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Comcast Cable Communications, LLC"
    },
    "notes": [
     "AWS root credentials used",
@@ -126,8 +105,6 @@
   },
   "_norm": {
    "actor": "root",
-   "ip": "98.51.100.23",
-   "kind": "ConsoleLogin",
    "org": "acme"
   },
   "additionalEventData": {
@@ -159,12 +136,7 @@
     "asn": 24940,
     "country": "FI",
     "hosting": "datacenter",
-    "ip": "65.108.22.91",
-    "org": "Hetzner Online GmbH",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Hetzner Online GmbH"
    },
    "notes": [
     "StopLogging is a kind the org watches every time",
@@ -175,8 +147,6 @@
   },
   "_norm": {
    "actor": "deploy-bot",
-   "ip": "65.108.22.91",
-   "kind": "StopLogging",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -205,12 +175,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws"
@@ -219,8 +184,6 @@
   },
   "_norm": {
    "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "GetCallerIdentity",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -246,21 +209,13 @@
    "ip": {
     "asn": 7922,
     "country": "US",
-    "ip": "73.162.14.9",
-    "org": "Comcast Cable Communications, LLC",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Comcast Cable Communications, LLC"
    },
    "notes": [],
    "principal": "member"
   },
   "_norm": {
    "actor": "bob@acme.io",
-   "country": "US",
-   "ip": "73.162.14.9",
-   "kind": "user.session.start",
    "org": "acme"
   },
   "actor": {
@@ -300,10 +255,7 @@
     "asn": 60729,
     "country": "DE",
     "hosting": "datacenter",
-    "ip": "185.220.101.4",
     "org": "Stiftung Erneuerbare Freiheit",
-    "ours": false,
-    "private": false,
     "tor": true,
     "vpn": true
    },
@@ -319,8 +271,6 @@
   },
   "_norm": {
    "actor": "cfo@acme.io",
-   "ip": "185.220.101.4",
-   "kind": "EMAIL_FORWARDING_OUT_OF_DOMAIN",
    "org": "acme"
   },
   "actor": {
@@ -350,9 +300,7 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "kind": "Run aquasecurity/trivy-action@0.28.0",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "job": "build",
   "line": "Downloading action archive",
@@ -368,9 +316,7 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "kind": "Run aquasecurity/trivy-action@0.28.0",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "job": "build",
   "line": "Downloading action archive",
@@ -387,10 +333,8 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "dest": "github.com",
    "kind": "egress",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "bytes_out": 300,
   "dst_host": "github.com",
@@ -410,9 +354,7 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "kind": "Run aquasecurity/trivy-action@0.28.0",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "job": "build",
   "line": "Trivy DB updated",
@@ -429,10 +371,8 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "dest": "ghcr.io",
    "kind": "egress",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "bytes_out": 600,
   "dst_host": "ghcr.io",
@@ -452,9 +392,7 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "kind": "Run aquasecurity/trivy-action@0.28.0",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "job": "build",
   "line": "Trivy DB updated",
@@ -471,10 +409,8 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "dest": "ghcr.io",
    "kind": "egress",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "bytes_out": 600,
   "dst_host": "ghcr.io",
@@ -494,9 +430,7 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "kind": "Run aquasecurity/trivy-action@0.28.0",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "job": "build",
   "line": "scanning image acme/api:sha-8f3c2a1",
@@ -515,10 +449,8 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "dest": "api.aquasecurtiy.org",
    "kind": "egress",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "bytes_out": 194560,
   "dst_host": "api.aquasecurtiy.org",
@@ -538,12 +470,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws"
@@ -552,8 +479,6 @@
   },
   "_norm": {
    "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "ListBuckets",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -580,9 +505,7 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "kind": "Run aquasecurity/trivy-action@0.28.0",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "job": "build",
   "line": "2 vulnerabilities found (LOW)",
@@ -598,9 +521,7 @@
   },
   "_norm": {
    "actor": "acme/api",
-   "kind": "Run aquasecurity/trivy-action@0.28.0",
-   "org": "acme",
-   "target": "acme/api"
+   "org": "acme"
   },
   "job": "build",
   "line": "0 vulnerabilities found",
@@ -616,12 +537,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws",
@@ -632,10 +548,7 @@
   },
   "_norm": {
    "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "GetObject",
-   "org": "acme",
-   "target": "acme-customer-exports"
+   "org": "acme"
   },
   "awsRegion": "us-west-2",
   "eventName": "GetObject",
@@ -664,12 +577,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws",
@@ -680,10 +588,7 @@
   },
   "_norm": {
    "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "GetObject",
-   "org": "acme",
-   "target": "acme-customer-exports"
+   "org": "acme"
   },
   "awsRegion": "us-west-2",
   "eventName": "GetObject",
@@ -712,12 +617,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws",
@@ -728,10 +628,7 @@
   },
   "_norm": {
    "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "GetObject",
-   "org": "acme",
-   "target": "acme-customer-exports"
+   "org": "acme"
   },
   "awsRegion": "us-west-2",
   "eventName": "GetObject",
@@ -760,12 +657,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws",
@@ -776,10 +668,7 @@
   },
   "_norm": {
    "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "GetObject",
-   "org": "acme",
-   "target": "acme-customer-exports"
+   "org": "acme"
   },
   "awsRegion": "us-west-2",
   "eventName": "GetObject",
@@ -808,12 +697,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws",
@@ -824,10 +708,7 @@
   },
   "_norm": {
    "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "GetObject",
-   "org": "acme",
-   "target": "acme-customer-exports"
+   "org": "acme"
   },
   "awsRegion": "us-west-2",
   "eventName": "GetObject",
@@ -856,12 +737,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws",
@@ -872,10 +748,7 @@
   },
   "_norm": {
    "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "GetObject",
-   "org": "acme",
-   "target": "acme-customer-exports"
+   "org": "acme"
   },
   "awsRegion": "us-west-2",
   "eventName": "GetObject",
@@ -904,12 +777,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws",
@@ -920,10 +788,7 @@
   },
   "_norm": {
    "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "GetObject",
-   "org": "acme",
-   "target": "acme-customer-exports"
+   "org": "acme"
   },
   "awsRegion": "us-west-2",
   "eventName": "GetObject",
@@ -952,12 +817,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws",
@@ -968,10 +828,7 @@
   },
   "_norm": {
    "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "GetObject",
-   "org": "acme",
-   "target": "acme-customer-exports"
+   "org": "acme"
   },
   "awsRegion": "us-west-2",
   "eventName": "GetObject",
@@ -1000,12 +857,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "dev-sam acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.)",
@@ -1015,11 +867,7 @@
   },
   "_norm": {
    "actor": "dev-sam",
-   "country": "NL",
-   "ip": "185.224.128.17",
-   "kind": "git.clone",
-   "org": "acme",
-   "target": "acme/payments-api"
+   "org": "acme"
   },
   "action": "git.clone",
   "actor": "dev-sam",
@@ -1039,12 +887,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "dev-sam acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.)",
@@ -1054,11 +897,7 @@
   },
   "_norm": {
    "actor": "dev-sam",
-   "country": "NL",
-   "ip": "185.224.128.17",
-   "kind": "git.clone",
-   "org": "acme",
-   "target": "acme/billing"
+   "org": "acme"
   },
   "action": "git.clone",
   "actor": "dev-sam",
@@ -1078,12 +917,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "dev-sam acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.)",
@@ -1093,11 +927,7 @@
   },
   "_norm": {
    "actor": "dev-sam",
-   "country": "NL",
-   "ip": "185.224.128.17",
-   "kind": "git.clone",
-   "org": "acme",
-   "target": "acme/infra"
+   "org": "acme"
   },
   "action": "git.clone",
   "actor": "dev-sam",
@@ -1117,12 +947,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "dev-sam acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.)",
@@ -1132,11 +957,7 @@
   },
   "_norm": {
    "actor": "dev-sam",
-   "country": "NL",
-   "ip": "185.224.128.17",
-   "kind": "git.clone",
-   "org": "acme",
-   "target": "acme/web"
+   "org": "acme"
   },
   "action": "git.clone",
   "actor": "dev-sam",
@@ -1156,12 +977,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "key_known_network": false,
    "notes": [
@@ -1171,8 +987,6 @@
   },
   "_norm": {
    "actor": "ak_rail",
-   "ip": "185.224.128.17",
-   "kind": "api_request",
    "org": "acme"
   },
   "actor": "ak_rail",
@@ -1192,12 +1006,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "key_known_network": false,
    "notes": [
@@ -1207,8 +1016,6 @@
   },
   "_norm": {
    "actor": "ak_rail",
-   "ip": "185.224.128.17",
-   "kind": "api_request",
    "org": "acme"
   },
   "actor": "ak_rail",
@@ -1228,12 +1035,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "key_known_network": false,
    "notes": [
@@ -1243,8 +1045,6 @@
   },
   "_norm": {
    "actor": "ak_rail",
-   "ip": "185.224.128.17",
-   "kind": "api_request",
    "org": "acme"
   },
   "actor": "ak_rail",
@@ -1264,12 +1064,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "key_known_network": false,
    "notes": [
@@ -1279,8 +1074,6 @@
   },
   "_norm": {
    "actor": "ak_rail",
-   "ip": "185.224.128.17",
-   "kind": "api_request",
    "org": "acme"
   },
   "actor": "ak_rail",
@@ -1300,12 +1093,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "key_known_network": false,
    "notes": [
@@ -1315,8 +1103,6 @@
   },
   "_norm": {
    "actor": "ak_rail",
-   "ip": "185.224.128.17",
-   "kind": "api_request",
    "org": "acme"
   },
   "actor": "ak_rail",
@@ -1336,12 +1122,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "key_known_network": false,
    "notes": [
@@ -1351,8 +1132,6 @@
   },
   "_norm": {
    "actor": "ak_rail",
-   "ip": "185.224.128.17",
-   "kind": "api_request",
    "org": "acme"
   },
   "actor": "ak_rail",
@@ -1372,12 +1151,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "key_known_network": false,
    "notes": [
@@ -1387,8 +1161,6 @@
   },
   "_norm": {
    "actor": "ak_rail",
-   "ip": "185.224.128.17",
-   "kind": "api_request",
    "org": "acme"
   },
   "actor": "ak_rail",
@@ -1408,12 +1180,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "key_known_network": false,
    "notes": [
@@ -1423,8 +1190,6 @@
   },
   "_norm": {
    "actor": "ak_rail",
-   "ip": "185.224.128.17",
-   "kind": "api_request",
    "org": "acme"
   },
   "actor": "ak_rail",
@@ -1444,12 +1209,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "key_known_network": false,
    "notes": [
@@ -1459,8 +1219,6 @@
   },
   "_norm": {
    "actor": "ak_rail",
-   "ip": "185.224.128.17",
-   "kind": "api_request",
    "org": "acme"
   },
   "actor": "ak_rail",
@@ -1480,12 +1238,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "key_known_network": false,
    "notes": [
@@ -1495,8 +1248,6 @@
   },
   "_norm": {
    "actor": "ak_rail",
-   "ip": "185.224.128.17",
-   "kind": "api_request",
    "org": "acme"
   },
   "actor": "ak_rail",
@@ -1516,12 +1267,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service deploy-bot acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws"
@@ -1530,8 +1276,6 @@
   },
   "_norm": {
    "actor": "deploy-bot",
-   "ip": "185.224.128.17",
-   "kind": "GetCallerIdentity",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -1558,12 +1302,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service deploy-bot acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws"
@@ -1572,8 +1311,6 @@
   },
   "_norm": {
    "actor": "deploy-bot",
-   "ip": "185.224.128.17",
-   "kind": "ListBuckets",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -1600,12 +1337,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service deploy-bot acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws"
@@ -1614,8 +1346,6 @@
   },
   "_norm": {
    "actor": "deploy-bot",
-   "ip": "185.224.128.17",
-   "kind": "ListSecrets",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -1642,12 +1372,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "service deploy-bot acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws"
@@ -1656,8 +1381,6 @@
   },
   "_norm": {
    "actor": "deploy-bot",
-   "ip": "185.224.128.17",
-   "kind": "GetSecretValue",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -1685,12 +1408,7 @@
    "ip": {
     "asn": 56300,
     "country": "SG",
-    "ip": "103.6.150.77",
-    "org": "MyRepublic Ltd.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "MyRepublic Ltd."
    },
    "notes": [
     "bob@acme.io acting from SG, 103.6.150.77 (MyRepublic Ltd.)"
@@ -1699,9 +1417,6 @@
   },
   "_norm": {
    "actor": "bob@acme.io",
-   "country": "SG",
-   "ip": "103.6.150.77",
-   "kind": "user.session.start",
    "org": "acme"
   },
   "actor": {
@@ -1740,21 +1455,13 @@
    "ip": {
     "asn": 7922,
     "country": "US",
-    "ip": "67.180.22.4",
-    "org": "Comcast Cable Communications, LLC",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Comcast Cable Communications, LLC"
    },
    "notes": [],
    "principal": "member"
   },
   "_norm": {
    "actor": "oncall-frank@acme.io",
-   "country": "US",
-   "ip": "67.180.22.4",
-   "kind": "user.session.start",
    "org": "acme"
   },
   "actor": {
@@ -1793,20 +1500,13 @@
    "ip": {
     "asn": 7922,
     "country": "US",
-    "ip": "67.180.22.4",
-    "org": "Comcast Cable Communications, LLC",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Comcast Cable Communications, LLC"
    },
    "notes": [],
    "principal": "member"
   },
   "_norm": {
    "actor": "oncall-frank@acme.io",
-   "ip": "67.180.22.4",
-   "kind": "page.view",
    "org": "acme"
   },
   "actor": "oncall-frank@acme.io",
@@ -1822,20 +1522,13 @@
    "ip": {
     "asn": 7922,
     "country": "US",
-    "ip": "67.180.22.4",
-    "org": "Comcast Cable Communications, LLC",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Comcast Cable Communications, LLC"
    },
    "notes": [],
    "principal": "member"
   },
   "_norm": {
    "actor": "oncall-frank@acme.io",
-   "ip": "67.180.22.4",
-   "kind": "incident.ack",
    "org": "acme"
   },
   "actor": "oncall-frank@acme.io",
@@ -1853,8 +1546,6 @@
   },
   "_norm": {
    "actor": "aws:resource-explorer-2",
-   "aws": true,
-   "kind": "ListTargetGroups",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -1882,10 +1573,7 @@
   },
   "_norm": {
    "actor": "aws:ecs-tasks",
-   "aws": true,
-   "kind": "AssumeRole",
-   "org": "acme",
-   "target": "arn:aws:iam::111122223333:role/ecs-task"
+   "org": "acme"
   },
   "awsRegion": "us-west-2",
   "eventName": "AssumeRole",
@@ -1908,13 +1596,7 @@
  },
  {
   "_facts": {
-   "ip": {
-    "ip": "203.0.113.9",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
-   },
+   "ip": {},
    "notes": [
     "principal foo is nobody the org profile knows"
    ],
@@ -1922,8 +1604,6 @@
   },
   "_norm": {
    "actor": "foo",
-   "ip": "203.0.113.9",
-   "kind": "ListBuckets",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -1949,21 +1629,13 @@
     "asn": 16509,
     "country": "US",
     "hosting": "aws",
-    "ip": "52.94.76.10",
-    "org": "Amazon.com, Inc.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Amazon.com, Inc."
    },
    "notes": [],
    "principal": "aws"
   },
   "_norm": {
    "actor": "aws:resource-explorer-2",
-   "aws": true,
-   "ip": "52.94.76.10",
-   "kind": "ListPolicyStores",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -1990,8 +1662,6 @@
   },
   "_norm": {
    "actor": "aws:ecr",
-   "aws": true,
-   "kind": "PolicyExecutionEvent",
    "org": "acme"
   },
   "awsRegion": "us-west-2",
@@ -2016,10 +1686,7 @@
   },
   "_norm": {
    "actor": "aws:organizations",
-   "aws": true,
-   "kind": "AssumeRole",
-   "org": "acme",
-   "target": "arn:aws:iam::111122223333:role/aws-service-role/organizations.amazonaws.com/AWSServiceRoleForOrganizations"
+   "org": "acme"
   },
   "awsRegion": "us-west-2",
   "eventName": "AssumeRole",
@@ -2046,12 +1713,7 @@
     "asn": 49870,
     "country": "NL",
     "hosting": "datacenter",
-    "ip": "185.224.128.40",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Alsycon B.V."
    },
    "notes": [
     "principal aws:support is nobody the org profile knows",
@@ -2062,8 +1724,6 @@
   },
   "_norm": {
    "actor": "aws:support",
-   "ip": "185.224.128.40",
-   "kind": "user.login",
    "org": "acme"
   },
   "actor": "aws:support",
@@ -2080,23 +1740,15 @@
     "asn": 16509,
     "country": "US",
     "hosting": "aws",
-    "ip": "3.208.10.20",
-    "org": "Amazon.com, Inc.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
+    "org": "Amazon.com, Inc."
    },
    "notes": [
-    "DrataAutopilotRole is Drata, the compliance vendor: reads IAM, credential reports and backups every day",
     "DrataAutopilotRole acting from aws hosting, 3.208.10.20 (Amazon.com, Inc.)"
    ],
    "principal": "unknown"
   },
   "_norm": {
    "actor": "DrataAutopilotRole",
-   "ip": "3.208.10.20",
-   "kind": "GenerateCredentialReport",
    "org": "acme"
   },
   "eventName": "GenerateCredentialReport",

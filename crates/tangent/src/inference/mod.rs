@@ -448,14 +448,17 @@ fn head(s: &str, n: usize) -> String {
     t
 }
 
-/// Dot-path lookup into a JSON value: "a.b.c".
+/// Dot-path lookup into a JSON value: "a.b.c", "events.0.name".
 pub fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
     if let Some(direct) = v.get(path) {
         return Some(direct);
     }
     let mut cur = v;
     for seg in path.split('.') {
-        cur = cur.get(seg)?;
+        cur = match (cur, seg.parse::<usize>()) {
+            (Value::Array(a), Ok(k)) => a.get(k)?,
+            _ => cur.get(seg)?,
+        };
     }
     Some(cur)
 }
