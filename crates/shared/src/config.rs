@@ -10,6 +10,7 @@ use crate::sinks::common::SinkConfig;
 use crate::sources::common::SourceConfig;
 
 pub mod dag;
+pub mod enrichment;
 pub mod inference;
 pub mod plugins;
 pub mod runtime;
@@ -34,6 +35,11 @@ pub struct Config {
     /// `kind: inference` in the DAG.
     #[serde(default)]
     pub inference: std::collections::BTreeMap<Arc<str>, inference::InferenceConfig>,
+
+    /// Reference data loaded once per process and shared by every plugin,
+    /// each looked up by its name.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub enrichment_tables: std::collections::BTreeMap<Arc<str>, enrichment::TableConfig>,
 
     #[serde(default)]
     pub dag: Vec<Edge>,

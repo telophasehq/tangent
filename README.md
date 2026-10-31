@@ -67,7 +67,7 @@ plugins:
   detect_export: { module_type: rust, path: ./detect, state_namespace: export }
 ```
 
-A plugin may read files too: `data: <dir>` mounts a directory, relative to the config file, read-only at `/data` in the guest, for reference data too big for `config` such as an IP database or published address ranges. [examples/enrich](/examples/enrich) reads MaxMind GeoLite2 and the cloud providers' ranges that way, and its `setup.sh` fetches them.
+A plugin may read files too: `data: <dir>` mounts a directory, relative to the config file, read-only at `/data` in the guest, for reference data too big for `config`. [examples/enrich](/examples/enrich) reads MaxMind GeoLite2 and the cloud providers' ranges that way, and its `setup.sh` fetches them. Each plugin instance on each worker reads such files into its own memory; reference data that several plugins read, or that is large, belongs in an [enrichment table](#enrichment-tables), which the process loads once.
 
 With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition. [examples/partition](/examples/partition) counts events per org with a single `count` key.
 
@@ -81,6 +81,43 @@ tangent state --config tangent.yaml get seen --partition acme   # one entry (--n
 tangent state --config tangent.yaml scan --prefix user: --limit 50
 tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
 ```
+
+## Enrichment tables
+Reference data every plugin can read, loaded once for the process: an IP database, a list of networks, a company profile. Each table has a name, a `type` and a `path`, relative to the config file:
+
+```yaml
+enrichment_tables:
+  geo:      { type: mmdb, path: data/GeoLite2-Country.mmdb }
+  asn:      { type: mmdb, path: data/GeoLite2-ASN.mmdb }
+  networks: { type: cidr, path: data/networks.csv }
+  profile:  { type: document, path: profile/profile.yaml, required: true }
+```
+
+A plugin looks a key up in a table by name through the `enrichment` interface ([assets/wit/processor.wit](/assets/wit/processor.wit)) and gets JSON back, or nothing:
+
+```rust
+use tangent::logs::enrichment::lookup;
+
+let geo = lookup("geo", ip);              // Some(r#"{"country":{"iso_code":"FI",...},...}"#)
+let nets = lookup("networks", ip);        // Some(r#"["aws","datacenter"]"#), None when in none
+let org = lookup("profile", "org");       // Some(r#""acme""#)
+```
+
+Every address in a record is a call: a plugin that knows three fields holding addresses looks up all three.
+
+| `type` | file | key | answer |
+|---|---|---|---|
+| `mmdb` | a MaxMind DB | an address | its record, as JSON |
+| `cidr` | `prefix,label` lines, IPv4 and IPv6; `#` comments; a bare address is its own /32 or /128; an IPv6 prefix holds no IPv4 address, however wide (`::/0`), and `::ffff:192.0.2.0/120` is the IPv4 prefix it maps | an address | the label of every prefix that holds it, as a list: each label once, in the order the labels first appear in the file, so a file lists first the labels that should win |
+| `document` | YAML, or JSON when the name ends `.json` | a dotted path, `[n]` or `.n` for an item of a list, `""` for all of it | the value there; a key may hold dots |
+
+An IPv4-mapped IPv6 address (`::ffff:203.0.113.7`) is looked up as the IPv4 address. A key that is not an address, a path that is not there, and a null all answer nothing.
+
+`tangent run` reads every table when it builds the DAG, before the first record, into one copy every worker and every plugin shares: two plugins that read GeoLite2 hold it in memory once, and a lookup is a search in that memory, with no file read and no lock: tens of nanoseconds for a `cidr` table, about a microsecond for a GeoLite2 Country record. A file named by two tables, as the same type, is read once. A file that is missing is a warning, once, and its table answers nothing, as a missing file did for a plugin that read its own; a file that is there but cannot be read as its type stops `tangent run`, naming the table and the file. A table with `required: true` must have its file: without it `tangent run` and `tangent plugin test` stop, naming both. Mark a table so when nothing is right without it, as for a company profile. A table no config defines answers nothing too, with a warning the first time a plugin asks for it. A refreshed file is picked up at the next start. `tangent plugin test` loads the tables its config declares, so a fixture runs against the same data. A test may name tables of its own (`tests: [{input, expected, enrichment_tables: {...}}]`), which take the place of the config's of the same name for that test: the data its expected output was written against, so the fixtures pass whatever files the config's own tables name.
+
+The runtime knows these three formats and nothing about what is in them. A provider's own format is converted beforehand: [examples/enrich/setup.sh](/examples/enrich/setup.sh) fetches GeoLite2, the AWS, GCP and Cloudflare ranges, X4BNet's datacenter and VPN lists and the Tor exit list, and writes the ranges into `data/networks.csv` labelled `aws`, `gcp`, `cloudflare`, `datacenter`, `vpn` and `tor`, in that order (`./setup.sh networks` writes it again from the files already there).
+
+A plugin built before the interface existed does not import it and runs as before. To call it from an existing plugin, copy [assets/wit/processor.wit](/assets/wit/processor.wit) into its `.tangent/wit/`; a plugin that imports it needs a runtime that provides it.
 
 ## Keeping records and reading them back
 A `sqlite` sink keeps every record once, in its `table`, with a column per partition field holding the field's value as text, NULL without it. A partition is an index on its fields and the record's time, `<table>_<partition>`; `pending` and `at` are taken by the table's own indexes. A `sqlite` source, in the same process or another, reads one partition back in batches, each of one partition value; it takes the partition's fields from that index:

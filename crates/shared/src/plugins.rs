@@ -1,7 +1,11 @@
 use ahash::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::enrichment::TableConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PluginConfig {
@@ -31,4 +35,10 @@ pub struct PluginConfig {
 pub struct PluginTests {
     pub input: PathBuf,
     pub expected: PathBuf,
+
+    /// Tables this test reads in place of the config's of the same name: the
+    /// data its expected output was written against, so the fixture means the
+    /// same whatever files the config's own tables name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub enrichment_tables: BTreeMap<Arc<str>, TableConfig>,
 }
