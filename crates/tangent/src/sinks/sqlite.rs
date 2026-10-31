@@ -20,7 +20,7 @@ use crate::{SINK_BYTES_TOTAL, SINK_BYTES_UNCOMPRESSED_TOTAL, SINK_OBJECTS_TOTAL}
 pub struct SqliteSink {
     conn: Mutex<Connection>,
     insert: String,
-    time: Option<String>,
+    timestamp_key: Option<String>,
     fields: Vec<String>,
 }
 
@@ -36,7 +36,7 @@ impl SqliteSink {
                 "INSERT INTO \"{}\" (at, record{cols}) VALUES (?1, ?2{params})",
                 cfg.table
             ),
-            time: cfg.time.clone(),
+            timestamp_key: cfg.timestamp_key.clone(),
             fields,
         }))
     }
@@ -146,7 +146,8 @@ impl Sink for SqliteSink {
                 }
             };
             // a time ahead of the clock would make every partition look due
-            let at = partition::time_of(&lv, self.time.as_deref()).map_or(now, |t| t.min(now));
+            let at =
+                partition::time_of(&lv, self.timestamp_key.as_deref()).map_or(now, |t| t.min(now));
             let mut row = vec![
                 Value::Integer(at),
                 Value::Text(String::from_utf8_lossy(line).into_owned()),
@@ -209,7 +210,7 @@ mod tests {
         let mut cfg = SqliteConfig {
             path: dir.join("logs.sqlite"),
             table: "logs".into(),
-            time: Some("ts".into()),
+            timestamp_key: Some("ts".into()),
             partitions,
         };
         let sink = SqliteSink::new(&cfg).unwrap();
