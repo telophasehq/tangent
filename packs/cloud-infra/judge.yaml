@@ -41,6 +41,30 @@ inference:
       top_p: 0.95
       chat_template_kwargs:
         enable_thinking: false
+    # The records as logfmt lines, about half the tokens of JSON lines and
+    # nothing lost: the fields in `keep` on every line, the rest a principal's
+    # records share written once. Measured with Claude Haiku 5.5 only, where it
+    # caught what JSON caught.
+    # encoding:
+    #   type: logfmt
+    #   keep: [_context, _norm.actor, _norm.kind, _norm.target, _norm.dest, _facts.principal, _facts.watch, _facts.root, _facts.world_open, _facts.sensitive_target, _facts.key_known_network, _facts.ip.tor, _facts.ip.vpn]
+    #   sources:
+    #     cloudtrail:
+    #       principal: [_norm.actor, userIdentity.arn]
+    #       time: [eventTime, ts]
+    #       keep: [eventName, requestParameters, responseElements, errorCode, errorMessage, userIdentity.mfaAuthenticated, additionalEventData.MFAUsed]
+    #     okta:
+    #       principal: [_norm.actor, actor.alternateId]
+    #       time: [published, ts]
+    #       keep: [eventType, outcome, target, authenticationContext.credentialType, securityContext.isProxy, debugData.threatSuspected]
+    #     github_audit:
+    #       principal: [_norm.actor, actor]
+    #       time: ["@timestamp", created_at, ts]
+    #       keep: [action, repo, visibility, permission, programmatic_access_type, token_scopes, operation_type]
+    #     google_workspace:
+    #       principal: [_norm.actor, actor.email]
+    #       time: [id.time, ts]
+    #       keep: [events]
 
 sinks:
   alerts:
@@ -56,7 +80,7 @@ sinks:
   # slack:
   #   type: slack
   #   webhook_url: ${SLACK_WEBHOOK_URL}
-  #   text: "*{_norm.actor}* {_norm.kind} from {_norm.ip}: {judge.why|not judged: judge.error}"
+  #   text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
 
 dag:
   - from: { kind: source, name: actors }

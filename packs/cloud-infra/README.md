@@ -11,7 +11,7 @@ logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged �
                                        └──▶ verdicts.ndjson
 ```
 
-- **norm** puts every source's shape into one, `_norm.{actor, org, kind, ip, country, dest, target}`, and trims the four API sources' records to what they mean: their ids, hashes, protocol details and bulk go. Anything else is left as it came. AWS acting on its own is the actor `aws:<service>`, named only from fields AWS writes.
+- **norm** puts every source's shape into one, `_norm.{actor, org, kind, ip, country, dest, target}` (facts later drops all but actor and org where the record already holds the value), and trims the four API sources' records to what they mean: their ids, hashes, protocol details and bulk go. Anything else is left as it came. AWS acting on its own is the actor `aws:<service>`, named only from fields AWS writes.
 - **enrich** adds what is known about the address: country, ASN and organization, cloud or datacenter, Tor exit, VPN, one of yours. From files on disk; nothing leaves the machine ([examples/enrich](/examples/enrich)).
 - **facts** writes what your profile knows about the record, and decides nothing: whether the actor is AWS itself, a member, a service, a key or nobody known; whether the address, destination and target are usual; which kinds you watch. Every record goes on.
 - **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two partitions: the org, and the org and actor. Nothing is deleted; trimming it is yours to do. That ends ingest, one process; the judge is another, so nothing in ingest waits on a model.
@@ -48,7 +48,7 @@ sinks:
   slack:
     type: slack
     webhook_url: ${SLACK_WEBHOOK_URL}
-    text: "*{_norm.actor}* {_norm.kind} from {_norm.ip}: {judge.why|not judged: judge.error}"
+    text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
 dag:
   - from: { kind: plugin, name: flagged }
     to: [{ kind: sink, name: slack }]

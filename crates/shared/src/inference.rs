@@ -2,10 +2,11 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::path::PathBuf;
+pub use tangent_compact::{CompactConfig, SourceSpec};
 
 /// Ask a model about each record. The node sends `prompt_file` as the system
 /// message and the records it is handed (or their listed `fields`), a JSON
-/// line each, as the user message, and adds each record's answer to it under
+/// or logfmt line each, as the user message, and adds each record's answer to it under
 /// the node's name. It adds and forwards; it never drops. What happens next
 /// is a plugin's call: a plugin whose `probe` selects on `<node name>.flag`
 /// is that filter.
@@ -53,6 +54,13 @@ pub struct InferenceConfig {
     #[serde(default = "default_batch_bytes")]
     pub batch_bytes: usize, // a request past this is split
 
+    /// How the records are written into the user message: `ndjson`, a JSON
+    /// line each (the default), or `logfmt`, the same records, every field
+    /// and value, a logfmt line each in about half the tokens, also split at
+    /// `budget_tokens`.
+    #[serde(default)]
+    pub encoding: Encoding,
+
     #[serde(default)]
     pub group_by: Vec<String>, // a request holds one value of these
 
@@ -85,6 +93,14 @@ pub struct InferenceConfig {
     /// `reasoning_effort: low` for gpt-oss. These win over what the node sets.
     #[serde(default)]
     pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Encoding {
+    #[default]
+    Ndjson,
+    Logfmt(CompactConfig),
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]

@@ -209,9 +209,8 @@ fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>,
     }
 
     let about = actor.as_ref().and_then(|a| p.about.get(a));
-    if let (Some(a), Some(s)) = (&actor, about) {
+    if let Some(s) = about {
         facts.insert("about".into(), json!(s));
-        notes.push(format!("{a} is {s}"));
     }
 
     // The principal: known to the profile, or nobody it knows.
@@ -287,6 +286,10 @@ fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>,
             }
             _ => {}
         }
+        let ip: Map<String, Value> = ip
+            .into_iter()
+            .filter(|(k, v)| k != "ip" && *v != Value::Bool(false))
+            .collect();
         facts.insert("ip".into(), Value::Object(ip));
     }
 
@@ -315,6 +318,35 @@ fn facts_of(p: &Profile, rec: &Value, ip: Option<Value>) -> (Map<String, Value>,
         }
     }
     (facts, notes)
+}
+
+/// `_norm` past this point keeps what routes a record (actor, org) and what the
+/// log does not already say: a kind, address or target copied from a field
+/// goes, as does the `aws` mark `_facts.principal` now carries.
+fn unrepeat(rec: &mut Value) {
+    fn values(v: &Value, out: &mut BTreeSet<String>) {
+        match v {
+            Value::Object(m) => m.values().for_each(|x| values(x, out)),
+            Value::Array(a) => a.iter().for_each(|x| values(x, out)),
+            _ => {
+                out.insert(v.to_string());
+            }
+        }
+    }
+    let mut logged = BTreeSet::new();
+    if let Some(m) = rec.as_object() {
+        for (k, v) in m {
+            if !matches!(k.as_str(), "_norm" | "_facts" | "_ip") {
+                values(v, &mut logged);
+            }
+        }
+    }
+    if let Some(norm) = rec.get_mut("_norm").and_then(Value::as_object_mut) {
+        norm.retain(|k, v| {
+            matches!(k.as_str(), "actor" | "org")
+                || (k != "aws" && !logged.contains(&v.to_string()))
+        });
+    }
 }
 
 impl Guest for Component {
@@ -354,6 +386,7 @@ impl Guest for Component {
             let (mut facts, notes) = facts_of(p, &rec, ip);
             facts.insert("notes".into(), json!(notes));
             rec["_facts"] = Value::Object(facts);
+            unrepeat(&mut rec);
             out.extend(serde_json::to_vec(&rec).map_err(|e| e.to_string())?);
             out.push(b'\n');
         }

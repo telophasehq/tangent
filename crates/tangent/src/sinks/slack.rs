@@ -188,6 +188,13 @@ mod tests {
             msg("repo.add_member by first_last"),
             "*alice*: repo.add_member by first_last"
         );
+        assert_eq!(
+            render(
+                "{_norm.kind|eventName|events.0.name}",
+                &json!({"events": [{"name": "EMAIL_FORWARDING_OUT_OF_DOMAIN"}]})
+            ),
+            "EMAIL_FORWARDING_OUT_OF_DOMAIN"
+        );
         let one = render("{x}", &json!({ "x": "a".repeat(1000) }));
         assert_eq!(one.chars().count(), 300);
     }
