@@ -1,4 +1,4 @@
-# compact v2, 12 records
+# compacted logfmt, 12 records
 ## 2 records
 actor.alternateId=oncall-frank@acme.io
 actor.displayName=Oncall-Frank
@@ -119,7 +119,7 @@ _norm.org=acme
 11 _norm.actor=acme/api bytes_out=600 dst_host=ghcr.io dst_port=443 http.method=GET http.path=/v2/aquasecurity/trivy-db/manifests/2 repo=acme/api run_id=61007 source=runner_egress ts="2026-10-20T13:00:12Z" _facts.dest_known=true _facts.notes=[] _norm.kind=egress
 # end
 --- sidecar
-# compact v2, 19 records
+# compacted logfmt, 19 records
 @1=dev-sam acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.)
 @2=dev-sam acting from NL, 185.224.128.17 (Alsycon B.V.)
 @3=service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws
@@ -165,7 +165,7 @@ eventTime,ts(2026-10-20)
 14 eventTime,ts=13:02:24 _norm.actor=railway-deploy eventName=GetObject requestParameters.bucketName=acme-customer-exports requestParameters.key=exports/2026-10/part-07.parquet userAgent=aws-cli/2.17.0 _facts.notes=[@3,@4] _facts.sensitive_target=true
 # end
 --- sidecar
-# compact v2, 16 records
+# compacted logfmt, 16 records
 ## 10 records
 actor=ak_rail
 event=api_request
@@ -264,7 +264,7 @@ _norm.org=acme
 15 _norm.actor=oncall-frank@acme.io eventType=user.session.start outcome.result=SUCCESS
 # end
 --- sidecar
-# compact v2, 10 records
+# compacted logfmt, 10 records
 ## 3 records
 org=acme
 source=app

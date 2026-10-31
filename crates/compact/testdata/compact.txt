@@ -1,4 +1,4 @@
-# compact v2, 57 records
+# compacted logfmt, 57 records
 @1=service deploy-bot acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws
 @2=service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws
 @3=railway-deploy touched acme-customer-exports, which the org marks sensitive
