@@ -67,8 +67,9 @@ pub struct PartitionConfig {
 
     /// The field holding a record's own time (RFC 3339 or epoch seconds or
     /// milliseconds), which keys its retained row. Arrival time without it.
-    #[serde(default)]
-    pub time: Option<String>,
+    /// `time`, its name in v0.1.10, still works.
+    #[serde(default, alias = "time")]
+    pub timestamp_key: Option<String>,
 }
 
 fn default_separator() -> String {

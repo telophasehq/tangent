@@ -107,12 +107,23 @@ mod tests {
         assert_eq!(time_of(&v, None), None);
     }
 
+    #[test]
+    fn timestamp_key_was_time() {
+        for raw in [
+            r#"{"key":["org"],"timestamp_key":"ts"}"#,
+            r#"{"key":["org"],"time":"ts"}"#,
+        ] {
+            let c: PartitionConfig = serde_json::from_str(raw).unwrap();
+            assert_eq!(c.timestamp_key.as_deref(), Some("ts"));
+        }
+    }
+
     fn cfg(keys: &[&str]) -> PartitionConfig {
         PartitionConfig {
             key: keys.iter().map(|s| s.to_string()).collect(),
             separator: "|".into(),
             retain_ms: None,
-            time: None,
+            timestamp_key: None,
         }
     }
 
