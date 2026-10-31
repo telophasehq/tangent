@@ -1,5 +1,5 @@
 [workspace]
-members = [ "crates/bench","crates/tangent", "crates/compile-wasm", "crates/shared", "crates/cli"]
+members = [ "crates/bench","crates/tangent", "crates/compile-wasm", "crates/shared", "crates/cli", "crates/compact"]
 resolver = "2"
 
 [workspace.dependencies]

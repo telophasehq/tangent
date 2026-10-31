@@ -5835,6 +5835,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tangent-compact"
+version = "0.1.9"
+dependencies = [
+ "anyhow",
+ "rand 0.9.2",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "tangent-runtime"
 version = "0.1.9"
 dependencies = [
@@ -5893,6 +5905,7 @@ dependencies = [
  "serde_yaml",
  "sha2 0.10.9",
  "simd-json",
+ "tangent-compact",
  "tangent-shared",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
@@ -5922,6 +5935,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "tangent-compact",
  "wasmtime",
  "wasmtime-wasi",
 ]

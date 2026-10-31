@@ -1,0 +1,238 @@
+# compact v2, 57 records
+@1=service deploy-bot acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws
+@2=service railway-deploy acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.), not the org's aws
+@3=railway-deploy touched acme-customer-exports, which the org marks sensitive
+@4=dev-sam acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.)
+@5=dev-sam acting from NL, 185.224.128.17 (Alsycon B.V.)
+@6=key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from
+## 3 records
+actor.alternateId=oncall-frank@acme.io
+actor.displayName=Oncall-Frank
+actor.type=User
+client.geographicalContext.city=Oakland
+client.geographicalContext.country=US
+client.ipAddress="67.180.22.4"
+client.userAgent.browser=CHROME
+client.userAgent.os=Mac OS X
+displayMessage=user session start
+securityContext.asNumber=7922
+securityContext.asOrg=Comcast Cable
+securityContext.isProxy=false
+severity=INFO
+source=okta
+_facts.ip.asn=7922
+_facts.ip.country=US
+_facts.ip.org=Comcast Cable Communications, LLC
+_facts.notes=[]
+_facts.principal=member
+_norm.org=acme
+0 published,ts="2026-10-14T03:05:00Z" _norm.actor=oncall-frank@acme.io eventType=user.session.start outcome.result=SUCCESS
+1 published,ts="2026-10-18T02:48:00Z" _norm.actor=oncall-frank@acme.io eventType=user.session.start outcome.result=SUCCESS
+46 published,ts="2026-10-22T03:12:00Z" _norm.actor=oncall-frank@acme.io eventType=user.session.start outcome.result=SUCCESS
+## 1 record
+additionalEventData.MFAUsed=No
+awsRegion=us-west-2
+eventSource=signin.amazonaws.com
+eventTime,ts="2026-10-20T13:00:00Z"
+recipientAccountId="111122223333"
+responseElements.ConsoleLogin=Success
+source=cloudtrail
+sourceIPAddress="98.51.100.23"
+userAgent=Mozilla/5.0
+userIdentity.accountId="111122223333"
+userIdentity.arn=arn:aws:iam::111122223333:root
+userIdentity.type=Root
+userIdentity.userName=root
+_facts.ip.asn=7922
+_facts.ip.country=US
+_facts.ip.org=Comcast Cable Communications, LLC
+_facts.notes=["AWS root credentials used","principal root is nobody the org profile knows"]
+_facts.principal=unknown
+_facts.root=true
+_norm.org=acme
+2 _norm.actor=root eventName=ConsoleLogin requestParameters={}
+## 5 records
+awsRegion=us-west-2
+recipientAccountId="111122223333"
+responseElements={}
+source=cloudtrail
+userIdentity.accountId="111122223333"
+userIdentity.arn=arn:aws:iam::111122223333:user/deploy-bot
+userIdentity.type=IAMUser
+userIdentity.userName=deploy-bot
+_facts.ip.hosting=datacenter
+_facts.principal=service
+_norm.org=acme
+eventTime,ts(2026-10-20)
+3 eventTime,ts=13:00:00 _norm.actor=deploy-bot _facts.watch=true eventName=StopLogging requestParameters.name=arn:aws:cloudtrail:us-west-2:111122223333:trail/org-trail eventSource=cloudtrail.amazonaws.com sourceIPAddress="65.108.22.91" userAgent=aws-cli/2.17.0 _facts.ip.asn=24940 _facts.ip.country=FI _facts.ip.org="Hetzner Online GmbH" _facts.notes=["StopLogging is a kind the org watches every time","service deploy-bot acting from datacenter hosting, 65.108.22.91 (Hetzner Online GmbH), not the org's aws"]
+41 eventTime,ts=13:11:00 _norm.actor=deploy-bot eventName=GetCallerIdentity requestParameters={} eventSource=sts.amazonaws.com sourceIPAddress="185.224.128.17" userAgent=aws-sdk-go/1.44 _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.org="Alsycon B.V." _facts.notes=[@1]
+42 eventTime,ts=13:11:30 _norm.actor=deploy-bot eventName=ListBuckets requestParameters={} eventSource=s3.amazonaws.com sourceIPAddress="185.224.128.17" userAgent=aws-sdk-go/1.44 _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.org="Alsycon B.V." _facts.notes=[@1]
+43 eventTime,ts=13:12:00 _norm.actor=deploy-bot eventName=ListSecrets requestParameters={} eventSource=secretsmanager.amazonaws.com sourceIPAddress="185.224.128.17" userAgent=aws-sdk-go/1.44 _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.org="Alsycon B.V." _facts.notes=[@1]
+44 eventTime,ts=13:12:30 _norm.actor=deploy-bot eventName=GetSecretValue requestParameters.secretId=prod/db/master eventSource=secretsmanager.amazonaws.com sourceIPAddress="185.224.128.17" userAgent=aws-sdk-go/1.44 _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.org="Alsycon B.V." _facts.notes=[@1]
+## 10 records
+awsRegion=us-west-2
+recipientAccountId="111122223333"
+responseElements={}
+source=cloudtrail
+sourceIPAddress="185.224.128.17"
+userIdentity.accountId="111122223333"
+userIdentity.arn=arn:aws:iam::111122223333:user/railway-deploy
+userIdentity.type=IAMUser
+userIdentity.userName=railway-deploy
+_facts.ip.asn=49870
+_facts.ip.country=NL
+_facts.ip.hosting=datacenter
+_facts.ip.org=Alsycon B.V.
+_facts.principal=service
+_norm.org=acme
+eventTime,ts(2026-10-20)
+4 eventTime,ts=13:00:00 _norm.actor=railway-deploy eventName=GetCallerIdentity requestParameters={} eventSource=sts.amazonaws.com userAgent=aws-cli/2.22.0 _facts.notes=[@2]
+16 eventTime,ts=13:00:30 _norm.actor=railway-deploy eventName=ListBuckets requestParameters={} eventSource=s3.amazonaws.com userAgent=aws-cli/2.22.0 _facts.notes=[@2]
+19 eventTime,ts=13:01:00 _norm.actor=railway-deploy eventName=GetObject requestParameters.bucketName=acme-customer-exports requestParameters.key=exports/2026-10/part-00.parquet eventSource=s3.amazonaws.com userAgent=aws-cli/2.17.0 _facts.notes=[@2,@3] _facts.sensitive_target=true
+20 eventTime,ts=13:01:12 _norm.actor=railway-deploy eventName=GetObject requestParameters.bucketName=acme-customer-exports requestParameters.key=exports/2026-10/part-01.parquet eventSource=s3.amazonaws.com userAgent=aws-cli/2.17.0 _facts.notes=[@2,@3] _facts.sensitive_target=true
+21 eventTime,ts=13:01:24 _norm.actor=railway-deploy eventName=GetObject requestParameters.bucketName=acme-customer-exports requestParameters.key=exports/2026-10/part-02.parquet eventSource=s3.amazonaws.com userAgent=aws-cli/2.17.0 _facts.notes=[@2,@3] _facts.sensitive_target=true
+22 eventTime,ts=13:01:36 _norm.actor=railway-deploy eventName=GetObject requestParameters.bucketName=acme-customer-exports requestParameters.key=exports/2026-10/part-03.parquet eventSource=s3.amazonaws.com userAgent=aws-cli/2.17.0 _facts.notes=[@2,@3] _facts.sensitive_target=true
+23 eventTime,ts=13:01:48 _norm.actor=railway-deploy eventName=GetObject requestParameters.bucketName=acme-customer-exports requestParameters.key=exports/2026-10/part-04.parquet eventSource=s3.amazonaws.com userAgent=aws-cli/2.17.0 _facts.notes=[@2,@3] _facts.sensitive_target=true
+24 eventTime,ts=13:02:00 _norm.actor=railway-deploy eventName=GetObject requestParameters.bucketName=acme-customer-exports requestParameters.key=exports/2026-10/part-05.parquet eventSource=s3.amazonaws.com userAgent=aws-cli/2.17.0 _facts.notes=[@2,@3] _facts.sensitive_target=true
+25 eventTime,ts=13:02:12 _norm.actor=railway-deploy eventName=GetObject requestParameters.bucketName=acme-customer-exports requestParameters.key=exports/2026-10/part-06.parquet eventSource=s3.amazonaws.com userAgent=aws-cli/2.17.0 _facts.notes=[@2,@3] _facts.sensitive_target=true
+26 eventTime,ts=13:02:24 _norm.actor=railway-deploy eventName=GetObject requestParameters.bucketName=acme-customer-exports requestParameters.key=exports/2026-10/part-07.parquet eventSource=s3.amazonaws.com userAgent=aws-cli/2.17.0 _facts.notes=[@2,@3] _facts.sensitive_target=true
+## 2 records
+actor.alternateId=bob@acme.io
+actor.displayName=Bob
+actor.type=User
+client.userAgent.browser=CHROME
+client.userAgent.os=Mac OS X
+displayMessage=user session start
+securityContext.isProxy=false
+severity=INFO
+source=okta
+_facts.principal=member
+_norm.org=acme
+published,ts(2026-10-20)
+5 published,ts=13:00:00 _norm.actor=bob@acme.io eventType=user.session.start outcome.result=SUCCESS client.geographicalContext.city="San Francisco" client.geographicalContext.country,_facts.ip.country=US client.ipAddress="73.162.14.9" securityContext.asNumber=7922 securityContext.asOrg="Comcast Cable" _facts.ip.asn=7922 _facts.ip.org="Comcast Cable Communications, LLC" _facts.notes=[]
+45 published,ts=13:22:00 _norm.actor=bob@acme.io eventType=user.session.start outcome.result=SUCCESS client.geographicalContext.city=Singapore client.geographicalContext.country,_facts.ip.country=SG client.ipAddress="103.6.150.77" securityContext.asNumber=63949 securityContext.asOrg="Akamai Connected Cloud" _facts.ip.asn=56300 _facts.ip.org="MyRepublic Ltd." _facts.notes=["bob@acme.io acting from SG, 103.6.150.77 (MyRepublic Ltd.)"]
+## 29 records
+_norm.org=acme
+6 _norm.actor=cfo@acme.io _facts.ip.tor,_facts.ip.vpn,_facts.watch=true actor.callerType=USER actor.email=cfo@acme.io events=[{"name":"EMAIL_FORWARDING_OUT_OF_DOMAIN","parameters":{"email_forwarding_destination_address":"acme.finance.backup@gmail.com"},"type":"email_forwarding_change"}] id.applicationName=user_accounts id.time="2026-10-20T13:00:00Z" ipAddress="185.220.101.4" source=google_workspace ts="2026-10-20T13:00:00Z" _facts.ip.asn=60729 _facts.ip.country=DE _facts.ip.hosting=datacenter _facts.ip.org="Stiftung Erneuerbare Freiheit" _facts.notes=["EMAIL_FORWARDING_OUT_OF_DOMAIN is a kind the org watches every time","185.220.101.4 is a Tor exit (Stiftung Erneuerbare Freiheit)","185.220.101.4 is a VPN address (Stiftung Erneuerbare Freiheit)","cfo@acme.io acting from datacenter hosting, 185.220.101.4 (Stiftung Erneuerbare Freiheit)","cfo@acme.io acting from DE, 185.220.101.4 (Stiftung Erneuerbare Freiheit)"] _facts.principal=member
+7 _norm.actor=acme/api job=build line="Downloading action archive" repo=acme/api run_id=61007 source=gha_ci step="Run aquasecurity/trivy-action@0.28.0" ts="2026-10-20T13:00:00Z" _facts.notes=[]
+8 _norm.actor=acme/api job=build line="Downloading action archive" repo=acme/api run_id=61075 source=gha_ci step="Run aquasecurity/trivy-action@0.28.0" ts="2026-10-20T13:00:00Z" _facts.notes=[]
+9 _norm.actor=acme/api bytes_out=300 dst_host=github.com dst_port=443 http.method=GET http.path=/aquasecurity/trivy-action/archive/refs/tags/0.28.0.tar.gz repo=acme/api run_id=61075 source=runner_egress ts="2026-10-20T13:00:06Z" _facts.dest_known=true _facts.notes=[] _norm.kind=egress
+10 _norm.actor=acme/api job=build line="Trivy DB updated" repo=acme/api run_id=61007 source=gha_ci step="Run aquasecurity/trivy-action@0.28.0" ts="2026-10-20T13:00:12Z" _facts.notes=[]
+11 _norm.actor=acme/api bytes_out=600 dst_host=ghcr.io dst_port=443 http.method=GET http.path=/v2/aquasecurity/trivy-db/manifests/2 repo=acme/api run_id=61007 source=runner_egress ts="2026-10-20T13:00:12Z" _facts.dest_known=true _facts.notes=[] _norm.kind=egress
+12 _norm.actor=acme/api job=build line="Trivy DB updated" repo=acme/api run_id=61075 source=gha_ci step="Run aquasecurity/trivy-action@0.28.0" ts="2026-10-20T13:00:12Z" _facts.notes=[]
+13 _norm.actor=acme/api bytes_out=600 dst_host=ghcr.io dst_port=443 http.method=GET http.path=/v2/aquasecurity/trivy-db/manifests/2 repo=acme/api run_id=61075 source=runner_egress ts="2026-10-20T13:00:12Z" _facts.dest_known=true _facts.notes=[] _norm.kind=egress
+14 _norm.actor=acme/api job=build line="scanning image acme/api:sha-8f3c2a1" repo=acme/api run_id=61007 source=gha_ci step="Run aquasecurity/trivy-action@0.28.0" ts="2026-10-20T13:00:18Z" _facts.notes=[]
+15 _norm.actor=acme/api bytes_out=194560 dst_host=api.aquasecurtiy.org dst_port=443 http.method=POST http.path=/v1/scan repo=acme/api run_id=61007 source=runner_egress ts="2026-10-20T13:00:24Z" _facts.dest_known=false _facts.notes=["acme/api talked to api.aquasecurtiy.org, not a host this org's systems talk to"] _norm.kind=egress
+17 _norm.actor=acme/api job=build line="2 vulnerabilities found (LOW)" repo=acme/api run_id=61075 source=gha_ci step="Run aquasecurity/trivy-action@0.28.0" ts="2026-10-20T13:00:30Z" _facts.notes=[]
+18 _norm.actor=acme/api job=build line="0 vulnerabilities found" repo=acme/api run_id=61007 source=gha_ci step="Run aquasecurity/trivy-action@0.28.0" ts="2026-10-20T13:00:36Z" _facts.notes=[]
+27 _norm.actor=dev-sam action=git.clone actor=dev-sam actor_ip="185.224.128.17" actor_location.country_code=NL org=acme programmatic_access_type="personal access token" repo=acme/payments-api source=github_audit ts="2026-10-20T13:03:00Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.notes=[@4,@5] _facts.principal=member
+28 _norm.actor=dev-sam action=git.clone actor=dev-sam actor_ip="185.224.128.17" actor_location.country_code=NL org=acme programmatic_access_type="personal access token" repo=acme/billing source=github_audit ts="2026-10-20T13:03:18Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.notes=[@4,@5] _facts.principal=member
+29 _norm.actor=dev-sam action=git.clone actor=dev-sam actor_ip="185.224.128.17" actor_location.country_code=NL org=acme programmatic_access_type="personal access token" repo=acme/infra source=github_audit ts="2026-10-20T13:03:36Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.notes=[@4,@5] _facts.principal=member
+30 _norm.actor=dev-sam action=git.clone actor=dev-sam actor_ip="185.224.128.17" actor_location.country_code=NL org=acme programmatic_access_type="personal access token" repo=acme/web source=github_audit ts="2026-10-20T13:03:54Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.notes=[@4,@5] _facts.principal=member
+31 _norm.actor=ak_rail actor=ak_rail event=api_request ip="185.224.128.17" method=GET org=acme page=1 path=/v1/findings source=app status=200 ts="2026-10-20T13:06:00Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.key_known_network=false _facts.notes=[@6] _facts.principal=key
+32 _norm.actor=ak_rail actor=ak_rail event=api_request ip="185.224.128.17" method=GET org=acme page=2 path=/v1/findings source=app status=200 ts="2026-10-20T13:06:12Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.key_known_network=false _facts.notes=[@6] _facts.principal=key
+33 _norm.actor=ak_rail actor=ak_rail event=api_request ip="185.224.128.17" method=GET org=acme page=3 path=/v1/findings source=app status=200 ts="2026-10-20T13:06:24Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.key_known_network=false _facts.notes=[@6] _facts.principal=key
+34 _norm.actor=ak_rail actor=ak_rail event=api_request ip="185.224.128.17" method=GET org=acme page=4 path=/v1/findings source=app status=200 ts="2026-10-20T13:06:36Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.key_known_network=false _facts.notes=[@6] _facts.principal=key
+35 _norm.actor=ak_rail actor=ak_rail event=api_request ip="185.224.128.17" method=GET org=acme page=5 path=/v1/findings source=app status=200 ts="2026-10-20T13:06:48Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.key_known_network=false _facts.notes=[@6] _facts.principal=key
+36 _norm.actor=ak_rail actor=ak_rail event=api_request ip="185.224.128.17" method=GET org=acme page=6 path=/v1/findings source=app status=200 ts="2026-10-20T13:07:00Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.key_known_network=false _facts.notes=[@6] _facts.principal=key
+37 _norm.actor=ak_rail actor=ak_rail event=api_request ip="185.224.128.17" method=GET org=acme page=7 path=/v1/findings source=app status=200 ts="2026-10-20T13:07:12Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.key_known_network=false _facts.notes=[@6] _facts.principal=key
+38 _norm.actor=ak_rail actor=ak_rail event=api_request ip="185.224.128.17" method=GET org=acme page=8 path=/v1/findings source=app status=200 ts="2026-10-20T13:07:24Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.key_known_network=false _facts.notes=[@6] _facts.principal=key
+39 _norm.actor=ak_rail actor=ak_rail event=api_request ip="185.224.128.17" method=GET org=acme page=9 path=/v1/findings source=app status=200 ts="2026-10-20T13:07:36Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.key_known_network=false _facts.notes=[@6] _facts.principal=key
+40 _norm.actor=ak_rail actor=ak_rail event=api_request ip="185.224.128.17" method=GET org=acme page=10 path=/v1/findings source=app status=200 ts="2026-10-20T13:07:48Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.key_known_network=false _facts.notes=[@6] _facts.principal=key
+47 _norm.actor=oncall-frank@acme.io actor=oncall-frank@acme.io event=page.view ip="67.180.22.4" org=acme path=/dashboards/errors source=app ts="2026-10-22T03:13:00Z" _facts.ip.asn=7922 _facts.ip.country=US _facts.ip.org="Comcast Cable Communications, LLC" _facts.notes=[] _facts.principal=member
+48 _norm.actor=oncall-frank@acme.io actor=oncall-frank@acme.io event=incident.ack incident=INC-2210 ip="67.180.22.4" org=acme source=app ts="2026-10-22T03:20:00Z" _facts.ip.asn=7922 _facts.ip.country=US _facts.ip.org="Comcast Cable Communications, LLC" _facts.notes=[] _facts.principal=member
+55 _norm.actor=aws:support actor=aws:support event=user.login ip="185.224.128.40" org=acme source=app ts="2026-10-22T03:25:00Z" _facts.ip.asn=49870 _facts.ip.country=NL _facts.ip.hosting=datacenter _facts.ip.org="Alsycon B.V." _facts.notes=["principal aws:support is nobody the org profile knows","aws:support acting from datacenter hosting, 185.224.128.40 (Alsycon B.V.)","aws:support acting from NL, 185.224.128.40 (Alsycon B.V.)"] _facts.principal=unknown
+## 2 records
+awsRegion=us-west-2
+readOnly=true
+recipientAccountId="111122223333"
+source=cloudtrail
+userIdentity.accountId="111122223333"
+userIdentity.arn=arn:aws:sts::111122223333:assumed-role/AWSServiceRoleForResourceExplorer/resource-explorer-2
+userIdentity.role=AWSServiceRoleForResourceExplorer
+userIdentity.type=AssumedRole
+_facts.notes=[]
+_facts.principal=aws
+_norm.org=acme
+eventTime,ts(2026-10-20)
+49 eventTime,ts=13:05:00 _norm.actor=aws:resource-explorer-2 eventName=ListTargetGroups eventSource=vpc-lattice.amazonaws.com sourceIPAddress=resource-explorer-2.amazonaws.com userAgent=resource-explorer-2.amazonaws.com userIdentity.invokedBy=resource-explorer-2.amazonaws.com
+52 eventTime,ts=13:08:00 _norm.actor=aws:resource-explorer-2 eventName=ListPolicyStores eventSource=verifiedpermissions.amazonaws.com sourceIPAddress="52.94.76.10" userAgent="aws-sdk-java/2.25.0 exec-env/AWS_ECS_FARGATE" _facts.ip.asn=16509 _facts.ip.country=US _facts.ip.hosting=aws _facts.ip.org="Amazon.com, Inc."
+## 1 record
+awsRegion=us-west-2
+eventSource=sts.amazonaws.com
+eventTime,ts="2026-10-20T13:06:00Z"
+readOnly=true
+recipientAccountId="111122223333"
+source=cloudtrail
+sourceIPAddress,userAgent,userIdentity.invokedBy=ecs-tasks.amazonaws.com
+userIdentity.type=AWSService
+_facts.notes=[]
+_facts.principal=aws
+_norm.org=acme
+50 _norm.actor=aws:ecs-tasks eventName=AssumeRole requestParameters.roleArn=arn:aws:iam::111122223333:role/ecs-task requestParameters.roleSessionName=task-1
+## 1 record
+awsRegion=us-west-2
+eventSource=s3.amazonaws.com
+eventTime,ts="2026-10-20T13:07:00Z"
+readOnly=true
+recipientAccountId="111122223333"
+source=cloudtrail
+sourceIPAddress="203.0.113.9"
+userAgent=aws-cli/2.17.0
+userIdentity.accountId="111122223333"
+userIdentity.arn=arn:aws:sts::111122223333:assumed-role/foo/foo-session
+userIdentity.role=foo
+userIdentity.type=AssumedRole
+_facts.ip={}
+_facts.notes=["principal foo is nobody the org profile knows"]
+_facts.principal=unknown
+_norm.org=acme
+51 _norm.actor=foo eventName=ListBuckets
+## 1 record
+awsRegion=us-west-2
+eventSource=ecr.amazonaws.com
+eventTime,ts="2026-10-20T13:09:00Z"
+readOnly=true
+recipientAccountId="111122223333"
+source=cloudtrail
+sourceIPAddress=AWS Internal
+userAgent=AWS Internal
+userIdentity.accountId="111122223333"
+userIdentity.invokedBy=AWS Internal
+_facts.notes=[]
+_facts.principal=aws
+_norm.org=acme
+53 _norm.actor=aws:ecr eventName=PolicyExecutionEvent
+## 1 record
+awsRegion=us-west-2
+eventSource=sts.amazonaws.com
+eventTime,ts="2026-10-20T13:10:00Z"
+readOnly=true
+recipientAccountId="111122223333"
+source=cloudtrail
+sourceIPAddress=AWS Internal
+userAgent=AWS Internal
+userIdentity.invokedBy=AWS Internal
+userIdentity.type=AWSService
+_facts.notes=[]
+_facts.principal=aws
+_norm.org=acme
+54 _norm.actor=aws:organizations eventName=AssumeRole requestParameters.roleArn=arn:aws:iam::111122223333:role/aws-service-role/organizations.amazonaws.com/AWSServiceRoleForOrganizations requestParameters.roleSessionName=ASLRP-SLRCreationManager
+## 1 record
+eventSource=iam.amazonaws.com
+source=cloudtrail
+sourceIPAddress="3.208.10.20"
+ts="2026-10-22T04:00:00Z"
+userIdentity.accountId="111122223333"
+userIdentity.role=DrataAutopilotRole
+userIdentity.type=AssumedRole
+_facts.about=Drata, the compliance vendor: reads IAM, credential reports and backups every day
+_facts.ip.asn=16509
+_facts.ip.country=US
+_facts.ip.hosting=aws
+_facts.ip.org=Amazon.com, Inc.
+_facts.notes=["DrataAutopilotRole acting from aws hosting, 3.208.10.20 (Amazon.com, Inc.)"]
+_facts.principal=unknown
+_norm.org=acme
+56 _norm.actor=DrataAutopilotRole eventName=GenerateCredentialReport
+# end

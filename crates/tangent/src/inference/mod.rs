@@ -24,7 +24,8 @@ use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tangent_shared::inference::{Backend, InferenceConfig};
+use tangent_compact as compact;
+use tangent_shared::inference::{Backend, Encoding, InferenceConfig};
 use tokio::sync::Semaphore;
 
 pub struct InferenceNode {
@@ -113,7 +114,7 @@ impl InferenceNode {
     }
 
     /// Every record through the model, a request per value of `group_by`
-    /// split at `batch_bytes`, each under one of the node's permits; the
+    /// split at `batch_bytes` (and `budget_tokens`), each under one of the node's permits; the
     /// annotated records, in the order given.
     pub async fn annotate_all(&self, records: Vec<Value>) -> Vec<Value> {
         let n = records.len();
@@ -155,14 +156,12 @@ impl InferenceNode {
     async fn annotate(&self, records: Vec<Value>) -> Vec<Value> {
         let n = records.len();
         let start = Instant::now();
-        let user = records
-            .iter()
-            .enumerate()
-            .map(|(k, v)| self.line(k, v))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let answers = match self.ask(user, n).await {
-            Ok(reply) => spread(reply, n),
+        let answers = match self.user(&records) {
+            Ok(user) => self.ask(user, n).await,
+            Err(e) => Err(e),
+        };
+        let answers = match answers {
+            Ok(reply) => spread(reply, n, matches!(self.cfg.encoding, Encoding::Ndjson)),
             // a failed request would fail the same in halves
             Err(e) if n > 1 && e.to_string().starts_with("reply ") => {
                 tracing::warn!(
@@ -194,8 +193,30 @@ impl InferenceNode {
             .collect()
     }
 
-    /// About `batch_bytes` per request.
+    /// About `batch_bytes` of JSON per request; with `logfmt`, also within its `budget_tokens`.
     fn chunks(&self, records: Vec<Value>) -> Vec<Vec<Value>> {
+        let parts = self.split(records);
+        let Encoding::Logfmt(cfg) = &self.cfg.encoding else {
+            return parts;
+        };
+        let mut out = Vec::new();
+        for part in parts {
+            let views: Vec<Value> = part.iter().map(|v| self.object(v)).collect();
+            let mut part = part.into_iter();
+            // objects no deeper than serde_json reads: nothing it cannot write
+            match compact::encode(&views, cfg) {
+                Ok(chunks) => out.extend(
+                    chunks
+                        .iter()
+                        .map(|c| part.by_ref().take(c.records.len()).collect()),
+                ),
+                Err(_) => out.extend(part.map(|r| vec![r])),
+            }
+        }
+        out
+    }
+
+    fn split(&self, records: Vec<Value>) -> Vec<Vec<Value>> {
         let max_bytes = self.cfg.batch_bytes.max(1);
         let mut out = Vec::new();
         let mut cur: Vec<Value> = Vec::new();
@@ -229,6 +250,30 @@ impl InferenceNode {
         Value::Object(m)
     }
 
+    /// The user message: a JSON line per record, or `logfmt` text.
+    fn user(&self, records: &[Value]) -> Result<String> {
+        match &self.cfg.encoding {
+            Encoding::Ndjson => Ok(records
+                .iter()
+                .enumerate()
+                .map(|(k, v)| self.line(k, v))
+                .collect::<Vec<_>>()
+                .join("\n")),
+            Encoding::Logfmt(cfg) => {
+                let views: Vec<Value> = records.iter().map(|v| self.object(v)).collect();
+                Ok(compact::encode_chunk(&views, cfg)?.0)
+            }
+        }
+    }
+
+    /// The view as an object: a record that is not one shows nothing, as in `line`.
+    fn object(&self, v: &Value) -> Value {
+        match self.view(v) {
+            o @ Value::Object(_) => o,
+            _ => Value::Object(Map::new()),
+        }
+    }
+
     fn line(&self, k: usize, v: &Value) -> String {
         let mut m = Map::new();
         m.insert("i".into(), json!(k));
@@ -239,9 +284,17 @@ impl InferenceNode {
     }
 
     fn request(&self, user: String, n: usize) -> CompletionRequest {
+        // logfmt text groups records, so its answers go by index rather than as written
+        let (format, order) = match self.cfg.encoding {
+            Encoding::Ndjson => (
+                "The records are one JSON object per line, each with its index `i`.",
+                "in the same order",
+            ),
+            Encoding::Logfmt(_) => (compact::LEGEND, "in order of index"),
+        };
         let preamble = format!(
-            "{}\n\nThe records are one JSON object per line, each with its index `i`. Reply with one JSON object, \
-             {{\"answers\": [...]}}, holding one answer per record, {n} in all, in the same order, each the \
+            "{}\n\n{format} Reply with one JSON object, \
+             {{\"answers\": [...]}}, holding one answer per record, {n} in all, {order}, each the \
              record's answer with its index first: {{\"i\": k, ...}}. Keep going through \
              every record: the reply is not finished until the answer with \"i\": {last} is written, then close \
              the array and the object. The reply is the JSON object itself: no code fence, no text before or \
@@ -347,8 +400,9 @@ fn attach(name: &str, v: Value, reply: Value) -> Value {
     Value::Object(obj)
 }
 
-/// Answers by their `i` when all carry one, else by position.
-fn spread(reply: Value, n: usize) -> Vec<Value> {
+/// Answers by their `i`; by position when none is missing one and the text
+/// is in index order (`in_order`; logfmt groups its rows).
+fn spread(reply: Value, n: usize, in_order: bool) -> Vec<Value> {
     let Some(items) = reply.get("answers").and_then(Value::as_array).cloned() else {
         let err = format!(
             "reply has no `answers` array: {}",
@@ -356,10 +410,11 @@ fn spread(reply: Value, n: usize) -> Vec<Value> {
         );
         return vec![json!({"error": err}); n];
     };
-    let indexed = !items.is_empty()
-        && items
-            .iter()
-            .all(|a| a.get("i").and_then(Value::as_u64).is_some());
+    let indexed = !in_order
+        || !items.is_empty()
+            && items
+                .iter()
+                .all(|a| a.get("i").and_then(Value::as_u64).is_some());
     let mut slots: Vec<Option<Value>> = vec![None; n];
     for (pos, a) in items.into_iter().enumerate() {
         let k = if indexed {
@@ -542,10 +597,28 @@ pub(crate) mod stub {
                     } else if user.matches("loop").count() >= 3 {
                         "{\"answers\": [{\"flag\": false, \"one_line\": \"a7a7a7a7".to_string()
                     } else {
-                        let answers: Vec<_> = user
-                            .lines()
-                            .filter(|l| l.starts_with("{\"i\":"))
-                            .map(verdict)
+                        // logfmt rows are not in index order: those answers carry `i`
+                        let logfmt = user.starts_with("# compact v");
+                        let records: Vec<String> = if logfmt {
+                            tangent_compact::decode(&user, None)
+                                .map(|rs| rs.iter().map(|r| r.to_string()).collect())
+                                .unwrap_or_default()
+                        } else {
+                            user.lines()
+                                .filter(|l| l.starts_with("{\"i\":"))
+                                .map(String::from)
+                                .collect()
+                        };
+                        let answers: Vec<_> = records
+                            .iter()
+                            .enumerate()
+                            .map(|(k, r)| {
+                                let mut a = verdict(r);
+                                if logfmt {
+                                    a["i"] = json!(k);
+                                }
+                                a
+                            })
                             .collect();
                         json!({"answers": answers}).to_string()
                     };
@@ -615,6 +688,7 @@ pub(crate) mod stub {
             schema_file: None,
             fields: Vec::new(),
             batch_bytes: 32_768,
+            encoding: Default::default(),
             group_by: Vec::new(),
             concurrency: 2,
             timeout_ms: 5_000,
@@ -702,6 +776,40 @@ mod tests {
             req.get("temperature").is_none(),
             "temperature is sent only when set: {req}"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn logfmt_records_reach_the_model_and_read_back() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("logfmt");
+        let mut cfg = stub::config(&url);
+        cfg.encoding = serde_yaml::from_str("{type: logfmt, budget_tokens: 60}").unwrap();
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let records: Vec<Value> = (0..6)
+            .map(|k| json!({"source": "app", "user": "ann", "n": k, "msg": if k == 4 { "bad login" } else { "fine" }}))
+            .collect();
+        let outs = node.annotate_all(records.clone()).await;
+        let flags: Vec<bool> = outs
+            .iter()
+            .map(|o| o["judge"]["flag"].as_bool().unwrap())
+            .collect();
+        assert_eq!(flags, [false, false, false, false, true, false]);
+
+        // past the budget the group is split between records; together the parts are the records
+        let seen = seen.lock().await;
+        assert!(seen.len() > 1, "{} requests", seen.len());
+        let users: Vec<String> = seen
+            .iter()
+            .map(|b| {
+                stub::text(&serde_json::from_str::<Value>(b).unwrap()["messages"][1]["content"])
+            })
+            .collect();
+        let back = compact::decode_all(users.iter().map(|u| (u.as_str(), None))).unwrap();
+        assert_eq!(back, records);
+        let system =
+            stub::text(&serde_json::from_str::<Value>(&seen[0]).unwrap()["messages"][0]["content"]);
+        assert!(system.contains("compact v2"), "{system}");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -826,6 +934,7 @@ mod tests {
         let out = spread(
             json!({"answers": [{"i": 1, "flag": true}, {"i": 0, "flag": false}]}),
             3,
+            true,
         );
         assert_eq!(out[0], json!({"flag": false}));
         assert_eq!(out[1], json!({"flag": true}));
@@ -833,6 +942,13 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("no answer for record 2"));
+        // logfmt's rows are not in index order: an answer without `i` lands nowhere
+        let out = spread(
+            json!({"answers": [{"flag": true}, {"flag": false}]}),
+            2,
+            false,
+        );
+        assert!(out.iter().all(|a| a["error"].is_string()), "{out:?}");
     }
 
     #[tokio::test]
