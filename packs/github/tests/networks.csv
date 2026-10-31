@@ -1,0 +1,5 @@
+# The fixtures' addresses and their labels, as examples/enrich/setup.sh's
+# networks.csv gives them: the github plugin's test reads this file as its
+# `networks` table (ingest.yaml), whatever the config's.
+prefix,label
+185.224.128.17/32,datacenter

@@ -1,0 +1,13 @@
+# aws, judge: how the judge writes CloudTrail records as logfmt, once
+# packs/core/judge.yaml's encoding is `type: logfmt`: the fields naming the
+# principal and the time, and those the model sees on every line, the pack's
+# own facts among them. Include it in a judge config with
+# packs/core/judge.yaml.
+inference:
+  judge:
+    encoding:
+      sources:
+        cloudtrail:
+          principal: [_norm.actor, userIdentity.arn]
+          time: [eventTime, ts]
+          keep: [eventName, requestParameters, responseElements, errorCode, errorMessage, userIdentity.mfaAuthenticated, additionalEventData.MFAUsed, _facts.root, _facts.world_open]

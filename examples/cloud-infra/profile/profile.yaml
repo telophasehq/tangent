@@ -10,6 +10,7 @@ own_sources: [cloudtrail, github_audit, okta, google_workspace, gha_ci, runner_e
 
 countries: [US]                  # where your people sign in from
 cloud: aws                       # where your services run (aws, gcp, cloudflare, datacenter); a service seen elsewhere is news
+networks: [10.0.0.0/8]           # your own addresses (office, VPN, CI egress): never a person's odd location
 
 members:                         # people: identity-provider emails and GitHub handles
   - admin@acme.io
@@ -33,10 +34,10 @@ services:                        # service principals: IAM users and roles, depl
   - prod-readonly
   - svc-backup2
   - railway-deploy
-  - hiro-plan-worker
+  - agent-plan-worker
 
 about:                           # who an actor is, when its name does not say
-  DrataAutopilotRole: "Drata, the compliance vendor: reads IAM, credential reports and backups every day"
+  VendorAuditRole: "the compliance vendor: reads IAM, credential reports and backups every day"
 
 keys:                            # API keys and the networks each calls from
   ak_1a1: [165.227.44.19]        # the findings poller
@@ -85,5 +86,5 @@ watch:                           # kinds a person wants seen every time, however
   - org.settings.changed
   - api_key.create
   - org.export.started
-  - aws_api_call                       # Hiro
+  - aws_api_call                       # the AI agent
   - step_failed

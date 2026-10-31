@@ -3,7 +3,7 @@
 countries: [US]
 cloud: aws
 members: []
-services: [hiro-plan-worker]
+services: [agent-plan-worker]
 keys:
   ak_1a1: [165.227.44.19]
   ak_drift: [52.94.76.0/24]

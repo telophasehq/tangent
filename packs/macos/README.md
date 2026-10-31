@@ -1,4 +1,4 @@
-# edge
+# macos (planned, not built)
 
 Developer laptops: where nx/s1ngularity, the axios RAT, Shai-Hulud's
 postinstalls and the Claude Code base-URL exfiltration actually ran. Not
@@ -23,21 +23,22 @@ That is enough for the paths that matter:
 | GlassWorm and Open VSX | a new directory under `~/.cursor/extensions` or `~/.vscode/extensions` from a publisher not seen in the profile |
 | a dropped binary | something executed from `/tmp`, `~/.cache` or a package's `node_modules` that then opens credential files |
 
-## The pipeline
+## The pack
 
-The same stages. **norm** turns `eslogger` records into `_norm` with the
-process tree as the actor (`npm → node → curl`), the file or host as the
-target, and the laptop's user as the org. **enrich** answers for any host the
-process connects to. **facts** holds a profile of the laptop: which tools the
-developer uses, which publishers' extensions, which paths hold credentials.
-Every record is kept in `logs.sqlite`, and the judge reads a process tree's
-records forty at a time, as it reads an actor's elsewhere.
+One plugin, `macos`, like every pack's: it puts `eslogger` records into
+`_norm` with the process tree as the actor (`npm → node → curl`), the file
+or host as the target, and the laptop's user as the org; enriches any
+address the process connects to from the runtime's tables; and adds the
+profile's facts, with a profile of the laptop: which tools the developer
+uses, which publishers' extensions, which paths hold credentials. Every
+record is kept in `logs.sqlite` by [core](../core), and the judge reads a
+process tree's records forty at a time, as it reads an actor's elsewhere.
 
 ## What it needs
 
-A corpus first, built the way the other two packs' were: sequences of
+A corpus first, built the way the examples' cases were: sequences of
 `eslogger` events for each of the paths above, with look-alikes (a developer
 running `aws configure`, an editor indexing a repo, a legitimate `npm ci`).
-Then the normalizer, the profile, the fixtures. Egress is the one thing
+Then the plugin, the profile, the fixtures. Egress is the one thing
 `eslogger` does not report; `nettop` or a packet filter log can fill it in
 later.

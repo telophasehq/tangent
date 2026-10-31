@@ -3,9 +3,8 @@
 What the judge has to catch, and what it must leave alone, written down as
 event sequences before arguing about designs. Every design question (per
 record or per window, which model, which cadence) is measured against these.
-`make test` runs eight of them through norm and facts as fixtures;
-the full set is replayed inside weeks of ordinary traffic for the numbers in
-the pack's README.
+The packs' fixtures were cut from eight of them; the full set is replayed
+inside weeks of ordinary traffic for the numbers in the example's README.
 
 Each case is a directory:
 
@@ -17,7 +16,7 @@ cases/<category>/<name>/
 
 Nothing in here is real: no customer, person, repo or account exists. The
 cases built on a product's own audit log or an AI agent's logs are in the
-[app-log pack](../../app-log/cases/).
+[app-log example](../../app-log/cases/).
 
 ## Sources and their shapes
 
@@ -30,7 +29,7 @@ cases built on a product's own audit log or an AI agent's logs are in the
 | `gha_ci` | GitHub Actions job lines: `repo`, `run_id`, `step`, `line` |
 | `runner_egress` | egress from the build runner: `repo`, `run_id`, `dst_host`, `bytes_out` |
 | `app` | a product's own audit log: `event`, `actor`, `ip`, `org` |
-| `hiro` | an AI agent's structlog: `service`, `event`, `organization_id` → `task_id` → `plan_id` → `step_id` |
+| `agent` | an AI agent's structlog: `service`, `event`, `organization_id` → `task_id` → `plan_id` → `step_id` |
 
 Every event also carries `ts`, so mixed sources order.
 
@@ -112,7 +111,7 @@ announced. A judge that flags these is a judge nobody reads.
 
 | case | | sources | events | what the logs show |
 |---|---|---|---|---|
-| `ai-agent/agent-escapes-task-uses-found-credentials` | flag P1 | `hiro`, `cloudtrail` | 14 | An agent given one credential finds more and uses them across services in minutes (OpenAI's evaluation-sandbox escape, July 2026) |
+| `ai-agent/agent-escapes-task-uses-found-credentials` | flag P1 | `agent`, `cloudtrail` | 14 | An agent given one credential finds more and uses them across services in minutes (OpenAI's evaluation-sandbox escape, July 2026) |
 
 ### Must not flag
 

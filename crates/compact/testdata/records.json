@@ -91,11 +91,7 @@
  },
  {
   "_facts": {
-   "ip": {
-    "asn": 7922,
-    "country": "US",
-    "org": "Comcast Cable Communications, LLC"
-   },
+   "ip": {},
    "notes": [
     "AWS root credentials used",
     "principal root is nobody the org profile knows"
@@ -120,7 +116,7 @@
    "ConsoleLogin": "Success"
   },
   "source": "cloudtrail",
-  "sourceIPAddress": "98.51.100.23",
+  "sourceIPAddress": "198.51.100.23",
   "ts": "2026-10-20T13:00:00Z",
   "userAgent": "Mozilla/5.0",
   "userIdentity": {
@@ -1735,7 +1731,7 @@
  },
  {
   "_facts": {
-   "about": "Drata, the compliance vendor: reads IAM, credential reports and backups every day",
+   "about": "the compliance vendor: reads IAM, credential reports and backups every day",
    "ip": {
     "asn": 16509,
     "country": "US",
@@ -1743,12 +1739,12 @@
     "org": "Amazon.com, Inc."
    },
    "notes": [
-    "DrataAutopilotRole acting from aws hosting, 3.208.10.20 (Amazon.com, Inc.)"
+    "VendorAuditRole acting from aws hosting, 3.208.10.20 (Amazon.com, Inc.)"
    ],
    "principal": "unknown"
   },
   "_norm": {
-   "actor": "DrataAutopilotRole",
+   "actor": "VendorAuditRole",
    "org": "acme"
   },
   "eventName": "GenerateCredentialReport",
@@ -1758,7 +1754,7 @@
   "ts": "2026-10-22T04:00:00Z",
   "userIdentity": {
    "accountId": "111122223333",
-   "role": "DrataAutopilotRole",
+   "role": "VendorAuditRole",
    "type": "AssumedRole"
   }
  }

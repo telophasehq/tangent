@@ -14,6 +14,7 @@ pub use tangent_compact::{CompactConfig, SourceSpec};
 /// The node runs inside each worker, in DAG order with the plugins, so a
 /// partition's records reach the model and leave it in order.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct InferenceConfig {
     /// Where the model is served.
     #[serde(default)]
@@ -35,10 +36,10 @@ pub struct InferenceConfig {
     #[serde(default)]
     pub aws: AwsConfig,
 
-    /// System prompt (relative to the config file).
+    /// System prompt (relative to the file that names it).
     pub prompt_file: PathBuf,
 
-    /// A JSON Schema (relative to the config file) the reply must satisfy,
+    /// A JSON Schema (relative to the file that names it) the reply must satisfy,
     /// enforced by the backend: `response_format` on an OpenAI-compatible
     /// server, structured output on Bedrock. Without one, an `openai` server
     /// is asked for JSON mode (any object) and a `bedrock` model is held to
@@ -116,6 +117,7 @@ pub enum Backend {
 
 /// The `bedrock` backend's AWS settings.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwsConfig {
     /// Region; the SDK's default when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]

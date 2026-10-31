@@ -1,5 +1,5 @@
 [package]
-name = "norm"
+name = "aws"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,9 +9,9 @@ crate-type = ["cdylib"]
 [workspace]
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
+factskit = { path = "../shared/factskit" }
+normkit = { path = "../shared/normkit" }
 serde_json = { version = "1", features = ["float_roundtrip"] }
-serde_yaml = "0.9"
 wit-bindgen = "0.48.0"
 
 [package.metadata.component]

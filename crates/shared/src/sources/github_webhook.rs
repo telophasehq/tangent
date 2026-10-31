@@ -4,6 +4,7 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GithubWebhookConfig {
     #[serde(default = "default_bind_address")]
     pub bind_address: SocketAddr,

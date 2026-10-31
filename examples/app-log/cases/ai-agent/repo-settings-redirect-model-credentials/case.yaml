@@ -5,7 +5,7 @@ priority: P1
 scope: plan            # the window that reveals it
 cadence: run-completion
 alone_innocent: true   # does each line look fine on its own?
-sources: [hiro]
+sources: [agent]
 events: 6
 expected:
   flag: true

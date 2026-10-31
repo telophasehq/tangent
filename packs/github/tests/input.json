@@ -1,0 +1,254 @@
+[
+ {
+  "ts": "2026-10-20T13:00:00Z",
+  "source": "gha_ci",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "job": "build",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "line": "Downloading action archive"
+ },
+ {
+  "ts": "2026-10-20T13:00:00Z",
+  "source": "gha_ci",
+  "repo": "acme/api",
+  "run_id": 61075,
+  "job": "build",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "line": "Downloading action archive"
+ },
+ {
+  "ts": "2026-10-20T13:00:06Z",
+  "source": "runner_egress",
+  "repo": "acme/api",
+  "run_id": 61075,
+  "dst_host": "github.com",
+  "dst_port": 443,
+  "bytes_out": 300,
+  "http": {
+   "method": "GET",
+   "path": "/aquasecurity/trivy-action/archive/refs/tags/0.28.0.tar.gz"
+  }
+ },
+ {
+  "ts": "2026-10-20T13:00:12Z",
+  "source": "gha_ci",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "job": "build",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "line": "Trivy DB updated"
+ },
+ {
+  "ts": "2026-10-20T13:00:12Z",
+  "source": "runner_egress",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "dst_host": "ghcr.io",
+  "dst_port": 443,
+  "bytes_out": 600,
+  "http": {
+   "method": "GET",
+   "path": "/v2/aquasecurity/trivy-db/manifests/2"
+  }
+ },
+ {
+  "ts": "2026-10-20T13:00:12Z",
+  "source": "gha_ci",
+  "repo": "acme/api",
+  "run_id": 61075,
+  "job": "build",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "line": "Trivy DB updated"
+ },
+ {
+  "ts": "2026-10-20T13:00:12Z",
+  "source": "runner_egress",
+  "repo": "acme/api",
+  "run_id": 61075,
+  "dst_host": "ghcr.io",
+  "dst_port": 443,
+  "bytes_out": 600,
+  "http": {
+   "method": "GET",
+   "path": "/v2/aquasecurity/trivy-db/manifests/2"
+  }
+ },
+ {
+  "ts": "2026-10-20T13:00:18Z",
+  "source": "gha_ci",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "job": "build",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "line": "scanning image acme/api:sha-8f3c2a1"
+ },
+ {
+  "ts": "2026-10-20T13:00:24Z",
+  "source": "runner_egress",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "dst_host": "api.aquasecurtiy.org",
+  "dst_port": 443,
+  "bytes_out": 194560,
+  "http": {
+   "method": "POST",
+   "path": "/v1/scan"
+  }
+ },
+ {
+  "ts": "2026-10-20T13:00:30Z",
+  "source": "gha_ci",
+  "repo": "acme/api",
+  "run_id": 61075,
+  "job": "build",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "line": "2 vulnerabilities found (LOW)"
+ },
+ {
+  "ts": "2026-10-20T13:00:36Z",
+  "source": "gha_ci",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "job": "build",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "line": "0 vulnerabilities found"
+ },
+ {
+  "ts": "2026-10-20T13:03:00Z",
+  "source": "github_audit",
+  "@timestamp": "2026-10-20T13:03:00Z",
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "org": "acme",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/payments-api"
+ },
+ {
+  "ts": "2026-10-20T13:03:18Z",
+  "source": "github_audit",
+  "@timestamp": "2026-10-20T13:03:18Z",
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "org": "acme",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/billing"
+ },
+ {
+  "ts": "2026-10-20T13:03:36Z",
+  "source": "github_audit",
+  "@timestamp": "2026-10-20T13:03:36Z",
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "org": "acme",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/infra"
+ },
+ {
+  "ts": "2026-10-20T13:03:54Z",
+  "source": "github_audit",
+  "@timestamp": "2026-10-20T13:03:54Z",
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "org": "acme",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/web"
+ },
+ {
+  "ts": "2026-10-20T13:22:00Z",
+  "source": "github_audit",
+  "action": "workflows.prepared_workflow_job",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "runner_name": "GitHub Actions 1042",
+  "_document_id": "EXAMPLEdocid01"
+ },
+ {
+  "ts": "2026-10-20T13:22:10Z",
+  "source": "github_audit",
+  "action": "workflows.prepared_workflow_job",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "runner_name": "build-01",
+  "_document_id": "EXAMPLEdocid02"
+ },
+ {
+  "ts": "2026-10-20T13:23:00Z",
+  "source": "github_audit",
+  "action": "workflows.completed_workflow_run",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "name": "deploy",
+  "conclusion": "success",
+  "topic": "github.actions.workflows.v1.WorkflowRunCompleted",
+  "_document_id": "EXAMPLEdocid03"
+ },
+ {
+  "ts": "2026-10-20T13:23:30Z",
+  "source": "github_audit",
+  "action": "repo.add_topic",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "topic": "payments",
+  "_document_id": "EXAMPLEdocid04"
+ },
+ {
+  "ts": "2026-10-22T04:00:00Z",
+  "source": "gha_ci",
+  "repo": "acme/api",
+  "run_id": 61110,
+  "job": "build",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "line": "Tests passed",
+  "_norm": {
+   "actor": "alice@example.com",
+   "principal": "aws",
+   "org": "acme",
+   "facts": {
+    "root": true,
+    "notes": [
+     "written by the log line"
+    ]
+   }
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [
+    "the org profile vouches for this actor"
+   ]
+  },
+  "_facts.notes": [
+   "the org profile vouches for this actor"
+  ],
+  "_ip": {
+   "_norm.ip": {
+    "ours": true,
+    "org": "Example Corp"
+   }
+  },
+  "_context": true,
+  "_hist": {
+   "seen": 120
+  }
+ }
+]

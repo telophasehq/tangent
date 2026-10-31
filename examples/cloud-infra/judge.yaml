@@ -1,95 +1,24 @@
-# cloud-infra, judge: a model reads each actor's latest forty records from
-# logs.sqlite and writes a verdict per new one; a person reads the ones it
-# flagged. One worker, so an actor's records reach the model together.
-runtime:
-  workers: 1
-  plugins_path: plugins/
-  state:
-    backend: lru
+# cloud-infra, judge: packs/core's judge over logs.sqlite, each pack's
+# records written as its judge.yaml says once the encoding is logfmt.
+include:
+  - ../../packs/core/judge.yaml
+  - ../../packs/aws/judge.yaml
+  - ../../packs/github/judge.yaml
+  - ../../packs/okta/judge.yaml
+  - ../../packs/google_workspace/judge.yaml
+  - ../../packs/app/judge.yaml
 
-sources:
-  actors:
-    type: sqlite
-    path: logs.sqlite
-    table: logs
-    partition: actor
-    batch_size: 40
-    timeout_secs: 3600
+# inference:
+#   judge:
+#     encoding:
+#       type: logfmt
 
-plugins:
-  fresh:
-    module_type: rust
-    path: fresh
-  flagged:
-    module_type: rust
-    path: ../../examples/inference-local/flagged
-
-inference:
-  judge:
-    url: ${JUDGE_URL}
-    model: ${JUDGE_MODEL}
-    api_key: ${JUDGE_API_KEY}
-    prompt_file: judge.md
-    schema_file: judge.schema.json
-    group_by: [_norm.org, _norm.actor]
-    batch_bytes: 48000
-    max_tokens: 200
-    temperature: 0.7
-    timeout_ms: 90000
-    concurrency: 4
-    extra:
-      top_p: 0.95
-      chat_template_kwargs:
-        enable_thinking: false
-    # The records as logfmt lines, about half the tokens of JSON lines and
-    # nothing lost: the fields in `keep` on every line, the rest a principal's
-    # records share written once. Measured with Claude Haiku 5.5 only, where it
-    # caught what JSON caught.
-    # encoding:
-    #   type: logfmt
-    #   keep: [_context, _norm.actor, _norm.kind, _norm.target, _norm.dest, _facts.principal, _facts.watch, _facts.root, _facts.world_open, _facts.sensitive_target, _facts.key_known_network, _facts.ip.tor, _facts.ip.vpn]
-    #   sources:
-    #     cloudtrail:
-    #       principal: [_norm.actor, userIdentity.arn]
-    #       time: [eventTime, ts]
-    #       keep: [eventName, requestParameters, responseElements, errorCode, errorMessage, userIdentity.mfaAuthenticated, additionalEventData.MFAUsed]
-    #     okta:
-    #       principal: [_norm.actor, actor.alternateId]
-    #       time: [published, ts]
-    #       keep: [eventType, outcome, target, authenticationContext.credentialType, securityContext.isProxy, debugData.threatSuspected]
-    #     github_audit:
-    #       principal: [_norm.actor, actor]
-    #       time: ["@timestamp", created_at, ts]
-    #       keep: [action, repo, visibility, permission, programmatic_access_type, token_scopes, operation_type]
-    #     google_workspace:
-    #       principal: [_norm.actor, actor.email]
-    #       time: [id.time, ts]
-    #       keep: [events]
-
-sinks:
-  alerts:
-    type: file
-    path: alerts.ndjson
-    compression:
-      type: none
-  verdicts:
-    type: file
-    path: verdicts.ndjson
-    compression:
-      type: none
-  # slack:
-  #   type: slack
-  #   webhook_url: ${SLACK_WEBHOOK_URL}
-  #   text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
-
-dag:
-  - from: { kind: source, name: actors }
-    to: [{ kind: inference, name: judge }]
-  - from: { kind: inference, name: judge }
-    to: [{ kind: plugin, name: fresh }]
-  - from: { kind: plugin, name: fresh }
-    to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]
-  - from: { kind: plugin, name: flagged }
-    to: [{ kind: sink, name: alerts }]
-  # - from: { kind: plugin, name: flagged }
-  #   to: [{ kind: sink, name: slack }]
+# What flagged keeps, to Slack too (README.md):
+# sinks:
+#   slack:
+#     type: slack
+#     webhook_url: ${SLACK_WEBHOOK_URL}
+#     text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
+# dag:
+#   - from: { kind: plugin, name: flagged }
+#     to: [{ kind: sink, name: slack }]

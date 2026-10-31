@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Toolchain for the pack's Rust plugins, and the enrichment data they read.
+# Toolchain for the packs' Rust plugins, and the enrichment data they read.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -14,7 +14,8 @@ rustup target add wasm32-wasip2 --toolchain stable >/dev/null 2>&1 || true
 has_cmd cargo-component || { echo "==> Installing cargo-component"; cargo install cargo-component --locked; }
 has_cmd wasm-tools || { echo "==> Installing wasm-tools"; cargo install wasm-tools; }
 
-# GeoLite2, the cloud providers' ranges, the Tor exit list: see examples/enrich.
+# GeoLite2, the cloud providers' ranges, the Tor exit list: the runtime's
+# enrichment tables (packs/core/ingest.yaml). See examples/enrich.
 ../../examples/enrich/setup.sh data
 
 echo "==> Done. Edit profile/profile.yaml, then: make test, make run"

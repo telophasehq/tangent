@@ -1,0 +1,25 @@
+# app: your product's audit log and an AI agent's run log (NDJSON) into
+# finished records, by one plugin, `app`: normalized, scrubbed, enriched, the
+# profile's facts added. Include it in an ingest config with
+# packs/core/ingest.yaml, route NDJSON with `source: app` or `agent` to plugin
+# app, and give the config a `profile` table; README.md has the lines.
+plugins:
+  app:
+    module_type: rust
+    path: .
+    # config:                       # which `source` values take which shape
+    #   sources: [app]              # the audit shape; replaces the default
+    #   extra_sources: [billing]    # the audit shape too, beside `sources`
+    #   agent_sources: [agent]      # the agent shape
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json
+        enrichment_tables:            # what the fixtures were written against, in any config
+          geo: { type: document, path: tests/addresses.yaml }   # GeoLite2's answers for their addresses
+          asn: { type: document, path: tests/addresses.yaml }
+          networks: { type: cidr, path: tests/networks.csv }
+          profile: { type: document, path: tests/profile.yaml }
+
+dag:
+  - from: { kind: plugin, name: app }
+    to: [{ kind: sink, name: logs }]   # logs.sqlite: packs/core/ingest.yaml's sink

@@ -9,14 +9,26 @@ pub struct TableConfig {
     #[serde(rename = "type")]
     pub kind: TableKind,
 
-    /// The file, relative to the config file.
+    /// The file, relative to the file that names it.
     pub path: PathBuf,
 
-    /// Without its file, nothing starts: `tangent run` and `tangent plugin
-    /// test` stop, naming the table and the file. A table that is not
-    /// required and has no file answers nothing.
+    /// Without its file, nothing starts: `tangent run`, `tangent plugin
+    /// test` and `tangent config` stop, naming the table and the file. A
+    /// table that is not required and has no file answers nothing.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub required: bool,
+}
+
+impl TableConfig {
+    /// An error when the table is required and its file, `path` read
+    /// against `dir`, is not there.
+    pub fn check(&self, name: &str, dir: &Path) -> anyhow::Result<()> {
+        let path = dir.join(&self.path);
+        if self.required && !path.exists() {
+            return Err(not_found(name, &path));
+        }
+        Ok(())
+    }
 }
 
 /// A required table's file is not there.

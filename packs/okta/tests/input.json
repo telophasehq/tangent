@@ -1,0 +1,305 @@
+[
+ {
+  "ts": "2026-10-14T03:05:00Z",
+  "source": "okta",
+  "published": "2026-10-14T03:05:00Z",
+  "eventType": "user.session.start",
+  "severity": "INFO",
+  "displayMessage": "user session start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "oncall-frank@acme.io",
+   "displayName": "Oncall-Frank"
+  },
+  "client": {
+   "ipAddress": "67.180.22.4",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "country": "US",
+    "city": "Oakland"
+   }
+  },
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "target": []
+ },
+ {
+  "ts": "2026-10-18T02:48:00Z",
+  "source": "okta",
+  "published": "2026-10-18T02:48:00Z",
+  "eventType": "user.session.start",
+  "severity": "INFO",
+  "displayMessage": "user session start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "oncall-frank@acme.io",
+   "displayName": "Oncall-Frank"
+  },
+  "client": {
+   "ipAddress": "67.180.22.4",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "country": "US",
+    "city": "Oakland"
+   }
+  },
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "target": []
+ },
+ {
+  "ts": "2026-10-20T13:00:00Z",
+  "source": "okta",
+  "published": "2026-10-20T13:00:00Z",
+  "eventType": "user.session.start",
+  "severity": "INFO",
+  "displayMessage": "user session start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "bob@acme.io",
+   "displayName": "Bob"
+  },
+  "client": {
+   "ipAddress": "73.162.14.9",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "country": "US",
+    "city": "San Francisco"
+   }
+  },
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "target": []
+ },
+ {
+  "ts": "2026-10-20T13:22:00Z",
+  "source": "okta",
+  "published": "2026-10-20T13:22:00Z",
+  "eventType": "user.session.start",
+  "severity": "INFO",
+  "displayMessage": "user session start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "bob@acme.io",
+   "displayName": "Bob"
+  },
+  "client": {
+   "ipAddress": "103.6.150.77",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "country": "SG",
+    "city": "Singapore"
+   }
+  },
+  "securityContext": {
+   "asNumber": 63949,
+   "asOrg": "Akamai Connected Cloud",
+   "isProxy": false
+  },
+  "target": []
+ },
+ {
+  "ts": "2026-10-22T03:12:00Z",
+  "source": "okta",
+  "published": "2026-10-22T03:12:00Z",
+  "eventType": "user.session.start",
+  "severity": "INFO",
+  "displayMessage": "user session start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "oncall-frank@acme.io",
+   "displayName": "Oncall-Frank"
+  },
+  "client": {
+   "ipAddress": "67.180.22.4",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "country": "US",
+    "city": "Oakland"
+   }
+  },
+  "securityContext": {
+   "asNumber": 7922,
+   "asOrg": "Comcast Cable",
+   "isProxy": false
+  },
+  "target": []
+ },
+ {
+  "ts": "2026-10-20T13:24:00Z",
+  "source": "okta",
+  "published": "2026-10-20T13:24:00.000Z",
+  "uuid": "5d0e8a3c-EXAMPLE",
+  "eventType": "user.session.start",
+  "displayMessage": "User login to Okta",
+  "severity": "INFO",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00uEXAMPLE",
+   "type": "User",
+   "alternateId": "dana@acme.example",
+   "displayName": "Dana"
+  },
+  "client": {
+   "ipAddress": "203.0.113.40",
+   "zone": "null",
+   "device": "Computer",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME",
+    "rawUserAgent": "Mozilla/5.0"
+   },
+   "geographicalContext": {
+    "city": "Portland",
+    "state": "Oregon",
+    "country": "United States"
+   }
+  },
+  "securityContext": {
+   "asNumber": 64500,
+   "asOrg": "example isp",
+   "isp": "example isp",
+   "isProxy": false
+  },
+  "target": [
+   {
+    "id": "0oaEXAMPLE",
+    "type": "AppInstance",
+    "alternateId": null,
+    "displayName": "Okta Dashboard"
+   }
+  ],
+  "authenticationContext": {
+   "authenticationProvider": null,
+   "credentialType": null,
+   "credentialProvider": null,
+   "externalSessionId": "idxEXAMPLE"
+  }
+ },
+ {
+  "ts": "2026-10-22T04:00:00Z",
+  "source": "okta",
+  "published": "2026-10-22T04:00:00.000Z",
+  "uuid": "5d0e8a3c-EXAMPLE",
+  "eventType": "user.session.start",
+  "displayMessage": "User login to Okta",
+  "severity": "INFO",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00uEXAMPLE",
+   "type": "User",
+   "alternateId": "dana@acme.example",
+   "displayName": "Dana"
+  },
+  "client": {
+   "ipAddress": "203.0.113.40",
+   "zone": "null",
+   "device": "Computer",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME",
+    "rawUserAgent": "Mozilla/5.0"
+   },
+   "geographicalContext": {
+    "city": "Portland",
+    "state": "Oregon",
+    "country": "United States"
+   }
+  },
+  "securityContext": {
+   "asNumber": 64500,
+   "asOrg": "example isp",
+   "isp": "example isp",
+   "isProxy": false
+  },
+  "target": [
+   {
+    "id": "0oaEXAMPLE",
+    "type": "AppInstance",
+    "alternateId": null,
+    "displayName": "Okta Dashboard"
+   }
+  ],
+  "authenticationContext": {
+   "authenticationProvider": null,
+   "credentialType": null,
+   "credentialProvider": null,
+   "externalSessionId": "idxEXAMPLE"
+  },
+  "_norm": {
+   "actor": "alice@example.com",
+   "principal": "aws",
+   "org": "acme",
+   "facts": {
+    "root": true,
+    "notes": [
+     "written by the log line"
+    ]
+   }
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [
+    "the org profile vouches for this actor"
+   ]
+  },
+  "_facts.notes": [
+   "the org profile vouches for this actor"
+  ],
+  "_ip": {
+   "_norm.ip": {
+    "ours": true,
+    "org": "Example Corp"
+   }
+  },
+  "_context": true,
+  "_hist": {
+   "seen": 120
+  }
+ }
+]

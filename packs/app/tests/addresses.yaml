@@ -1,0 +1,8 @@
+# The fixtures' addresses, as GeoLite2 Country and ASN answer them: the app
+# plugin's test reads this file as its `geo` and `asn` tables (ingest.yaml),
+# whatever the config's. An address not here is in no network these tables
+# know.
+
+"67.180.22.4": {"country": {"iso_code": "US"}, "autonomous_system_number": 7922, "autonomous_system_organization": "Comcast Cable Communications, LLC"}
+"185.224.128.17": {"country": {"iso_code": "NL"}, "autonomous_system_number": 49870, "autonomous_system_organization": "Alsycon B.V."}
+"185.224.128.40": {"country": {"iso_code": "NL"}, "autonomous_system_number": 49870, "autonomous_system_organization": "Alsycon B.V."}

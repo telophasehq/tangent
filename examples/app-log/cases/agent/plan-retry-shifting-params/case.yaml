@@ -1,11 +1,11 @@
-id: hiro/plan-retry-shifting-params
+id: agent/plan-retry-shifting-params
 title: A plan step fails and retries six times with a different role ARN each time
-category: hiro-agent
+category: agent
 priority: P2
 scope: plan            # the window that reveals it
 cadence: plan-completion
 alone_innocent: true   # does each line look fine on its own?
-sources: [hiro]
+sources: [agent]
 events: 7
 expected:
   flag: true

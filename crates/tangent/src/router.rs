@@ -1,10 +1,10 @@
-use ahash::AHashMap as HashMap;
+use ahash::{AHashMap as HashMap, AHashSet as HashSet};
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::BytesMut;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Weak,
+    Arc, Mutex, Weak,
 };
 use tangent_shared::dag::NodeRef;
 use tokio::sync::OnceCell;
@@ -13,6 +13,7 @@ use crate::{
     inference::lines,
     sinks::manager::SinkManager,
     worker::{Ack, Payload, Record, WorkerPool},
+    UNROUTED_TOTAL,
 };
 
 /// The records in a frame, one per NDJSON line. A frame with one line is
@@ -67,6 +68,8 @@ pub struct Router {
     /// Records handed to a worker and not yet through their walk of the DAG.
     /// Zero means the DAG is quiet.
     in_flight: Arc<AtomicUsize>,
+    /// Nodes already named for a record none of their targets took.
+    unrouted: Mutex<HashSet<NodeRef>>,
 }
 
 impl Router {
@@ -76,6 +79,7 @@ impl Router {
             pool: OnceCell::new(),
             sink_manager,
             in_flight: Arc::new(AtomicUsize::new(0)),
+            unrouted: Mutex::new(HashSet::default()),
         }
     }
 
@@ -103,6 +107,34 @@ impl Router {
 
     pub fn sinks(&self) -> &Arc<SinkManager> {
         &self.sink_manager
+    }
+
+    /// `n` records from `from` that none of its targets took: each a plugin
+    /// whose probe they did not match. They are dropped and acked, so they
+    /// are counted. A source's are named once too: past the source, a probe
+    /// that takes nothing is a filter doing its job (`fresh` drops context
+    /// records so), but a record from a source no target takes is data lost,
+    /// such as a `source` value no plugin on a fan-out claims.
+    pub fn unrouted(&self, from: &NodeRef, n: usize) {
+        UNROUTED_TOTAL
+            .with_label_values(&[&node_label(from)])
+            .inc_by(n as u64);
+        if !matches!(from, NodeRef::Source { .. }) {
+            return;
+        }
+        let first = self
+            .unrouted
+            .lock()
+            .map(|mut seen| seen.insert(from.clone()))
+            .unwrap_or(false);
+        if first {
+            tracing::warn!(
+                node = %node_label(from),
+                targets = ?self.outs(from),
+                "a record from this source matched none of its targets and was dropped; \
+                 tangent_unrouted_records_total counts them"
+            );
+        }
     }
 
     /// Records from a source into the DAG. With a plugin or an inference node
@@ -184,6 +216,16 @@ impl Router {
     }
 }
 
+/// `kind:name`, for a metric's label.
+fn node_label(n: &NodeRef) -> String {
+    match n {
+        NodeRef::Source { name } => format!("source:{name}"),
+        NodeRef::Plugin { name } => format!("plugin:{name}"),
+        NodeRef::Inference { name } => format!("inference:{name}"),
+        NodeRef::Sink { name, .. } => format!("sink:{name}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,5 +239,30 @@ mod tests {
         assert_eq!(many.len(), 3);
         assert_eq!(&many[1][..], b"{\"a\":2}\n");
         assert_eq!(&many[2][..], b"{\"a\":3}\n");
+    }
+
+    /// Every node's are counted; a source's are named once, a plugin's
+    /// (a filter, as often as not) only counted.
+    #[tokio::test]
+    async fn records_no_target_took_are_counted_and_a_sources_named_once() {
+        let router = Router::new(
+            HashMap::default(),
+            Arc::new(SinkManager::for_test(Vec::new(), 1)),
+        );
+        let counted = |label: &str| UNROUTED_TOTAL.with_label_values(&[label]).get();
+        let source = NodeRef::Source {
+            name: Arc::from("unrouted-test"),
+        };
+        router.unrouted(&source, 2);
+        router.unrouted(&source, 3);
+        assert_eq!(counted("source:unrouted-test"), 5);
+        let filter = NodeRef::Plugin {
+            name: Arc::from("unrouted-test"),
+        };
+        router.unrouted(&filter, 4);
+        assert_eq!(counted("plugin:unrouted-test"), 4);
+        let named = router.unrouted.lock().unwrap();
+        assert_eq!(named.len(), 1, "the source, once");
+        assert!(named.contains(&source));
     }
 }

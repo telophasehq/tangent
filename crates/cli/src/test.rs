@@ -173,8 +173,9 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 sinks,
                 plugins,
                 // Every table, as the config names them, and the test's own
-                // in place of theirs: relative to the test config, which sits
-                // next to the original.
+                // in place of theirs: an included file's paths are absolute,
+                // and the root's resolve against the test config, which sits
+                // next to it.
                 enrichment_tables: tables,
                 dag: vec![entry, exit],
             };

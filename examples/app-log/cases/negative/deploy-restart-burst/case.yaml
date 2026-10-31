@@ -5,7 +5,7 @@ priority: P1
 scope: org            # the window that reveals it
 cadence: 5m
 alone_innocent: true   # does each line look fine on its own?
-sources: [hiro]
+sources: [agent]
 events: 42
 expected:
   flag: false
