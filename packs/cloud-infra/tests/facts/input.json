@@ -186,44 +186,6 @@
  {
   "_ip": {
    "_norm.ip": {
-    "asn": 49870,
-    "country": "NL",
-    "hosting": "datacenter",
-    "ip": "185.224.128.17",
-    "org": "Alsycon B.V.",
-    "ours": false,
-    "private": false,
-    "tor": false,
-    "vpn": false
-   }
-  },
-  "_norm": {
-   "actor": "railway-deploy",
-   "ip": "185.224.128.17",
-   "kind": "GetCallerIdentity",
-   "org": "acme"
-  },
-  "awsRegion": "us-west-2",
-  "eventName": "GetCallerIdentity",
-  "eventSource": "sts.amazonaws.com",
-  "eventTime": "2026-10-20T13:00:00Z",
-  "recipientAccountId": "111122223333",
-  "requestParameters": {},
-  "responseElements": {},
-  "source": "cloudtrail",
-  "sourceIPAddress": "185.224.128.17",
-  "ts": "2026-10-20T13:00:00Z",
-  "userAgent": "aws-cli/2.22.0",
-  "userIdentity": {
-   "accountId": "111122223333",
-   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
-   "type": "IAMUser",
-   "userName": "railway-deploy"
-  }
- },
- {
-  "_ip": {
-   "_norm.ip": {
     "asn": 7922,
     "country": "US",
     "ip": "73.162.14.9",
@@ -273,6 +235,74 @@
   "ts": "2026-10-20T13:00:00Z"
  },
  {
+  "_norm": {
+   "actor": "acme/api",
+   "kind": "Run aquasecurity/trivy-action@0.28.0",
+   "org": "acme",
+   "target": "acme/api"
+  },
+  "job": "build",
+  "line": "Downloading action archive",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "source": "gha_ci",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "ts": "2026-10-20T13:00:00Z"
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "ip": "185.224.128.17",
+    "org": "Alsycon B.V.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "railway-deploy",
+   "ip": "185.224.128.17",
+   "kind": "GetCallerIdentity",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetCallerIdentity",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:00:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {},
+  "responseElements": {},
+  "source": "cloudtrail",
+  "sourceIPAddress": "185.224.128.17",
+  "ts": "2026-10-20T13:00:00Z",
+  "userAgent": "aws-cli/2.22.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/railway-deploy",
+   "type": "IAMUser",
+   "userName": "railway-deploy"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "acme/api",
+   "kind": "Run aquasecurity/trivy-action@0.28.0",
+   "org": "acme",
+   "target": "acme/api"
+  },
+  "job": "build",
+  "line": "Downloading action archive",
+  "repo": "acme/api",
+  "run_id": 61075,
+  "source": "gha_ci",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "ts": "2026-10-20T13:00:00Z"
+ },
+ {
   "_ip": {
    "_norm.ip": {
     "asn": 60729,
@@ -311,36 +341,6 @@
   },
   "ipAddress": "185.220.101.4",
   "source": "google_workspace",
-  "ts": "2026-10-20T13:00:00Z"
- },
- {
-  "_norm": {
-   "actor": "acme/api",
-   "kind": "Run aquasecurity/trivy-action@0.28.0",
-   "org": "acme",
-   "target": "acme/api"
-  },
-  "job": "build",
-  "line": "Downloading action archive",
-  "repo": "acme/api",
-  "run_id": 61007,
-  "source": "gha_ci",
-  "step": "Run aquasecurity/trivy-action@0.28.0",
-  "ts": "2026-10-20T13:00:00Z"
- },
- {
-  "_norm": {
-   "actor": "acme/api",
-   "kind": "Run aquasecurity/trivy-action@0.28.0",
-   "org": "acme",
-   "target": "acme/api"
-  },
-  "job": "build",
-  "line": "Downloading action archive",
-  "repo": "acme/api",
-  "run_id": 61075,
-  "source": "gha_ci",
-  "step": "Run aquasecurity/trivy-action@0.28.0",
   "ts": "2026-10-20T13:00:00Z"
  },
  {
@@ -1798,6 +1798,911 @@
   "userIdentity": {
    "invokedBy": "AWS Internal",
    "type": "AWSService"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "AssumeRole",
+   "org": "acme",
+   "target": "arn:aws:iam::111122223333:role/deploy"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRole",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:11:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "durationSeconds": 3600,
+   "externalId": "acme-ci",
+   "roleArn": "arn:aws:iam::111122223333:role/deploy",
+   "roleSessionName": "ci-1730"
+  },
+  "responseElements": {
+   "assumedRoleUser": {
+    "arn": "arn:aws:sts::111122223333:assumed-role/deploy/ci-1730"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:11:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "ListSecrets",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListSecrets",
+  "eventSource": "secretsmanager.amazonaws.com",
+  "eventTime": "2026-10-20T13:12:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "maxResults": 100
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:12:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "DescribeNatGateways",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "DescribeNatGateways",
+  "eventSource": "ec2.amazonaws.com",
+  "eventTime": "2026-10-20T13:12:30Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:12:30Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "CreateNetworkInterface",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "CreateNetworkInterface",
+  "eventSource": "ec2.amazonaws.com",
+  "eventTime": "2026-10-20T13:13:00Z",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "description": "build runner",
+   "groupSet": {
+    "items": [
+     {
+      "groupId": "sg-0abc1234"
+     }
+    ]
+   },
+   "subnetId": "subnet-0abc1234"
+  },
+  "responseElements": {
+   "networkInterface": {
+    "networkInterfaceId": "eni-0abc1234",
+    "privateIpAddress": "10.0.1.23",
+    "subnetId": "subnet-0abc1234"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:13:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "CreateInvalidation",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "CreateInvalidation",
+  "eventSource": "cloudfront.amazonaws.com",
+  "eventTime": "2026-10-20T13:14:00Z",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "distributionId": "E2EXAMPLE",
+   "invalidationBatch": {
+    "paths": {
+     "items": [
+      "/*"
+     ],
+     "quantity": 1
+    }
+   }
+  },
+  "responseElements": {
+   "invalidation": {
+    "createTime": "Oct 20, 2026, 1:14:00 PM",
+    "invalidationBatch": {
+     "paths": {
+      "items": [
+       "/*"
+      ],
+      "quantity": 1
+     }
+    },
+    "status": "InProgress"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:14:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "198.51.100.7",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "ip": "198.51.100.7",
+   "kind": "InitiateAuth",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "InitiateAuth",
+  "eventSource": "cognito-idp.amazonaws.com",
+  "eventTime": "2026-10-20T13:15:00Z",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "authFlow": "USER_PASSWORD_AUTH",
+   "clientId": "5example0app0client0id"
+  },
+  "responseElements": {
+   "authenticationResult": {
+    "expiresIn": 3600,
+    "tokenType": "Bearer"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "198.51.100.7",
+  "ts": "2026-10-20T13:15:00Z",
+  "userAgent": "Mozilla/5.0",
+  "userIdentity": {
+   "type": "Unknown"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "CompleteLayerUpload",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "CompleteLayerUpload",
+  "eventSource": "ecr.amazonaws.com",
+  "eventTime": "2026-10-20T13:16:00Z",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "registryId": "111122223333",
+   "repositoryName": "web"
+  },
+  "responseElements": {
+   "registryId": "111122223333",
+   "repositoryName": "web"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:16:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "Decrypt",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "Decrypt",
+  "eventSource": "kms.amazonaws.com",
+  "eventTime": "2026-10-20T13:17:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "encryptionAlgorithm": "SYMMETRIC_DEFAULT",
+   "encryptionContext": {
+    "SecretARN": "arn:aws:secretsmanager:us-west-2:111122223333:secret:prod/db-AbCdEf"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:17:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_norm": {
+   "kind": "plan_step_started",
+   "org": "org_7f3a"
+  },
+  "env": "prod",
+  "event": "plan_step_started",
+  "level": "info",
+  "logger": "hiro.plans",
+  "organization_id": "org_7f3a",
+  "plan_id": "pln_01",
+  "service": "plan-worker",
+  "source": "hiro",
+  "step_id": "stp_02",
+  "timestamp": "2026-10-20T13:20:00.123456Z",
+  "ts": "2026-10-20T13:20:00Z"
+ },
+ {
+  "_norm": {},
+  "message": "HTTP Request: GET https://acmeexports.blob.core.windows.net/exports/2026-10.csv?sv=2024-08-04&se=2026-10-20T14%3A20%3A00Z&sr=b&sp=r \"HTTP/1.1 200 OK\"",
+  "source": "hiro",
+  "ts": "2026-10-20T13:20:01Z"
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.30",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "dana@acme.example",
+   "ip": "203.0.113.30",
+   "kind": "export.download",
+   "org": "acme"
+  },
+  "actor": "dana@acme.example",
+  "event": "export.download",
+  "ip": "203.0.113.30",
+  "org": "acme",
+  "path": "/api/exports?page=3",
+  "source": "app",
+  "ts": "2026-10-20T13:21:00Z"
+ },
+ {
+  "_norm": {
+   "actor": "dana",
+   "kind": "workflows.prepared_workflow_job",
+   "org": "acme",
+   "target": "acme/web"
+  },
+  "action": "workflows.prepared_workflow_job",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:22:00Z"
+ },
+ {
+  "_norm": {
+   "actor": "dana",
+   "kind": "workflows.prepared_workflow_job",
+   "org": "acme",
+   "target": "acme/web"
+  },
+  "action": "workflows.prepared_workflow_job",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "runner_name": "build-01",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:22:10Z"
+ },
+ {
+  "_norm": {
+   "actor": "dana",
+   "kind": "workflows.completed_workflow_run",
+   "org": "acme",
+   "target": "acme/web"
+  },
+  "action": "workflows.completed_workflow_run",
+  "actor": "dana",
+  "conclusion": "success",
+  "name": "deploy",
+  "org": "acme",
+  "repo": "acme/web",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:23:00Z"
+ },
+ {
+  "_norm": {
+   "actor": "dana",
+   "kind": "repo.add_topic",
+   "org": "acme",
+   "target": "acme/web"
+  },
+  "action": "repo.add_topic",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "source": "github_audit",
+  "topic": "payments",
+  "ts": "2026-10-20T13:23:30Z"
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.40",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "dana@acme.example",
+   "country": "United States",
+   "ip": "203.0.113.40",
+   "kind": "user.session.start",
+   "org": "acme",
+   "target": "Okta Dashboard"
+  },
+  "actor": {
+   "alternateId": "dana@acme.example",
+   "displayName": "Dana",
+   "type": "User"
+  },
+  "client": {
+   "device": "Computer",
+   "geographicalContext": {
+    "city": "Portland",
+    "country": "United States",
+    "state": "Oregon"
+   },
+   "ipAddress": "203.0.113.40",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   }
+  },
+  "displayMessage": "User login to Okta",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-10-20T13:24:00.000Z",
+  "securityContext": {
+   "asNumber": 64500,
+   "asOrg": "example isp",
+   "isProxy": false,
+   "isp": "example isp"
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "target": [
+   {
+    "displayName": "Okta Dashboard",
+    "type": "AppInstance"
+   }
+  ],
+  "ts": "2026-10-20T13:24:00Z"
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.50",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "dana@acme.example",
+   "ip": "203.0.113.50",
+   "kind": "download",
+   "org": "acme"
+  },
+  "actor": {
+   "callerType": "USER",
+   "email": "dana@acme.example"
+  },
+  "events": [
+   {
+    "name": "download",
+    "parameters": {
+     "doc_id": "1AbCEXAMPLE",
+     "doc_title": "Q4 plan"
+    },
+    "type": "access"
+   }
+  ],
+  "id": {
+   "applicationName": "drive",
+   "time": "2026-10-20T13:25:00.000Z"
+  },
+  "ipAddress": "203.0.113.50",
+  "source": "google_workspace",
+  "ts": "2026-10-20T13:25:00Z"
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.50",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "dana@acme.example",
+   "ip": "203.0.113.50",
+   "kind": "authorize",
+   "org": "acme"
+  },
+  "actor": {
+   "callerType": "USER",
+   "email": "dana@acme.example"
+  },
+  "events": [
+   {
+    "name": "authorize",
+    "parameters": {
+     "app_name": "Example Notes",
+     "client_id": "1234567890.apps.example",
+     "scope": [
+      "https://www.googleapis.com/auth/drive.readonly"
+     ]
+    },
+    "type": "auth"
+   }
+  ],
+  "id": {
+   "applicationName": "token",
+   "time": "2026-10-20T13:26:00.000Z"
+  },
+  "ipAddress": "203.0.113.50",
+  "source": "google_workspace",
+  "ts": "2026-10-20T13:26:00Z"
+ },
+ {
+  "_norm": {
+   "kind": "HTTP Request: GET https://files.acme.example/exports/2026-10.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEEXAMPLE01%2F20261020%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261020T133000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host \"HTTP/1.1 200 OK\"",
+   "org": "org_7f3a"
+  },
+  "event": "HTTP Request: GET https://files.acme.example/exports/2026-10.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEEXAMPLE01%2F20261020%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261020T133000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host \"HTTP/1.1 200 OK\"",
+  "level": "info",
+  "logger": "httpx",
+  "organization_id": "org_7f3a",
+  "source": "hiro",
+  "timestamp": "2026-10-20T13:30:00.250000Z",
+  "ts": "2026-10-20T13:30:00Z"
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.31",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "dana@acme.example",
+   "ip": "203.0.113.31",
+   "kind": "export.link_shared",
+   "org": "acme",
+   "target": "https://files.acme.example/e/7.csv?sv=2024-08-04&sp=r"
+  },
+  "actor": "dana@acme.example",
+  "callback": "https://app.acme.example/cb#token_type=bearer&expires_in=3600",
+  "event": "export.link_shared",
+  "ip": "203.0.113.31",
+  "links": "urls=[https://a.acme.example/x,https://b.acme.example/y]",
+  "next": "https://login.acme.example/r?to=https://files.acme.example/f?v=1",
+  "note": "see (https://a.acme.example/z); then retry",
+  "org": "acme",
+  "source": "app",
+  "target": "https://files.acme.example/e/7.csv?sv=2024-08-04&sp=r",
+  "ts": "2026-10-20T13:30:10Z"
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "CreateLoginProfile",
+   "org": "acme",
+   "target": "dana"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "CreateLoginProfile",
+  "eventSource": "iam.amazonaws.com",
+  "eventTime": "2026-10-20T13:31:00Z",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "password": "HIDDEN_DUE_TO_SECURITY_REASONS",
+   "passwordResetRequired": false,
+   "userName": "dana"
+  },
+  "responseElements": {
+   "loginProfile": {
+    "createDate": "Oct 20, 2026, 1:31:00 PM",
+    "passwordResetRequired": false,
+    "userName": "dana"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:31:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "AssumeRole",
+   "org": "acme",
+   "target": "arn:aws:iam::111122223333:role/deploy"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRole",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:32:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "durationSeconds": 3600,
+   "roleArn": "arn:aws:iam::111122223333:role/deploy",
+   "roleSessionName": "ci-1732"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:32:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_norm": {
+   "actor": "repo:acme/web:ref:refs/heads/main",
+   "kind": "AssumeRoleWithWebIdentity",
+   "org": "acme",
+   "target": "arn:aws:iam::111122223333:role/gha-deploy"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRoleWithWebIdentity",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:33:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "roleArn": "arn:aws:iam::111122223333:role/gha-deploy",
+   "roleSessionName": "gha-1733"
+  },
+  "responseElements": {
+   "audience": "sts.amazonaws.com",
+   "provider": "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com",
+   "subjectFromWebIdentityToken": "repo:acme/web:ref:refs/heads/main"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.40",
+  "ts": "2026-10-20T13:33:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "WebIdentityUser",
+   "userName": "repo:acme/web:ref:refs/heads/main"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "dana@acme.example",
+   "ip": "203.0.113.20",
+   "kind": "GetRoleCredentials",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetRoleCredentials",
+  "eventSource": "sso.amazonaws.com",
+  "eventTime": "2026-10-20T13:34:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "accountId": "111122223333",
+   "roleName": "AdministratorAccess"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:34:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "type": "Unknown",
+   "userName": "dana@acme.example"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "GetCredentialsForIdentity",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetCredentialsForIdentity",
+  "eventSource": "cognito-identity.amazonaws.com",
+  "eventTime": "2026-10-20T13:35:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "identityId": "us-west-2:0a1b2c3d-EXAMPLE"
+  },
+  "responseElements": {
+   "identityId": "us-west-2:0a1b2c3d-EXAMPLE"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:35:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "CreateBucketAccessKey",
+   "org": "acme",
+   "target": "acme-exports"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "CreateBucketAccessKey",
+  "eventSource": "lightsail.amazonaws.com",
+  "eventTime": "2026-10-20T13:36:00Z",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-exports"
+  },
+  "responseElements": {
+   "accessKey": {
+    "accessKeyId": "AKIAEXAMPLEEXAMPLE09",
+    "createdAt": "Oct 20, 2026, 1:36:00 PM",
+    "status": "Active"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:36:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
+  }
+ },
+ {
+  "_ip": {
+   "_norm.ip": {
+    "ip": "203.0.113.20",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   }
+  },
+  "_norm": {
+   "actor": "ci",
+   "ip": "203.0.113.20",
+   "kind": "CreateLocationObjectStorage",
+   "org": "acme",
+   "target": "backups"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "CreateLocationObjectStorage",
+  "eventSource": "datasync.amazonaws.com",
+  "eventTime": "2026-10-20T13:37:00Z",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "accessKey": "EXAMPLEACCESSKEY10",
+   "bucketName": "backups",
+   "serverHostname": "objects.acme.example"
+  },
+  "responseElements": {
+   "locationArn": "arn:aws:datasync:us-west-2:111122223333:location/loc-0abc1234"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:37:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "type": "IAMUser",
+   "userName": "ci"
   }
  },
  {

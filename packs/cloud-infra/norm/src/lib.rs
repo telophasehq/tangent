@@ -1,4 +1,5 @@
-//! Each source's shape into `_norm`; the four API sources' records are trimmed too.
+//! Each source's shape into `_norm`; the four API sources' records are trimmed too,
+//! and every other's loses its per-event ids and URL signatures.
 
 wit_bindgen::generate!({
     path: ".tangent/wit",
@@ -81,8 +82,10 @@ fn text(s: Scalar) -> Option<String> {
     }
 }
 
+/// its URLs unsigned, as an untrimmed record's are
 fn get(lv: &Logview, path: &str) -> Option<String> {
-    lv.get(path).and_then(text)
+    let s = lv.get(path).and_then(text)?;
+    Some(trim::unsigned(&s).unwrap_or(s))
 }
 
 /// `https://api.github.com/repos/x` -> `api.github.com`
@@ -274,7 +277,10 @@ impl Guest for Component {
                     let rec = serde_json::from_str(&lv.log()).map_err(|e| e.to_string())?;
                     serde_json::to_string(&trim(&rec)).map_err(|e| e.to_string())?
                 }
-                None => lv.log().trim_end().to_string(),
+                None => {
+                    let raw = lv.log();
+                    trim::scrubbed_line(&source, &raw).unwrap_or_else(|| raw.trim_end().to_string())
+                }
             };
             if !line.ends_with('}') {
                 return Err("record is not a JSON object".to_string());

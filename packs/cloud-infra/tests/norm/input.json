@@ -1004,5 +1004,801 @@
    "type": "AWSService",
    "invokedBy": "AWS Internal"
   }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRole",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:11:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "roleArn": "arn:aws:iam::111122223333:role/deploy",
+   "roleSessionName": "ci-1730",
+   "externalId": "acme-ci",
+   "durationSeconds": 3600
+  },
+  "responseElements": {
+   "credentials": {
+    "accessKeyId": "ASIAEXAMPLEEXAMPLE02",
+    "sessionToken": "IQoJb3JpZ2luX2VjEXAMPLE+SESSION/TOKEN==",
+    "expiration": "Oct 20, 2026, 2:11:00 PM"
+   },
+   "assumedRoleUser": {
+    "assumedRoleId": "AROAEXAMPLEEXAMPLE03:ci-1730",
+    "arn": "arn:aws:sts::111122223333:assumed-role/deploy/ci-1730"
+   },
+   "packedPolicySize": 4
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:11:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "ListSecrets",
+  "eventSource": "secretsmanager.amazonaws.com",
+  "eventTime": "2026-10-20T13:12:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "maxResults": 100,
+   "nextToken": "AAMA-EXAMPLE-NEXT-PAGE-TOKEN"
+  },
+  "responseElements": null,
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:12:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "DescribeNatGateways",
+  "eventSource": "ec2.amazonaws.com",
+  "eventTime": "2026-10-20T13:12:30Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "DescribeNatGatewaysRequest": {
+    "NextToken": ""
+   }
+  },
+  "responseElements": null,
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:12:30Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "CreateNetworkInterface",
+  "eventSource": "ec2.amazonaws.com",
+  "eventTime": "2026-10-20T13:13:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "subnetId": "subnet-0abc1234",
+   "description": "build runner",
+   "clientToken": "3f9c2b1a-7d6e-4f5a-8b9c-0d1e2f3a4b5c",
+   "groupSet": {
+    "items": [
+     {
+      "groupId": "sg-0abc1234"
+     }
+    ]
+   }
+  },
+  "responseElements": {
+   "requestId": "9e8d7c6b-5a4f-4e3d-2c1b-0a9f8e7d6c5b",
+   "networkInterface": {
+    "networkInterfaceId": "eni-0abc1234",
+    "subnetId": "subnet-0abc1234",
+    "privateIpAddress": "10.0.1.23"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:13:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "CreateInvalidation",
+  "eventSource": "cloudfront.amazonaws.com",
+  "eventTime": "2026-10-20T13:14:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "distributionId": "E2EXAMPLE",
+   "invalidationBatch": {
+    "paths": {
+     "quantity": 1,
+     "items": [
+      "/*"
+     ]
+    },
+    "callerReference": "deploy-1730"
+   }
+  },
+  "responseElements": {
+   "location": "https://cloudfront.amazonaws.com/2020-05-31/distribution/E2EXAMPLE/invalidation/I3EXAMPLE",
+   "invalidation": {
+    "id": "I3EXAMPLE",
+    "status": "InProgress",
+    "createTime": "Oct 20, 2026, 1:14:00 PM",
+    "invalidationBatch": {
+     "paths": {
+      "quantity": 1,
+      "items": [
+       "/*"
+      ]
+     },
+     "callerReference": "deploy-1730"
+    }
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:14:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "InitiateAuth",
+  "eventSource": "cognito-idp.amazonaws.com",
+  "eventTime": "2026-10-20T13:15:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "authFlow": "USER_PASSWORD_AUTH",
+   "clientId": "5example0app0client0id",
+   "authParameters": "HIDDEN_DUE_TO_SECURITY_REASONS"
+  },
+  "responseElements": {
+   "challengeParameters": {},
+   "authenticationResult": {
+    "accessToken": "HIDDEN_DUE_TO_SECURITY_REASONS",
+    "expiresIn": 3600,
+    "tokenType": "Bearer",
+    "refreshToken": "HIDDEN_DUE_TO_SECURITY_REASONS",
+    "idToken": "HIDDEN_DUE_TO_SECURITY_REASONS"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "198.51.100.7",
+  "ts": "2026-10-20T13:15:00Z",
+  "userAgent": "Mozilla/5.0",
+  "userIdentity": {
+   "type": "Unknown",
+   "principalId": "Anonymous"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "CompleteLayerUpload",
+  "eventSource": "ecr.amazonaws.com",
+  "eventTime": "2026-10-20T13:16:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "registryId": "111122223333",
+   "repositoryName": "web",
+   "uploadId": "0b9b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+   "layerDigests": [
+    "sha256:a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4"
+   ]
+  },
+  "responseElements": {
+   "registryId": "111122223333",
+   "repositoryName": "web",
+   "uploadId": "0b9b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+   "layerDigest": "sha256:a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:16:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "Decrypt",
+  "eventSource": "kms.amazonaws.com",
+  "eventTime": "2026-10-20T13:17:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "encryptionAlgorithm": "SYMMETRIC_DEFAULT",
+   "encryptionContext": {
+    "aws-crypto-public-key": "AxEXAMPLEpublicKeyBase64EXAMPLEpublicKeyBase64EXAMPLE==",
+    "SecretARN": "arn:aws:secretsmanager:us-west-2:111122223333:secret:prod/db-AbCdEf"
+   }
+  },
+  "responseElements": null,
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:17:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "ts": "2026-10-20T13:20:00Z",
+  "source": "hiro",
+  "timestamp": "2026-10-20T13:20:00.123456Z",
+  "event": "plan_step_started",
+  "organization_id": "org_7f3a",
+  "plan_id": "pln_01",
+  "step_id": "stp_02",
+  "service": "plan-worker",
+  "env": "prod",
+  "dd.service": "plan-worker",
+  "dd.env": "prod",
+  "dd.version": "4f1c2d9e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e",
+  "dd.trace_id": "6918463517226104713",
+  "dd.span_id": "1532478859232091218",
+  "ddsource": "python",
+  "level": "info",
+  "logger": "hiro.plans"
+ },
+ {
+  "ts": "2026-10-20T13:20:01Z",
+  "source": "hiro",
+  "message": "HTTP Request: GET https://acmeexports.blob.core.windows.net/exports/2026-10.csv?sv=2024-08-04&se=2026-10-20T14%3A20%3A00Z&sr=b&sp=r&sig=EXAMPLEsig%2Bvalue%3D \"HTTP/1.1 200 OK\""
+ },
+ {
+  "ts": "2026-10-20T13:21:00Z",
+  "source": "app",
+  "event": "export.download",
+  "actor": "dana@acme.example",
+  "org": "acme",
+  "ip": "203.0.113.30",
+  "path": "/api/exports?page=3",
+  "request_id": "req_8c1f2e",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+ },
+ {
+  "ts": "2026-10-20T13:22:00Z",
+  "source": "github_audit",
+  "action": "workflows.prepared_workflow_job",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "runner_name": "GitHub Actions 1042",
+  "_document_id": "EXAMPLEdocid01"
+ },
+ {
+  "ts": "2026-10-20T13:22:10Z",
+  "source": "github_audit",
+  "action": "workflows.prepared_workflow_job",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "runner_name": "build-01",
+  "_document_id": "EXAMPLEdocid02"
+ },
+ {
+  "ts": "2026-10-20T13:23:00Z",
+  "source": "github_audit",
+  "action": "workflows.completed_workflow_run",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "name": "deploy",
+  "conclusion": "success",
+  "topic": "github.actions.workflows.v1.WorkflowRunCompleted",
+  "_document_id": "EXAMPLEdocid03"
+ },
+ {
+  "ts": "2026-10-20T13:23:30Z",
+  "source": "github_audit",
+  "action": "repo.add_topic",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "topic": "payments",
+  "_document_id": "EXAMPLEdocid04"
+ },
+ {
+  "ts": "2026-10-20T13:24:00Z",
+  "source": "okta",
+  "published": "2026-10-20T13:24:00.000Z",
+  "uuid": "5d0e8a3c-EXAMPLE",
+  "eventType": "user.session.start",
+  "displayMessage": "User login to Okta",
+  "severity": "INFO",
+  "outcome": {
+   "result": "SUCCESS",
+   "reason": null
+  },
+  "actor": {
+   "id": "00uEXAMPLE",
+   "type": "User",
+   "alternateId": "dana@acme.example",
+   "displayName": "Dana"
+  },
+  "client": {
+   "ipAddress": "203.0.113.40",
+   "zone": "null",
+   "device": "Computer",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME",
+    "rawUserAgent": "Mozilla/5.0"
+   },
+   "geographicalContext": {
+    "city": "Portland",
+    "state": "Oregon",
+    "country": "United States"
+   }
+  },
+  "securityContext": {
+   "asNumber": 64500,
+   "asOrg": "example isp",
+   "isp": "example isp",
+   "isProxy": false
+  },
+  "target": [
+   {
+    "id": "0oaEXAMPLE",
+    "type": "AppInstance",
+    "alternateId": null,
+    "displayName": "Okta Dashboard"
+   }
+  ],
+  "authenticationContext": {
+   "authenticationProvider": null,
+   "credentialType": null,
+   "credentialProvider": null,
+   "externalSessionId": "idxEXAMPLE"
+  }
+ },
+ {
+  "ts": "2026-10-20T13:25:00Z",
+  "source": "google_workspace",
+  "ipAddress": "203.0.113.50",
+  "id": {
+   "time": "2026-10-20T13:25:00.000Z",
+   "applicationName": "drive",
+   "uniqueQualifier": "-4242"
+  },
+  "actor": {
+   "email": "dana@acme.example",
+   "callerType": "USER"
+  },
+  "events": [
+   {
+    "type": "access",
+    "name": "download",
+    "parameters": [
+     {
+      "name": "doc_id",
+      "value": "1AbCEXAMPLE"
+     },
+     {
+      "name": "doc_title",
+      "value": "Q4 plan"
+     },
+     {
+      "name": "billable",
+      "boolValue": true
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "ts": "2026-10-20T13:26:00Z",
+  "source": "google_workspace",
+  "ipAddress": "203.0.113.50",
+  "id": {
+   "time": "2026-10-20T13:26:00.000Z",
+   "applicationName": "token",
+   "uniqueQualifier": "-4343"
+  },
+  "actor": {
+   "email": "dana@acme.example",
+   "callerType": "USER"
+  },
+  "events": [
+   {
+    "type": "auth",
+    "name": "authorize",
+    "parameters": [
+     {
+      "name": "client_id",
+      "value": "1234567890.apps.example"
+     },
+     {
+      "name": "app_name",
+      "value": "Example Notes"
+     },
+     {
+      "name": "scope",
+      "multiValue": [
+       "https://www.googleapis.com/auth/drive.readonly"
+      ]
+     },
+     {
+      "name": "scope_data",
+      "multiMessageValue": [
+       {
+        "parameter": [
+         {
+          "name": "scope_name",
+          "value": "drive.readonly"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "ts": "2026-10-20T13:30:00Z",
+  "source": "hiro",
+  "timestamp": "2026-10-20T13:30:00.250000Z",
+  "event": "HTTP Request: GET https://files.acme.example/exports/2026-10.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEEXAMPLE01%2F20261020%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261020T133000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Security-Token=IQoJEXAMPLEsecurityTOKEN&X-Amz-Signature=0a1b2c3d4e5f6a7b8c9d \"HTTP/1.1 200 OK\"",
+  "organization_id": "org_7f3a",
+  "level": "info",
+  "logger": "httpx"
+ },
+ {
+  "ts": "2026-10-20T13:30:10Z",
+  "source": "app",
+  "event": "export.link_shared",
+  "actor": "dana@acme.example",
+  "org": "acme",
+  "ip": "203.0.113.31",
+  "target": "https://files.acme.example/e/7.csv?sv=2024-08-04&sp=r&sig=EXAMPLEsig%3D",
+  "links": "urls=[https://a.acme.example/x?sig=EXAMPLE1,https://b.acme.example/y]",
+  "next": "https://login.acme.example/r?to=https://files.acme.example/f?sig=EXAMPLE2&v=1",
+  "callback": "https://app.acme.example/cb#access_token=EXAMPLEtok&token_type=bearer&expires_in=3600",
+  "note": "see (https://a.acme.example/z?token=EXAMPLE3); then retry"
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "CreateLoginProfile",
+  "eventSource": "iam.amazonaws.com",
+  "eventTime": "2026-10-20T13:31:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "userName": "dana",
+   "password": "HIDDEN_DUE_TO_SECURITY_REASONS",
+   "passwordResetRequired": false
+  },
+  "responseElements": {
+   "loginProfile": {
+    "userName": "dana",
+    "createDate": "Oct 20, 2026, 1:31:00 PM",
+    "passwordResetRequired": false
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:31:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRole",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:32:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "roleArn": "arn:aws:iam::111122223333:role/deploy",
+   "roleSessionName": "ci-1732",
+   "durationSeconds": 3600
+  },
+  "responseElements": {
+   "credentials": {
+    "accessKeyId": "ASIAEXAMPLEEXAMPLE05",
+    "sessionToken": "IQoJb3JpZ2luX2VjEXAMPLEEXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/==",
+    "expiration": "Oct 20, 2026, 2:33:00 PM"
+   },
+   "assumedRoleUser": {
+    "assumedRoleId": "AROAEXAMPLEEXAMPLE03:ci-1732",
+    "arn": "arn:aws:sts::111122223333:assumed-role/deploy/ci-1732"
+   },
+   "packedPolicySize": 4
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:32:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRoleWithWebIdentity",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:33:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "roleArn": "arn:aws:iam::111122223333:role/gha-deploy",
+   "roleSessionName": "gha-1733"
+  },
+  "responseElements": {
+   "credentials": {
+    "accessKeyId": "ASIAEXAMPLEEXAMPLE05",
+    "sessionToken": "IQoJb3JpZ2luX2VjEXAMPLEEXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/EXAMPLEsessionTOKEN/==",
+    "expiration": "Oct 20, 2026, 2:33:00 PM"
+   },
+   "assumedRoleUser": {
+    "assumedRoleId": "AROAEXAMPLEEXAMPLE06:gha-1733",
+    "arn": "arn:aws:sts::111122223333:assumed-role/gha-deploy/gha-1733"
+   },
+   "provider": "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com",
+   "audience": "sts.amazonaws.com",
+   "subjectFromWebIdentityToken": "repo:acme/web:ref:refs/heads/main",
+   "packedPolicySize": 7
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.40",
+  "ts": "2026-10-20T13:33:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "WebIdentityUser",
+   "principalId": "token.actions.githubusercontent.com:sts.amazonaws.com:repo:acme/web:ref:refs/heads/main",
+   "userName": "repo:acme/web:ref:refs/heads/main",
+   "identityProvider": "token.actions.githubusercontent.com"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "GetRoleCredentials",
+  "eventSource": "sso.amazonaws.com",
+  "eventTime": "2026-10-20T13:34:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "roleName": "AdministratorAccess",
+   "accountId": "111122223333"
+  },
+  "responseElements": {
+   "roleCredentials": {
+    "accessKeyId": "ASIAEXAMPLEEXAMPLE07",
+    "secretAccessKey": "HIDDEN_DUE_TO_SECURITY_REASONS",
+    "sessionToken": "HIDDEN_DUE_TO_SECURITY_REASONS",
+    "expiration": 1792509240000
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:34:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "Unknown",
+   "principalId": "111122223333",
+   "accountId": "111122223333",
+   "userName": "dana@acme.example"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "GetCredentialsForIdentity",
+  "eventSource": "cognito-identity.amazonaws.com",
+  "eventTime": "2026-10-20T13:35:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "identityId": "us-west-2:0a1b2c3d-EXAMPLE"
+  },
+  "responseElements": {
+   "identityId": "us-west-2:0a1b2c3d-EXAMPLE",
+   "Credentials": {
+    "AccessKeyId": "ASIAEXAMPLEEXAMPLE08",
+    "SecretKey": "HIDDEN_DUE_TO_SECURITY_REASONS",
+    "SessionToken": "HIDDEN_DUE_TO_SECURITY_REASONS",
+    "Expiration": "Oct 20, 2026, 2:35:00 PM"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:35:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "CreateBucketAccessKey",
+  "eventSource": "lightsail.amazonaws.com",
+  "eventTime": "2026-10-20T13:36:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "bucketName": "acme-exports"
+  },
+  "responseElements": {
+   "accessKey": {
+    "accessKeyId": "AKIAEXAMPLEEXAMPLE09",
+    "secretAccessKey": "HIDDEN_DUE_TO_SECURITY_REASONS",
+    "status": "Active",
+    "createdAt": "Oct 20, 2026, 1:36:00 PM"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:36:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
+ },
+ {
+  "eventVersion": "1.09",
+  "awsRegion": "us-west-2",
+  "eventName": "CreateLocationObjectStorage",
+  "eventSource": "datasync.amazonaws.com",
+  "eventTime": "2026-10-20T13:37:00Z",
+  "eventType": "AwsApiCall",
+  "eventID": "0f6c1d2e-3b4a-4c5d-8e9f-0a1b2c3d4e5f",
+  "requestID": "8a7b6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "serverHostname": "objects.acme.example",
+   "bucketName": "backups",
+   "accessKey": "EXAMPLEACCESSKEY10",
+   "secretKey": "HIDDEN_DUE_TO_SECURITY_REASONS",
+   "SecretAccessKey": "HIDDEN_DUE_TO_SECURITY_REASONS"
+  },
+  "responseElements": {
+   "locationArn": "arn:aws:datasync:us-west-2:111122223333:location/loc-0abc1234"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.20",
+  "ts": "2026-10-20T13:37:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "type": "IAMUser",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/ci",
+   "userName": "ci",
+   "accessKeyId": "AKIAEXAMPLEEXAMPLE01",
+   "principalId": "AIDAEXAMPLEEXAMPLE01"
+  }
  }
 ]
