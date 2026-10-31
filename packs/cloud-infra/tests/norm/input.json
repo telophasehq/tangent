@@ -73,6 +73,7 @@
   "eventSource": "signin.amazonaws.com",
   "eventName": "ConsoleLogin",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "98.51.100.23",
   "userAgent": "Mozilla/5.0",
   "userIdentity": {
@@ -97,6 +98,7 @@
   "eventSource": "cloudtrail.amazonaws.com",
   "eventName": "StopLogging",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "65.108.22.91",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -160,6 +162,7 @@
   "eventSource": "sts.amazonaws.com",
   "eventName": "GetCallerIdentity",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.22.0",
   "userIdentity": {
@@ -179,6 +182,31 @@
   "job": "build",
   "step": "Run aquasecurity/trivy-action@0.28.0",
   "line": "Downloading action archive"
+ },
+ {
+  "ts": "2026-10-20T13:00:00Z",
+  "source": "google_workspace",
+  "id": {
+   "time": "2026-10-20T13:00:00Z",
+   "applicationName": "user_accounts"
+  },
+  "actor": {
+   "email": "cfo@acme.io",
+   "callerType": "USER"
+  },
+  "ipAddress": "185.220.101.4",
+  "events": [
+   {
+    "type": "email_forwarding_change",
+    "name": "EMAIL_FORWARDING_OUT_OF_DOMAIN",
+    "parameters": [
+     {
+      "name": "email_forwarding_destination_address",
+      "value": "acme.finance.backup@gmail.com"
+     }
+    ]
+   }
+  ]
  },
  {
   "ts": "2026-10-20T13:00:06Z",
@@ -267,6 +295,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "ListBuckets",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.22.0",
   "userIdentity": {
@@ -304,6 +333,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -326,6 +356,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -348,6 +379,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -370,6 +402,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -392,6 +425,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -414,6 +448,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -436,6 +471,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -458,6 +494,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "GetObject",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
@@ -656,6 +693,7 @@
   "eventSource": "sts.amazonaws.com",
   "eventName": "GetCallerIdentity",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-sdk-go/1.44",
   "userIdentity": {
@@ -675,6 +713,7 @@
   "eventSource": "s3.amazonaws.com",
   "eventName": "ListBuckets",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-sdk-go/1.44",
   "userIdentity": {
@@ -694,6 +733,7 @@
   "eventSource": "secretsmanager.amazonaws.com",
   "eventName": "ListSecrets",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-sdk-go/1.44",
   "userIdentity": {
@@ -713,6 +753,7 @@
   "eventSource": "secretsmanager.amazonaws.com",
   "eventName": "GetSecretValue",
   "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
   "sourceIPAddress": "185.224.128.17",
   "userAgent": "aws-sdk-go/1.44",
   "userIdentity": {

@@ -9,5 +9,6 @@ pub mod npm_registry;
 pub mod okta;
 pub mod poll;
 pub mod socket;
+pub mod sqlite;
 pub mod sqs;
 pub mod tcp;

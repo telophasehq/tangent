@@ -2,10 +2,11 @@
 //! worker and runs in DAG order with the plugins: the worker hands it the
 //! records that reached it, waits for the replies (`concurrency` at a time),
 //! and carries the annotated records on to the node's outputs. The system
-//! prompt is a file; the user message is the record (or selected fields) as
-//! pretty JSON; the reply is added to the record under the node's name. The
-//! node adds and forwards, never drops: a failure lands as `{"error": ...}`
-//! in the same field, and a plugin downstream decides what goes on.
+//! prompt is a file; the user message is the records of one `group_by` value
+//! (or selected fields), a JSON line each; each record's answer is added to
+//! it under the node's name. The node adds and forwards, never drops: a
+//! failure lands as `{"error": ...}` in the same field, and a plugin
+//! downstream decides what goes on.
 //!
 //! The reply is read as JSON and nothing else. The backend is asked to make
 //! it so: a schema (`schema_file`) through rig's structured output, or JSON
@@ -110,47 +111,113 @@ impl InferenceNode {
         })
     }
 
-    /// Every record through the model at once, each under one of the node's
-    /// permits; the annotated records, in the order given.
+    /// Every record through the model, a request per value of `group_by`
+    /// split at `batch_bytes`, each under one of the node's permits; the
+    /// annotated records, in the order given.
     pub async fn annotate_all(&self, records: Vec<Value>) -> Vec<Value> {
-        futures::future::join_all(records.into_iter().map(|v| async move {
+        let n = records.len();
+        let mut groups: Vec<(String, Vec<(usize, Value)>)> = Vec::new();
+        for (i, v) in records.into_iter().enumerate() {
+            let key: Vec<Option<&Value>> =
+                self.cfg.group_by.iter().map(|f| lookup(&v, f)).collect();
+            let key = json!(key).to_string();
+            match groups.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, g)) => g.push((i, v)),
+                None => groups.push((key, vec![(i, v)])),
+            }
+        }
+        let mut jobs: Vec<(Vec<usize>, Vec<Value>)> = Vec::new();
+        for (_, group) in groups {
+            let (ids, values): (Vec<usize>, Vec<Value>) = group.into_iter().unzip();
+            let mut at = 0;
+            for chunk in self.chunks(values) {
+                let len = chunk.len();
+                jobs.push((ids[at..at + len].to_vec(), chunk));
+                at += len;
+            }
+        }
+        let done = futures::future::join_all(jobs.into_iter().map(|(ids, chunk)| async move {
             let _permit = self.sem.acquire().await.expect("semaphore is never closed");
-            self.annotate(v).await
+            (ids, self.annotate(chunk).await)
         }))
-        .await
+        .await;
+        let mut slots = vec![Value::Null; n];
+        for (ids, out) in done {
+            for (i, v) in ids.into_iter().zip(out) {
+                slots[i] = v;
+            }
+        }
+        slots
     }
 
-    /// One record through the model: the reply, or the error, added under the
-    /// node's name.
-    pub async fn annotate(&self, v: Value) -> Value {
+    /// Records in one request; an unreadable reply is asked again in halves.
+    async fn annotate(&self, records: Vec<Value>) -> Vec<Value> {
+        let n = records.len();
         let start = Instant::now();
-        let reply = match self.ask(self.user_message(&v)).await {
-            Ok(reply) => reply,
+        let user = records
+            .iter()
+            .enumerate()
+            .map(|(k, v)| self.line(k, v))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let answers = match self.ask(user, n).await {
+            Ok(reply) => spread(reply, n),
+            // a failed request would fail the same in halves
+            Err(e) if n > 1 && e.to_string().starts_with("reply ") => {
+                tracing::warn!(
+                    node = %self.name,
+                    records = n,
+                    "reply unreadable, asking again in halves: {e:#}"
+                );
+                let mut records = records;
+                let tail = records.split_off(n / 2);
+                let mut out = Box::pin(self.annotate(records)).await;
+                out.extend(Box::pin(self.annotate(tail)).await);
+                return out;
+            }
             Err(e) => {
-                tracing::warn!(node = %self.name, "inference failed: {e:#}");
-                json!({"error": format!("{e:#}")})
+                tracing::warn!(node = %self.name, records = n, "inference failed: {e:#}");
+                vec![json!({"error": format!("{e:#}")}); n]
             }
         };
         tracing::debug!(
             node = %self.name,
+            records = n,
             ms = start.elapsed().as_millis() as u64,
             "inference"
         );
-        let mut obj = match v {
-            Value::Object(m) => m,
-            other => {
-                let mut m = Map::new();
-                m.insert("value".into(), other);
-                m
-            }
-        };
-        obj.insert(self.name.to_string(), reply);
-        Value::Object(obj)
+        records
+            .into_iter()
+            .zip(answers)
+            .map(|(v, a)| attach(&self.name, v, a))
+            .collect()
     }
 
-    fn user_message(&self, v: &Value) -> String {
+    /// About `batch_bytes` per request.
+    fn chunks(&self, records: Vec<Value>) -> Vec<Vec<Value>> {
+        let max_bytes = self.cfg.batch_bytes.max(1);
+        let mut out = Vec::new();
+        let mut cur: Vec<Value> = Vec::new();
+        let mut bytes = 0usize;
+        for v in records {
+            let size = self.view(&v).to_string().len();
+            if !cur.is_empty() && bytes + size > max_bytes {
+                out.push(std::mem::take(&mut cur));
+                bytes = 0;
+            }
+            bytes += size;
+            cur.push(v);
+        }
+        if !cur.is_empty() {
+            out.push(cur);
+        }
+        out
+    }
+
+    /// The record as the model sees it: whole, or the listed `fields`.
+    fn view(&self, v: &Value) -> Value {
         if self.cfg.fields.is_empty() {
-            return serde_json::to_string_pretty(v).unwrap_or_default();
+            return v.clone();
         }
         let mut m = Map::new();
         for f in &self.cfg.fields {
@@ -158,19 +225,40 @@ impl InferenceNode {
                 m.insert(f.clone(), x.clone());
             }
         }
-        serde_json::to_string_pretty(&Value::Object(m)).unwrap_or_default()
+        Value::Object(m)
     }
 
-    fn request(&self, user: String) -> CompletionRequest {
+    fn line(&self, k: usize, v: &Value) -> String {
+        let mut m = Map::new();
+        m.insert("i".into(), json!(k));
+        if let Value::Object(fields) = self.view(v) {
+            m.extend(fields);
+        }
+        serde_json::to_string(&Value::Object(m)).unwrap_or_default()
+    }
+
+    fn request(&self, user: String, n: usize) -> CompletionRequest {
+        let preamble = format!(
+            "{}\n\nThe records are one JSON object per line, each with its index `i`. Reply with one JSON object, \
+             {{\"answers\": [...]}}, holding one answer per record, {n} in all, in the same order, each the \
+             record's answer with its index first: {{\"i\": k, ...}}. Keep going through \
+             every record: the reply is not finished until the answer with \"i\": {last} is written, then close \
+             the array and the object. The reply is the JSON object itself: no code fence, no text before or \
+             after it.",
+            self.prompt.trim_end(),
+            last = n.saturating_sub(1)
+        );
         let mut request = CompletionRequest::new(user)
-            .preamble(self.prompt.clone())
-            .max_tokens(u64::from(self.cfg.max_tokens));
+            .preamble(preamble)
+            .max_tokens(u64::from(self.cfg.max_tokens) * n as u64);
         if let Some(t) = self.cfg.temperature {
             request = request.temperature(t);
         }
         let mut params = Map::new();
         match (&self.schema, self.cfg.backend) {
-            (Some(schema), _) => request = request.output_schema(schema.clone()),
+            (Some(schema), _) => {
+                request = request.output_schema(answers_schema(schema));
+            }
             // JSON mode: any object. Converse has no such mode without a schema.
             (None, Backend::Openai) => {
                 params.insert("response_format".into(), json!({"type": "json_object"}));
@@ -188,12 +276,12 @@ impl InferenceNode {
 
     /// The reply as a JSON object, after `retries` more tries for a request
     /// that got no reply.
-    async fn ask(&self, user: String) -> Result<Value> {
+    async fn ask(&self, user: String, n: usize) -> Result<Value> {
         let attempts = self.cfg.retries.saturating_add(1);
         let mut attempt = 0;
         let text = loop {
             attempt += 1;
-            match self.call(user.clone()).await {
+            match self.call(user.clone(), n).await {
                 Ok(text) => break text,
                 Err(e) if attempt < attempts => {
                     let wait = Duration::from_secs(1 << (attempt - 1).min(6));
@@ -216,10 +304,10 @@ impl InferenceNode {
     }
 
     /// One request: the reply's text, or why there is none.
-    async fn call(&self, user: String) -> Result<String> {
+    async fn call(&self, user: String, n: usize) -> Result<String> {
         let reply = tokio::time::timeout(
             Duration::from_millis(self.cfg.timeout_ms),
-            self.model.call(self.request(user)),
+            self.model.call(self.request(user, n)),
         )
         .await
         .map_err(|_| anyhow!("no reply within {} ms", self.cfg.timeout_ms))?
@@ -243,6 +331,112 @@ impl InferenceNode {
         }
         Ok(text)
     }
+}
+
+fn attach(name: &str, v: Value, reply: Value) -> Value {
+    let mut obj = match v {
+        Value::Object(m) => m,
+        other => {
+            let mut m = Map::new();
+            m.insert("value".into(), other);
+            m
+        }
+    };
+    obj.insert(name.to_string(), reply);
+    Value::Object(obj)
+}
+
+/// Answers by their `i` when all carry one, else by position.
+fn spread(reply: Value, n: usize) -> Vec<Value> {
+    let Some(items) = reply.get("answers").and_then(Value::as_array).cloned() else {
+        let err = format!(
+            "reply has no `answers` array: {}",
+            head(&reply.to_string(), 200)
+        );
+        return vec![json!({"error": err}); n];
+    };
+    let indexed = !items.is_empty()
+        && items
+            .iter()
+            .all(|a| a.get("i").and_then(Value::as_u64).is_some());
+    let mut slots: Vec<Option<Value>> = vec![None; n];
+    for (pos, a) in items.into_iter().enumerate() {
+        let k = if indexed {
+            a["i"].as_u64().unwrap_or(u64::MAX) as usize
+        } else {
+            pos
+        };
+        if k < n && slots[k].is_none() {
+            slots[k] = Some(a);
+        }
+    }
+    slots
+        .into_iter()
+        .enumerate()
+        .map(|(k, slot)| match slot {
+            Some(Value::Object(mut m)) => {
+                m.remove("i");
+                Value::Object(m)
+            }
+            Some(other) => json!({"error": format!("answer {k} is not a JSON object: {}", head(&other.to_string(), 200))}),
+            None => json!({"error": format!("no answer for record {k} in a reply to {n}")}),
+        })
+        .collect()
+}
+
+/// `{"answers": [...]}`, each answer with its record's index `i`.
+fn answers_schema(item: &schemars::Schema) -> schemars::Schema {
+    let mut item = serde_json::to_value(item).unwrap_or(Value::Null);
+    let defs: Vec<(&str, Value)> = ["$defs", "definitions"]
+        .into_iter()
+        .filter_map(|k| Some((k, item.as_object_mut()?.remove(k)?)))
+        .collect();
+    if item.get("properties").is_some() {
+        indexed(&mut item);
+    }
+    if let Some(shapes) = item.get_mut("anyOf").and_then(Value::as_array_mut) {
+        for shape in shapes.iter_mut() {
+            if shape.get("properties").is_some()
+                || shape.get("type").and_then(Value::as_str) == Some("object")
+            {
+                indexed(shape);
+            }
+        }
+    }
+    let mut wrapped = json!({
+        "title": "Answers",
+        "type": "object",
+        "properties": {
+            "answers": {"type": "array", "items": item}
+        },
+        "required": ["answers"],
+        "additionalProperties": false
+    });
+    for (k, d) in defs {
+        wrapped[k] = d;
+    }
+    schemars::Schema::try_from(wrapped).expect("a schema wrapped in an object is a schema")
+}
+
+/// `i` first in the shape's properties, and required.
+fn indexed(shape: &mut Value) {
+    let Some(obj) = shape.as_object_mut() else {
+        return;
+    };
+    let mut props = Map::new();
+    props.insert(
+        "i".into(),
+        json!({"type": "integer", "description": "the record's index"}),
+    );
+    if let Some(Value::Object(old)) = obj.remove("properties") {
+        props.extend(old.into_iter().filter(|(k, _)| k != "i"));
+    }
+    obj.insert("properties".into(), Value::Object(props));
+    let mut required = vec![json!("i")];
+    if let Some(Value::Array(old)) = obj.remove("required") {
+        required.extend(old.into_iter().filter(|r| r != "i"));
+    }
+    obj.insert("required".into(), Value::Array(required));
 }
 
 fn head(s: &str, n: usize) -> String {
@@ -274,9 +468,10 @@ pub fn lines(payload: &[u8]) -> impl Iterator<Item = &[u8]> {
 }
 
 /// An OpenAI-compatible chat server in a few lines, for tests here and in the
-/// worker: it flags any request whose body mentions "bad", answers in prose
-/// to one that mentions "prose", fails the first two requests that mention
-/// "flaky" with a 500, and records every request body.
+/// worker: it answers each record line, flagging one that mentions "bad",
+/// answers in prose to a request that mentions "prose", fails the first two
+/// requests that mention "flaky" with a 500, cuts off its reply to one with
+/// three "loop"s, and records every request body.
 #[cfg(test)]
 pub(crate) mod stub {
     use serde_json::json;
@@ -329,12 +524,26 @@ pub(crate) mod stub {
                         let _ = sock.shutdown().await;
                         return;
                     }
+                    let verdict = |text: &str| {
+                        if text.contains("bad") {
+                            json!({"flag": true, "one_line": "bad thing"})
+                        } else {
+                            json!({"flag": false, "one_line": "fine"})
+                        }
+                    };
+                    let req: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                    let user = text(&req["messages"][1]["content"]);
                     let content = if body.contains("prose") {
                         "Looks fine to me, nothing to flag.".to_string()
-                    } else if body.contains("bad") {
-                        r#"{"flag": true, "one_line": "bad thing"}"#.to_string()
+                    } else if user.matches("loop").count() >= 3 {
+                        "{\"answers\": [{\"flag\": false, \"one_line\": \"a7a7a7a7".to_string()
                     } else {
-                        r#"{"flag": false, "one_line": "fine"}"#.to_string()
+                        let answers: Vec<_> = user
+                            .lines()
+                            .filter(|l| l.starts_with("{\"i\":"))
+                            .map(verdict)
+                            .collect();
+                        json!({"answers": answers}).to_string()
                     };
                     let reply = json!({
                         "choices": [{"message": {"content": content}, "finish_reason": "stop"}]
@@ -351,6 +560,19 @@ pub(crate) mod stub {
             }
         });
         (url, seen)
+    }
+
+    /// A message's text: a string, or a list of text parts.
+    pub fn text(content: &serde_json::Value) -> String {
+        match content {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Array(parts) => parts
+                .iter()
+                .filter_map(|p| p["text"].as_str())
+                .collect::<Vec<_>>()
+                .join(""),
+            _ => String::new(),
+        }
     }
 
     /// A node config against `url`, with the prompt (and a schema, when
@@ -370,6 +592,8 @@ pub(crate) mod stub {
             prompt_file: "judge.md".into(),
             schema_file: None,
             fields: Vec::new(),
+            batch_bytes: 32_768,
+            group_by: Vec::new(),
             concurrency: 2,
             timeout_ms: 5_000,
             retries: 0,
@@ -425,65 +649,37 @@ mod tests {
         );
         assert_eq!(outs[1]["judge"]["flag"], true);
         assert_eq!(outs[1]["judge"]["one_line"], "bad thing");
+        assert!(outs[1]["judge"].get("i").is_none());
         assert_eq!(outs[0]["judge"]["flag"], false);
         assert_eq!(outs[2]["judge"]["flag"], false);
 
         let seen = seen.lock().await;
-        assert_eq!(seen.len(), 3, "one request per record");
-        for body in seen.iter() {
-            let req: Value = serde_json::from_str(body).unwrap();
-            assert_eq!(req["model"], "stub");
-            assert_eq!(req["messages"][0]["role"], "system");
-            assert!(
-                req["messages"][0]["content"]
-                    .to_string()
-                    .contains("You are a test judge."),
-                "{}",
-                req["messages"][0]
-            );
-            assert_eq!(req["messages"][1]["role"], "user");
-            assert_eq!(
-                req["chat_template_kwargs"]["enable_thinking"], false,
-                "extra is merged"
-            );
-            assert_eq!(req["max_tokens"], 50);
-            assert_eq!(
-                req["response_format"]["type"], "json_object",
-                "JSON mode without a schema"
-            );
-            assert!(
-                req.get("temperature").is_none(),
-                "temperature is sent only when set: {req}"
-            );
-        }
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[tokio::test]
-    async fn a_schema_is_sent_as_the_response_format() {
-        let (url, seen) = stub::model().await;
-        let dir = stub::dir("schema");
-        std::fs::write(
-            dir.join("verdict.json"),
-            r#"{"title": "Verdict", "type": "object", "properties": {"flag": {"type": "boolean"}}, "required": ["flag"], "additionalProperties": false}"#,
-        )
-        .unwrap();
-        let mut cfg = stub::config(&url);
-        cfg.schema_file = Some("verdict.json".into());
-        cfg.temperature = Some(0.0);
-        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
-        let out = node.annotate(json!({"id": 1, "msg": "bad"})).await;
-        assert_eq!(out["judge"]["flag"], true);
-
-        let seen = seen.lock().await;
+        assert_eq!(seen.len(), 1, "the records handed over are one request");
         let req: Value = serde_json::from_str(&seen[0]).unwrap();
-        assert_eq!(req["response_format"]["type"], "json_schema", "{req}");
-        assert_eq!(req["response_format"]["json_schema"]["name"], "Verdict");
+        assert_eq!(req["model"], "stub");
+        assert_eq!(req["messages"][0]["role"], "system");
+        let system = stub::text(&req["messages"][0]["content"]);
+        assert!(system.starts_with("You are a test judge."), "{system}");
+        assert!(system.contains("3 in all"), "{system}");
+        assert_eq!(req["messages"][1]["role"], "user");
+        let lines = user_lines(&seen[0]);
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0]["i"], 0);
+        assert_eq!(lines[1]["i"], 1);
+        assert_eq!(lines[1]["id"], 2);
         assert_eq!(
-            req["response_format"]["json_schema"]["schema"]["properties"]["flag"]["type"],
-            "boolean"
+            req["chat_template_kwargs"]["enable_thinking"], false,
+            "extra is merged"
         );
-        assert_eq!(req["temperature"], 0.0);
+        assert_eq!(req["max_tokens"], 150, "max_tokens is per record");
+        assert_eq!(
+            req["response_format"]["type"], "json_object",
+            "JSON mode without a schema"
+        );
+        assert!(
+            req.get("temperature").is_none(),
+            "temperature is sent only when set: {req}"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -492,9 +688,11 @@ mod tests {
         let (url, seen) = stub::model().await;
         let dir = stub::dir("prose");
         let node = InferenceNode::new(Arc::from("judge"), stub::config(&url), &dir).unwrap();
-        let out = node.annotate(json!({"id": 7, "msg": "prose please"})).await;
-        assert_eq!(out["id"], 7);
-        let err = out["judge"]["error"].as_str().unwrap();
+        let out = node
+            .annotate_all(vec![json!({"id": 7, "msg": "prose please"})])
+            .await;
+        assert_eq!(out[0]["id"], 7);
+        let err = out[0]["judge"]["error"].as_str().unwrap();
         assert!(
             err.contains("not JSON") && err.contains("Looks fine"),
             "{err}"
@@ -516,9 +714,9 @@ mod tests {
         let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
         // Two 500s, then the verdict: three requests, one answer.
         let out = node
-            .annotate(json!({"id": 3, "msg": "flaky bad link"}))
+            .annotate_all(vec![json!({"id": 3, "msg": "flaky bad link"})])
             .await;
-        assert_eq!(out["judge"]["flag"], true, "{out}");
+        assert_eq!(out[0]["judge"]["flag"], true, "{out:?}");
         assert_eq!(seen.lock().await.len(), 3);
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -534,9 +732,162 @@ mod tests {
             &dir,
         )
         .unwrap();
-        let out = node.annotate(json!({"id": 9})).await;
-        assert_eq!(out["id"], 9);
-        assert!(!out["judge"]["error"].as_str().unwrap().is_empty(), "{out}");
+        let out = node.annotate_all(vec![json!({"id": 9})]).await;
+        assert_eq!(out[0]["id"], 9);
+        assert!(
+            !out[0]["judge"]["error"].as_str().unwrap().is_empty(),
+            "{out:?}"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn user_lines(body: &str) -> Vec<Value> {
+        let req: Value = serde_json::from_str(body).unwrap();
+        stub::text(&req["messages"][1]["content"])
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn unreadable_reply_is_asked_in_halves() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("halves");
+        let node = InferenceNode::new(Arc::from("judge"), stub::config(&url), &dir).unwrap();
+        let outs = node
+            .annotate_all(
+                (1..=4)
+                    .map(|i| json!({"id": i, "msg": format!("loop {i} bad")}))
+                    .collect(),
+            )
+            .await;
+        assert!(outs.iter().all(|o| o["judge"]["flag"] == true), "{outs:?}");
+        assert_eq!(seen.lock().await.len(), 3, "the whole, then two halves");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn group_by_keeps_requests_apart() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("group-by");
+        let mut cfg = stub::config(&url);
+        cfg.group_by = vec!["who.actor".into()];
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let outs = node
+            .annotate_all(vec![
+                json!({"id": 1, "who": {"actor": "a"}}),
+                json!({"id": 2, "who": {"actor": "b"}}),
+                json!({"id": 3, "who": {"actor": "a"}, "msg": "bad"}),
+                json!({"id": 4}),
+                json!({"id": 5, "who": {"actor": "b"}}),
+            ])
+            .await;
+        let ids: Vec<i64> = outs.iter().map(|o| o["id"].as_i64().unwrap()).collect();
+        assert_eq!(ids, [1, 2, 3, 4, 5]);
+        assert_eq!(outs[2]["judge"]["flag"], true);
+        assert_eq!(outs[0]["judge"]["flag"], false);
+
+        let seen = seen.lock().await;
+        assert_eq!(seen.len(), 3, "a, b, and none");
+        for body in seen.iter() {
+            let actors: std::collections::BTreeSet<String> = user_lines(body)
+                .iter()
+                .map(|l| l["who"]["actor"].to_string())
+                .collect();
+            assert_eq!(actors.len(), 1, "{body}");
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn spread_errors_missing_answers() {
+        let out = spread(
+            json!({"answers": [{"i": 1, "flag": true}, {"i": 0, "flag": false}]}),
+            3,
+        );
+        assert_eq!(out[0], json!({"flag": false}));
+        assert_eq!(out[1], json!({"flag": true}));
+        assert!(out[2]["error"]
+            .as_str()
+            .unwrap()
+            .contains("no answer for record 2"));
+    }
+
+    #[tokio::test]
+    async fn schema_wraps_each_answer() {
+        let (url, seen) = stub::model().await;
+        let dir = stub::dir("schema");
+        std::fs::write(
+            dir.join("verdict.json"),
+            r#"{"title": "Verdict", "type": "object", "properties": {"flag": {"type": "boolean"}}, "required": ["flag"], "additionalProperties": false}"#,
+        )
+        .unwrap();
+        let mut cfg = stub::config(&url);
+        cfg.schema_file = Some("verdict.json".into());
+        cfg.temperature = Some(0.0);
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let outs = node
+            .annotate_all(vec![json!({"id": 1, "msg": "bad"}), json!({"id": 2})])
+            .await;
+        assert_eq!(outs[0]["judge"]["flag"], true);
+        let seen = seen.lock().await;
+        let req: Value = serde_json::from_str(&seen[0]).unwrap();
+        assert_eq!(req["response_format"]["type"], "json_schema", "{req}");
+        assert_eq!(req["response_format"]["json_schema"]["name"], "Answers");
+        assert_eq!(req["temperature"], 0.0);
+        let answers = &req["response_format"]["json_schema"]["schema"]["properties"]["answers"];
+        assert!(answers.get("minItems").is_none(), "backends reject bounds");
+        let item = &answers["items"];
+        assert_eq!(item["properties"]["flag"]["type"], "boolean", "{item}");
+        let first = item["properties"].as_object().unwrap().keys().next();
+        assert_eq!(first.unwrap(), "i", "the index comes first: {item}");
+        assert_eq!(item["required"][0], "i", "{item}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn two_shapes_both_get_the_index() {
+        let verdict: schemars::Schema = serde_json::from_value(json!({
+            "title": "Verdict",
+            "anyOf": [
+                {"type": "object", "properties": {"flag": {"type": "boolean", "const": false}},
+                 "required": ["flag"], "additionalProperties": false},
+                {"type": "object", "properties": {"flag": {"type": "boolean", "const": true}, "why": {"type": "string"}},
+                 "required": ["flag", "why"], "additionalProperties": false}
+            ]
+        }))
+        .unwrap();
+        let schema = serde_json::to_value(answers_schema(&verdict)).unwrap();
+        let shapes = schema["properties"]["answers"]["items"]["anyOf"]
+            .as_array()
+            .unwrap();
+        assert_eq!(shapes.len(), 2);
+        for shape in shapes {
+            let props: Vec<&String> = shape["properties"].as_object().unwrap().keys().collect();
+            assert_eq!(props[0], "i", "{shape}");
+            assert_eq!(shape["additionalProperties"], false, "{shape}");
+        }
+        assert_eq!(shapes[1]["required"], json!(["i", "flag", "why"]));
+    }
+
+    #[test]
+    fn batch_bytes_splits_a_group() {
+        let dir = stub::dir("chunks");
+        let mut cfg = stub::config("http://127.0.0.1:1/v1");
+        cfg.batch_bytes = 80;
+        let node = InferenceNode::new(Arc::from("judge"), cfg, &dir).unwrap();
+        let lens = |v: Value| {
+            node.chunks(vec![v; 5])
+                .iter()
+                .map(Vec::len)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(lens(json!({"id": 1})), [5]);
+        assert_eq!(
+            lens(json!({"id": 1, "msg": "a record of some length"})),
+            [2, 2, 1]
+        );
+        assert_eq!(lens(json!({"msg": "x".repeat(100)})), [1, 1, 1, 1, 1]);
         let _ = std::fs::remove_dir_all(dir);
     }
 

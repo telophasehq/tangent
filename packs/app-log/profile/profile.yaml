@@ -1,5 +1,5 @@
 # One profile for every customer, for now. `org` and `own_sources` stay empty:
-# nothing is folded into one partition; each tenant id is its own.
+# nothing is folded into one org; each tenant id is its own.
 countries: [US]
 cloud: aws
 members: []
@@ -10,3 +10,4 @@ keys:
   ak_c4d: [54.240.197.233]
 hosts: [api.github.com, registry.npmjs.org, sts.amazonaws.com, vault.acme.internal, "*.acme.internal", api.anthropic.com, api.postmarkapp.com]
 sensitive: [acme-customer-exports, prod-db]
+watch: [member.role.changed, org.settings.changed, api_key.create, org.export.started, aws_api_call, step_failed]
