@@ -99,6 +99,10 @@ enum PluginCommands {
         /// Language: go|py|rust
         #[arg(long)]
         lang: String,
+        /// Also run the project's setup.sh: installs the language toolchain
+        /// and may add PATH lines to your shell profile
+        #[arg(long)]
+        setup: bool,
     },
     /// Test a plugin with input/expected fixtures
     Test {
@@ -181,7 +185,9 @@ async fn main() -> Result<()> {
                 let wit = wit.canonicalize().unwrap_or(wit);
                 compile_wasm::compile_from_config(&cfg, &wit)?;
             }
-            PluginCommands::Scaffold { name, lang } => scaffold::scaffold(&name, &lang)?,
+            PluginCommands::Scaffold { name, lang, setup } => {
+                scaffold::scaffold(&name, &lang, setup)?
+            }
             PluginCommands::Test {
                 plugin,
                 config,

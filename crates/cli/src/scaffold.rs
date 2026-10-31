@@ -34,7 +34,10 @@ const DOCKERFILE: &str = include_str!(concat!(
     "/../../assets/Dockerfile"
 ));
 
-pub fn scaffold(name: &str, lang: &str) -> Result<()> {
+/// `setup` also runs the project's setup.sh, which installs the language's
+/// toolchain and can add PATH lines to the shell profile; without it the
+/// script is only written.
+pub fn scaffold(name: &str, lang: &str, setup: bool) -> Result<()> {
     let renamed = name.replace("-", "");
     let name = renamed.as_str();
 
@@ -60,9 +63,9 @@ pub fn scaffold(name: &str, lang: &str) -> Result<()> {
     fs::write(proj_dir.join("tests/bench.json"), TEST_BENCH)?;
 
     match lang {
-        "go" => scaffold_go(name, &proj_dir)?,
-        "python" => scaffold_py(name, &proj_dir)?,
-        "rust" => scaffold_rust(name, &proj_dir)?,
+        "go" => scaffold_go(name, &proj_dir, setup)?,
+        "python" => scaffold_py(name, &proj_dir, setup)?,
+        "rust" => scaffold_rust(name, &proj_dir, setup)?,
         other => bail!("unsupported --lang {other} (options: go, python, rust)"),
     }
 
@@ -72,6 +75,13 @@ pub fn scaffold(name: &str, lang: &str) -> Result<()> {
         lang,
         proj_dir.display()
     );
+    if !setup {
+        println!(
+            "   setup.sh not run. If the {1} toolchain isn't installed yet, run ./setup.sh in {0}/ (it installs it and may add PATH lines to your shell profile), or scaffold with --setup.",
+            proj_dir.display(),
+            lang
+        );
+    }
     Ok(())
 }
 
@@ -98,7 +108,7 @@ pub fn write_embedded_wit(dest: &Path) -> Result<()> {
     Ok(())
 }
 
-fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
+fn scaffold_go(name: &str, dir: &Path, setup: bool) -> Result<()> {
     fs::write(dir.join("go.mod"), go_mod_for(name))?;
     fs::write(dir.join("main.go"), go_main_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("go", name))?;
@@ -110,13 +120,22 @@ fn scaffold_go(name: &str, dir: &Path) -> Result<()> {
     permissions.set_mode(permissions.mode() | 0o111);
     fs::set_permissions(&setup_path, permissions)?;
 
-    run_setup(dir)?;
-    run_go_download(dir)?;
+    if setup {
+        run_setup(dir)?;
+    }
+    if setup || on_path("go") {
+        run_go_download(dir)?;
+    } else {
+        println!(
+            "   go not found: once Go is installed, run `go mod tidy && go get go.bytecodealliance.org/cmd/wit-bindgen-go` in {}/.",
+            dir.display()
+        );
+    }
 
     Ok(())
 }
 
-fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
+fn scaffold_py(name: &str, dir: &Path, setup: bool) -> Result<()> {
     fs::write(dir.join("pyproject.toml"), py_project_for(name))?;
     fs::write(dir.join("mapper.py"), py_mapper_for(name))?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("python", name))?;
@@ -129,12 +148,21 @@ fn scaffold_py(name: &str, dir: &Path) -> Result<()> {
     permissions.set_mode(permissions.mode() | 0o111);
     fs::set_permissions(&setup_path, permissions)?;
 
-    run_setup(dir)?;
-    run_wit_bindgen_py(dir, "processor", ".tangent/wit/")?;
+    if setup {
+        run_setup(dir)?;
+    }
+    if setup || on_path("componentize-py") {
+        run_wit_bindgen_py(dir, "processor", ".tangent/wit/")?;
+    } else {
+        println!(
+            "   componentize-py not found: run `componentize-py -d .tangent/wit/ -w processor bindings .` in {}/ after setup.",
+            dir.display()
+        );
+    }
     Ok(())
 }
 
-fn scaffold_rust(name: &str, dir: &Path) -> Result<()> {
+fn scaffold_rust(name: &str, dir: &Path, setup: bool) -> Result<()> {
     fs::create_dir(dir.join("src"))?;
     fs::write(dir.join("Cargo.toml"), rust_cargo_toml_for(name))?;
     fs::write(dir.join("src/lib.rs"), rust_lib_for(name))?;
@@ -147,9 +175,17 @@ fn scaffold_rust(name: &str, dir: &Path) -> Result<()> {
     permissions.set_mode(permissions.mode() | 0o111);
     fs::set_permissions(&setup_path, permissions)?;
 
-    run_setup(dir)?;
+    if setup {
+        run_setup(dir)?;
+    }
 
     Ok(())
+}
+
+/// Whether `cmd` is an executable on PATH.
+fn on_path(cmd: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(cmd).is_file()))
 }
 
 fn run_setup(cwd: &Path) -> Result<()> {
