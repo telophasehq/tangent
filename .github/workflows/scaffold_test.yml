@@ -32,13 +32,13 @@ jobs:
         run: cargo install --path crates/cli --locked
 
       - name: Scaffold Go plugin
-        run: tangent plugin scaffold --name goplugin --lang go
+        run: tangent plugin scaffold --name goplugin --lang go --setup
 
       - name: Scaffold Python plugin
-        run: tangent plugin scaffold --name pyplugin --lang python
+        run: tangent plugin scaffold --name pyplugin --lang python --setup
       
       - name: Scaffold Rust plugin
-        run: tangent plugin scaffold --name rustplugin --lang rust
+        run: tangent plugin scaffold --name rustplugin --lang rust --setup
 
       - name: Run make test (Go)
         run: make test
