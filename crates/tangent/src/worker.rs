@@ -462,21 +462,28 @@ impl Worker {
                     }
                     continue;
                 }
-                if !sinks.is_empty() {
-                    let frame = match &hop {
-                        Hop::Frames(frames) => join_frames(frames.clone()),
-                        Hop::Views(views) => frame_of(views),
-                    };
-                    deliver(&mut deliveries, sinks, frame);
-                }
-
                 // A plugin or a model needs the records: parse now, and a record
-                // whose partition belongs to another worker goes there instead.
-                let views = match hop {
-                    Hop::Views(views) => views,
-                    Hop::Frames(frames) => self.parse(&frames).await?,
+                // whose partition belongs to another worker goes there instead,
+                // before this node's sinks have it: the owner's walk resumes from
+                // this node, and its sinks take the record there.
+                let (views, frames) = match hop {
+                    Hop::Views(views) => (views, None),
+                    Hop::Frames(frames) => (self.parse(&frames).await?, Some(frames)),
                 };
+                let parsed = views.len();
                 let views = self.keep_local(&node, views, &mut handoffs);
+                if !sinks.is_empty() {
+                    match frames {
+                        // none handed off: the node's output as it is
+                        Some(frames) if views.len() == parsed => {
+                            deliver(&mut deliveries, sinks, join_frames(frames));
+                        }
+                        _ if !views.is_empty() => {
+                            deliver(&mut deliveries, sinks, frame_of(&views));
+                        }
+                        _ => {}
+                    }
+                }
                 if views.is_empty() {
                     continue;
                 }
@@ -1357,6 +1364,136 @@ mod tests {
             1,
             "the source's ack fires once, when all six are through"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A node with a sink and another node beside it, and a partition that
+    /// resolves at that node: a record handed to its owner reaches the sink
+    /// once, from the owner's walk, and the next node once too.
+    #[tokio::test]
+    async fn a_handed_off_record_reaches_the_node_s_sinks_once() {
+        let (url, _seen) = stub::model().await;
+        let dir = stub::dir("handoff-sinks");
+        let source = NodeRef::Source {
+            name: Arc::from("events"),
+        };
+        let judge: Arc<str> = Arc::from("judge");
+        let again: Arc<str> = Arc::from("again");
+        let (logs, judged): (Arc<str>, Arc<str>) = (Arc::from("logs"), Arc::from("judged"));
+        let logs_sink = Arc::new(RecordingSink::default());
+        let judged_sink = Arc::new(RecordingSink::default());
+        let sink_manager = Arc::new(SinkManager::for_test(
+            vec![
+                (logs.clone(), logs_sink.clone() as Arc<dyn Sink>),
+                (judged.clone(), judged_sink.clone() as Arc<dyn Sink>),
+            ],
+            1,
+        ));
+        let to_sink = |name: &Arc<str>| NodeRef::Sink {
+            name: Arc::clone(name),
+            key_prefix: None,
+        };
+        let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
+        outs.insert(
+            source.clone(),
+            vec![NodeRef::Inference {
+                name: judge.clone(),
+            }],
+        );
+        outs.insert(
+            NodeRef::Inference {
+                name: judge.clone(),
+            },
+            vec![
+                to_sink(&logs),
+                NodeRef::Inference {
+                    name: again.clone(),
+                },
+            ],
+        );
+        outs.insert(
+            NodeRef::Inference {
+                name: again.clone(),
+            },
+            vec![to_sink(&judged)],
+        );
+        let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
+        let store: Arc<dyn crate::state::StateStore> =
+            Arc::new(crate::state::lru::LruStore::new(StateConfig::default()).unwrap());
+        let engines = (0..2)
+            .map(|_| WasmEngine::new(Arc::clone(&store), true).unwrap())
+            .collect();
+        let mut inference = BTreeMap::new();
+        inference.insert(judge.clone(), stub::config(&url));
+        inference.insert(again.clone(), stub::config(&url));
+        let pool = Arc::new(
+            WorkerPool::new(
+                2,
+                engines,
+                vec![Vec::new(), Vec::new()],
+                &inference,
+                &dir,
+                1 << 20,
+                Duration::from_millis(20),
+                Arc::clone(&router),
+                Some(PartitionConfig {
+                    key: vec!["judge.flag".into()],
+                    separator: "|".into(),
+                    retain_ms: None,
+                    timestamp_key: None,
+                }),
+                Arc::clone(&store),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap(),
+        );
+        router.set_pool(&pool);
+
+        let ack = Arc::new(CountingAck::default());
+        let frames: Vec<BytesMut> = (1..=6)
+            .map(|i| {
+                let msg = if i % 2 == 0 { "bad" } else { "fine" };
+                BytesMut::from(format!("{{\"id\":{i},\"msg\":\"{msg}\"}}\n").as_str())
+            })
+            .collect();
+        router
+            .forward(&source, frames, vec![ack.clone() as Arc<dyn Ack>])
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while router.in_flight() > 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the DAG goes quiet");
+        drop(router);
+        Arc::try_unwrap(pool).ok().expect("pool refs").join().await;
+        Arc::try_unwrap(sink_manager)
+            .ok()
+            .expect("sink manager refs")
+            .join()
+            .await
+            .unwrap();
+
+        for (sink, name) in [(&logs_sink, "logs"), (&judged_sink, "judged")] {
+            let mut ids: Vec<i64> = sink
+                .writes
+                .lock()
+                .await
+                .iter()
+                .flat_map(|w| w.lines())
+                .map(|l| {
+                    serde_json::from_str::<Value>(l).unwrap()["id"]
+                        .as_i64()
+                        .unwrap()
+                })
+                .collect();
+            ids.sort_unstable();
+            assert_eq!(ids, [1, 2, 3, 4, 5, 6], "{name}: every record once");
+        }
+        assert_eq!(ack.0.load(Ordering::SeqCst), 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
