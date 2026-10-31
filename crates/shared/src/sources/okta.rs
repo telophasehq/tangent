@@ -1,3 +1,4 @@
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 /// Okta's System Log, polled (`GET /api/v1/logs?since=…`, paged by the
@@ -10,8 +11,8 @@ pub struct OktaConfig {
     #[serde(default)]
     pub org_url: Option<String>,
     /// An API token (`SSWS`), e.g. `${OKTA_API_TOKEN}`.
-    #[serde(default)]
-    pub token: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub token: Option<SecretString>,
     #[serde(default = "default_interval_secs")]
     pub interval_secs: u64,
     /// On first start, how far back to read; afterwards from the cursor.

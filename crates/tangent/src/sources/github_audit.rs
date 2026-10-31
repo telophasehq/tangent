@@ -10,7 +10,7 @@ use tangent_shared::sources::github_audit::GithubAuditConfig;
 use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
-use crate::sources::poll::{idle, next_link, opt, parse_time, urlencode, Poller};
+use crate::sources::poll::{idle, next_link, opt, parse_time, secret, urlencode, Poller};
 use crate::state::StateStore;
 
 const SOURCE: &str = "github_audit";
@@ -24,7 +24,7 @@ pub async fn run_consumer(
     store: Arc<dyn StateStore>,
     shutdown: CancellationToken,
 ) -> Result<()> {
-    let (Some(org), Some(token)) = (opt(&cfg.org), opt(&cfg.token)) else {
+    let (Some(org), Some(token)) = (opt(&cfg.org), secret(&cfg.token)) else {
         idle(&name, "github_audit org or token");
         shutdown.cancelled().await;
         return Ok(());

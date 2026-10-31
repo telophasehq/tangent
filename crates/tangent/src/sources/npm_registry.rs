@@ -4,6 +4,7 @@ use ahash::HashMap;
 use anyhow::{anyhow, Context, Result};
 use bytes::BytesMut;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use secrecy::ExposeSecret;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
@@ -82,7 +83,7 @@ async fn poll_package(
 
     let mut req = client.get(&url);
     if let Some(token) = &cfg.token {
-        req = req.bearer_auth(token);
+        req = req.bearer_auth(token.expose_secret());
     }
 
     let resp = req.send().await.context("request to npm registry failed")?;
@@ -172,7 +173,7 @@ async fn list_org_packages(
 
     let mut req = client.get(&url);
     if let Some(token) = &cfg.token {
-        req = req.bearer_auth(token);
+        req = req.bearer_auth(token.expose_secret());
     }
 
     let resp = req.send().await.context("request to npm registry failed")?;

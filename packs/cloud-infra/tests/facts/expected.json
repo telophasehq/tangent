@@ -1845,5 +1845,269 @@
   "org": "acme",
   "source": "app",
   "ts": "2026-10-22T03:20:00Z"
+ },
+ {
+  "_facts": {
+   "notes": [],
+   "principal": "aws"
+  },
+  "_norm": {
+   "actor": "aws:resource-explorer-2",
+   "aws": true,
+   "kind": "ListTargetGroups",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListTargetGroups",
+  "eventSource": "vpc-lattice.amazonaws.com",
+  "eventTime": "2026-10-20T13:05:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "source": "cloudtrail",
+  "sourceIPAddress": "resource-explorer-2.amazonaws.com",
+  "ts": "2026-10-20T13:05:00Z",
+  "userAgent": "resource-explorer-2.amazonaws.com",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSServiceRoleForResourceExplorer/resource-explorer-2",
+   "invokedBy": "resource-explorer-2.amazonaws.com",
+   "role": "AWSServiceRoleForResourceExplorer",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "_facts": {
+   "notes": [],
+   "principal": "aws"
+  },
+  "_norm": {
+   "actor": "aws:ecs-tasks",
+   "aws": true,
+   "kind": "AssumeRole",
+   "org": "acme",
+   "target": "arn:aws:iam::111122223333:role/ecs-task"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRole",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:06:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "roleArn": "arn:aws:iam::111122223333:role/ecs-task",
+   "roleSessionName": "task-1"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "ecs-tasks.amazonaws.com",
+  "ts": "2026-10-20T13:06:00Z",
+  "userAgent": "ecs-tasks.amazonaws.com",
+  "userIdentity": {
+   "invokedBy": "ecs-tasks.amazonaws.com",
+   "type": "AWSService"
+  }
+ },
+ {
+  "_facts": {
+   "ip": {
+    "ip": "203.0.113.9",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [
+    "principal foo is nobody the org profile knows"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "foo",
+   "ip": "203.0.113.9",
+   "kind": "ListBuckets",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListBuckets",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-10-20T13:07:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.9",
+  "ts": "2026-10-20T13:07:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/foo/foo-session",
+   "role": "foo",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 16509,
+    "country": "US",
+    "hosting": "aws",
+    "ip": "52.94.76.10",
+    "org": "Amazon.com, Inc.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [],
+   "principal": "aws"
+  },
+  "_norm": {
+   "actor": "aws:resource-explorer-2",
+   "aws": true,
+   "ip": "52.94.76.10",
+   "kind": "ListPolicyStores",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListPolicyStores",
+  "eventSource": "verifiedpermissions.amazonaws.com",
+  "eventTime": "2026-10-20T13:08:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "source": "cloudtrail",
+  "sourceIPAddress": "52.94.76.10",
+  "ts": "2026-10-20T13:08:00Z",
+  "userAgent": "aws-sdk-java/2.25.0 exec-env/AWS_ECS_FARGATE",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSServiceRoleForResourceExplorer/resource-explorer-2",
+   "role": "AWSServiceRoleForResourceExplorer",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "_facts": {
+   "notes": [],
+   "principal": "aws"
+  },
+  "_norm": {
+   "actor": "aws:ecr",
+   "aws": true,
+   "kind": "PolicyExecutionEvent",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "PolicyExecutionEvent",
+  "eventSource": "ecr.amazonaws.com",
+  "eventTime": "2026-10-20T13:09:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "source": "cloudtrail",
+  "sourceIPAddress": "AWS Internal",
+  "ts": "2026-10-20T13:09:00Z",
+  "userAgent": "AWS Internal",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "invokedBy": "AWS Internal"
+  }
+ },
+ {
+  "_facts": {
+   "notes": [],
+   "principal": "aws"
+  },
+  "_norm": {
+   "actor": "aws:organizations",
+   "aws": true,
+   "kind": "AssumeRole",
+   "org": "acme",
+   "target": "arn:aws:iam::111122223333:role/aws-service-role/organizations.amazonaws.com/AWSServiceRoleForOrganizations"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRole",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-10-20T13:10:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "roleArn": "arn:aws:iam::111122223333:role/aws-service-role/organizations.amazonaws.com/AWSServiceRoleForOrganizations",
+   "roleSessionName": "ASLRP-SLRCreationManager"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "AWS Internal",
+  "ts": "2026-10-20T13:10:00Z",
+  "userAgent": "AWS Internal",
+  "userIdentity": {
+   "invokedBy": "AWS Internal",
+   "type": "AWSService"
+  }
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "ip": "185.224.128.40",
+    "org": "Alsycon B.V.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [
+    "principal aws:support is nobody the org profile knows",
+    "aws:support acting from datacenter hosting, 185.224.128.40 (Alsycon B.V.)",
+    "aws:support acting from NL, 185.224.128.40 (Alsycon B.V.)"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "aws:support",
+   "ip": "185.224.128.40",
+   "kind": "user.login",
+   "org": "acme"
+  },
+  "actor": "aws:support",
+  "event": "user.login",
+  "ip": "185.224.128.40",
+  "org": "acme",
+  "source": "app",
+  "ts": "2026-10-22T03:25:00Z"
+ },
+ {
+  "_facts": {
+   "about": "Drata, the compliance vendor: reads IAM, credential reports and backups every day",
+   "ip": {
+    "asn": 16509,
+    "country": "US",
+    "hosting": "aws",
+    "ip": "3.208.10.20",
+    "org": "Amazon.com, Inc.",
+    "ours": false,
+    "private": false,
+    "tor": false,
+    "vpn": false
+   },
+   "notes": [
+    "DrataAutopilotRole is Drata, the compliance vendor: reads IAM, credential reports and backups every day",
+    "DrataAutopilotRole acting from aws hosting, 3.208.10.20 (Amazon.com, Inc.)"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "DrataAutopilotRole",
+   "ip": "3.208.10.20",
+   "kind": "GenerateCredentialReport",
+   "org": "acme"
+  },
+  "eventName": "GenerateCredentialReport",
+  "eventSource": "iam.amazonaws.com",
+  "source": "cloudtrail",
+  "sourceIPAddress": "3.208.10.20",
+  "ts": "2026-10-22T04:00:00Z",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "role": "DrataAutopilotRole",
+   "type": "AssumedRole"
+  }
  }
 ]
