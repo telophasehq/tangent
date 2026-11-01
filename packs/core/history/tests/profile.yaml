@@ -1,0 +1,5 @@
+# What the fixtures were written against: the profile's `people`, the only key
+# history reads.
+people:
+  dave@acme.io: [dave]
+  grace@acme.io: [grace]

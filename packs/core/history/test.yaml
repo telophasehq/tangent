@@ -1,0 +1,23 @@
+# history alone in `mode: both`: each record's `_hist` is what the records
+# before it taught, as ingest's learn and the judge's header see it. Every
+# record is over half the test runner's 1 KB batch, so each is a call of its
+# own. `make -C packs test-history` runs it.
+runtime:
+  plugins_path: plugins/
+  state:
+    backend: lru
+    default_ttl_ms: 0
+    max_ttl_ms: 0
+
+plugins:
+  history:
+    module_type: rust
+    path: .
+    state_namespace: history
+    config:
+      mode: both
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json
+        enrichment_tables:
+          profile: { type: document, path: tests/profile.yaml }   # people: dave is dave@acme.io

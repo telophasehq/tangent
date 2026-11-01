@@ -27,6 +27,11 @@ GitHub into finished records, by one plugin, `github`. It takes three
 A CI run's story is told per repository: a run id is new every time, and the
 repository is not a principal, so CI records get no `_facts.principal`.
 
+Each record goes to `logs` and to core's [history](../core#history) too,
+which folds it into its actor's history: actions, repositories, clients,
+tokens and OAuth apps, addresses, keys and grants; a CI repository's steps and
+egress hosts. That is what the judge's `_hist` says of the actor.
+
 ## What it drops
 
 - `github_audit` keeps `ts`, `source`, `action`, `actor`, `actor_is_bot`,
@@ -35,10 +40,12 @@ repository is not a principal, so CI records get no `_facts.principal`.
   `operation_type`, `permission`, `old_permission`, `name`, `head_branch`,
   `event`, `conclusion`, `runner_name`, `runner_type`, `pull_request_title`,
   `pull_request_url`, `topic`, `ref`, `key`, `fingerprint`, `read_only`,
-  `hook_id`, `config`, `target_login`, `reason` and `explanation`. A hosted
-  runner's name (`GitHub Actions 12`, its job's VM) and a workflow event's
-  `topic` go too; so do `@timestamp`, `created_at`, `_document_id`,
-  `request_id`, `hashed_token`, `user_agent` and the rest.
+  `hook_id`, `config`, `target_login`, `reason`, `explanation`, and
+  `token_id` and `hashed_token`, which name the credential, so core's history
+  can tell a token it has not seen before. A hosted runner's name (`GitHub
+  Actions 12`, its job's VM) and a workflow event's `topic` go too; so do
+  `@timestamp`, `created_at`, `_document_id`, `request_id`, `user_agent` and
+  the rest.
 - `gha_ci` and `runner_egress` stay as sent, less their request and trace ids
   and URL signatures.
 

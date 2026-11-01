@@ -25,6 +25,11 @@ of an organization trail), or the same records sent as NDJSON.
 | `root` | `userIdentity.type` is `Root` | AWS root credentials used |
 | `world_open` | the call's parameters hold `0.0.0.0/0` | opened to 0.0.0.0/0 |
 
+Each record goes to `logs` and to core's [history](../core#history) too,
+which folds it into its actor's history: the APIs and resources it touched,
+its clients and addresses, sign-ins, credential changes, and who assumed each
+role session. That is what the judge's `_hist` says of the actor.
+
 ## What it drops
 
 Kept: `ts`, `source`, `eventTime`, `eventSource`, `eventName`, `awsRegion`,

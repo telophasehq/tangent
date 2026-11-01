@@ -4,11 +4,12 @@ Not a provider: what every pack needs, and the judge. Every config includes
 it, beside the packs it uses.
 
 ```
-your sources ──▶ a pack's plugin ──▶ logs.sqlite                                      (ingest.yaml)
-                   reads the tables geo, asn, networks and profile
+your sources ──▶ a pack's plugin ──┬──▶ logs.sqlite                                   (ingest.yaml)
+                   reads the       └──▶ history ──▶ state.sqlite
+                   tables geo, asn, networks and profile
 
-logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson              (judge.yaml)
-                                       └──▶ verdicts.ndjson
+logs.sqlite ──▶ actors ──▶ history ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson  (judge.yaml)
+state.sqlite ─────────────────┘                    └──▶ verdicts.ndjson
 ```
 
 ## ingest.yaml
@@ -29,9 +30,13 @@ logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged �
 - **`logs`**, the sink every pack's plugin has an edge to: `logs.sqlite`, each
   record once, at its `ts`, with two partitions, the org and the org and actor.
   Nothing is deleted; trimming it is yours to do.
-- **The runtime**: two workers, plugins compiled into `plugins/` beside the
-  config you run, and the state store at `state.sqlite`, where the API
-  sources keep their place.
+- **`history`**, the plugin every pack's plugin has an edge to as well, in
+  `mode: learn`: it folds each record into the state store, under the
+  namespace `history`, and passes nothing on ([below](#history)).
+- **The runtime**: one worker and no `partition`, history's one writer
+  ([below](#history)); plugins compiled into `plugins/` beside the config you
+  run; and the state store at `state.sqlite`, where the API sources keep their
+  place and history its keys.
 
 No sources and no profile: your config adds them, and sends each source to
 its pack.
@@ -78,7 +83,8 @@ A pack adds what only its provider's log says: `aws` adds `root` and
 ## The profile
 
 Every fact about your company that no log carries, as the `profile` table: a
-YAML file your ingest config names.
+YAML file your ingest config names. The judge config needs none: what history
+needs of it, `people`, ingest files in the state store.
 
 ```yaml
 enrichment_tables:
@@ -95,6 +101,7 @@ enrichment_tables:
 | `services` | IAM users and roles, bots | `principal: service`, held to `cloud` |
 | `keys` | API keys and the networks each calls from | `principal: key`, `key_known_network` |
 | `about` | who an actor is, when its name does not say | `about`, in place of the "nobody it knows" note |
+| `people` | a person's other names: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_hist`: their history, sign-ins and networks as one person's |
 | `hosts` | hosts your systems talk to (`*.suffix` allowed) | `dest_known` |
 | `sensitive` | buckets, repos, tables | `sensitive_target` |
 | `watch` | kinds a person wants seen every time | `watch` |
@@ -108,6 +115,12 @@ would go on as nobody the org knows, in the provider's org rather than yours.
 - **actors** reads `logs.sqlite` back forty records of one actor at a time,
   oldest first, topped up with the actor's latest records already judged,
   marked `_context`.
+- **history**, in `mode: header`, reads ingest's `state.sqlite` and puts the
+  same `_hist` on each of an actor's records ([below](#history)). The state is
+  opened `read_only`, without ingest's lock, so ingest starts first: the judge
+  refuses a file that is not there yet.
+  `drop_on_error: false`: when history fails, the records go to the model
+  without `_hist` rather than not at all.
 - **judge** reads an actor's records together and writes a verdict per record,
   with [judge.md](judge.md) as its brief and
   [judge.schema.json](judge.schema.json) as the verdict's shape.
@@ -134,16 +147,34 @@ llama-server -m GLM-4.7-Flash-Q4_K.gguf --port 8080 -np 1 -c 32768 -ngl 99 -fa o
 
 For a hosted one: `JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY`.
 
-The records go to the model as JSON lines. One line in your judge config
-sends them as logfmt instead, about half the tokens, each source written as
-its pack's `judge.yaml` says:
+The records go to the model as logfmt, a line each, each source written as
+its pack's `judge.yaml` says: about half the tokens of JSON lines, and an
+actor's `_hist` written once per request. Your judge config can send JSON
+lines instead, where `_hist` is on every record; give it half the
+`batch_bytes` then, so a request fits a 32k context:
 
 ```yaml
 inference:
   judge:
+    batch_bytes: 48000
     encoding:
-      type: logfmt
+      type: ndjson
 ```
+
+Measured on the requests of the corpus the packs are evaluated on, an
+actor's forty records each, with GLM-4.7-Flash's tokenizer, `judge.md` and
+the schema included:
+
+| encoding | `batch_bytes` | requests | tokens, median | 90th percentile | largest |
+|---|---|---|---|---|---|
+| logfmt, without `_hist` | 48000 | 487 | 6,508 | 8,298 | 15,928 |
+| logfmt (the default) | 96000 | 485 | 6,817 | 8,604 | 18,560 |
+| JSON lines, without `_hist` | 48000 | 487 | 9,089 | 10,323 | 21,086 |
+| JSON lines | 96000 | 485 | 20,262 | 22,620 | 33,303 |
+| JSON lines | 48000 | 872 | 12,738 | 15,689 | 20,200 |
+
+Logfmt was measured with Claude Haiku 5.5, where it caught what JSON caught;
+the default model has not been measured with either.
 
 ### Slack
 
@@ -167,6 +198,82 @@ the first of them it has, so a record the model could not judge says why. A
 field's value is escaped: a log line cannot mention anyone, link or start a
 line in the message. A post that fails is logged and dropped.
 
+## history
+
+One plugin, [history](history), in both configs: in ingest it learns what
+each actor does, in the judge it tells the model. It answers the question one
+window of forty records cannot, "is this normal for this identity?", from the
+state store alone, and only from what happened before the actor's first
+record in the request: nothing at or after it counts, so a window never
+explains itself.
+
+**What it learns** (ingest, `mode: learn`), from every record with a
+`_norm.actor` whose `source` it knows: `cloudtrail`, `github_audit`, `okta`,
+`google_workspace`, `app`, `gha_ci` and `runner_egress`, and any other with an
+`event`, as the app pack's audit shape under a name of yours. Others, `agent`
+among them, it passes over.
+
+- when the actor was first seen, and its events per day and per five minutes,
+  by category: read, write, IAM or policy on someone else, its own
+  credentials, delete, sign-in;
+- when it first called each API, touched each resource (bucket, role, user,
+  secret, repository, document, path, ...), used each client, OAuth app, Okta
+  device and GitHub token, from each source; only what succeeded counts as
+  seen, since anyone can fail in someone's name;
+- the networks (ASN, country, /24 or /48) each person and the org have used,
+  and which actors have used each address;
+- each person's sign-ins, failed sign-ins and credential changes (MFA,
+  passwords, keys, grants, OAuth grants), filed under the person they were
+  done to as well;
+- who assumed each role session, and when.
+
+Each is a minimum, a sum or a row keyed by the event's time, so records that
+arrive out of order leave the same state. Keys begin with `_norm.org` (all
+but `people`), so orgs stay apart in one namespace, `history`, and never
+expire.
+
+**What it stamps** (judge, `mode: header`): `_hist`, one object, the same on
+each of an actor's records in the request, `_context` ones included; a key is
+left out when it has nothing to say.
+
+| key | what it says |
+|---|---|
+| `actor` | who it is to the profile, its person and that person's other names, the identities seen here (IAM user, assumed role, okta user, ...); for a role, who assumed it, and who assumed them, up to four hops and twelve hours back, or its SSO permission set; the privilege it used before (admin, write, read-only, none); a session's MFA against its earlier sessions' |
+| `baseline` | how long it has been seen, its events and active days, from which sources; or `none: first seen in this window` |
+| `new` | what it does here for the first time, or first did within the hour: `api`, `resource`, `client`, `network` (with `(new to org)`), `source`, `oauth`, `device`, `token`; or `nothing: ...` |
+| `volume` | the last hour against the p90 of its active hours in 28 days, in total and per category, as `normal`, `2-5x`, `5-10x`, `>10x` or `none before` |
+| `time` | the window's hours against its usual hours in 28 days, and how long since it was last active; or dormant |
+| `auth` | the last 72 hours of its person, and of whoever is behind a role: logins per source, failed logins, MFA, password, key and grant changes, and the last login's address, network and MFA |
+| `links` | when an OAuth app in the window was first seen; a login from the window's address; a login from a network new for the person in the hour before; an address new for this actor, and who used it before |
+
+The text is printable ASCII with no `"`, `\` or `=`, so logfmt writes each
+key as a bare line, once per request with the fields an actor's records
+share; JSON lines repeat it on every record ([the cost](#judgeyaml)).
+
+- **People**: `people` in the profile ([above](#the-profile)) says which names
+  are one person, as an IAM user `dave` is `dave@example.com`; a name not
+  there is its own person, and one other name may be written bare
+  (`dave@example.com: dave`). Ingest's history reads it from the `profile`
+  table and files it in the state store, under `people`, where the judge's
+  reads it: the two cannot disagree on who is who, and the judge config names
+  no profile.
+- **One writer**: ingest runs one worker and no `runtime.partition`, and your
+  ingest config must keep it so, since it wins over core's. History reads an
+  hour's counts, adds to them and writes them back, as it does first-seen
+  times and role sessions: two workers lose updates. A partition files every
+  key under it, where the judge, which has none, does not look; history's keys
+  carry the org instead.
+- **Read-only state**: the judge opens ingest's `state.sqlite` with
+  `runtime.state.read_only: true`, without the lock, creating nothing, and
+  its writes fail. Start ingest first: the judge refuses a state file that is
+  not there yet. The examples' `make run` waits for it, and starts no judge
+  once ingest has exited.
+- **Fail-open**: in the judge, `drop_on_error: false`: when a call fails, the
+  records go on without `_hist`.
+
+[history/README.md](history/README.md) has the keys it keeps and how it is
+tested.
+
 ## Writing a pack's plugin
 
 A pack's plugin links [packs/shared](/packs/shared) by path:
@@ -181,12 +288,19 @@ A pack's plugin links [packs/shared](/packs/shared) by path:
   and `kit.write(out, record, norm)` folds the org, enriches the addresses,
   adds the facts and writes the record as one line.
 
+The pack's `ingest.yaml` gives the plugin an edge to `history` beside `logs`.
+History reads a source it knows from its own table
+([history/src/kinds.rs](history/src/kinds.rs)); a new pack's records pass
+through it unlearned, with no `_hist`, until the table knows their `source`,
+unless they carry an `event`, which it reads as the app pack's audit shape.
+
 ## What include cannot do
 
 - **Take a stage out of, or put one into, core's chain.** Edges add up and none
-  can be removed, so `actors -> judge` stays. A plugin between them (the
-  pending `history` stage, say) means copying `judge.yaml` instead of including
-  it, or a change here that every config gets.
+  can be removed, so `actors -> history -> judge` stays, and so does each
+  pack's edge to `history`. Another plugin between them, or a judge without
+  history, means copying `judge.yaml` instead of including it, or a change
+  here that every config gets, as history was.
 - **Keep a batch's order.** A source routed to several packs hands each its own
   records in turn, so within a batch every `cloudtrail` record reaches
   `logs.sqlite` before every `okta` one. `actors` reads back by time, so only

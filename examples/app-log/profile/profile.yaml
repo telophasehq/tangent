@@ -3,6 +3,7 @@
 countries: [US]
 cloud: aws
 members: []
+people: {}                       # one person under each name: {alice@example.com: [alice]}
 services: [agent-plan-worker]
 keys:
   ak_1a1: [165.227.44.19]

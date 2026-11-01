@@ -21,13 +21,20 @@ to copy for a new provider.
 `_facts` is what the profile and the tables say; Okta adds no facts of its
 own.
 
+Each record goes to `logs` and to core's [history](../core#history) too,
+which folds it into its actor's history: event types, applications, browsers
+and devices, addresses, sign-ins, failed sign-ins, MFA and password changes
+and grants, Okta's positive behaviors on a sign-in. That is what the judge's
+`_hist` says of the actor.
+
 ## What it drops
 
 Kept: `ts`, `source`, `published`, `eventType`, `displayMessage`, `severity`,
-`outcome`; the actor's `type`, `alternateId` and `displayName`; the client's
-`ipAddress`, `zone`, `device`, the user agent's `os` and `browser`, and the
-city, state and country; `securityContext`'s `asNumber`, `asOrg`, `isp` and
-`isProxy`; each target's `type`, `alternateId` and `displayName`;
+`outcome`, `device` (the registered device, whose `id` core's history keeps as
+the actor's devices); the actor's `type`, `alternateId` and `displayName`; the
+client's `ipAddress`, `zone`, `device`, the user agent's `os` and `browser`,
+and the city, state and country; `securityContext`'s `asNumber`, `asOrg`,
+`isp` and `isProxy`; each target's `type`, `alternateId` and `displayName`;
 `authenticationContext`'s provider and credential type; and Okta's own risk
 signals in `debugContext.debugData` (`threatSuspected`, `risk`, `behaviors`,
 `logOnlySecurityData`, `factor`), as `debugData`. Nulls go, and a `zone` of

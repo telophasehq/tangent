@@ -12,6 +12,7 @@ pub fn okta(m: &Map<String, Value>) -> Map<String, Value> {
             "displayMessage",
             "severity",
             "outcome",
+            "device",
         ],
     );
     if let Some(a) = obj(m.get("actor")) {

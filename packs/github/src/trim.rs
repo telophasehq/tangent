@@ -42,6 +42,8 @@ pub fn github_audit(m: &Map<String, Value>) -> Map<String, Value> {
             "target_login",
             "reason",
             "explanation",
+            "token_id",
+            "hashed_token",
         ],
     );
     // a hosted runner is named for its job's VM: `GitHub Actions 12`

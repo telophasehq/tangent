@@ -1,4 +1,5 @@
-# app-log, judge: packs/core's judge, over each customer's actors.
+# app-log, judge: packs/core's judge, over each customer's actors, with each
+# actor's history from ingest's state.sqlite (start ingest first).
 include:
   - ../../packs/core/judge.yaml
   - ../../packs/app/judge.yaml

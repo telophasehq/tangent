@@ -1,12 +1,15 @@
 # core, judge: a model reads each actor's latest forty records from
-# logs.sqlite and writes a verdict per new one; a person reads the ones it
-# flagged. One worker, so an actor's records reach the model together. Include
-# it in your judge config with the packs' judge.yaml.
+# logs.sqlite, with what ingest's history knew of the actor before them, and
+# writes a verdict per new one; a person reads the ones it flagged. One
+# worker, so an actor's records reach the model together. Include it in your
+# judge config with the packs' judge.yaml.
 runtime:
   workers: 1
   plugins_path: plugins/
-  state:
-    backend: lru
+  state:                         # ingest's, read only: start ingest first
+    backend: sqlite
+    path: state.sqlite
+    read_only: true
 
 sources:
   actors:
@@ -18,6 +21,13 @@ sources:
     timeout_secs: 3600
 
 plugins:
+  history:
+    module_type: rust
+    path: history
+    state_namespace: history
+    drop_on_error: false         # no `_hist` rather than no verdict
+    config:
+      mode: header               # the same `_hist` on each of an actor's records
   fresh:
     module_type: rust
     path: fresh
@@ -33,7 +43,7 @@ inference:
     prompt_file: judge.md
     schema_file: judge.schema.json
     group_by: [_norm.org, _norm.actor]
-    batch_bytes: 48000
+    batch_bytes: 96000           # JSON bytes, `_hist` counted on every record though logfmt writes it once: an actor's forty fit
     max_tokens: 200
     temperature: 0.7
     timeout_ms: 90000
@@ -42,14 +52,16 @@ inference:
       top_p: 0.95
       chat_template_kwargs:
         enable_thinking: false
-    # JSON lines. `type: logfmt` writes the records as logfmt lines instead,
-    # about half the tokens and nothing lost: the fields in `keep` on every
-    # line, the rest a principal's records share written once, each source as
-    # its pack's judge.yaml says. Measured with Claude Haiku 5.5 only, where it
-    # caught what JSON caught. `keep` holds what every pack writes; a pack's
-    # own `_facts` go in its sources' `keep`, as packs/aws/judge.yaml's do.
+    # logfmt lines, about half the tokens of JSON lines and nothing lost: the
+    # fields in `keep` on every line, the rest a principal's records share
+    # written once (`_hist` among them), each source as its pack's judge.yaml
+    # says. Measured with Claude Haiku 5.5, where it caught what JSON caught.
+    # `type: ndjson` sends JSON lines instead, `_hist` on every one: three
+    # times the tokens, so `batch_bytes: 48000` with it (README.md). `keep`
+    # holds what every pack writes; a pack's own `_facts` go in its sources'
+    # `keep`, as packs/aws/judge.yaml's do.
     encoding:
-      type: ndjson
+      type: logfmt
       keep: [_context, _norm.actor, _norm.kind, _norm.target, _norm.dest, _facts.principal, _facts.watch, _facts.sensitive_target, _facts.key_known_network, _facts.ip.tor, _facts.ip.vpn]
 
 sinks:
@@ -66,6 +78,8 @@ sinks:
 
 dag:
   - from: { kind: source, name: actors }
+    to: [{ kind: plugin, name: history }]
+  - from: { kind: plugin, name: history }
     to: [{ kind: inference, name: judge }]
   - from: { kind: inference, name: judge }
     to: [{ kind: plugin, name: fresh }]

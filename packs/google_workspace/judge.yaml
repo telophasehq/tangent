@@ -1,7 +1,7 @@
 # google_workspace, judge: how the judge writes Workspace's records as logfmt,
-# once packs/core/judge.yaml's encoding is `type: logfmt`: the fields naming
-# the principal and the time, and those the model sees on every line. Include
-# it in a judge config with packs/core/judge.yaml.
+# the encoding packs/core/judge.yaml sets: the fields naming the principal and
+# the time, and those the model sees on every line. Include it in a judge
+# config with packs/core/judge.yaml.
 inference:
   judge:
     encoding:
