@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::enrichment::TableConfig;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PluginConfig {
     pub module_type: String,
@@ -30,6 +30,30 @@ pub struct PluginConfig {
     /// for `config`: an IP database, published address ranges, an org profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<PathBuf>,
+
+    /// When a call fails (the guest traps or returns an error), its records
+    /// are dropped; false passes them on unchanged, as if the plugin were
+    /// not there.
+    #[serde(default = "default_true")]
+    pub drop_on_error: bool,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+impl Default for PluginConfig {
+    fn default() -> Self {
+        Self {
+            module_type: String::new(),
+            path: PathBuf::new(),
+            tests: Vec::new(),
+            config: HashMap::default(),
+            state_namespace: None,
+            data: None,
+            drop_on_error: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

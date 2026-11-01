@@ -123,6 +123,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 // a stateful plugin is tested the way it runs.
                 state: StateConfig {
                     backend: StateBackend::Lru,
+                    read_only: false,
                     ..cfg.runtime.state.clone()
                 },
                 partition: cfg.runtime.partition.clone(),
@@ -161,6 +162,8 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 state_namespace: plugin_cfg.state_namespace.clone(),
                 // Relative to the test config, which sits next to the original.
                 data: plugin_cfg.data.clone(),
+                // A test sees a failed call as a failure, not a pass-through.
+                drop_on_error: true,
             };
 
             let mut plugins = BTreeMap::new();

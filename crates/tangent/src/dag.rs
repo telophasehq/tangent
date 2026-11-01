@@ -49,6 +49,11 @@ impl DagRuntime {
 
         let workers = cfg.runtime.workers;
 
+        if cfg.runtime.state.read_only {
+            if let Some(w) = state_writer(&cfg) {
+                anyhow::bail!("runtime.state.read_only: this pipeline writes state ({w})");
+            }
+        }
         let store = state::open(&cfg.runtime.state, config_dir)?;
 
         // Read once, here, for the whole process: the workers' engines and
@@ -99,6 +104,7 @@ impl DagRuntime {
                             plugin_cfg.config.clone(),
                             plugin_cfg.state_namespace.as_deref(),
                             data_dir.as_deref(),
+                            plugin_cfg.drop_on_error,
                         )
                         .with_context(|| format!("loading {}", &component_file))?,
                 ));
@@ -240,6 +246,22 @@ impl DagRuntime {
     }
 }
 
+/// What writes state besides the plugins: kept records, and the cursors of the
+/// sources that poll an API.
+fn state_writer(cfg: &Config) -> Option<String> {
+    if cfg
+        .runtime
+        .partition
+        .as_ref()
+        .is_some_and(|p| p.retain_ms.is_some())
+    {
+        return Some("partition.retain_ms".into());
+    }
+    cfg.sources
+        .iter()
+        .find_map(|(name, s)| s.keeps_cursor().then(|| format!("source {name}")))
+}
+
 fn spawn_consumers(
     sources: BTreeMap<Arc<str>, SourceConfig>,
     batch_size: usize,
@@ -250,7 +272,8 @@ fn spawn_consumers(
     let mut handles = Vec::new();
     for src in sources {
         let shutdown = shutdown.clone();
-        // The polling sources keep their cursor in the state store.
+        // The polling sources keep their cursor in the state store; those that
+        // do say so in `SourceConfig::keeps_cursor`.
         let store = Arc::clone(&store);
         match src {
             (name, SourceConfig::MSK(kc)) => {
@@ -524,5 +547,21 @@ mod tests {
         assert_eq!(blocking_sink.write_count().await, 1);
         assert!(blocking_sink.flush_completed());
         assert_eq!(ack.count(), 1);
+    }
+
+    /// A read-only pipeline whose runtime writes state is refused: a
+    /// polling source keeps its cursor there, and kept records live there.
+    #[test]
+    fn what_writes_state_besides_the_plugins() {
+        let cfg = |yaml: &str| -> Config { serde_yaml::from_str(yaml).unwrap() };
+        let logs = "runtime: {}\nsources:\n  logs: { type: sqlite, path: logs.sqlite, table: logs, partition: actor, batch_size: 40, timeout_secs: 60 }\n";
+        assert_eq!(state_writer(&cfg(logs)), None);
+        let okta = format!("{logs}  okta: {{ type: okta }}\n");
+        assert_eq!(state_writer(&cfg(&okta)).as_deref(), Some("source okta"));
+        let kept = "runtime:\n  partition: { key: [org], retain_ms: 1000 }\n";
+        assert_eq!(
+            state_writer(&cfg(kept)).as_deref(),
+            Some("partition.retain_ms")
+        );
     }
 }

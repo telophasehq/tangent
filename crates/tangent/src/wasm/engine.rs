@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ahash::{HashMap, HashMapExt};
+use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use anyhow::{Context, Result};
 
 use serde_json::Value;
@@ -26,6 +26,9 @@ pub struct WasmEngine {
     /// The enrichment tables, loaded once for the process: every engine and
     /// every plugin instance holds the same ones.
     tables: Arc<Tables>,
+    /// Plugins whose records go on unchanged when a call fails
+    /// (`plugins.<name>.drop_on_error: false`).
+    pass_on_error: HashSet<Arc<str>>,
     disable_remote_calls: bool,
 }
 
@@ -57,6 +60,7 @@ impl WasmEngine {
             config: HashMap::new(),
             state_ns: HashMap::new(),
             data: HashMap::new(),
+            pass_on_error: HashSet::new(),
         })
     }
 
@@ -71,6 +75,7 @@ impl WasmEngine {
         cfg: HashMap<String, Value>,
         state_ns: Option<&str>,
         data: Option<&Path>,
+        drop_on_error: bool,
     ) -> Result<Component> {
         let comp = unsafe { Component::deserialize_file(&self.engine, &loc)? };
 
@@ -79,9 +84,16 @@ impl WasmEngine {
         if let Some(dir) = data {
             self.data.insert(Arc::clone(&name), dir.to_path_buf());
         }
+        if !drop_on_error {
+            self.pass_on_error.insert(Arc::clone(&name));
+        }
         self.config.insert(name, Arc::new(cfg));
 
         Ok(comp)
+    }
+
+    pub fn drops_on_error(&self, name: &str) -> bool {
+        !self.pass_on_error.contains(name)
     }
 
     pub fn make_store(&self, component_name: &Arc<str>) -> Result<Store<HostEngine>> {

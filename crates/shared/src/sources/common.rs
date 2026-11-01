@@ -45,6 +45,28 @@ pub enum SourceConfig {
     Sqlite(SqliteConfig),
 }
 
+impl SourceConfig {
+    /// A source that keeps its place in the state store (a poller's cursor),
+    /// so a pipeline with it writes state. Every source is named here: a new
+    /// one decides.
+    pub fn keeps_cursor(&self) -> bool {
+        match self {
+            SourceConfig::GithubAudit(_)
+            | SourceConfig::Okta(_)
+            | SourceConfig::GoogleWorkspace(_) => true,
+            SourceConfig::MSK(_)
+            | SourceConfig::File(_)
+            | SourceConfig::Socket(_)
+            | SourceConfig::Tcp(_)
+            | SourceConfig::SQS(_)
+            | SourceConfig::GithubWebhook(_)
+            | SourceConfig::NPMRegistry(_)
+            | SourceConfig::Cloudtrail(_)
+            | SourceConfig::Sqlite(_) => false,
+        }
+    }
+}
+
 /// A string field that may be written bare. Inside a `type`-tagged block
 /// serde reads `since: 3600` as a number before the field sees it, so a
 /// number or a bool is taken as the text it was written as.

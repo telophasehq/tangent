@@ -140,6 +140,11 @@ pub fn open(cfg: &StateConfig, base_dir: &Path) -> Result<Arc<dyn StateStore>> {
             cfg.max_ttl_ms
         );
     }
+    if cfg.read_only {
+        return open_reader(cfg, base_dir).map_err(|e| {
+            e.context("runtime.state.read_only: start the pipeline that writes this state first")
+        });
+    }
     Ok(match cfg.backend {
         StateBackend::Sqlite => Arc::new(sqlite::SqliteStore::open(cfg, base_dir)?),
         StateBackend::Lru => Arc::new(lru::LruStore::new(cfg.clone())?),
