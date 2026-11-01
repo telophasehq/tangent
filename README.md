@@ -302,7 +302,7 @@ $15 for each million logs  +  $12 for each GB of them
 | 1M | $18 | $21 | $27 | $39 |
 | 10M | $180 | $210 | $270 | $390 |
 
-A month is thirty times as much. The count matters more than the size. A log reaches the model as a trimmed logfmt line, about a token for every 9 bytes it had, but each one also carries its `_norm` and `_facts`, a share of the prompt and of `_hist`, and gets an answer (about 11 tokens to pass, 150 to flag): below 1 KB, that is most of what a log costs. The rule fits real CloudTrail, GitHub and Google Workspace logs, and overstates Okta's, which trim further. The corpus the packs are evaluated on, synthetic logs of a few hundred bytes that repeat less than real ones, came to $27 a million (921 requests, $0.98).
+A month is thirty times as much. The count matters more than the size. A log reaches the model as a trimmed logfmt line, about a token for every 9 bytes it had, but each one also carries its `_norm` and `_facts`, a share of the prompt and of `_baseline`, and gets an answer (about 11 tokens to pass, 150 to flag): below 1 KB, that is most of what a log costs. The rule fits real CloudTrail, GitHub and Google Workspace logs, and overstates Okta's, which trim further. The corpus the packs are evaluated on, synthetic logs of a few hundred bytes that repeat less than real ones, came to $27 a million (921 requests, $0.98).
 
 Two things the count must include:
 
@@ -322,7 +322,7 @@ Rough ranges for a company of 50 people, each active about eight hours a day, pr
 
 A person costs about a cent a day or less in each source that sees them, however little they do. A trail that also logs data events (S3 objects, Lambda invocations) can have ten to a hundred times aws's events. AWS VPC Flow Logs have no pack: a startup writes 5M–30M flow records a day of about 0.1 KB, $80–500 a day by the rule and more than one judge keeps up with, so a pack for them would roll flows up before the judge.
 
-`logs.sqlite` keeps every finished log, about a day's volume each day until you trim it; history's `state.sqlite` grows with actors, their active hours, role sessions and sign-ins, not with logs. A local model, the default, costs only the machine it runs on.
+`logs.sqlite` keeps every finished log, about a day's volume each day until you trim it; baseline's `state.sqlite` grows with actors, their active hours, role sessions and sign-ins, not with logs. A local model, the default, costs only the machine it runs on.
 
 These are estimates. Log sizes are measured on samples (CloudTrail on 20k events, the others on tens to hundreds), tokens with Claude Haiku 4.5's count scaled to 5.5's, and the volumes are typical of startups, not yours: a day of your own ingest in `logs.sqlite` says what yours are.
 
