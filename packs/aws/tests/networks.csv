@@ -1,0 +1,8 @@
+# The fixtures' addresses and their labels, as examples/enrich/setup.sh's
+# networks.csv gives them: the aws plugin's test reads this file as its
+# `networks` table (ingest.yaml), whatever the config's.
+prefix,label
+3.208.10.20/32,aws
+52.94.76.10/32,aws
+65.108.22.91/32,datacenter
+185.224.128.17/32,datacenter

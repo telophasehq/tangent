@@ -1,0 +1,8 @@
+# A pack: its plugin and fixtures, relative to this file.
+plugins:
+  probe:
+    module_type: rust
+    path: probe
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json

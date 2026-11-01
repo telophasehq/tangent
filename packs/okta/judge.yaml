@@ -1,0 +1,12 @@
+# okta, judge: how the judge writes Okta's records as logfmt, once
+# packs/core/judge.yaml's encoding is `type: logfmt`: the fields naming the
+# principal and the time, and those the model sees on every line. Include it
+# in a judge config with packs/core/judge.yaml.
+inference:
+  judge:
+    encoding:
+      sources:
+        okta:
+          principal: [_norm.actor, actor.alternateId]
+          time: [published, ts]
+          keep: [eventType, outcome, target, authenticationContext.credentialType, securityContext.isProxy, debugData.threatSuspected]

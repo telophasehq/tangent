@@ -30,15 +30,13 @@ eventTime,ts="2026-10-20T13:00:00Z"
 recipientAccountId="111122223333"
 responseElements.ConsoleLogin=Success
 source=cloudtrail
-sourceIPAddress="98.51.100.23"
+sourceIPAddress="198.51.100.23"
 userAgent=Mozilla/5.0
 userIdentity.accountId="111122223333"
 userIdentity.arn=arn:aws:iam::111122223333:root
 userIdentity.type=Root
 userIdentity.userName=root
-_facts.ip.asn=7922
-_facts.ip.country=US
-_facts.ip.org=Comcast Cable Communications, LLC
+_facts.ip={}
 _facts.notes=["AWS root credentials used","principal root is nobody the org profile knows"]
 _facts.principal=unknown
 _facts.root=true
@@ -354,16 +352,16 @@ source=cloudtrail
 sourceIPAddress="3.208.10.20"
 ts="2026-10-22T04:00:00Z"
 userIdentity.accountId="111122223333"
-userIdentity.role=DrataAutopilotRole
+userIdentity.role=VendorAuditRole
 userIdentity.type=AssumedRole
-_facts.about=Drata, the compliance vendor: reads IAM, credential reports and backups every day
+_facts.about=the compliance vendor: reads IAM, credential reports and backups every day
 _facts.ip.asn=16509
 _facts.ip.country=US
 _facts.ip.hosting=aws
 _facts.ip.org=Amazon.com, Inc.
-_facts.notes=["DrataAutopilotRole acting from aws hosting, 3.208.10.20 (Amazon.com, Inc.)"]
+_facts.notes=["VendorAuditRole acting from aws hosting, 3.208.10.20 (Amazon.com, Inc.)"]
 _facts.principal=unknown
 _norm.org=acme
-9 _norm.actor=DrataAutopilotRole eventName=GenerateCredentialReport
+9 _norm.actor=VendorAuditRole eventName=GenerateCredentialReport
 # end
 --- sidecar

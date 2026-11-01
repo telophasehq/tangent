@@ -1,0 +1,13 @@
+id: data/egress-new-destination
+title: A service that only talks to vendors posts to a file-sharing site
+category: data
+priority: P2
+scope: org            # the window that reveals it
+cadence: 5m
+alone_innocent: true   # does each line look fine on its own?
+sources: [agent]
+events: 4
+expected:
+  flag: true
+  one_line: the plan worker posted 48 KB to transfer.sh during an IAM key rotation step
+  check_first: "the step's code path; what was in the payload"

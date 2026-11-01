@@ -9,8 +9,9 @@ use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
 
+use crate::enrichment::Tables;
 use crate::state::{StateStore, PLUGIN_NS};
-use crate::wasm::host::tangent::logs::{config, lock, log, remote, state};
+use crate::wasm::host::tangent::logs::{config, enrichment, lock, log, remote, state};
 use crate::wasm::host::{HostEngine, Processor};
 pub struct WasmEngine {
     engine: Engine,
@@ -22,11 +23,18 @@ pub struct WasmEngine {
     /// Each plugin's data directory (`plugins.<name>.data`), seen by the
     /// guest read-only at `/data`.
     data: HashMap<Arc<str>, PathBuf>,
+    /// The enrichment tables, loaded once for the process: every engine and
+    /// every plugin instance holds the same ones.
+    tables: Arc<Tables>,
     disable_remote_calls: bool,
 }
 
 impl WasmEngine {
-    pub fn new(state: Arc<dyn StateStore>, disable_remote_calls: bool) -> Result<Self> {
+    pub fn new(
+        state: Arc<dyn StateStore>,
+        tables: Arc<Tables>,
+        disable_remote_calls: bool,
+    ) -> Result<Self> {
         let engine = tangent_shared::wasm_engine::build()?;
         let mut linker = Linker::<HostEngine>::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;
@@ -35,11 +43,16 @@ impl WasmEngine {
         state::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         config::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         lock::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
+        enrichment::add_to_linker::<HostEngine, HostEngine>(
+            &mut linker,
+            |host: &mut HostEngine| host,
+        )?;
 
         Ok(Self {
             engine,
             linker,
             state,
+            tables,
             disable_remote_calls,
             config: HashMap::new(),
             state_ns: HashMap::new(),
@@ -93,6 +106,7 @@ impl WasmEngine {
                     .get(component_name)
                     .map_or_else(|| Arc::from(PLUGIN_NS), Arc::clone),
                 self.config.get(component_name).unwrap().clone(),
+                Arc::clone(&self.tables),
                 self.disable_remote_calls,
             ),
         ))

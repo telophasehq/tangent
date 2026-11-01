@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct TcpConfig {
     #[serde(default = "default_bind_address")]
     pub bind_address: SocketAddr,

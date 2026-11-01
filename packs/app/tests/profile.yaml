@@ -1,0 +1,13 @@
+# The company in the app fixtures (examples/cloud-infra's fictional one), cut
+# to what tests/expected.json turns on. The fixtures' test reads it as its
+# `profile` table (ingest.yaml), in any config that includes this pack.
+# packs/core/README.md lists every key.
+
+countries: [US]                  # where your people sign in from
+networks: [10.0.0.0/8]           # the office: never a person's odd location
+
+members:                         # people: identity-provider emails and GitHub handles
+  - oncall-frank@acme.io
+
+keys:                            # API keys and the networks each calls from
+  ak_rail: [35.212.0.0/16]       # the service hosted at a vendor

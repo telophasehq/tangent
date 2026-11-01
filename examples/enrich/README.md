@@ -33,6 +33,7 @@ them; MaxMind publishes on Tuesdays and Fridays.
 | `cloudflare-ips-v4.txt`, `-v6.txt` | [Cloudflare](https://www.cloudflare.com/ips/) | public |
 | `tor-exits.txt` | [Tor Project](https://check.torproject.org/torbulkexitlist) | public |
 | `datacenter-ips.txt`, `vpn-ips.txt` | [X4BNet lists_vpn](https://github.com/X4BNet/lists_vpn), broad datacenter and VPN ranges | MIT |
+| `networks.csv` | every range above as `prefix,label` (`aws`, `gcp`, `cloudflare`, `datacenter`, `vpn`, `tor`), written by `setup.sh` for the runtime's `cidr` [enrichment tables](/README.md#enrichment-tables); this plugin does not read it | as above |
 
 Drop in `GeoLite2-City.mmdb` instead of Country to get the same fields from
 the larger database. A file that is missing leaves its fields out; nothing
@@ -40,7 +41,9 @@ fails.
 
 Each worker instance reads the files into its own memory: about 15 MB for
 Country, ASN and the ranges, 60 MB with City. Picking up a refreshed file
-takes a restart.
+takes a restart. The runtime's [enrichment tables](/README.md#enrichment-tables)
+serve the same files to every plugin from one copy per process
+(`GeoLite2-*.mmdb` as `mmdb` tables, `networks.csv` as a `cidr` table).
 
 ## Config
 

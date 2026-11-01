@@ -150,6 +150,9 @@ pub async fn run(opts: TestOptions) -> Result<()> {
             let mut sources = BTreeMap::new();
             sources.insert(Arc::<str>::from("input"), input_source);
 
+            let mut tables = cfg.enrichment_tables.clone();
+            tables.extend(test.enrichment_tables);
+
             let plugin_config = PluginConfig {
                 module_type: "".to_string(), // not used
                 path: plugins_path,
@@ -169,6 +172,11 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 sources,
                 sinks,
                 plugins,
+                // Every table, as the config names them, and the test's own
+                // in place of theirs: an included file's paths are absolute,
+                // and the root's resolve against the test config, which sits
+                // next to it.
+                enrichment_tables: tables,
                 dag: vec![entry, exit],
             };
 

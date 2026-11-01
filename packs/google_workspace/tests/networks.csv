@@ -1,0 +1,7 @@
+# The fixtures' addresses and their labels, as examples/enrich/setup.sh's
+# networks.csv gives them: the google_workspace plugin's test reads this file
+# as its `networks` table (ingest.yaml), whatever the config's.
+prefix,label
+185.220.101.4/32,datacenter
+185.220.101.4/32,vpn
+185.220.101.4/32,tor

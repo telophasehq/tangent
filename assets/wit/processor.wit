@@ -54,6 +54,17 @@ interface lock {
   release: func(key: string);
 }
 
+/// Reference data under `enrichment_tables` in the config, loaded once per
+/// process and shared by every plugin: a MaxMind DB, a list of networks, a
+/// document. No call reads a file.
+interface enrichment {
+  /// What `table` holds for `key`, as JSON: an mmdb table's record for an
+  /// address, the labels of a cidr table's prefixes that hold an address (a
+  /// list), the value at a dotted path of a document ("" for all of it).
+  /// None when it holds nothing for the key, or there is no such table.
+  lookup: func(table: string, key: string) -> option<string>;
+}
+
 
 /// Keyed state in the pipeline's state store, shared by every worker and
 /// scoped by the runtime to the partition of the records being processed.
@@ -136,5 +147,6 @@ world processor {
   import state;
   import config;
   import lock;
+  import enrichment;
   export mapper;
 }

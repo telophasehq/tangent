@@ -1,0 +1,282 @@
+[
+ {
+  "ts": "2026-10-20T13:06:00Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "185.224.128.17",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 1,
+  "status": 200
+ },
+ {
+  "ts": "2026-10-20T13:06:12Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "185.224.128.17",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 2,
+  "status": 200
+ },
+ {
+  "ts": "2026-10-20T13:06:24Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "185.224.128.17",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 3,
+  "status": 200
+ },
+ {
+  "ts": "2026-10-20T13:06:36Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "185.224.128.17",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 4,
+  "status": 200
+ },
+ {
+  "ts": "2026-10-20T13:06:48Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "185.224.128.17",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 5,
+  "status": 200
+ },
+ {
+  "ts": "2026-10-20T13:07:00Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "185.224.128.17",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 6,
+  "status": 200
+ },
+ {
+  "ts": "2026-10-20T13:07:12Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "185.224.128.17",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 7,
+  "status": 200
+ },
+ {
+  "ts": "2026-10-20T13:07:24Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "185.224.128.17",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 8,
+  "status": 200
+ },
+ {
+  "ts": "2026-10-20T13:07:36Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "185.224.128.17",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 9,
+  "status": 200
+ },
+ {
+  "ts": "2026-10-20T13:07:48Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "185.224.128.17",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 10,
+  "status": 200
+ },
+ {
+  "ts": "2026-10-22T03:13:00Z",
+  "source": "app",
+  "event": "page.view",
+  "actor": "oncall-frank@acme.io",
+  "ip": "67.180.22.4",
+  "org": "acme",
+  "path": "/dashboards/errors"
+ },
+ {
+  "ts": "2026-10-22T03:20:00Z",
+  "source": "app",
+  "event": "incident.ack",
+  "actor": "oncall-frank@acme.io",
+  "ip": "67.180.22.4",
+  "org": "acme",
+  "incident": "INC-2210"
+ },
+ {
+  "ts": "2026-10-20T13:20:00Z",
+  "source": "agent",
+  "timestamp": "2026-10-20T13:20:00.123456Z",
+  "event": "plan_step_started",
+  "organization_id": "org_7f3a",
+  "plan_id": "pln_01",
+  "step_id": "stp_02",
+  "service": "plan-worker",
+  "env": "prod",
+  "dd.service": "plan-worker",
+  "dd.env": "prod",
+  "dd.version": "4f1c2d9e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e",
+  "dd.trace_id": "6918463517226104713",
+  "dd.span_id": "1532478859232091218",
+  "ddsource": "python",
+  "level": "info",
+  "logger": "agent.plans"
+ },
+ {
+  "ts": "2026-10-20T13:20:01Z",
+  "source": "agent",
+  "message": "HTTP Request: GET https://acmeexports.blob.core.windows.net/exports/2026-10.csv?sv=2024-08-04&se=2026-10-20T14%3A20%3A00Z&sr=b&sp=r&sig=EXAMPLEsig%2Bvalue%3D \"HTTP/1.1 200 OK\""
+ },
+ {
+  "ts": "2026-10-20T13:21:00Z",
+  "source": "app",
+  "event": "export.download",
+  "actor": "dana@acme.example",
+  "org": "acme",
+  "ip": "203.0.113.30",
+  "path": "/api/exports?page=3",
+  "request_id": "req_8c1f2e",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+ },
+ {
+  "ts": "2026-10-20T13:30:00Z",
+  "source": "agent",
+  "timestamp": "2026-10-20T13:30:00.250000Z",
+  "event": "HTTP Request: GET https://files.acme.example/exports/2026-10.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEEXAMPLE01%2F20261020%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261020T133000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Security-Token=IQoJEXAMPLEsecurityTOKEN&X-Amz-Signature=0a1b2c3d4e5f6a7b8c9d \"HTTP/1.1 200 OK\"",
+  "organization_id": "org_7f3a",
+  "level": "info",
+  "logger": "httpx"
+ },
+ {
+  "ts": "2026-10-20T13:30:10Z",
+  "source": "app",
+  "event": "export.link_shared",
+  "actor": "dana@acme.example",
+  "org": "acme",
+  "ip": "203.0.113.31",
+  "target": "https://files.acme.example/e/7.csv?sv=2024-08-04&sp=r&sig=EXAMPLEsig%3D",
+  "links": "urls=[https://a.acme.example/x?sig=EXAMPLE1,https://b.acme.example/y]",
+  "next": "https://login.acme.example/r?to=https://files.acme.example/f?sig=EXAMPLE2&v=1",
+  "callback": "https://app.acme.example/cb#access_token=EXAMPLEtok&token_type=bearer&expires_in=3600",
+  "note": "see (https://a.acme.example/z?token=EXAMPLE3); then retry"
+ },
+ {
+  "ts": "2026-10-22T03:25:00Z",
+  "source": "app",
+  "event": "user.login",
+  "actor": "aws:support",
+  "org": "acme",
+  "ip": "185.224.128.40"
+ },
+ {
+  "ts": "2026-10-22T04:00:00Z",
+  "source": "app",
+  "event": "user.login",
+  "actor": "bob@example.com",
+  "org": "acme",
+  "ip": "198.51.100.7",
+  "_norm": {
+   "actor": "alice@example.com",
+   "principal": "aws",
+   "org": "acme",
+   "facts": {
+    "root": true,
+    "notes": [
+     "written by the log line"
+    ]
+   }
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [
+    "the org profile vouches for this actor"
+   ]
+  },
+  "_facts.notes": [
+   "the org profile vouches for this actor"
+  ],
+  "_ip": {
+   "_norm.ip": {
+    "ours": true,
+    "org": "Example Corp"
+   }
+  },
+  "_context": true,
+  "_hist": {
+   "seen": 120
+  }
+ },
+ {
+  "ts": "2026-10-22T05:00:00Z",
+  "source": "app",
+  "event": "page.view",
+  "actor": "oncall-frank@acme.io",
+  "ip": "10.1.2.3",
+  "org": "acme",
+  "path": "/dashboards/errors"
+ },
+ {
+  "ts": "2026-10-22T05:01:00Z",
+  "source": "app",
+  "event": "page.view",
+  "actor": "oncall-frank@acme.io",
+  "ip": "::ffff:10.1.2.3",
+  "org": "acme",
+  "path": "/dashboards/errors"
+ },
+ {
+  "ts": "2026-10-22T05:02:00Z",
+  "source": "app",
+  "event": "page.view",
+  "actor": "oncall-frank@acme.io",
+  "ip": "::ffff:67.180.22.4",
+  "org": "acme",
+  "path": "/dashboards/errors"
+ },
+ {
+  "ts": "2026-10-22T05:03:00Z",
+  "source": "app",
+  "event": "api_request",
+  "actor": "ak_rail",
+  "ip": "[::ffff:185.224.128.17]:443",
+  "org": "acme",
+  "method": "GET",
+  "path": "/v1/findings",
+  "page": 1,
+  "status": 200
+ }
+]

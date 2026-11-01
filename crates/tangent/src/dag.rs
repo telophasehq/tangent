@@ -8,12 +8,8 @@ use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    router::Router,
-    sinks::manager::SinkManager,
-    sources, state,
-    state::StateStore,
-    wasm::engine::WasmEngine,
-    worker::WorkerPool,
+    enrichment::Tables, router::Router, sinks::manager::SinkManager, sources, state,
+    state::StateStore, wasm::engine::WasmEngine, worker::WorkerPool,
 };
 
 pub struct DagRuntime {
@@ -21,6 +17,10 @@ pub struct DagRuntime {
     pool: Arc<WorkerPool>,
     sink_manager: Arc<SinkManager>,
     consumer_handles: Vec<tokio::task::JoinHandle<()>>,
+    /// The enrichment tables every plugin on every worker reads, here so a
+    /// test can count what holds them; the engines keep them alive.
+    #[cfg(test)]
+    pub(crate) tables: Arc<Tables>,
 }
 
 impl DagRuntime {
@@ -51,8 +51,18 @@ impl DagRuntime {
 
         let store = state::open(&cfg.runtime.state, config_dir)?;
 
+        // Read once, here, for the whole process: the workers' engines and
+        // every plugin instance in them share these.
+        let tables = Arc::new(Tables::load(&cfg.enrichment_tables, config_dir)?);
+
         let mut engines: Vec<WasmEngine> = (0..workers)
-            .map(|_| WasmEngine::new(Arc::clone(&store), cfg.runtime.disable_remote_calls))
+            .map(|_| {
+                WasmEngine::new(
+                    Arc::clone(&store),
+                    Arc::clone(&tables),
+                    cfg.runtime.disable_remote_calls,
+                )
+            })
             .collect::<Result<_, _>>()?;
         let mut components: Vec<Vec<(Arc<str>, Component)>> = Vec::with_capacity(workers);
         for i in 0..workers {
@@ -151,6 +161,8 @@ impl DagRuntime {
             pool,
             sink_manager,
             consumer_handles,
+            #[cfg(test)]
+            tables,
         })
     }
 
@@ -160,6 +172,7 @@ impl DagRuntime {
             pool,
             sink_manager,
             consumer_handles,
+            ..
         } = self;
 
         tracing::info!("waiting on consumers to shutdown...");
@@ -479,6 +492,7 @@ mod tests {
             pool: worker_pool,
             sink_manager: Arc::clone(&sink_manager),
             consumer_handles: vec![],
+            tables: Default::default(),
         };
 
         let ack = Arc::new(CountingAck::default());

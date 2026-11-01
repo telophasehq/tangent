@@ -1,0 +1,11 @@
+[package]
+name = "enrichkit"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+ipnet = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }

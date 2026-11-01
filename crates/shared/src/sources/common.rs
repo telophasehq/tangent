@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
+use std::fmt;
 
 use crate::sources::cloudtrail::CloudtrailConfig;
 use crate::sources::file::FileConfig;
@@ -44,7 +45,67 @@ pub enum SourceConfig {
     Sqlite(SqliteConfig),
 }
 
+/// A string field that may be written bare. Inside a `type`-tagged block
+/// serde reads `since: 3600` as a number before the field sees it, so a
+/// number or a bool is taken as the text it was written as.
+pub fn bare_string<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    d.deserialize_any(Bare)
+}
+
+/// [`bare_string`] for an optional field; empty is none.
+pub fn bare_string_opt<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    d.deserialize_option(BareOpt)
+}
+
+struct Bare;
+
+impl<'de> de::Visitor<'de> for Bare {
+    type Value = String;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a string, number or bool")
+    }
+    fn visit_str<E: de::Error>(self, v: &str) -> Result<String, E> {
+        Ok(v.to_string())
+    }
+    fn visit_string<E: de::Error>(self, v: String) -> Result<String, E> {
+        Ok(v)
+    }
+    fn visit_u64<E: de::Error>(self, v: u64) -> Result<String, E> {
+        Ok(v.to_string())
+    }
+    fn visit_i64<E: de::Error>(self, v: i64) -> Result<String, E> {
+        Ok(v.to_string())
+    }
+    fn visit_f64<E: de::Error>(self, v: f64) -> Result<String, E> {
+        Ok(v.to_string())
+    }
+    fn visit_bool<E: de::Error>(self, v: bool) -> Result<String, E> {
+        Ok(v.to_string())
+    }
+}
+
+struct BareOpt;
+
+impl<'de> de::Visitor<'de> for BareOpt {
+    type Value = Option<String>;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a string, number or bool, or nothing")
+    }
+    fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+    fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        bare_string(d).map(Some)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Decoding {
     pub format: DecodeFormat, // ndjson | json | json-array | text | msgpack
 

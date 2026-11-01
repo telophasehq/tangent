@@ -3,6 +3,7 @@
 #
 #   ./setup.sh          toolchain + data
 #   ./setup.sh data     data only (refresh; MaxMind publishes Tuesdays and Fridays)
+#   ./setup.sh networks data/networks.csv again from the ranges already in data/
 #
 # GeoLite2 comes from MaxMind when MAXMIND_LICENSE_KEY is set (free account:
 # https://www.maxmind.com/en/geolite2/signup), otherwise from a public mirror of
@@ -65,6 +66,81 @@ fetch_geolite2() {
   fi
 }
 
+# data/networks.csv: every range above in one `prefix,label` file, for a
+# runtime `cidr` enrichment table, so no plugin parses a provider's format.
+# Labels go in this order, which is the order a lookup answers them in: a
+# provider's own ranges, then X4BNet's broad datacenter list, VPN, Tor. A
+# file that is missing adds nothing. python3 from the standard library, -I so
+# nothing in data/ or the working directory is imported.
+build_networks() {
+  echo "==> data/networks.csv from the ranges"
+  python3 -I - data <<'PY'
+import ipaddress, json, os, sys
+
+data = sys.argv[1]
+
+
+def read(name):
+    try:
+        with open(os.path.join(data, name), encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
+
+def lines(*names):
+    for name in names:
+        for line in read(name).splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                yield line
+
+
+def published(name, *lists):
+    text = read(name)
+    if not text:
+        return
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        print(f"warning: {name} is not JSON; left out", file=sys.stderr)
+        return
+    for key, fields in lists:
+        for entry in doc.get(key) or []:
+            for field in fields:
+                if isinstance(entry, dict) and isinstance(entry.get(field), str):
+                    yield entry[field]
+
+
+labels = [
+    ("aws", published("aws-ip-ranges.json", ("prefixes", ["ip_prefix"]), ("ipv6_prefixes", ["ipv6_prefix"]))),
+    ("gcp", published("gcp-ip-ranges.json", ("prefixes", ["ipv4Prefix", "ipv6Prefix"]))),
+    ("cloudflare", lines("cloudflare-ips-v4.txt", "cloudflare-ips-v6.txt")),
+    ("datacenter", lines("datacenter-ips.txt")),
+    ("vpn", lines("vpn-ips.txt")),
+    ("tor", lines("tor-exits.txt")),
+]
+path = os.path.join(data, "networks.csv")
+counts = []
+with open(path + ".tmp", "w", encoding="utf-8") as out:
+    out.write("# Built by setup.sh from the ranges beside it; labels answer in this order.\n")
+    out.write("prefix,label\n")
+    for label, prefixes in labels:
+        seen = set()
+        for p in prefixes:
+            try:
+                net = str(ipaddress.ip_network(p, strict=False))
+            except ValueError:
+                continue
+            if net not in seen:
+                seen.add(net)
+                out.write(f"{net},{label}\n")
+        counts.append(f"{label} {len(seen)}")
+os.replace(path + ".tmp", path)
+print("    " + ", ".join(counts))
+PY
+}
+
 fetch_data() {
   mkdir -p data
   fetch_geolite2
@@ -77,11 +153,16 @@ fetch_data() {
   echo "==> Datacenter and VPN ranges (X4BNet)"
   fetch https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv4.txt data/datacenter-ips.txt
   fetch https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt data/vpn-ips.txt
+  build_networks
   ls -la data | awk 'NR>1 && $9 != "" {printf "    %8d  %s\n", $5, $9}'
 }
 
 if [ "${1:-}" = "data" ]; then
   fetch_data
+  exit 0
+fi
+if [ "${1:-}" = "networks" ]; then
+  build_networks
   exit 0
 fi
 

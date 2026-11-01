@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+use crate::sources::common::bare_string;
+
 /// Google Workspace's audit activity, polled from the Admin SDK Reports API
 /// as a service account with domain-wide delegation acting for an admin.
 /// Records are emitted as the API returns them, plus `source:
 /// google_workspace` and `ts` (from `id.time`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GoogleWorkspaceConfig {
     /// The service account's JSON key file, e.g.
     /// `${GOOGLE_APPLICATION_CREDENTIALS}`. Empty, the source stays idle.
@@ -20,7 +23,7 @@ pub struct GoogleWorkspaceConfig {
     #[serde(default = "default_interval_secs")]
     pub interval_secs: u64,
     /// On first start, how far back to read; afterwards from the cursor.
-    #[serde(default = "default_since")]
+    #[serde(default = "default_since", deserialize_with = "bare_string")]
     pub since: String,
     /// The Reports API root.
     #[serde(default = "default_api")]

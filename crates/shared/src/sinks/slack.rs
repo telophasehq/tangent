@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 /// One message a record: `{a.b}` is the record's field, escaped (`-` when missing),
 /// and `{x|words y}` the first one it has.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SlackConfig {
     #[serde(skip_serializing)]
     pub webhook_url: SecretString,

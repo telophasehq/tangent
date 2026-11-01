@@ -2,6 +2,7 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NpmRegistryConfig {
     /// List of npm package names to poll, e.g. ["tangent-home-js", "@telophasehq/foo"].
     /// Leave empty to check all packages registered to your org.  Must specify this or orgs.
