@@ -1496,7 +1496,7 @@ mod tests {
         let store: Arc<dyn crate::state::StateStore> =
             Arc::new(crate::state::lru::LruStore::new(StateConfig::default()).unwrap());
         let engines = (0..2)
-            .map(|_| WasmEngine::new(Arc::clone(&store), true).unwrap())
+            .map(|_| WasmEngine::new(Arc::clone(&store), Default::default(), true).unwrap())
             .collect();
         let mut inference = BTreeMap::new();
         inference.insert(judge.clone(), stub::config(&url));
