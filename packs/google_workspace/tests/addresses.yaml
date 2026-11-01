@@ -1,0 +1,6 @@
+# The fixtures' addresses, as GeoLite2 Country and ASN answer them: the
+# google_workspace plugin's test reads this file as its `geo` and `asn` tables
+# (ingest.yaml), whatever the config's. An address not here is in no network
+# these tables know.
+
+"185.220.101.4": {"country": {"iso_code": "DE"}, "autonomous_system_number": 60729, "autonomous_system_organization": "Stiftung Erneuerbare Freiheit"}

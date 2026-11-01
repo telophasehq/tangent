@@ -1,0 +1,13 @@
+# The company in the okta fixtures (examples/cloud-infra's fictional one), cut
+# to what tests/expected.json turns on. The fixtures' test reads it as its
+# `profile` table (ingest.yaml), in any config that includes this pack.
+# packs/core/README.md lists every key.
+
+org: acme                        # the org every one of your own infrastructure logs is folded into
+own_sources: [okta]
+
+countries: [US]                  # where your people sign in from
+
+members:                         # people: identity-provider emails and GitHub handles
+  - bob@acme.io
+  - oncall-frank@acme.io

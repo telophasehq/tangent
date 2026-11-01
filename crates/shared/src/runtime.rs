@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
     #[serde(default = "default_batch_size")]
     pub batch_size: usize,
@@ -31,6 +32,20 @@ pub struct RuntimeConfig {
     pub disable_remote_calls: bool,
 }
 
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            batch_size: default_batch_size(),
+            batch_age: default_batch_age(),
+            workers: default_workers(),
+            plugins_path: default_plugin_path(),
+            state: StateConfig::default(),
+            partition: None,
+            disable_remote_calls: false,
+        }
+    }
+}
+
 #[must_use]
 const fn default_batch_size() -> usize {
     256
@@ -52,6 +67,7 @@ fn default_plugin_path() -> PathBuf {
 /// values are joined with `separator`; a record with none of the fields is
 /// unpartitioned.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PartitionConfig {
     pub key: Vec<String>,
 
@@ -77,11 +93,13 @@ fn default_separator() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StateConfig {
     #[serde(default)]
     pub backend: StateBackend,
 
-    /// SQLite file (relative to the config), for the `sqlite` backend.
+    /// SQLite file (relative to the config you run, even when an included
+    /// file sets it), for the `sqlite` backend.
     #[serde(default = "default_state_path")]
     pub path: PathBuf,
 

@@ -16,6 +16,7 @@ use simd_json::{BorrowedValue, StaticNode};
 use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
+use crate::enrichment::Tables;
 use crate::state::{StateStore, StateValue};
 use crate::wasm::host::tangent::logs::log;
 use crate::wasm::host::tangent::logs::remote;
@@ -52,6 +53,8 @@ pub struct HostEngine {
     /// worker sets it before each call. Scopes the guest's state.
     pub partition: Arc<str>,
     plugin_cfg: Arc<HashMap<String, JSONValue>>,
+    /// The process's enrichment tables, shared with every other instance.
+    tables: Arc<Tables>,
     /// If true, short-circuit remote calls with successful empty responses.
     pub disable_remote_calls: bool,
 }
@@ -62,6 +65,7 @@ impl HostEngine {
         state: Arc<dyn StateStore>,
         ns: Arc<str>,
         config: Arc<HashMap<String, JSONValue>>,
+        tables: Arc<Tables>,
         disable_remote_calls: bool,
     ) -> Self {
         Self {
@@ -72,6 +76,7 @@ impl HostEngine {
             ns,
             partition: Arc::from(""),
             plugin_cfg: config,
+            tables,
             disable_remote_calls,
         }
     }
@@ -220,6 +225,14 @@ impl tangent::logs::config::Host for HostEngine {
                 other => other.to_string(),
             }
         })
+    }
+}
+
+/// A lookup is an index search in memory the tables already hold: no file,
+/// no lock, nothing async.
+impl tangent::logs::enrichment::Host for HostEngine {
+    fn lookup(&mut self, table: String, key: String) -> Option<String> {
+        self.tables.lookup(&table, &key)
     }
 }
 

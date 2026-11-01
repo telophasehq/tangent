@@ -1,0 +1,22 @@
+# google_workspace: Google Workspace's activity into finished records, by one
+# plugin, `google_workspace`: normalized, trimmed, its address enriched, the
+# profile's facts added. Include it in an ingest config with
+# packs/core/ingest.yaml, route a `google_workspace` source to plugin
+# google_workspace, and give the config a `profile` table; README.md has the
+# lines.
+plugins:
+  google_workspace:
+    module_type: rust
+    path: .
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json
+        enrichment_tables:            # what the fixtures were written against, in any config
+          geo: { type: document, path: tests/addresses.yaml }   # GeoLite2's answers for their addresses
+          asn: { type: document, path: tests/addresses.yaml }
+          networks: { type: cidr, path: tests/networks.csv }
+          profile: { type: document, path: tests/profile.yaml }
+
+dag:
+  - from: { kind: plugin, name: google_workspace }
+    to: [{ kind: sink, name: logs }]   # logs.sqlite: packs/core/ingest.yaml's sink

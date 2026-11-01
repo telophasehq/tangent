@@ -1,0 +1,24 @@
+# cloud-infra, judge: packs/core's judge over logs.sqlite, each pack's
+# records written as its judge.yaml says once the encoding is logfmt.
+include:
+  - ../../packs/core/judge.yaml
+  - ../../packs/aws/judge.yaml
+  - ../../packs/github/judge.yaml
+  - ../../packs/okta/judge.yaml
+  - ../../packs/google_workspace/judge.yaml
+  - ../../packs/app/judge.yaml
+
+# inference:
+#   judge:
+#     encoding:
+#       type: logfmt
+
+# What flagged keeps, to Slack too (README.md):
+# sinks:
+#   slack:
+#     type: slack
+#     webhook_url: ${SLACK_WEBHOOK_URL}
+#     text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
+# dag:
+#   - from: { kind: plugin, name: flagged }
+#     to: [{ kind: sink, name: slack }]

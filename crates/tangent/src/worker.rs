@@ -26,7 +26,11 @@ use crate::state::{StateStore, StateValue, PLUGIN_NS};
 use crate::wasm::host::JsonLogView;
 use crate::{
     partition,
-    wasm::{self, mapper::Mappers, probe::eval_selector},
+    wasm::{
+        self,
+        mapper::Mappers,
+        probe::{eval_selector, CompiledSelector},
+    },
 };
 use crate::{
     CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, GUEST_BYTES_TOTAL, GUEST_LATENCY,
@@ -437,6 +441,12 @@ impl Worker {
                     .iter()
                     .filter(|to| matches!(to, NodeRef::Plugin { .. } | NodeRef::Inference { .. }))
                     .collect();
+                // A sink or a model takes every record; plugins only those
+                // their probe matches, and one no target takes goes nowhere.
+                let takes_all = !sinks.is_empty()
+                    || nodes
+                        .iter()
+                        .any(|to| matches!(to, NodeRef::Inference { .. }));
                 if let Some(bad) = outs.iter().find(|to| matches!(to, NodeRef::Source { .. })) {
                     tracing::warn!(from = ?node, to = ?bad, "a source is not an output; dropping");
                 }
@@ -487,9 +497,12 @@ impl Worker {
                 if views.is_empty() {
                     continue;
                 }
+                let mut taken = vec![takes_all; views.len()];
                 for to in nodes {
                     let out = match to {
-                        NodeRef::Plugin { name } => self.run_plugin(name, &views).await?,
+                        NodeRef::Plugin { name } => {
+                            self.run_plugin(name, &views, &mut taken).await?
+                        }
                         NodeRef::Inference { name } => {
                             match run_inference(&self.inference, name, &views, &self.stop).await? {
                                 Some(out) => out,
@@ -502,6 +515,10 @@ impl Worker {
                     if !out.is_empty() {
                         queue.push_back((to.clone(), Hop::Frames(out)));
                     }
+                }
+                let missed = taken.iter().filter(|t| !**t).count();
+                if missed > 0 {
+                    router.unrouted(&node, missed);
                 }
             }
 
@@ -546,8 +563,14 @@ impl Worker {
     /// `views` through plugin `name`: one guest call per partition, with the
     /// records whose probe matched, the plugin's state scoped to that
     /// partition. The plugin's output frames, partitions in first-seen order,
-    /// each under the partition it came out of.
-    async fn run_plugin(&mut self, name: &Arc<str>, views: &Views) -> Result<Frames> {
+    /// each under the partition it came out of. The records the probe took
+    /// are marked in `taken`.
+    async fn run_plugin(
+        &mut self,
+        name: &Arc<str>,
+        views: &Views,
+        taken: &mut [bool],
+    ) -> Result<Frames> {
         let Some(idx) = self
             .mappers
             .mappers
@@ -557,22 +580,7 @@ impl Worker {
             bail!("unknown plugin {name}");
         };
 
-        let mut groups: Vec<(Arc<str>, Vec<JsonLogView>, usize)> = Vec::new();
-        {
-            let m = &self.mappers.mappers[idx];
-            for (lv, part) in views {
-                if !m.selectors.iter().any(|s| eval_selector(s, lv)) {
-                    continue;
-                }
-                match groups.iter_mut().find(|(p, _, _)| p == part) {
-                    Some((_, g, bytes)) => {
-                        g.push(lv.clone());
-                        *bytes += lv.byte_len();
-                    }
-                    None => groups.push((Arc::clone(part), vec![lv.clone()], lv.byte_len())),
-                }
-            }
-        }
+        let groups = by_probe(&self.mappers.mappers[idx].selectors, views, taken);
         if groups.is_empty() {
             tracing::debug!(plugin = %name, "no record matched the probe");
             return Ok(Vec::new());
@@ -647,6 +655,30 @@ impl Worker {
         }
         Ok(out)
     }
+}
+
+/// The records `selectors` take, grouped by partition in first-seen order,
+/// each group with its bytes. Each record taken is marked in `taken`.
+fn by_probe(
+    selectors: &[CompiledSelector],
+    views: &Views,
+    taken: &mut [bool],
+) -> Vec<(Arc<str>, Vec<JsonLogView>, usize)> {
+    let mut groups: Vec<(Arc<str>, Vec<JsonLogView>, usize)> = Vec::new();
+    for (i, (lv, part)) in views.iter().enumerate() {
+        if !selectors.iter().any(|s| eval_selector(s, lv)) {
+            continue;
+        }
+        taken[i] = true;
+        match groups.iter_mut().find(|(p, _, _)| p == part) {
+            Some((_, g, bytes)) => {
+                g.push(lv.clone());
+                *bytes += lv.byte_len();
+            }
+            None => groups.push((Arc::clone(part), vec![lv.clone()], lv.byte_len())),
+        }
+    }
+    groups
 }
 
 /// `views` through inference node `name`, `concurrency` at a time: every
@@ -929,6 +961,49 @@ mod tests {
         assert_eq!(used.len(), 4, "partitions spread over the workers");
     }
 
+    /// A record no probe matches is not taken; each taken one is marked,
+    /// whichever target took it.
+    #[test]
+    fn a_probe_marks_the_records_it_takes() {
+        use crate::wasm::host::exports::tangent::logs::mapper::{Pred, Selector};
+        use crate::wasm::host::tangent::logs::log::Scalar;
+        use crate::wasm::probe::compile_selector;
+
+        let source_is = |names: &[&str]| {
+            vec![compile_selector(&Selector {
+                any: vec![],
+                all: vec![Pred::In((
+                    "source".into(),
+                    names.iter().map(|n| Scalar::Str(n.to_string())).collect(),
+                ))],
+                none: vec![],
+            })
+            .unwrap()]
+        };
+        let part: Arc<str> = Arc::from("");
+        let views: Views = ["okta", "cloudtrail", "mystery", "okta"]
+            .iter()
+            .map(|s| {
+                let line = format!("{{\"source\":\"{s}\"}}");
+                (
+                    JsonLogView::from_bytes(BytesMut::from(line.as_str())).unwrap(),
+                    Arc::clone(&part),
+                )
+            })
+            .collect();
+        let mut taken = vec![false; views.len()];
+        let okta = by_probe(&source_is(&["okta"]), &views, &mut taken);
+        assert_eq!(okta.len(), 1, "one partition");
+        assert_eq!(okta[0].1.len(), 2);
+        let aws = by_probe(&source_is(&["cloudtrail"]), &views, &mut taken);
+        assert_eq!(aws[0].1.len(), 1);
+        assert_eq!(
+            taken,
+            [true, true, false, true],
+            "the mystery record went nowhere"
+        );
+    }
+
     #[derive(Default)]
     struct RecordingSink {
         writes: Mutex<Vec<String>>,
@@ -1006,7 +1081,7 @@ mod tests {
             mappers: Mappers {
                 mappers: Vec::new(),
             },
-            engine: WasmEngine::new(Arc::clone(&store), true).unwrap(),
+            engine: WasmEngine::new(Arc::clone(&store), Default::default(), true).unwrap(),
             components: Vec::new(),
             inference,
             batch_max_size: 1 << 20,
@@ -1179,7 +1254,7 @@ mod tests {
             mappers: Mappers {
                 mappers: Vec::new(),
             },
-            engine: WasmEngine::new(Arc::clone(&store), true).unwrap(),
+            engine: WasmEngine::new(Arc::clone(&store), Default::default(), true).unwrap(),
             components: Vec::new(),
             inference,
             batch_max_size: 1 << 20,
@@ -1291,7 +1366,7 @@ mod tests {
         let store: Arc<dyn crate::state::StateStore> =
             Arc::new(crate::state::lru::LruStore::new(StateConfig::default()).unwrap());
         let engines = (0..2)
-            .map(|_| WasmEngine::new(Arc::clone(&store), true).unwrap())
+            .map(|_| WasmEngine::new(Arc::clone(&store), Default::default(), true).unwrap())
             .collect();
         let mut inference = BTreeMap::new();
         inference.insert(judge.clone(), stub::config(&url));

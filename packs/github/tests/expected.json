@@ -1,0 +1,416 @@
+[
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "org": "acme"
+  },
+  "job": "build",
+  "line": "Downloading action archive",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "source": "gha_ci",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "ts": "2026-10-20T13:00:00Z"
+ },
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "org": "acme"
+  },
+  "job": "build",
+  "line": "Downloading action archive",
+  "repo": "acme/api",
+  "run_id": 61075,
+  "source": "gha_ci",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "ts": "2026-10-20T13:00:00Z"
+ },
+ {
+  "_facts": {
+   "dest_known": true,
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "kind": "egress",
+   "org": "acme"
+  },
+  "bytes_out": 300,
+  "dst_host": "github.com",
+  "dst_port": 443,
+  "http": {
+   "method": "GET",
+   "path": "/aquasecurity/trivy-action/archive/refs/tags/0.28.0.tar.gz"
+  },
+  "repo": "acme/api",
+  "run_id": 61075,
+  "source": "runner_egress",
+  "ts": "2026-10-20T13:00:06Z"
+ },
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "org": "acme"
+  },
+  "job": "build",
+  "line": "Trivy DB updated",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "source": "gha_ci",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "ts": "2026-10-20T13:00:12Z"
+ },
+ {
+  "_facts": {
+   "dest_known": true,
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "kind": "egress",
+   "org": "acme"
+  },
+  "bytes_out": 600,
+  "dst_host": "ghcr.io",
+  "dst_port": 443,
+  "http": {
+   "method": "GET",
+   "path": "/v2/aquasecurity/trivy-db/manifests/2"
+  },
+  "repo": "acme/api",
+  "run_id": 61007,
+  "source": "runner_egress",
+  "ts": "2026-10-20T13:00:12Z"
+ },
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "org": "acme"
+  },
+  "job": "build",
+  "line": "Trivy DB updated",
+  "repo": "acme/api",
+  "run_id": 61075,
+  "source": "gha_ci",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "ts": "2026-10-20T13:00:12Z"
+ },
+ {
+  "_facts": {
+   "dest_known": true,
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "kind": "egress",
+   "org": "acme"
+  },
+  "bytes_out": 600,
+  "dst_host": "ghcr.io",
+  "dst_port": 443,
+  "http": {
+   "method": "GET",
+   "path": "/v2/aquasecurity/trivy-db/manifests/2"
+  },
+  "repo": "acme/api",
+  "run_id": 61075,
+  "source": "runner_egress",
+  "ts": "2026-10-20T13:00:12Z"
+ },
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "org": "acme"
+  },
+  "job": "build",
+  "line": "scanning image acme/api:sha-8f3c2a1",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "source": "gha_ci",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "ts": "2026-10-20T13:00:18Z"
+ },
+ {
+  "_facts": {
+   "dest_known": false,
+   "notes": [
+    "acme/api talked to api.aquasecurtiy.org, not a host this org's systems talk to"
+   ]
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "kind": "egress",
+   "org": "acme"
+  },
+  "bytes_out": 194560,
+  "dst_host": "api.aquasecurtiy.org",
+  "dst_port": 443,
+  "http": {
+   "method": "POST",
+   "path": "/v1/scan"
+  },
+  "repo": "acme/api",
+  "run_id": 61007,
+  "source": "runner_egress",
+  "ts": "2026-10-20T13:00:24Z"
+ },
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "org": "acme"
+  },
+  "job": "build",
+  "line": "2 vulnerabilities found (LOW)",
+  "repo": "acme/api",
+  "run_id": 61075,
+  "source": "gha_ci",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "ts": "2026-10-20T13:00:30Z"
+ },
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "org": "acme"
+  },
+  "job": "build",
+  "line": "0 vulnerabilities found",
+  "repo": "acme/api",
+  "run_id": 61007,
+  "source": "gha_ci",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "ts": "2026-10-20T13:00:36Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "notes": [
+    "dev-sam acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.)",
+    "dev-sam acting from NL, 185.224.128.17 (Alsycon B.V.)"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dev-sam",
+   "org": "acme"
+  },
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "org": "acme",
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/payments-api",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:03:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "notes": [
+    "dev-sam acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.)",
+    "dev-sam acting from NL, 185.224.128.17 (Alsycon B.V.)"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dev-sam",
+   "org": "acme"
+  },
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "org": "acme",
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/billing",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:03:18Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "notes": [
+    "dev-sam acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.)",
+    "dev-sam acting from NL, 185.224.128.17 (Alsycon B.V.)"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dev-sam",
+   "org": "acme"
+  },
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "org": "acme",
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/infra",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:03:36Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "notes": [
+    "dev-sam acting from datacenter hosting, 185.224.128.17 (Alsycon B.V.)",
+    "dev-sam acting from NL, 185.224.128.17 (Alsycon B.V.)"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dev-sam",
+   "org": "acme"
+  },
+  "action": "git.clone",
+  "actor": "dev-sam",
+  "actor_ip": "185.224.128.17",
+  "actor_location": {
+   "country_code": "NL"
+  },
+  "org": "acme",
+  "programmatic_access_type": "personal access token",
+  "repo": "acme/web",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:03:54Z"
+ },
+ {
+  "_facts": {
+   "notes": [
+    "principal dana is nobody the org profile knows"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "dana",
+   "org": "acme"
+  },
+  "action": "workflows.prepared_workflow_job",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:22:00Z"
+ },
+ {
+  "_facts": {
+   "notes": [
+    "principal dana is nobody the org profile knows"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "dana",
+   "org": "acme"
+  },
+  "action": "workflows.prepared_workflow_job",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "runner_name": "build-01",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:22:10Z"
+ },
+ {
+  "_facts": {
+   "notes": [
+    "principal dana is nobody the org profile knows"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "dana",
+   "org": "acme"
+  },
+  "action": "workflows.completed_workflow_run",
+  "actor": "dana",
+  "conclusion": "success",
+  "name": "deploy",
+  "org": "acme",
+  "repo": "acme/web",
+  "source": "github_audit",
+  "ts": "2026-10-20T13:23:00Z"
+ },
+ {
+  "_facts": {
+   "notes": [
+    "principal dana is nobody the org profile knows"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "dana",
+   "org": "acme"
+  },
+  "action": "repo.add_topic",
+  "actor": "dana",
+  "org": "acme",
+  "repo": "acme/web",
+  "source": "github_audit",
+  "topic": "payments",
+  "ts": "2026-10-20T13:23:30Z"
+ },
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {
+   "actor": "acme/api",
+   "org": "acme"
+  },
+  "job": "build",
+  "line": "Tests passed",
+  "repo": "acme/api",
+  "run_id": 61110,
+  "source": "gha_ci",
+  "step": "Run aquasecurity/trivy-action@0.28.0",
+  "ts": "2026-10-22T04:00:00Z"
+ }
+]
