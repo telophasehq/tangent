@@ -289,6 +289,43 @@ A `tcp` source can feed several packs: route it to each, and each takes only its
 
 [examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, with the cases it is measured against; [examples/app-log](/examples/app-log) is the app pack, one org per customer.
 
+### Volume and cost
+What a pack costs to run is what its judge's model charges: tangent moves hundreds of MB a second ([Benchmarks](#benchmarks)), and a model is paid by the token. With Claude Haiku 5.5 as the judge ($0.10 a million tokens in, $0.50 out), a day of logs costs about
+
+```
+$15 for each million logs  +  $12 for each GB of them
+```
+
+| logs a day | 250 B each | 500 B | 1 KB | 2 KB |
+|---|---|---|---|---|
+| 100k | $1.80 | $2.10 | $2.70 | $3.90 |
+| 1M | $18 | $21 | $27 | $39 |
+| 10M | $180 | $210 | $270 | $390 |
+
+A month is thirty times as much. The count matters more than the size. A log reaches the model as a trimmed logfmt line, about a token for every 9 bytes it had, but each one also carries its `_norm` and `_facts`, a share of the prompt and of `_hist`, and gets an answer (about 11 tokens to pass, 150 to flag): below 1 KB, that is most of what a log costs. The rule fits real CloudTrail, GitHub and Google Workspace logs, and overstates Okta's, which trim further. The corpus the packs are evaluated on, synthetic logs of a few hundred bytes that repeat less than real ones, came to $27 a million (921 requests, $0.98).
+
+Two things the count must include:
+
+- People. A request is one actor's latest forty logs. A busy actor, a service role or an app server, fills one with new logs. A quiet one, a person, goes an hour after its oldest new log, topped up to forty with logs already judged (`_context`), which the model answers too. Count a person as at least forty logs for each hour they are active.
+- Throughput. At 2–10 s a Haiku 5.5 request, core's `concurrency: 4` keeps up with 35k–170k requests a day, 1.4M–6.8M logs; raise `inference.judge.concurrency` past that.
+
+#### Per provider
+Rough ranges for a company of 50 people, each active about eight hours a day, priced by the rule above:
+
+| pack | grows with | a log | a day | judged as | Haiku 5.5, a day |
+|---|---|---|---|---|---|
+| [aws](/packs/aws) | services, scheduled jobs and deploys, more than people | ~2 KB | 50k–500k events, 0.1–1 GB | the same | $2–20 |
+| [app](/packs/app) | traffic, background jobs and log level | 0.2–1 KB | 0.6M–6M lines, 0.3–3 GB | the same | $13–130 at 0.5 KB |
+| [google_workspace](/packs/google_workspace) | people: 100–500 events each, most of them Drive | ~0.5 KB | 5k–25k events, 3–13 MB | 16k–32k logs | $0.35–0.70 |
+| [okta](/packs/okta) | people: 20–100 events each, sign-ins, MFA and app launches | ~2 KB | 1k–5k events, 2–10 MB | 16k logs | $0.60 |
+| [github](/packs/github) | engineers: 20–200 events each, pushes, reviews and Actions runs | ~0.3 KB | 1k–10k events, 0.3–3 MB | 16k logs | $0.30 |
+
+A person costs about a cent a day or less in each source that sees them, however little they do. A trail that also logs data events (S3 objects, Lambda invocations) can have ten to a hundred times aws's events. AWS VPC Flow Logs have no pack: a startup writes 5M–30M flow records a day of about 0.1 KB, $80–500 a day by the rule and more than one judge keeps up with, so a pack for them would roll flows up before the judge.
+
+`logs.sqlite` keeps every finished log, about a day's volume each day until you trim it; history's `state.sqlite` grows with actors, their active hours, role sessions and sign-ins, not with logs. A local model, the default, costs only the machine it runs on.
+
+These are estimates. Log sizes are measured on samples (CloudTrail on 20k events, the others on tens to hundreds), tokens with Claude Haiku 4.5's count scaled to 5.5's, and the volumes are typical of startups, not yours: a day of your own ingest in `logs.sqlite` says what yours are.
+
 ### Writing a pack
 1. Copy [packs/okta](/packs/okta), the smallest, to a directory beside it under `packs/`, and rename its package and plugin; a name may not contain `-`. Its `Cargo.toml` finds `normkit` and `factskit` at `../shared/`; a copy kept elsewhere points them at `<checkout>/packs/shared/...`. Its `probe()` takes your `source` values and nothing else: a value belongs to one pack. `process_logs` fills a `normkit::Norm`, trims the record, and hands both to `factskit`, which enriches the address, adds the profile's facts and writes the record ([packs/core](/packs/core) has the contract).
 2. `ingest.yaml`: the plugin, named after the pack, with its fixtures under `tests:` and the tables they were written against (`tests/profile.yaml`, and `tests/addresses.yaml` and `tests/networks.csv` for the addresses), and an edge from it to `logs` and `history`. History learns a `source` only once [its table](/packs/core/history/src/kinds.rs) knows it.
