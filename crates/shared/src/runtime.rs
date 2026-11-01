@@ -117,6 +117,11 @@ pub struct StateConfig {
     /// Entries the `lru` backend holds before evicting the least recently used.
     #[serde(default = "default_state_max_entries")]
     pub max_entries: usize,
+
+    /// Open another pipeline's sqlite state without its lock: reads only,
+    /// and the file must exist.
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -140,6 +145,7 @@ impl Default for StateConfig {
             max_ttl_ms: default_state_max_ttl_ms(),
             lock_timeout_ms: default_state_lock_timeout_ms(),
             max_entries: default_state_max_entries(),
+            read_only: false,
         }
     }
 }

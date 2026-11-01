@@ -1,7 +1,8 @@
 //! Durable state in one SQLite file, WAL mode, shared by every worker through
 //! a mutex. The runtime holds an exclusive file lock while it runs; readers
-//! (`tangent state ...`) open the same file read-only without the lock. Calls
-//! are microseconds of local I/O, so they run inline on the async executor.
+//! (`tangent state ...`, a pipeline with `state.read_only`) open the same file
+//! read-only without the lock. Calls are microseconds of local I/O, so they
+//! run inline on the async executor.
 //!
 //! Schema: `state(ns, partition, key, kind, value, expires_at, updated_at)`.
 
@@ -39,7 +40,8 @@ CREATE INDEX IF NOT EXISTS state_expires_idx ON state(expires_at);
 
 pub struct SqliteStore {
     conn: Arc<Mutex<Connection>>,
-    _lock: Option<Arc<std::fs::File>>,
+    /// None: a reader's handle.
+    lock: Option<Arc<std::fs::File>>,
     cfg: StateConfig,
 }
 
@@ -69,7 +71,7 @@ impl SqliteStore {
         info!(target = "state", path = %path.display(), "state db initialized");
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
-            _lock: Some(Arc::new(lock)),
+            lock: Some(Arc::new(lock)),
             cfg: cfg.clone(),
         })
     }
@@ -82,9 +84,20 @@ impl SqliteStore {
         )
         .with_context(|| format!("opening state db at {} read-only", path.display()))?;
         conn.busy_timeout(Duration::from_secs(5))?;
+        let tables: i64 = conn.query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'state'",
+            [],
+            |r| r.get(0),
+        )?;
+        if tables == 0 {
+            bail!(
+                "{} holds no state yet (no `state` table): its pipeline has not opened it",
+                path.display()
+            );
+        }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
-            _lock: None,
+            lock: None,
             cfg: StateConfig::default(),
         })
     }
@@ -191,10 +204,13 @@ impl StateStore for SqliteStore {
         match found {
             None => Ok(None),
             Some((_, _, Some(exp))) if exp <= now => {
-                conn.execute(
-                    "DELETE FROM state WHERE ns = ?1 AND partition = ?2 AND key = ?3",
-                    params![ns, partition, key],
-                )?;
+                // A reader leaves the row to the writer.
+                if self.lock.is_some() {
+                    conn.execute(
+                        "DELETE FROM state WHERE ns = ?1 AND partition = ?2 AND key = ?3",
+                        params![ns, partition, key],
+                    )?;
+                }
                 Ok(None)
             }
             Some((kind, raw, _)) => Ok(Some(from_sqlite(&kind, raw)?)),
@@ -427,6 +443,53 @@ mod tests {
             reader.sql("DELETE FROM state", 10).is_err(),
             "writes are refused"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn read_only_state_reads_a_locked_store() {
+        let dir = temp_dir("read-only");
+        let cfg = StateConfig {
+            read_only: true,
+            ..StateConfig::default()
+        };
+        let err = crate::state::open(&cfg, &dir)
+            .err()
+            .expect("a reader creates nothing");
+        assert!(
+            format!("{err:#}").contains("start the pipeline that writes"),
+            "{err:#}"
+        );
+        assert!(!sqlite_path(&cfg, &dir).exists());
+        std::fs::write(sqlite_path(&cfg, &dir), b"").unwrap();
+        let err = crate::state::open(&cfg, &dir)
+            .err()
+            .expect("an empty file holds no state");
+        assert!(format!("{err:#}").contains("no `state` table"), "{err:#}");
+        let writer = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
+        writer
+            .set("history", "", "gone", &StateValue::Int(1), Some(1))
+            .await
+            .unwrap();
+        let reader = crate::state::open(&cfg, &dir).unwrap();
+        writer
+            .set("history", "", "seen", &StateValue::Int(3), Some(0))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        assert_eq!(
+            reader.get("history", "", "seen").await.unwrap(),
+            Some(StateValue::Int(3))
+        );
+        assert_eq!(
+            reader.get("history", "", "gone").await.unwrap(),
+            None,
+            "expired, and left to the writer"
+        );
+        assert!(reader
+            .set("history", "", "k", &StateValue::Int(1), None)
+            .await
+            .is_err());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

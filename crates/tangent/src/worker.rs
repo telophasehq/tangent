@@ -98,9 +98,9 @@ fn worker_for(partition: &str, workers: usize) -> usize {
 }
 
 /// The records as one NDJSON frame, for a sink.
-fn frame_of(views: &Views) -> BytesMut {
+fn frame_of<'a>(views: impl IntoIterator<Item = &'a JsonLogView>) -> BytesMut {
     let mut frame = BytesMut::new();
-    for (lv, _) in views {
+    for lv in views {
         frame.extend_from_slice(lv.to_json().as_bytes());
         frame.extend_from_slice(b"\n");
     }
@@ -466,7 +466,11 @@ impl Worker {
                         }
                         Hop::Views(views) => {
                             if !sinks.is_empty() {
-                                deliver(&mut deliveries, sinks, frame_of(&views));
+                                deliver(
+                                    &mut deliveries,
+                                    sinks,
+                                    frame_of(views.iter().map(|(lv, _)| lv)),
+                                );
                             }
                         }
                     }
@@ -475,7 +479,7 @@ impl Worker {
                 if !sinks.is_empty() {
                     let frame = match &hop {
                         Hop::Frames(frames) => join_frames(frames.clone()),
-                        Hop::Views(views) => frame_of(views),
+                        Hop::Views(views) => frame_of(views.iter().map(|(lv, _)| lv)),
                     };
                     deliver(&mut deliveries, sinks, frame);
                 }
@@ -583,10 +587,11 @@ impl Worker {
         for (part, group, bytes) in groups {
             let m = &mut self.mappers.mappers[idx];
             m.store.data_mut().partition = Arc::clone(&part);
+            let drop_on_error = m.drop_on_error;
 
             let mut owned: Vec<Resource<JsonLogView>> = Vec::with_capacity(group.len());
-            for lv in group {
-                owned.push(m.store.data_mut().table.push(lv)?);
+            for lv in &group {
+                owned.push(m.store.data_mut().table.push(lv.clone())?);
             }
 
             let start = Instant::now();
@@ -602,18 +607,20 @@ impl Worker {
             GUEST_BYTES_TOTAL.inc_by(bytes as u64);
 
             let frame = match res {
+                Ok(Ok(frame)) => Some(frame),
                 Err(trap) => {
                     // The guest trapped (a panic, an out-of-bounds access, a
                     // host failure under it). Its memory is not to be trusted
-                    // any more, so it is instantiated again from the component
-                    // and this batch is skipped; the worker goes on. Without
-                    // this one bad record took the worker down for good.
+                    // any more, so it is instantiated again from the component;
+                    // the worker goes on. Without this one bad record took the
+                    // worker down for good.
                     tracing::error!(
                         error = ?trap,
                         mapper = %m.name,
                         partition = %part,
                         records = owned.len(),
-                        "plugin trapped; reinstantiating it and skipping the batch"
+                        drop_on_error,
+                        "plugin trapped; reinstantiating it"
                     );
                     PLUGIN_TRAPS_TOTAL
                         .with_label_values(&[m.cfg_name.as_ref()])
@@ -627,17 +634,23 @@ impl Worker {
                     self.mappers.mappers[idx] = Mappers::load_one(&self.engine, name, component)
                         .await
                         .with_context(|| format!("reinstantiating plugin {name} after a trap"))?;
-                    continue;
+                    None
                 }
-                Ok(Ok(frame)) => frame,
                 Ok(Err(guest_err)) => {
-                    tracing::warn!(mapper = %m.name, error = ?guest_err, "guest error; skipping");
-                    continue;
+                    tracing::warn!(mapper = %m.name, error = ?guest_err, drop_on_error, "guest error");
+                    None
                 }
+            };
+            let Some(frame) = frame else {
+                // A failed call: its records are dropped, or go on unchanged.
+                if !drop_on_error {
+                    out.push((part, frame_of(&group)));
+                }
+                continue;
             };
             if frame.is_empty() {
                 // A plugin that filters emits nothing for most batches.
-                tracing::debug!(mapper = %m.name, "mapper produced empty output");
+                tracing::debug!(plugin = %name, "mapper produced empty output");
                 continue;
             }
             // The guest's buffer becomes the frame without a copy.
@@ -1432,6 +1445,176 @@ mod tests {
             1,
             "the source's ack fires once, when all six are through"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A plugin that traps on every call. Its metadata and probe (one empty
+    /// selector: every record) are static data.
+    const TRAPS: &str = r#"
+(component
+  (import "tangent:logs/log@0.1.0" (instance $log
+    (export "logview" (type (sub resource)))))
+  (alias export $log "logview" (type $logview))
+  (core module $m
+    (memory (export "memory") 1)
+    (global $next (mut i32) (i32.const 1024))
+    (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32)
+      (local $p i32)
+      (local.set $p (global.get $next))
+      (global.set $next (i32.and
+        (i32.add (i32.add (local.get $p) (local.get 3)) (i32.const 7))
+        (i32.const -8)))
+      (local.get $p))
+    (data (i32.const 0) "fail0")
+    (data (i32.const 16) "\00\00\00\00\04\00\00\00\04\00\00\00\01\00\00\00")
+    (data (i32.const 32) "\30\00\00\00\01\00\00\00")
+    (func (export "metadata") (result i32) (i32.const 16))
+    (func (export "probe") (result i32) (i32.const 32))
+    (func (export "process-logs") (param i32 i32) (result i32) unreachable))
+  (core instance $i (instantiate $m))
+  (type $scalar (variant (case "str" string) (case "int" s64) (case "float" f64)
+    (case "boolean" bool) (case "bytes" (list u8))))
+  (type $meta (record (field "name" string) (field "version" string)))
+  (type $pred (variant (case "has" string) (case "eq" (tuple string $scalar))
+    (case "prefix" (tuple string string)) (case "in" (tuple string (list $scalar)))
+    (case "gt" (tuple string f64)) (case "regex" (tuple string string))))
+  (type $selector (record (field "any" (list $pred)) (field "all" (list $pred))
+    (field "none" (list $pred))))
+  (func $metadata (result $meta)
+    (canon lift (core func $i "metadata") (memory $i "memory")))
+  (func $probe (result (list $selector))
+    (canon lift (core func $i "probe") (memory $i "memory")))
+  (func $process (param "input" (list (own $logview))) (result (result (list u8) (error string)))
+    (canon lift (core func $i "process-logs") (memory $i "memory")
+      (realloc (func $i "cabi_realloc"))))
+  (instance $mapper
+    (export "scalar" (type $scalar))
+    (export "meta" (type $meta))
+    (export "pred" (type $pred))
+    (export "selector" (type $selector))
+    (export "metadata" (func $metadata))
+    (export "probe" (func $probe))
+    (export "process-logs" (func $process)))
+  (export "tangent:logs/mapper@0.1.0" (instance $mapper)))
+"#;
+
+    /// A failed call's records are dropped, or with `drop_on_error: false`
+    /// go on to the next node unchanged.
+    #[tokio::test]
+    async fn a_failed_call_passes_its_records_on_when_asked() {
+        let dir = stub::dir("pass-on-error");
+        let cwasm = dir.join("traps.cwasm");
+        let compiled = tangent_shared::wasm_engine::build()
+            .unwrap()
+            .precompile_component(TRAPS.as_bytes())
+            .unwrap();
+        std::fs::write(&cwasm, compiled).unwrap();
+        let store: Arc<dyn StateStore> =
+            Arc::new(crate::state::lru::LruStore::new(StateConfig::default()).unwrap());
+        let mut engine = WasmEngine::new(Arc::clone(&store), Default::default(), true).unwrap();
+        let keeps: Arc<str> = Arc::from("keeps");
+        let drops: Arc<str> = Arc::from("drops");
+        let mut components = Vec::new();
+        for (name, drop_on_error) in [(&keeps, false), (&drops, true)] {
+            let c = engine
+                .load_precompiled(
+                    Arc::clone(name),
+                    &cwasm,
+                    Default::default(),
+                    None,
+                    None,
+                    drop_on_error,
+                )
+                .unwrap();
+            components.push((Arc::clone(name), c));
+        }
+
+        let source = NodeRef::Source {
+            name: Arc::from("events"),
+        };
+        let sink_name: Arc<str> = Arc::from("out");
+        let to_sink = NodeRef::Sink {
+            name: sink_name.clone(),
+            key_prefix: None,
+        };
+        let sink = Arc::new(RecordingSink::default());
+        let sink_manager = Arc::new(SinkManager::for_test(
+            vec![(sink_name, sink.clone() as Arc<dyn Sink>)],
+            1,
+        ));
+        let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
+        let plugins: Vec<NodeRef> = [&keeps, &drops]
+            .into_iter()
+            .map(|name| NodeRef::Plugin {
+                name: Arc::clone(name),
+            })
+            .collect();
+        for p in &plugins {
+            outs.insert(p.clone(), vec![to_sink.clone()]);
+        }
+        outs.insert(source.clone(), plugins);
+        let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
+        let in_flight = router.in_flight_counter();
+        let (tx, rx) = mpsc::channel(16);
+        let handoff = mpsc::unbounded_channel();
+        let worker = Worker {
+            id: 0,
+            rx,
+            mappers: Mappers::load_all(&engine, &components).await.unwrap(),
+            engine,
+            components,
+            inference: HashMap::default(),
+            batch_max_size: 1 << 20,
+            batch_max_age: Duration::from_millis(20),
+            router: Arc::clone(&router),
+            partition: None,
+            in_flight: Arc::clone(&in_flight),
+            handoff_rx: handoff.1,
+            handoffs: vec![handoff.0],
+            store,
+            seq: 0,
+            stop: CancellationToken::new(),
+        };
+        let handle = tokio::spawn(worker.run());
+
+        let ack = Arc::new(CountingAck::default());
+        let sent: Vec<String> = (1..=3)
+            .map(|i| format!("{{\"id\":{i},\"msg\":\"fine\"}}"))
+            .collect();
+        for line in &sent {
+            in_flight.fetch_add(1, Ordering::AcqRel);
+            tx.send(Record {
+                payload: Payload::Raw(BytesMut::from(format!("{line}\n").as_str())),
+                ack: Some(ack.clone() as Arc<dyn Ack>),
+                from: source.clone(),
+            })
+            .await
+            .unwrap();
+        }
+        drop(tx);
+        handle.await.unwrap().unwrap();
+        drop(router);
+        Arc::try_unwrap(sink_manager)
+            .ok()
+            .expect("sink manager refs")
+            .join()
+            .await
+            .unwrap();
+
+        let got: Vec<Value> = sink
+            .writes
+            .lock()
+            .await
+            .iter()
+            .flat_map(|w| w.lines())
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        let want: Vec<Value> = sent
+            .iter()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(got, want, "once each, unchanged, from keeps only");
+        assert_eq!(ack.0.load(Ordering::SeqCst), 3);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
