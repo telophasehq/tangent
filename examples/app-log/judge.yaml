@@ -1,0 +1,4 @@
+# app-log, judge: packs/core's judge, over each customer's actors.
+include:
+  - ../../packs/core/judge.yaml
+  - ../../packs/app/judge.yaml

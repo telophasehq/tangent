@@ -1,9 +1,0 @@
-plugins/
-state.sqlite*
-logs.sqlite*
-alerts.ndjson
-verdicts.ndjson
-test_out.ndjson
-.test.yaml
-.stage.yaml
-.empty.json

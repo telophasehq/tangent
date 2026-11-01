@@ -62,7 +62,25 @@ jobs:
         run: make test
         working-directory: examples/enrich
 
-      # A pack: three plugins, a profile, cases as fixtures; no model needed for the test.
-      - name: Run make test (packs/cloud-infra)
+      # The config loader: include, merging, paths; and every config in the repo loads.
+      - name: Run cargo test (tangent-shared)
+        run: cargo test -p tangent-shared --locked
+
+      # Every pack through include, with core and a profile; no model needed for the test.
+      - name: Run make test (examples/cloud-infra)
         run: make test
-        working-directory: packs/cloud-infra
+        working-directory: examples/cloud-infra
+
+      - name: Run make test (examples/app-log)
+        run: make test
+        working-directory: examples/app-log
+
+      # Each pack alone, so none leans on another's files; and the libraries they share.
+      - name: Run make test (packs)
+        run: make -C packs test
+
+      - name: Merge and check the examples' configs
+        run: |
+          for c in examples/cloud-infra/ingest.yaml examples/cloud-infra/judge.yaml examples/app-log/ingest.yaml examples/app-log/judge.yaml; do
+            tangent config --config "$c" > /dev/null
+          done

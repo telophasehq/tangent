@@ -1,0 +1,18 @@
+# app-log, ingest: the product's logs into logs.sqlite. The customer's tenant
+# id is the org, so each customer's actors are their own. judge.yaml reads
+# them back.
+include:
+  - ../../packs/core/ingest.yaml              # the tables, logs.sqlite, the runtime
+  - ../../packs/app/ingest.yaml               # plugin app: app, agent
+
+enrichment_tables:
+  profile: { type: document, path: profile/profile.yaml, required: true }   # a typo here stops it
+
+sources:
+  events:
+    type: tcp
+    bind_address: 0.0.0.0:9401
+
+dag:
+  - from: { kind: source, name: events }
+    to: [{ kind: plugin, name: app }]

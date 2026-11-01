@@ -1,0 +1,22 @@
+# github: GitHub's audit log, CI job logs and runner egress into finished
+# records, by one plugin, `github`: normalized, trimmed, enriched, the
+# profile's facts added. Include it in an ingest config with
+# packs/core/ingest.yaml, route a `github_audit` source (and NDJSON with
+# `source: gha_ci` or `runner_egress`) to plugin github, and give the config a
+# `profile` table; README.md has the lines.
+plugins:
+  github:
+    module_type: rust
+    path: .
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json
+        enrichment_tables:            # what the fixtures were written against, in any config
+          geo: { type: document, path: tests/addresses.yaml }   # GeoLite2's answers for their addresses
+          asn: { type: document, path: tests/addresses.yaml }
+          networks: { type: cidr, path: tests/networks.csv }
+          profile: { type: document, path: tests/profile.yaml }
+
+dag:
+  - from: { kind: plugin, name: github }
+    to: [{ kind: sink, name: logs }]   # logs.sqlite: packs/core/ingest.yaml's sink

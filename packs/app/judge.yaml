@@ -1,0 +1,10 @@
+# app, judge: how the judge writes the audit log's records as logfmt, once
+# packs/core/judge.yaml's encoding is `type: logfmt`: the fields naming the
+# principal and the time, and those the model sees on every line. The agent's
+# records have no row; they go without principal groups. Include it in a judge
+# config with packs/core/judge.yaml.
+inference:
+  judge:
+    encoding:
+      sources:
+        app: { principal: [_norm.actor, actor], time: [ts] }

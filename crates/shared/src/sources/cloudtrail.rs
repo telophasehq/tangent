@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// CloudTrail, read from a trail's files through the SQS queue told of each.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CloudtrailConfig {
     #[serde(default)]
     pub region: Option<String>,

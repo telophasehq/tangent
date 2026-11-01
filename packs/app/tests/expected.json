@@ -1,0 +1,561 @@
+[
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 1,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:06:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 2,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:06:12Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 3,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:06:24Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 4,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:06:36Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 5,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:06:48Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 6,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:07:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 7,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:07:12Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 8,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:07:24Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 9,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:07:36Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "185.224.128.17",
+  "method": "GET",
+  "org": "acme",
+  "page": 10,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-20T13:07:48Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 7922,
+    "country": "US",
+    "org": "Comcast Cable Communications, LLC"
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "org": "acme"
+  },
+  "actor": "oncall-frank@acme.io",
+  "event": "page.view",
+  "ip": "67.180.22.4",
+  "org": "acme",
+  "path": "/dashboards/errors",
+  "source": "app",
+  "ts": "2026-10-22T03:13:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 7922,
+    "country": "US",
+    "org": "Comcast Cable Communications, LLC"
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "org": "acme"
+  },
+  "actor": "oncall-frank@acme.io",
+  "event": "incident.ack",
+  "incident": "INC-2210",
+  "ip": "67.180.22.4",
+  "org": "acme",
+  "source": "app",
+  "ts": "2026-10-22T03:20:00Z"
+ },
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {
+   "org": "org_7f3a"
+  },
+  "env": "prod",
+  "event": "plan_step_started",
+  "level": "info",
+  "logger": "agent.plans",
+  "organization_id": "org_7f3a",
+  "plan_id": "pln_01",
+  "service": "plan-worker",
+  "source": "agent",
+  "step_id": "stp_02",
+  "timestamp": "2026-10-20T13:20:00.123456Z",
+  "ts": "2026-10-20T13:20:00Z"
+ },
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {},
+  "message": "HTTP Request: GET https://acmeexports.blob.core.windows.net/exports/2026-10.csv?sv=2024-08-04&se=2026-10-20T14%3A20%3A00Z&sr=b&sp=r \"HTTP/1.1 200 OK\"",
+  "source": "agent",
+  "ts": "2026-10-20T13:20:01Z"
+ },
+ {
+  "_facts": {
+   "ip": {},
+   "notes": [
+    "principal dana@acme.example is nobody the org profile knows"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "dana@acme.example",
+   "org": "acme"
+  },
+  "actor": "dana@acme.example",
+  "event": "export.download",
+  "ip": "203.0.113.30",
+  "org": "acme",
+  "path": "/api/exports?page=3",
+  "source": "app",
+  "ts": "2026-10-20T13:21:00Z"
+ },
+ {
+  "_facts": {
+   "notes": []
+  },
+  "_norm": {
+   "org": "org_7f3a"
+  },
+  "event": "HTTP Request: GET https://files.acme.example/exports/2026-10.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLEEXAMPLE01%2F20261020%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261020T133000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host \"HTTP/1.1 200 OK\"",
+  "level": "info",
+  "logger": "httpx",
+  "organization_id": "org_7f3a",
+  "source": "agent",
+  "timestamp": "2026-10-20T13:30:00.250000Z",
+  "ts": "2026-10-20T13:30:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {},
+   "notes": [
+    "principal dana@acme.example is nobody the org profile knows"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "dana@acme.example",
+   "org": "acme"
+  },
+  "actor": "dana@acme.example",
+  "callback": "https://app.acme.example/cb#token_type=bearer&expires_in=3600",
+  "event": "export.link_shared",
+  "ip": "203.0.113.31",
+  "links": "urls=[https://a.acme.example/x,https://b.acme.example/y]",
+  "next": "https://login.acme.example/r?to=https://files.acme.example/f?v=1",
+  "note": "see (https://a.acme.example/z); then retry",
+  "org": "acme",
+  "source": "app",
+  "target": "https://files.acme.example/e/7.csv?sv=2024-08-04&sp=r",
+  "ts": "2026-10-20T13:30:10Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "notes": [
+    "principal aws:support is nobody the org profile knows",
+    "aws:support acting from datacenter hosting, 185.224.128.40 (Alsycon B.V.)",
+    "aws:support acting from NL, 185.224.128.40 (Alsycon B.V.)"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "aws:support",
+   "org": "acme"
+  },
+  "actor": "aws:support",
+  "event": "user.login",
+  "ip": "185.224.128.40",
+  "org": "acme",
+  "source": "app",
+  "ts": "2026-10-22T03:25:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {},
+   "notes": [
+    "principal bob@example.com is nobody the org profile knows"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "bob@example.com",
+   "org": "acme"
+  },
+  "actor": "bob@example.com",
+  "event": "user.login",
+  "ip": "198.51.100.7",
+  "org": "acme",
+  "source": "app",
+  "ts": "2026-10-22T04:00:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "ours": true,
+    "private": true
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "org": "acme"
+  },
+  "actor": "oncall-frank@acme.io",
+  "event": "page.view",
+  "ip": "10.1.2.3",
+  "org": "acme",
+  "path": "/dashboards/errors",
+  "source": "app",
+  "ts": "2026-10-22T05:00:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "ours": true,
+    "private": true
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "org": "acme"
+  },
+  "actor": "oncall-frank@acme.io",
+  "event": "page.view",
+  "ip": "::ffff:10.1.2.3",
+  "org": "acme",
+  "path": "/dashboards/errors",
+  "source": "app",
+  "ts": "2026-10-22T05:01:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 7922,
+    "country": "US",
+    "org": "Comcast Cable Communications, LLC"
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "oncall-frank@acme.io",
+   "org": "acme"
+  },
+  "actor": "oncall-frank@acme.io",
+  "event": "page.view",
+  "ip": "::ffff:67.180.22.4",
+  "org": "acme",
+  "path": "/dashboards/errors",
+  "source": "app",
+  "ts": "2026-10-22T05:02:00Z"
+ },
+ {
+  "_facts": {
+   "ip": {
+    "asn": 49870,
+    "country": "NL",
+    "hosting": "datacenter",
+    "org": "Alsycon B.V."
+   },
+   "key_known_network": false,
+   "notes": [
+    "key ak_rail used from 185.224.128.17 (Alsycon B.V.), outside the networks it calls from"
+   ],
+   "principal": "key"
+  },
+  "_norm": {
+   "actor": "ak_rail",
+   "org": "acme"
+  },
+  "actor": "ak_rail",
+  "event": "api_request",
+  "ip": "[::ffff:185.224.128.17]:443",
+  "method": "GET",
+  "org": "acme",
+  "page": 1,
+  "path": "/v1/findings",
+  "source": "app",
+  "status": 200,
+  "ts": "2026-10-22T05:03:00Z"
+ }
+]

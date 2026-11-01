@@ -1,7 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use serde_yaml::Value;
 use tracing_subscriber::EnvFilter;
 
 use tangent_bench::BenchOptions;
@@ -77,6 +78,15 @@ enum Commands {
     Plugin {
         #[command(subcommand)]
         command: PluginCommands,
+    },
+
+    /// Print the config as tangent reads it: its includes merged, `${VAR}`
+    /// expanded, defaults filled in. Secrets (tokens, api_key, webhook_url,
+    /// passwords) are left out, so the output is for reading, not for running
+    Config {
+        /// Path to YAML config
+        #[arg(long, value_name = "FILE")]
+        config: PathBuf,
     },
 
     /// Inspect a pipeline's state store (read-only, works while it runs)
@@ -173,6 +183,8 @@ async fn main() -> Result<()> {
             tangent_bench::run(&config, opts).await?;
         }
 
+        Commands::Config { config } => print!("{}", show_config(&config)?),
+
         Commands::State { config, command } => {
             let cfg = config.canonicalize().unwrap_or(config);
             state::run(&cfg, command).await?;
@@ -205,4 +217,100 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// The config at `path` as YAML, after a header naming the files it was
+/// merged from. Every path that names a file is absolute; `runtime` paths
+/// are as written, relative to `path`. The DAG and the required tables'
+/// files are checked after: a config that does not hold together still
+/// prints, then fails.
+fn show_config(path: &Path) -> Result<String> {
+    let loaded = tangent_shared::Config::load(path)?;
+    let dir = path
+        .canonicalize()?
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    let mut value = serde_yaml::to_value(&loaded.config)?;
+    if let Value::Mapping(m) = &mut value {
+        tangent_shared::include::rebase(m, &dir);
+        // a plugin's own config is a hash map: in a fixed order, to diff
+        if let Some(Value::Mapping(plugins)) = m.get_mut("plugins") {
+            for p in plugins.values_mut() {
+                if let Some(config) = p.get_mut("config") {
+                    sort_keys(config);
+                }
+            }
+        }
+    }
+    let mut out = String::from("# merged from, in order:\n");
+    for f in &loaded.files {
+        out.push_str(&format!("#   {}\n", f.display()));
+    }
+    out.push_str(
+        "# secrets (tokens, api_key, webhook_url, passwords) are left out: read it, don't run it\n",
+    );
+    out.push_str(&serde_yaml::to_string(&value)?);
+    let checked = loaded.config.validate().and_then(|()| {
+        loaded
+            .config
+            .enrichment_tables
+            .iter()
+            .try_for_each(|(name, table)| table.check(name, &dir))
+    });
+    if let Err(e) = checked {
+        print!("{out}");
+        return Err(e);
+    }
+    Ok(out)
+}
+
+fn sort_keys(v: &mut Value) {
+    match v {
+        Value::Mapping(m) => {
+            let mut entries: Vec<(Value, Value)> = std::mem::take(m).into_iter().collect();
+            entries.sort_by(|(a, _), (b, _)| {
+                serde_yaml::to_string(a)
+                    .unwrap_or_default()
+                    .cmp(&serde_yaml::to_string(b).unwrap_or_default())
+            });
+            for (k, mut v) in entries {
+                sort_keys(&mut v);
+                m.insert(k, v);
+            }
+        }
+        Value::Sequence(items) => items.iter_mut().for_each(sort_keys),
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_fails_on_a_required_table_without_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("profile")).unwrap();
+        std::fs::write(dir.path().join("profile/profile.yaml"), "org: acme\n").unwrap();
+        let config = |path: &str| {
+            let file = dir.path().join("ingest.yaml");
+            std::fs::write(
+                &file,
+                format!(
+                    "enrichment_tables:\n  profile: {{ type: document, path: {path}, required: true }}\n  geo: {{ type: mmdb, path: missing.mmdb }}\n"
+                ),
+            )
+            .unwrap();
+            show_config(&file)
+        };
+        let shown = config("profile/profile.yaml").unwrap();
+        assert!(shown.contains("required: true"), "{shown}");
+        let err = format!("{:#}", config("profle/profile.yaml").unwrap_err());
+        assert!(err.contains("enrichment table profile: "), "{err}");
+        assert!(
+            err.contains("profle/profile.yaml not found, and the table is required"),
+            "{err}"
+        );
+    }
 }

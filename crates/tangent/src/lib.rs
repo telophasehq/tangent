@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use std::{net::SocketAddr, path::PathBuf};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -9,7 +9,7 @@ use prometheus::{
     HistogramVec, IntCounter, IntCounterVec, IntGauge,
 };
 
-use tangent_shared::Config;
+use tangent_shared::{dag::NodeRef, Config};
 
 use crate::dag::DagRuntime;
 
@@ -86,10 +86,27 @@ lazy_static::lazy_static! {
 
     pub static ref WAL_PENDING_BYTES: IntGauge =
         register_int_gauge!("tangent_wal_pending_bytes", "Approx bytes pending in sealed WAL files").unwrap();
+
+    pub static ref UNROUTED_TOTAL: IntCounterVec = register_int_counter_vec!(
+        "tangent_unrouted_records_total",
+        "Records dropped because no target on their node's edges took them",
+        &["node"]
+    ).unwrap();
 }
 
 pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     let cfg = Config::from_file(config_path)?;
+    cfg.validate()?;
+    // A source with nowhere to go is read and dropped: its records are acked
+    // and a polling source's cursor moves past them.
+    for name in cfg.sources.keys() {
+        let from = NodeRef::Source {
+            name: Arc::clone(name),
+        };
+        if !cfg.dag.iter().any(|e| e.from == from && !e.to.is_empty()) {
+            tracing::warn!("source {name} has no outgoing edge; its records are dropped");
+        }
+    }
 
     // Metrics are worth having, not worth dying for: a second tangent on the
     // box, or anything else on the port, must not keep this one from running.

@@ -1,0 +1,5 @@
+# A deployment beside the pack, run from two directories up.
+include: [../pack/ingest.yaml]
+plugins:
+  probe:
+    data: profile

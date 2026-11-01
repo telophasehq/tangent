@@ -1,0 +1,31 @@
+# core, ingest: what every pack's plugin reads and where its records go. Not a
+# provider: include it in your ingest config with the packs you want. That
+# config names your sources, routes each to its pack, and gives the `profile`
+# table (README.md).
+runtime:
+  workers: 2
+  plugins_path: plugins/
+  state:
+    backend: sqlite
+    path: state.sqlite
+    default_ttl_ms: 0
+    max_ttl_ms: 0
+
+# Read once for the process and shared by every pack's plugin, however many are
+# included. examples/enrich/setup.sh fetches them; a missing file is a warning,
+# and its fields are left out.
+enrichment_tables:
+  geo: { type: mmdb, path: ../../examples/enrich/data/GeoLite2-Country.mmdb }
+  asn: { type: mmdb, path: ../../examples/enrich/data/GeoLite2-ASN.mmdb }
+  networks: { type: cidr, path: ../../examples/enrich/data/networks.csv }
+
+# Every pack's plugin has an edge here.
+sinks:
+  logs:
+    type: sqlite
+    path: logs.sqlite
+    table: logs
+    timestamp_key: ts
+    partitions:
+      org: [_norm.org]
+      actor: [_norm.org, _norm.actor]
