@@ -1,23 +1,23 @@
-# history
+# baseline
 
-Core's plugin for `_hist`: what the state store knew about an actor before the
-first of its records in a call. [packs/core](../README.md#history) says what it
-learns and what `_hist` says; this is how.
+Core's plugin for `_baseline`: what the state store knew about an actor before
+the first of its records in a call. [packs/core](../README.md#baseline) says
+what it learns and what `_baseline` says; this is how.
 
 | `config.mode` | where | what it does |
 |---|---|---|
 | `learn` | ingest | files the profile's `people`, folds every record into state; emits nothing |
-| `header` | the judge | puts `_hist` on each of an actor's records, with the `people` learn filed; writes nothing |
+| `header` | the judge | puts `_baseline` on each of an actor's records, with the `people` learn filed; writes nothing |
 | `both` | tests | files `people`, then header, then learn, in one call |
 
 Its probe takes every record: one it cannot read, with no `_norm.actor` or
 from a source it does not know goes on unchanged. A state call that fails
 fails the call; in the judge, `drop_on_error: false` then sends the records on
-without `_hist`.
+without `_baseline`.
 
 ## Keys
 
-In its namespace, `history`, with no partition: each key but `people` starts
+In its namespace, `baseline`, with no partition: each key but `people` starts
 with the org.
 `|` separates the parts, `%` and `|` in a value are %-escaped, `ms13` is epoch
 milliseconds in 13 digits. Nothing expires.
@@ -53,13 +53,13 @@ instead, and this table would go.
 ## Tests
 
 ```bash
-make -C packs test-history   # cargo test, then tests/ through test.yaml in `mode: both`
-make -C packs fixtures-history
+make -C packs test-baseline  # cargo test, then tests/ through test.yaml in `mode: both`
+make -C packs fixtures-baseline
 ```
 
 `tests/input.json` is a sign-in story, records as the packs write them: office
 logins, a failed one from another country, an MFA reset by an admin, the
 sign-in from the new country, an aliased IAM user's bucket policy twenty
 minutes later, an AssumeRole and the role's call, an SSO session, and an
-agent's record with no actor. Each record is a call of its own, so its `_hist`
-is what the records before it taught.
+agent's record with no actor. Each record is a call of its own, so its
+`_baseline` is what the records before it taught.

@@ -1,13 +1,14 @@
-//! `_hist`: what state knew about an actor before the first of its records in a
-//! call, the facts one window cannot give: who it is and who assumed it, how long
-//! it has been seen, what it does for the first time, its volume and hours against
-//! its own, and its person's sign-ins and credential changes in every source.
-//! `mode: learn` folds every record into state and emits nothing (ingest); `header`
-//! stamps the same `_hist` on each of an actor's records and writes nothing (the
-//! judge); `both` is header, then learn (tests). Every read is cut at the window's
-//! start, so nothing at or after it counts. Keys start with the org; `%` and `|`
-//! in a value are %-escaped. People's names across sources: `people` in the
-//! runtime's `profile` table, which learn files in state for the header.
+//! `_baseline`: what state knew about an actor before the first of its records
+//! in a call, the facts one window cannot give: who it is and who assumed it,
+//! how long it has been seen, what it does for the first time, its volume and
+//! hours against its own, and its person's sign-ins and credential changes in
+//! every source. `mode: learn` folds every record into state and emits nothing
+//! (ingest); `header` stamps the same `_baseline` on each of an actor's records
+//! and writes nothing (the judge); `both` is header, then learn (tests). Every
+//! read is cut at the window's start, so nothing at or after it counts. Keys
+//! start with the org; `%` and `|` in a value are %-escaped. People's names
+//! across sources: `people` in the runtime's `profile` table, which learn files
+//! in state for the header.
 
 wit_bindgen::generate!({
     path: ".tangent/wit",
@@ -88,7 +89,7 @@ impl People {
             Value::Null => return p,
             v => {
                 eprintln!(
-                    "history: profile `people` is {v}, not a map of person to names; ignored"
+                    "baseline: profile `people` is {v}, not a map of person to names; ignored"
                 );
                 return p;
             }
@@ -101,7 +102,7 @@ impl People {
                 Value::Null => Vec::new(),
                 v => {
                     eprintln!(
-                        "history: profile `people.{person}` is {v}, not a list of names; ignored"
+                        "baseline: profile `people.{person}` is {v}, not a list of names; ignored"
                     );
                     Vec::new()
                 }
@@ -113,7 +114,7 @@ impl People {
                         all.insert(n.to_lowercase());
                     }
                     None => eprintln!(
-                        "history: profile `people.{person}` holds {n}, not a name; ignored"
+                        "baseline: profile `people.{person}` holds {n}, not a name; ignored"
                     ),
                 }
             }
@@ -194,7 +195,7 @@ enum Mode {
 impl Guest for Component {
     fn metadata() -> Meta {
         Meta {
-            name: "history".to_string(),
+            name: "baseline".to_string(),
             version: "0.1.0".to_string(),
         }
     }
@@ -216,10 +217,10 @@ impl Guest for Component {
             Some("learn") => Mode::Learn,
             Some("header") => Mode::Header,
             Some("both") => Mode::Both,
-            m => return Err(format!("history: mode {m:?}: learn, header or both")),
+            m => return Err(format!("baseline: mode {m:?}: learn, header or both")),
         };
         let lines: Vec<String> = input.iter().map(Logview::log).collect();
-        // The judge's history reads only state: no profile, no lookup.
+        // The judge's baseline reads only state: no profile, no lookup.
         let none = Profile::from_value(Value::Null);
         let profile = if mode == Mode::Header {
             &none
@@ -262,20 +263,20 @@ fn run(kv: &mut impl Kv, profile: &Profile, mode: Mode, lines: &[String]) -> R<V
         for e in evs.iter().flatten() {
             groups.entry((&e.org, &e.actor)).or_default().push(e);
         }
-        let mut hists = BTreeMap::new();
+        let mut baselines = BTreeMap::new();
         for (k, g) in &groups {
             if let Some(h) = header(kv, people, g)? {
-                hists.insert(*k, Value::Object(h));
+                baselines.insert(*k, Value::Object(h));
             }
         }
         for ((line, rec), e) in lines.iter().zip(&recs).zip(&evs) {
             let h = e
                 .as_ref()
-                .and_then(|e| hists.get(&(e.org.as_str(), e.actor.as_str())));
+                .and_then(|e| baselines.get(&(e.org.as_str(), e.actor.as_str())));
             match (rec, h) {
                 (Some(Value::Object(m)), Some(h)) => {
                     let mut m = m.clone();
-                    m.insert("_hist".into(), h.clone());
+                    m.insert("_baseline".into(), h.clone());
                     out.extend(serde_json::to_vec(&m).map_err(|e| e.to_string())?);
                 }
                 _ => out.extend(line.trim_end().as_bytes()),
@@ -576,7 +577,7 @@ impl<K: Kv> Before<'_, K> {
     }
 }
 
-/// `_hist` for one actor's records in a call, or None when all are `_context`.
+/// `_baseline` for one actor's records in a call, or None when all are `_context`.
 fn header<K: Kv>(kv: &mut K, people: &People, group: &[&Ev]) -> R<Option<Map<String, Value>>> {
     let fresh: Vec<&Ev> = group.iter().copied().filter(|e| !e.context).collect();
     let (Some(e0), Some(ws), Some(we)) = (
@@ -674,7 +675,7 @@ fn header<K: Kv>(kv: &mut K, people: &People, group: &[&Ev]) -> R<Option<Map<Str
     }
     h.insert("actor".into(), json!(parts.join("; ")));
 
-    // baseline
+    // seen
     let first = b.first(&["a", a, "first"])?;
     let days = b.days(a)?;
     let sl = b.slots(a, ws - BASE)?;
@@ -690,7 +691,7 @@ fn header<K: Kv>(kv: &mut K, people: &People, group: &[&Ev]) -> R<Option<Map<Str
     srcs.sort();
     let young = first.is_some_and(|f| ws - f < D);
     h.insert(
-        "baseline".into(),
+        "seen".into(),
         json!(match first {
             None => "none: first seen in this window".to_string(),
             Some(f) => format!(
@@ -1419,12 +1420,12 @@ mod tests {
         st
     }
 
-    fn hist(st: &mut Mem, rec: &Value) -> Value {
+    fn baseline(st: &mut Mem, rec: &Value) -> Value {
         // the judge's: no profile, what learn filed
         let none = Profile::from_value(Value::Null);
         let out = run(st, &none, Mode::Header, &[rec.to_string()]).unwrap_or_default();
         let rec: Value = serde_json::from_slice(&out).unwrap_or_default();
-        rec.get("_hist").cloned().unwrap_or_default()
+        rec.get("_baseline").cloned().unwrap_or_default()
     }
 
     fn has(h: &Value, k: &str, text: &str) {
@@ -1452,7 +1453,7 @@ mod tests {
             okta("01-05T12:39:59", "user.authentication.verify", AWAY),
             okta("01-05T12:40:00", "user.session.start", AWAY),
         ]);
-        let h = hist(
+        let h = baseline(
             &mut st,
             &ct(
                 "dave",
@@ -1506,7 +1507,7 @@ mod tests {
                 role("admin", "s2"),
             ),
         ]);
-        let h = hist(
+        let h = baseline(
             &mut st,
             &ct("admin/s2", "01-05T13:00:00", "ListUsers", HOME.0, json!({})),
         );
@@ -1544,9 +1545,9 @@ mod tests {
             "192.0.2.78",
             json!({"userName": "eve"}),
         );
-        let h = hist(&mut fold(std::slice::from_ref(&old)), &win);
-        has(&h, "baseline", "seen 3.9 days");
-        assert_eq!(h, hist(&mut fold(&[old, win.clone(), same]), &win));
+        let h = baseline(&mut fold(std::slice::from_ref(&old)), &win);
+        has(&h, "seen", "seen 3.9 days");
+        assert_eq!(h, baseline(&mut fold(&[old, win.clone(), same]), &win));
     }
 
     #[test]
@@ -1561,7 +1562,7 @@ mod tests {
             )
         };
         let mut st = fold(&[day(1), day(2), day(3), day(4)]);
-        // judged already, in the window's own five minutes, so in no slot `_hist` reads
+        // judged already, in the window's own five minutes, so in no slot `_baseline` reads
         let mut ctx = ct(
             "dave",
             "01-05T13:00:50",
@@ -1585,7 +1586,7 @@ mod tests {
             .nth(1)
             .and_then(|l| serde_json::from_slice(l).ok())
             .unwrap_or_default();
-        let h = last.get("_hist").cloned().unwrap_or_default();
+        let h = last.get("_baseline").cloned().unwrap_or_default();
         has(&h, "time", "last active 5s before");
         has(&h, "volume", "own creds none before");
     }
@@ -1632,7 +1633,7 @@ mod tests {
             json!({"bucketName": "x"}),
         );
         has(
-            &hist(&mut fold(&own), &win),
+            &baseline(&mut fold(&own), &win),
             "actor",
             "privilege used before: read-only",
         );
@@ -1643,7 +1644,7 @@ mod tests {
             HOME.0,
             json!({"userName": "deploy-bot"}),
         );
-        let h = hist(&mut fold(&[own.as_slice(), &[other]].concat()), &win);
+        let h = baseline(&mut fold(&[own.as_slice(), &[other]].concat()), &win);
         has(&h, "actor", "privilege used before: admin");
         has(&h, "auth", "key created access key on deploy-bot");
     }
@@ -1676,20 +1677,20 @@ mod tests {
             json!({"bucketName": "x"}),
         );
         has(
-            &hist(&mut st, &win),
+            &baseline(&mut st, &win),
             "actor",
             "person dave@acme.io (dave, dave@acme.io)",
         );
         let alone = Profile::from_value(json!({}));
         assert!(run(&mut st, &alone, Mode::Learn, &[]).is_ok());
         assert!(matches!(st.0.get(PEOPLE), Some(Scalar::Str(t)) if t == "{}"));
-        let h = hist(&mut st, &win);
+        let h = baseline(&mut st, &win);
         let actor = h.get("actor").and_then(Value::as_str).unwrap_or_default();
         assert!(!actor.is_empty() && !actor.contains("person"), "{h}");
     }
 
     /// The app pack's audit shape under a name of yours (its `sources` or
-    /// `extra_sources`) is learned as `app` is; a record of a source history
+    /// `extra_sources`) is learned as `app` is; a record of a source baseline
     /// does not know, without an `event`, is not.
     #[test]
     fn the_app_shape_under_another_name() {
@@ -1698,12 +1699,12 @@ mod tests {
                    "path": "/invoices/42", "_norm": {"actor": "carol@acme.io", "org": "acme"}})
         };
         let mut st = fold(&[rec("billing", "01-01T15:00:00")]);
-        let h = hist(&mut st, &rec("billing", "01-05T13:00:00"));
-        has(&h, "baseline", "seen 3.9 days");
+        let h = baseline(&mut st, &rec("billing", "01-05T13:00:00"));
+        has(&h, "seen", "seen 3.9 days");
         let mut other = rec("mystery", "01-05T13:00:00");
         if let Some(m) = other.as_object_mut() {
             m.remove("event");
         }
-        assert_eq!(hist(&mut st, &other), Value::Null);
+        assert_eq!(baseline(&mut st, &other), Value::Null);
     }
 }

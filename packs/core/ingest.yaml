@@ -3,7 +3,7 @@
 # config names your sources, routes each to its pack, and gives the `profile`
 # table (README.md).
 runtime:
-  workers: 1                     # history's one writer: keep it, and add no `partition` (README.md)
+  workers: 1                     # baseline's one writer: keep it, and add no `partition` (README.md)
   plugins_path: plugins/
   state:
     backend: sqlite
@@ -19,14 +19,14 @@ enrichment_tables:
   asn: { type: mmdb, path: ../../examples/enrich/data/GeoLite2-ASN.mmdb }
   networks: { type: cidr, path: ../../examples/enrich/data/networks.csv }
 
-# Every pack's plugin has an edge here too, beside the one to `logs`: history
+# Every pack's plugin has an edge here too, beside the one to `logs`: baseline
 # folds each record into state.sqlite, what each actor did and from where,
-# which judge.yaml's history reads before the model sees the actor.
+# which judge.yaml's baseline reads before the model sees the actor.
 plugins:
-  history:
+  baseline:
     module_type: rust
-    path: history
-    state_namespace: history
+    path: baseline
+    state_namespace: baseline
     config:
       mode: learn                # folds every record into state; emits nothing
 

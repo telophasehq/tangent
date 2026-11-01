@@ -19,4 +19,4 @@ plugins:
 
 dag:
   - from: { kind: plugin, name: github }
-    to: [{ kind: sink, name: logs }, { kind: plugin, name: history }]   # packs/core/ingest.yaml's: logs.sqlite, and each actor's history
+    to: [{ kind: sink, name: logs }, { kind: plugin, name: baseline }]   # packs/core/ingest.yaml's: logs.sqlite, and each actor's baseline

@@ -1,7 +1,7 @@
-# history alone in `mode: both`: each record's `_hist` is what the records
+# baseline alone in `mode: both`: each record's `_baseline` is what the records
 # before it taught, as ingest's learn and the judge's header see it. Every
 # record is over half the test runner's 1 KB batch, so each is a call of its
-# own. `make -C packs test-history` runs it.
+# own. `make -C packs test-baseline` runs it.
 runtime:
   plugins_path: plugins/
   state:
@@ -10,10 +10,10 @@ runtime:
     max_ttl_ms: 0
 
 plugins:
-  history:
+  baseline:
     module_type: rust
     path: .
-    state_namespace: history
+    state_namespace: baseline
     config:
       mode: both
     tests:

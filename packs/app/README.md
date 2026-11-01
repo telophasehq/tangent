@@ -38,11 +38,11 @@ plugins:
 `_facts` is what the profile and the tables say; an agent's run has no
 principal.
 
-Each record goes to `logs` and to core's [history](../core#history) too,
+Each record goes to `logs` and to core's [baseline](../core#baseline) too,
 which folds the audit shape, under `app` or a name of yours, into its actor's
-history: events, paths, keys, addresses, logins, key creations and role
+baseline: events, paths, keys, addresses, logins, key creations and role
 changes. The agent shape has no actor and passes through it unlearned. That
-is what the judge's `_hist` says of the actor.
+is what the judge's `_baseline` says of the actor.
 
 ## What it drops
 

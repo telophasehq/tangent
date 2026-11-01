@@ -5,10 +5,10 @@ it, beside the packs it uses.
 
 ```
 your sources ──▶ a pack's plugin ──┬──▶ logs.sqlite                                   (ingest.yaml)
-                   reads the       └──▶ history ──▶ state.sqlite
+                   reads the       └──▶ baseline ──▶ state.sqlite
                    tables geo, asn, networks and profile
 
-logs.sqlite ──▶ actors ──▶ history ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson  (judge.yaml)
+logs.sqlite ──▶ actors ──▶ baseline ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson (judge.yaml)
 state.sqlite ─────────────────┘                    └──▶ verdicts.ndjson
 ```
 
@@ -30,13 +30,13 @@ state.sqlite ─────────────────┘             
 - **`logs`**, the sink every pack's plugin has an edge to: `logs.sqlite`, each
   record once, at its `ts`, with two partitions, the org and the org and actor.
   Nothing is deleted; trimming it is yours to do.
-- **`history`**, the plugin every pack's plugin has an edge to as well, in
+- **`baseline`**, the plugin every pack's plugin has an edge to as well, in
   `mode: learn`: it folds each record into the state store, under the
-  namespace `history`, and passes nothing on ([below](#history)).
-- **The runtime**: one worker and no `partition`, history's one writer
-  ([below](#history)); plugins compiled into `plugins/` beside the config you
+  namespace `baseline`, and passes nothing on ([below](#baseline)).
+- **The runtime**: one worker and no `partition`, baseline's one writer
+  ([below](#baseline)); plugins compiled into `plugins/` beside the config you
   run; and the state store at `state.sqlite`, where the API sources keep their
-  place and history its keys.
+  place and baseline its keys.
 
 No sources and no profile: your config adds them, and sends each source to
 its pack.
@@ -44,7 +44,7 @@ its pack.
 ## The record
 
 What a pack's plugin writes, the same for every provider. A raw record's own
-`_norm`, `_facts`, `_ip`, `_context` and `_hist` (and a key naming a field
+`_norm`, `_facts`, `_ip`, `_context` and `_baseline` (and a key naming a field
 under one, such as `_facts.notes`) are dropped first, so a log line cannot
 speak for the pipeline.
 
@@ -83,7 +83,7 @@ A pack adds what only its provider's log says: `aws` adds `root` and
 ## The profile
 
 Every fact about your company that no log carries, as the `profile` table: a
-YAML file your ingest config names. The judge config needs none: what history
+YAML file your ingest config names. The judge config needs none: what baseline
 needs of it, `people`, ingest files in the state store.
 
 ```yaml
@@ -101,7 +101,7 @@ enrichment_tables:
 | `services` | IAM users and roles, bots | `principal: service`, held to `cloud` |
 | `keys` | API keys and the networks each calls from | `principal: key`, `key_known_network` |
 | `about` | who an actor is, when its name does not say | `about`, in place of the "nobody it knows" note |
-| `people` | a person's other names: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_hist`: their history, sign-ins and networks as one person's |
+| `people` | a person's other names: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_baseline`: their history, sign-ins and networks as one person's |
 | `hosts` | hosts your systems talk to (`*.suffix` allowed) | `dest_known` |
 | `sensitive` | buckets, repos, tables | `sensitive_target` |
 | `watch` | kinds a person wants seen every time | `watch` |
@@ -115,12 +115,12 @@ would go on as nobody the org knows, in the provider's org rather than yours.
 - **actors** reads `logs.sqlite` back forty records of one actor at a time,
   oldest first, topped up with the actor's latest records already judged,
   marked `_context`.
-- **history**, in `mode: header`, reads ingest's `state.sqlite` and puts the
-  same `_hist` on each of an actor's records ([below](#history)). The state is
-  opened `read_only`, without ingest's lock, so ingest starts first: the judge
-  refuses a file that is not there yet.
-  `drop_on_error: false`: when history fails, the records go to the model
-  without `_hist` rather than not at all.
+- **baseline**, in `mode: header`, reads ingest's `state.sqlite` and puts the
+  same `_baseline` on each of an actor's records ([below](#baseline)). The
+  state is opened `read_only`, without ingest's lock, so ingest starts first:
+  the judge refuses a file that is not there yet.
+  `drop_on_error: false`: when baseline fails, the records go to the model
+  without `_baseline` rather than not at all.
 - **judge** reads an actor's records together and writes a verdict per record,
   with [judge.md](judge.md) as its brief and
   [judge.schema.json](judge.schema.json) as the verdict's shape.
@@ -149,8 +149,8 @@ For a hosted one: `JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE
 
 The records go to the model as logfmt, a line each, each source written as
 its pack's `judge.yaml` says: about half the tokens of JSON lines, and an
-actor's `_hist` written once per request. Your judge config can send JSON
-lines instead, where `_hist` is on every record; give it half the
+actor's `_baseline` written once per request. Your judge config can send JSON
+lines instead, where `_baseline` is on every record; give it half the
 `batch_bytes` then, so a request fits a 32k context:
 
 ```yaml
@@ -167,9 +167,9 @@ the schema included:
 
 | encoding | `batch_bytes` | requests | tokens, median | 90th percentile | largest |
 |---|---|---|---|---|---|
-| logfmt, without `_hist` | 48000 | 487 | 6,508 | 8,298 | 15,928 |
+| logfmt, without `_baseline` | 48000 | 487 | 6,508 | 8,298 | 15,928 |
 | logfmt (the default) | 96000 | 485 | 6,817 | 8,604 | 18,560 |
-| JSON lines, without `_hist` | 48000 | 487 | 9,089 | 10,323 | 21,086 |
+| JSON lines, without `_baseline` | 48000 | 487 | 9,089 | 10,323 | 21,086 |
 | JSON lines | 96000 | 485 | 20,262 | 22,620 | 33,303 |
 | JSON lines | 48000 | 872 | 12,738 | 15,689 | 20,200 |
 
@@ -198,9 +198,9 @@ the first of them it has, so a record the model could not judge says why. A
 field's value is escaped: a log line cannot mention anyone, link or start a
 line in the message. A post that fails is logged and dropped.
 
-## history
+## baseline
 
-One plugin, [history](history), in both configs: in ingest it learns what
+One plugin, [baseline](baseline), in both configs: in ingest it learns what
 each actor does, in the judge it tells the model. It answers the question one
 window of forty records cannot, "is this normal for this identity?", from the
 state store alone, and only from what happened before the actor's first
@@ -229,17 +229,17 @@ among them, it passes over.
 
 Each is a minimum, a sum or a row keyed by the event's time, so records that
 arrive out of order leave the same state. Keys begin with `_norm.org` (all
-but `people`), so orgs stay apart in one namespace, `history`, and never
+but `people`), so orgs stay apart in one namespace, `baseline`, and never
 expire.
 
-**What it stamps** (judge, `mode: header`): `_hist`, one object, the same on
-each of an actor's records in the request, `_context` ones included; a key is
-left out when it has nothing to say.
+**What it stamps** (judge, `mode: header`): `_baseline`, one object, the same
+on each of an actor's records in the request, `_context` ones included; a key
+is left out when it has nothing to say.
 
 | key | what it says |
 |---|---|
 | `actor` | who it is to the profile, its person and that person's other names, the identities seen here (IAM user, assumed role, okta user, ...); for a role, who assumed it, and who assumed them, up to four hops and twelve hours back, or its SSO permission set; the privilege it used before (admin, write, read-only, none); a session's MFA against its earlier sessions' |
-| `baseline` | how long it has been seen, its events and active days, from which sources; or `none: first seen in this window` |
+| `seen` | how long it has been seen, its events and active days, from which sources; or `none: first seen in this window` |
 | `new` | what it does here for the first time, or first did within the hour: `api`, `resource`, `client`, `network` (with `(new to org)`), `source`, `oauth`, `device`, `token`; or `nothing: ...` |
 | `volume` | the last hour against the p90 of its active hours in 28 days, in total and per category, as `normal`, `2-5x`, `5-10x`, `>10x` or `none before` |
 | `time` | the window's hours against its usual hours in 28 days, and how long since it was last active; or dormant |
@@ -253,15 +253,15 @@ share; JSON lines repeat it on every record ([the cost](#judgeyaml)).
 - **People**: `people` in the profile ([above](#the-profile)) says which names
   are one person, as an IAM user `dave` is `dave@example.com`; a name not
   there is its own person, and one other name may be written bare
-  (`dave@example.com: dave`). Ingest's history reads it from the `profile`
+  (`dave@example.com: dave`). Ingest's baseline reads it from the `profile`
   table and files it in the state store, under `people`, where the judge's
   reads it: the two cannot disagree on who is who, and the judge config names
   no profile.
 - **One writer**: ingest runs one worker and no `runtime.partition`, and your
-  ingest config must keep it so, since it wins over core's. History reads an
+  ingest config must keep it so, since it wins over core's. Baseline reads an
   hour's counts, adds to them and writes them back, as it does first-seen
   times and role sessions: two workers lose updates. A partition files every
-  key under it, where the judge, which has none, does not look; history's keys
+  key under it, where the judge, which has none, does not look; baseline's keys
   carry the org instead.
 - **Read-only state**: the judge opens ingest's `state.sqlite` with
   `runtime.state.read_only: true`, without the lock, creating nothing, and
@@ -269,9 +269,9 @@ share; JSON lines repeat it on every record ([the cost](#judgeyaml)).
   not there yet. The examples' `make run` waits for it, and starts no judge
   once ingest has exited.
 - **Fail-open**: in the judge, `drop_on_error: false`: when a call fails, the
-  records go on without `_hist`.
+  records go on without `_baseline`.
 
-[history/README.md](history/README.md) has the keys it keeps and how it is
+[baseline/README.md](baseline/README.md) has the keys it keeps and how it is
 tested.
 
 ## Writing a pack's plugin
@@ -288,19 +288,20 @@ A pack's plugin links [packs/shared](/packs/shared) by path:
   and `kit.write(out, record, norm)` folds the org, enriches the addresses,
   adds the facts and writes the record as one line.
 
-The pack's `ingest.yaml` gives the plugin an edge to `history` beside `logs`.
-History reads a source it knows from its own table
-([history/src/kinds.rs](history/src/kinds.rs)); a new pack's records pass
-through it unlearned, with no `_hist`, until the table knows their `source`,
-unless they carry an `event`, which it reads as the app pack's audit shape.
+The pack's `ingest.yaml` gives the plugin an edge to `baseline` beside `logs`.
+Baseline reads a source it knows from its own table
+([baseline/src/kinds.rs](baseline/src/kinds.rs)); a new pack's records pass
+through it unlearned, with no `_baseline`, until the table knows their
+`source`, unless they carry an `event`, which it reads as the app pack's audit
+shape.
 
 ## What include cannot do
 
 - **Take a stage out of, or put one into, core's chain.** Edges add up and none
-  can be removed, so `actors -> history -> judge` stays, and so does each
-  pack's edge to `history`. Another plugin between them, or a judge without
-  history, means copying `judge.yaml` instead of including it, or a change
-  here that every config gets, as history was.
+  can be removed, so `actors -> baseline -> judge` stays, and so does each
+  pack's edge to `baseline`. Another plugin between them, or a judge without
+  `baseline`, means copying `judge.yaml` instead of including it, or a change
+  here that every config gets, as `baseline` was.
 - **Keep a batch's order.** A source routed to several packs hands each its own
   records in turn, so within a batch every `cloudtrail` record reaches
   `logs.sqlite` before every `okta` one. `actors` reads back by time, so only

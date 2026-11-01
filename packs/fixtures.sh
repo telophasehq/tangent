@@ -12,7 +12,7 @@
 # plugin that left out a record.
 #
 #   ./fixtures.sh okta        (make fixtures-okta)
-#   CONFIG=test.yaml ./fixtures.sh core/history     (make fixtures-history)
+#   CONFIG=test.yaml ./fixtures.sh core/baseline    (make fixtures-baseline)
 set -euo pipefail
 [ $# -eq 1 ] || { echo "usage: $0 <pack>" >&2; exit 2; }
 cd "$(dirname "$0")/$1"
