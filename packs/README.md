@@ -8,7 +8,7 @@ says about it in `_facts`. How to use them is in the main
 
 | directory | what it is |
 |---|---|
-| [core](core) | not a provider: what every pack needs. `ingest.yaml`: the enrichment tables, the `logs` sink and `history`, which learns each actor's history; `judge.yaml`: `history` again, stamping `_hist`, and the judge. Its README has the record contract and the profile's keys. Every config includes it. |
+| [core](core) | not a provider: what every pack needs. `ingest.yaml`: the enrichment tables, the `logs` sink and `baseline`, which learns each actor's history; `judge.yaml`: `baseline` again, stamping `_baseline`, and the judge. Its README has the record contract and the profile's keys. Every config includes it. |
 | [aws](aws) | `cloudtrail` |
 | [github](github) | `github_audit`, `gha_ci`, `runner_egress` |
 | [okta](okta) | `okta` |
@@ -27,8 +27,8 @@ Its `ingest.yaml` names them for the test, so the fixtures mean the same in
 any config and on any day, with no data fetched.
 
 ```bash
-make test                # each pack alone: compile, then its fixtures; core's history; and the libraries' tests
+make test                # each pack alone: compile, then its fixtures; core's baseline; and the libraries' tests
 make fixtures-okta       # okta/tests/expected.json from the plugin's output; read the diff
                          # (a test that fails for any reason but its output leaves it as it was)
-make fixtures-history    # core/history/tests/expected.json, the same way
+make fixtures-baseline   # core/baseline/tests/expected.json, the same way
 ```

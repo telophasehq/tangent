@@ -6,9 +6,9 @@ log and an AI agent's logs carry a customer's tenant id, and that is the org.
 Each customer's actors are kept and judged apart, forty records at a time.
 
 ```
-app audit log, agent logs ──▶ app ──▶ logs.sqlite ──▶ actors ──▶ history ──▶ judge ──▶ alerts.ndjson
+app audit log, agent logs ──▶ app ──▶ logs.sqlite ──▶ actors ──▶ baseline ──▶ judge ──▶ alerts.ndjson
                                │                                    ▲
-                               └──▶ history ──▶ state.sqlite ───────┘
+                               └──▶ baseline ──▶ state.sqlite ──────┘
                         (org = the customer's tenant id)
 ```
 

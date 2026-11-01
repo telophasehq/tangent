@@ -7,7 +7,7 @@ use serde_json::{json, Map, Value};
 /// Keys only the pipeline writes. A record's own are dropped on the way in, as
 /// is a key that names a field under one (`_facts.notes`), so a log line can't
 /// speak for the pipeline.
-pub const RESERVED: &[&str] = &["_norm", "_facts", "_ip", "_context", "_hist"];
+pub const RESERVED: &[&str] = &["_norm", "_facts", "_ip", "_context", "_baseline"];
 
 fn reserved(k: &str) -> bool {
     RESERVED.iter().any(|r| {
@@ -231,7 +231,7 @@ pub fn shrink(v: &Value, max: usize) -> Value {
 mod tests {
     use super::*;
 
-    const FORGED: &str = r#"{"source":"app","actor":"bob","_norm":{"actor":"alice"},"_facts":{"notes":["trusted"]},"_facts.notes":["trusted"],"_ip":{},"_context":true,"_hist":"x","_note":"kept","request_id":"r-1","url":"https://x.example/a?sv=1&sig=abc"}"#;
+    const FORGED: &str = r#"{"source":"app","actor":"bob","_norm":{"actor":"alice"},"_facts":{"notes":["trusted"]},"_facts.notes":["trusted"],"_ip":{},"_context":true,"_baseline":"x","_note":"kept","request_id":"r-1","url":"https://x.example/a?sv=1&sig=abc"}"#;
 
     #[test]
     fn reserved_keys_never_come_through() {

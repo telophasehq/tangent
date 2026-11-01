@@ -1,5 +1,11 @@
 [
  {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: no logins or credential changes",
+   "links": "ip 203.0.113.10 new for this actor, no other actor used it before",
+   "seen": "none: first seen in this window"
+  },
   "_facts": {
    "ip": {
     "asn": 64500,
@@ -8,12 +14,6 @@
    },
    "notes": [],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
-   "auth": "last 72h, person dave@acme.io: no logins or credential changes",
-   "baseline": "none: first seen in this window",
-   "links": "ip 203.0.113.10 new for this actor, no other actor used it before"
   },
   "_norm": {
    "actor": "dave@acme.io",
@@ -73,6 +73,12 @@
   "ts": "2026-01-02T16:00:00Z"
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 1 login (okta 1), 0 failed; no mfa, password, key or grant changes; last login okta 5m before from 203.0.113.10 ASN 64500 US, mfa unknown",
+   "links": "window ip 203.0.113.10 matches okta login by dave@acme.io 5m before; ip 203.0.113.10 new for this actor, used before by 1 other actor (dave@acme.io)",
+   "seen": "none: first seen in this window"
+  },
   "_facts": {
    "ip": {
     "asn": 64500,
@@ -81,12 +87,6 @@
    },
    "notes": [],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: none",
-   "auth": "last 72h, person dave@acme.io: 1 login (okta 1), 0 failed; no mfa, password, key or grant changes; last login okta 5m before from 203.0.113.10 ASN 64500 US, mfa unknown",
-   "baseline": "none: first seen in this window",
-   "links": "window ip 203.0.113.10 matches okta login by dave@acme.io 5m before; ip 203.0.113.10 new for this actor, used before by 1 other actor (dave@acme.io)"
   },
   "_norm": {
    "actor": "dave",
@@ -116,6 +116,18 @@
   }
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 0 failed; no mfa, password, key or grant changes; last login aws console 24h before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "links": "window ip 203.0.113.10 matches okta login by dave@acme.io 24h before",
+   "new": {
+    "api": "s3:ListObjects (1 of 1 in window)",
+    "resource": "bucket:acme-reports (1 of 1 in window)"
+   },
+   "seen": "seen 1.0 days (since 2026-01-02), 1 event on 1 day, from cloudtrail",
+   "time": "window 16 UTC active on 1 of its 1 active day in 28d; usual hours: none yet; last active 24h before",
+   "volume": "last hour vs p90 of its 1 active hour in 28d: total normal, read none before, write -, iam -, own creds -, delete -"
+  },
   "_facts": {
    "ip": {
     "asn": 64500,
@@ -124,18 +136,6 @@
    },
    "notes": [],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: none",
-   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 0 failed; no mfa, password, key or grant changes; last login aws console 24h before from 203.0.113.10 ASN 64500 US, mfa yes",
-   "baseline": "seen 1.0 days (since 2026-01-02), 1 event on 1 day, from cloudtrail",
-   "links": "window ip 203.0.113.10 matches okta login by dave@acme.io 24h before",
-   "new": {
-    "api": "s3:ListObjects (1 of 1 in window)",
-    "resource": "bucket:acme-reports (1 of 1 in window)"
-   },
-   "time": "window 16 UTC active on 1 of its 1 active day in 28d; usual hours: none yet; last active 24h before",
-   "volume": "last hour vs p90 of its 1 active hour in 28d: total normal, read none before, write -, iam -, own creds -, delete -"
   },
   "_norm": {
    "actor": "dave",
@@ -176,6 +176,18 @@
   }
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 0 failed; no mfa, password, key or grant changes; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "links": "ip 198.51.100.23 new for this actor, no other actor used it before",
+   "new": {
+    "device": "guo9examplenew02",
+    "network": "ASN 64501 Example Hosting B.V. (new to org), country NL (new to org), net 198.51.100.0/24 (new to org)"
+   },
+   "seen": "seen 2.8 days (since 2026-01-02), 1 event on 1 day, from okta",
+   "time": "window 11 UTC active on 0 of its 1 active day in 28d; usual hours: none yet; last active 2d before",
+   "volume": "last hour vs p90 of its 1 active hour in 28d: total normal, read -, write -, iam -, own creds -, delete -"
+  },
   "_facts": {
    "ip": {
     "asn": 64501,
@@ -186,18 +198,6 @@
     "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
    ],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
-   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 0 failed; no mfa, password, key or grant changes; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
-   "baseline": "seen 2.8 days (since 2026-01-02), 1 event on 1 day, from okta",
-   "links": "ip 198.51.100.23 new for this actor, no other actor used it before",
-   "new": {
-    "device": "guo9examplenew02",
-    "network": "ASN 64501 Example Hosting B.V. (new to org), country NL (new to org), net 198.51.100.0/24 (new to org)"
-   },
-   "time": "window 11 UTC active on 0 of its 1 active day in 28d; usual hours: none yet; last active 2d before",
-   "volume": "last hour vs p90 of its 1 active hour in 28d: total normal, read -, write -, iam -, own creds -, delete -"
   },
   "_norm": {
    "actor": "dave@acme.io",
@@ -257,6 +257,12 @@
   "ts": "2026-01-05T11:00:00Z"
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); here as okta user; privilege used before: none",
+   "auth": "last 72h, admin@acme.io: no logins or credential changes",
+   "links": "ip 203.0.113.11 new for this actor, no other actor used it before",
+   "seen": "none: first seen in this window"
+  },
   "_facts": {
    "ip": {
     "asn": 64500,
@@ -265,12 +271,6 @@
    },
    "notes": [],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); here as okta user; privilege used before: none",
-   "auth": "last 72h, admin@acme.io: no logins or credential changes",
-   "baseline": "none: first seen in this window",
-   "links": "ip 203.0.113.11 new for this actor, no other actor used it before"
   },
   "_norm": {
    "actor": "admin@acme.io",
@@ -329,6 +329,19 @@
   "ts": "2026-01-05T12:30:00Z"
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 1 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 9m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "links": "ip 198.51.100.23 new for this actor, no other actor used it before",
+   "new": {
+    "api": "policy.evaluate_sign_on (1 of 1 in window)",
+    "device": "guo9examplenew02",
+    "network": "ASN 64501 Example Hosting B.V. (new to org), country NL (new to org), net 198.51.100.0/24 (new to org)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from okta",
+   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 1h before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
+  },
   "_facts": {
    "ip": {
     "asn": 64501,
@@ -339,19 +352,6 @@
     "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
    ],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
-   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 1 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 9m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
-   "baseline": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from okta",
-   "links": "ip 198.51.100.23 new for this actor, no other actor used it before",
-   "new": {
-    "api": "policy.evaluate_sign_on (1 of 1 in window)",
-    "device": "guo9examplenew02",
-    "network": "ASN 64501 Example Hosting B.V. (new to org), country NL (new to org), net 198.51.100.0/24 (new to org)"
-   },
-   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 1h before",
-   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
   },
   "_norm": {
    "actor": "dave@acme.io",
@@ -411,6 +411,18 @@
   "ts": "2026-01-05T12:39:58Z"
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 1 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 9m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "new": {
+    "api": "user.authentication.verify (1 of 1 in window)",
+    "device": "guo9examplenew02 (first seen 1s before)",
+    "network": "ASN 64501 Example Hosting B.V. (first seen 1s before), country NL (first seen 1s before), net 198.51.100.0/24 (first seen 1s before)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from okta",
+   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 1h before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
+  },
   "_facts": {
    "ip": {
     "asn": 64501,
@@ -421,18 +433,6 @@
     "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
    ],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
-   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 1 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 9m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
-   "baseline": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from okta",
-   "new": {
-    "api": "user.authentication.verify (1 of 1 in window)",
-    "device": "guo9examplenew02 (first seen 1s before)",
-    "network": "ASN 64501 Example Hosting B.V. (first seen 1s before), country NL (first seen 1s before), net 198.51.100.0/24 (first seen 1s before)"
-   },
-   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 1h before",
-   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
   },
   "_norm": {
    "actor": "dave@acme.io",
@@ -492,6 +492,18 @@
   "ts": "2026-01-05T12:39:59Z"
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 10m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "new": {
+    "api": "user.authentication.auth_via_mfa (1 of 1 in window)",
+    "device": "guo9examplenew02 (first seen 2s before)",
+    "network": "ASN 64501 Example Hosting B.V. (first seen 2s before), country NL (first seen 2s before), net 198.51.100.0/24 (first seen 2s before)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 4 events on 2 days, from okta",
+   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 0s before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
+  },
   "_facts": {
    "ip": {
     "asn": 64501,
@@ -502,18 +514,6 @@
     "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
    ],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
-   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 10m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
-   "baseline": "seen 2.9 days (since 2026-01-02), 4 events on 2 days, from okta",
-   "new": {
-    "api": "user.authentication.auth_via_mfa (1 of 1 in window)",
-    "device": "guo9examplenew02 (first seen 2s before)",
-    "network": "ASN 64501 Example Hosting B.V. (first seen 2s before), country NL (first seen 2s before), net 198.51.100.0/24 (first seen 2s before)"
-   },
-   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 0s before",
-   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
   },
   "_norm": {
    "actor": "dave@acme.io",
@@ -573,6 +573,17 @@
   "ts": "2026-01-05T12:40:00Z"
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 10m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "new": {
+    "device": "guo9examplenew02 (first seen 3s before)",
+    "network": "ASN 64501 Example Hosting B.V. (first seen 3s before), country NL (first seen 3s before), net 198.51.100.0/24 (first seen 3s before)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 4 events on 2 days, from okta",
+   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 1s before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
+  },
   "_facts": {
    "ip": {
     "asn": 64501,
@@ -583,17 +594,6 @@
     "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
    ],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
-   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 10m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
-   "baseline": "seen 2.9 days (since 2026-01-02), 4 events on 2 days, from okta",
-   "new": {
-    "device": "guo9examplenew02 (first seen 3s before)",
-    "network": "ASN 64501 Example Hosting B.V. (first seen 3s before), country NL (first seen 3s before), net 198.51.100.0/24 (first seen 3s before)"
-   },
-   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 1s before",
-   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
   },
   "_norm": {
    "actor": "dave@acme.io",
@@ -653,6 +653,20 @@
   "ts": "2026-01-05T12:40:01Z"
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: read-only",
+   "auth": "last 72h, person dave@acme.io: 3 logins (okta 2, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 30m before from 203.0.113.11; last login okta 20m before from 198.51.100.23 ASN 64501 NL (new asn/cc for person then), mfa yes (okta: New Geo-Location, New Device, New IP, New State, New Country, New City)",
+   "links": "okta login from a network new for dave@acme.io 20m before this window; ip 192.0.2.77 new for this actor, no other actor used it before",
+   "new": {
+    "api": "s3:PutBucketPolicy (1 of 1 in window)",
+    "client": "aws-cli/2 (cli); before: browser (console)",
+    "network": "ASN 64502 Example VPS (new to org), country NL (first seen 20m before), net 192.0.2.0/24 (new to org)",
+    "resource": "bucket:acme-customer-exports (1 of 1 in window)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from cloudtrail",
+   "time": "window 13 UTC active on 0 of its 2 active days in 28d; usual 16 UTC; last active 44h before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam none before, own creds -, delete -"
+  },
   "_facts": {
    "ip": {
     "asn": 64502,
@@ -664,20 +678,6 @@
     "PutBucketPolicy is a kind the org watches every time"
    ],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: read-only",
-   "auth": "last 72h, person dave@acme.io: 3 logins (okta 2, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 30m before from 203.0.113.11; last login okta 20m before from 198.51.100.23 ASN 64501 NL (new asn/cc for person then), mfa yes (okta: New Geo-Location, New Device, New IP, New State, New Country, New City)",
-   "baseline": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from cloudtrail",
-   "links": "okta login from a network new for dave@acme.io 20m before this window; ip 192.0.2.77 new for this actor, no other actor used it before",
-   "new": {
-    "api": "s3:PutBucketPolicy (1 of 1 in window)",
-    "client": "aws-cli/2 (cli); before: browser (console)",
-    "network": "ASN 64502 Example VPS (new to org), country NL (first seen 20m before), net 192.0.2.0/24 (new to org)",
-    "resource": "bucket:acme-customer-exports (1 of 1 in window)"
-   },
-   "time": "window 13 UTC active on 0 of its 2 active days in 28d; usual 16 UTC; last active 44h before",
-   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam none before, own creds -, delete -"
   },
   "_norm": {
    "actor": "dave",
@@ -705,6 +705,20 @@
   }
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: admin (iam/policy changes)",
+   "auth": "last 72h, person dave@acme.io: 3 logins (okta 2, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 32m before from 203.0.113.11; last login okta 21m before from 198.51.100.23 ASN 64501 NL (new asn/cc for person then), mfa yes (okta: New Geo-Location, New Device, New IP, New State, New Country, New City)",
+   "links": "okta login from a network new for dave@acme.io 21m before this window",
+   "new": {
+    "api": "sts:AssumeRole (1 of 1 in window)",
+    "client": "aws-cli/2 (cli) (first seen 1m before); before: browser (console)",
+    "network": "ASN 64502 Example VPS (first seen 1m before), country NL (first seen 22m before), net 192.0.2.0/24 (first seen 1m before)",
+    "resource": "role:deploy-admin (1 of 1 in window)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from cloudtrail",
+   "time": "window 13 UTC active on 0 of its 2 active days in 28d; usual 16 UTC; last active 44h before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read normal, write -, iam -, own creds -, delete -"
+  },
   "_facts": {
    "ip": {
     "asn": 64502,
@@ -715,20 +729,6 @@
     "dave acting from NL, 192.0.2.77 (Example VPS)"
    ],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: admin (iam/policy changes)",
-   "auth": "last 72h, person dave@acme.io: 3 logins (okta 2, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 32m before from 203.0.113.11; last login okta 21m before from 198.51.100.23 ASN 64501 NL (new asn/cc for person then), mfa yes (okta: New Geo-Location, New Device, New IP, New State, New Country, New City)",
-   "baseline": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from cloudtrail",
-   "links": "okta login from a network new for dave@acme.io 21m before this window",
-   "new": {
-    "api": "sts:AssumeRole (1 of 1 in window)",
-    "client": "aws-cli/2 (cli) (first seen 1m before); before: browser (console)",
-    "network": "ASN 64502 Example VPS (first seen 1m before), country NL (first seen 22m before), net 192.0.2.0/24 (first seen 1m before)",
-    "resource": "role:deploy-admin (1 of 1 in window)"
-   },
-   "time": "window 13 UTC active on 0 of its 2 active days in 28d; usual 16 UTC; last active 44h before",
-   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read normal, write -, iam -, own creds -, delete -"
   },
   "_norm": {
    "actor": "dave",
@@ -767,6 +767,12 @@
   }
  },
  {
+  "_baseline": {
+   "actor": "not in profile; here as assumed role; chain deploy-admin <- dave (IAM user, 60s before, first time); privilege used before: none",
+   "auth": "last 72h, deploy-admin and person dave@acme.io: 3 logins (okta 2, aws 1), 2 failed; mfa change user.mfa.factor.reset_all on dave@acme.io by admin@acme.io 33m before from 203.0.113.11; last login okta 22m before from 198.51.100.23 ASN 64501 NL (new asn/cc for person then), mfa yes (okta: New Geo-Location, New Device, New IP, New State, New Country, New City)",
+   "links": "okta login from a network new for dave@acme.io 22m before this window; ip 192.0.2.77 new for this actor, used before by 1 other actor (dave)",
+   "seen": "none: first seen in this window"
+  },
   "_facts": {
    "ip": {
     "asn": 64502,
@@ -778,12 +784,6 @@
     "CreateAccessKey is a kind the org watches every time"
    ],
    "principal": "unknown"
-  },
-  "_hist": {
-   "actor": "not in profile; here as assumed role; chain deploy-admin <- dave (IAM user, 60s before, first time); privilege used before: none",
-   "auth": "last 72h, deploy-admin and person dave@acme.io: 3 logins (okta 2, aws 1), 2 failed; mfa change user.mfa.factor.reset_all on dave@acme.io by admin@acme.io 33m before from 203.0.113.11; last login okta 22m before from 198.51.100.23 ASN 64501 NL (new asn/cc for person then), mfa yes (okta: New Geo-Location, New Device, New IP, New State, New Country, New City)",
-   "baseline": "none: first seen in this window",
-   "links": "okta login from a network new for dave@acme.io 22m before this window; ip 192.0.2.77 new for this actor, used before by 1 other actor (dave)"
   },
   "_norm": {
    "actor": "deploy-admin",
@@ -818,6 +818,12 @@
   }
  },
  {
+  "_baseline": {
+   "actor": "human (profile member); here as assumed role; SSO permission set ReadOnly; privilege used before: none",
+   "auth": "last 72h, carol@acme.io: no logins or credential changes",
+   "links": "ip 203.0.113.12 new for this actor, no other actor used it before",
+   "seen": "none: first seen in this window"
+  },
   "_facts": {
    "ip": {
     "asn": 64500,
@@ -826,12 +832,6 @@
    },
    "notes": [],
    "principal": "member"
-  },
-  "_hist": {
-   "actor": "human (profile member); here as assumed role; SSO permission set ReadOnly; privilege used before: none",
-   "auth": "last 72h, carol@acme.io: no logins or credential changes",
-   "baseline": "none: first seen in this window",
-   "links": "ip 203.0.113.12 new for this actor, no other actor used it before"
   },
   "_norm": {
    "actor": "carol@acme.io",

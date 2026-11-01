@@ -19,10 +19,10 @@ reads it from the Reports API, or the same records sent as NDJSON.
 `_facts` is what the profile and the tables say; Workspace adds no facts of
 its own.
 
-Each record goes to `logs` and to core's [history](../core#history) too,
-which folds it into its actor's history: events, documents, OAuth apps,
+Each record goes to `logs` and to core's [baseline](../core#baseline) too,
+which folds it into its actor's baseline: events, documents, OAuth apps,
 addresses, sign-ins, 2-step and password changes, and an admin's resets of
-someone else's. That is what the judge's `_hist` says of the actor.
+someone else's. That is what the judge's `_baseline` says of the actor.
 
 ## What it drops
 

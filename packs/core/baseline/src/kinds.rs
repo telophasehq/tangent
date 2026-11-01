@@ -1,6 +1,7 @@
-//! What history keeps of one record, per source: its verb, category, resources,
-//! client, identity and auth event. Categories: r read, w write, i iam/policy on
-//! someone or something else, d delete, a sign-in, c the actor's own credentials.
+//! What baseline keeps of one record, per source: its verb, category,
+//! resources, client, identity and auth event. Categories: r read, w write,
+//! i iam/policy on someone or something else, d delete, a sign-in, c the
+//! actor's own credentials.
 
 use std::net::IpAddr;
 
