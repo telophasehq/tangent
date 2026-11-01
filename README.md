@@ -70,6 +70,8 @@ plugins:
 
 A plugin may read files too: `data: <dir>` mounts a directory, relative to the file that names it, read-only at `/data` in the guest, for reference data too big for `config`. [examples/enrich](/examples/enrich) reads MaxMind GeoLite2 and the cloud providers' ranges that way, and its `setup.sh` fetches them. Each plugin instance on each worker reads such files into its own memory; reference data that several plugins read, or that is large, belongs in an [enrichment table](#enrichment-tables), which the process loads once.
 
+When a plugin's call fails (it traps or returns an error), the records it was given are logged and dropped. `drop_on_error: false` passes them on unchanged instead, as if the plugin were not there: right for a plugin that only adds to records, such as context for a model, wrong for a filter. `tangent plugin test` always drops, so a failed call fails the test.
+
 With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition. [examples/partition](/examples/partition) counts events per org with a single `count` key.
 
 With `retain_ms` as well, the runtime keeps every partitioned record in the store, in the plugins' namespace, as `ev:<epoch ms, 13 digits>:<seq>` with that TTL, so a partition's history is a key range: `state.Scan("ev:<from>", "ev:<to>", limit)` returns the last hour in order, however it arrived, and nothing is ever read back to be rewritten. The store is the partition's log; the TTL is its retention. A record is stored once, where it enters its partition, whether the key was on it at the source or a plugin added it. What a record means in the light of that history is a plugin's decision, and the hour of context it attaches for a model is one `Scan`. Each backend answers a range its own way: SQLite walks the primary-key index, a DynamoDB backend would query the sort key.
@@ -82,6 +84,8 @@ tangent state --config tangent.yaml get seen --partition acme   # one entry (--n
 tangent state --config tangent.yaml scan --prefix user: --limit 50
 tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
 ```
+
+Another pipeline can read it too: `read_only: true` under `runtime.state` opens the same SQLite file without the lock and creates nothing, so one pipeline learns while another reads what it learned. The file must exist and hold the writer's table, so the writer starts first. Its writes fail, and an expired entry reads as missing; a pipeline whose runtime writes state (`partition.retain_ms`, a source that polls an API) is refused.
 
 ## Enrichment tables
 Reference data every plugin can read, loaded once for the process: an IP database, a list of networks, a company profile. Each table has a name, a `type` and a `path`, relative to the file that names it:

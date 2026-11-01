@@ -16,6 +16,8 @@ pub struct MapperCtx {
     pub store: Store<HostEngine>,
     pub proc: Processor,
     pub selectors: Vec<CompiledSelector>,
+    /// A failed call's records are dropped; false passes them on.
+    pub drop_on_error: bool,
 }
 
 pub struct Mappers {
@@ -61,6 +63,7 @@ impl Mappers {
             store,
             proc,
             selectors,
+            drop_on_error: engine.drops_on_error(name),
         })
     }
 }
