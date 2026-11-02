@@ -366,8 +366,11 @@ impl Sink for DurableFileSink {
     }
 
     async fn flush(&self) -> Result<()> {
+        // The rotator loops for as long as the sink lives: stop it, then seal
+        // what is left below.
         let value = self.rotator.lock().await.take();
         if let Some(h) = value {
+            h.abort();
             let _ = h.await;
         }
 
@@ -534,4 +537,85 @@ async fn open_route_current(dir: &Path, meta: &WalMeta) -> anyhow::Result<Curren
         bytes: 0,
         created_at: Instant::now(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::BytesMut;
+
+    /// What reached the inner sink: each file's name and bytes.
+    #[derive(Default)]
+    struct Recorder {
+        got: Mutex<Vec<(String, Vec<u8>)>>,
+    }
+
+    #[async_trait]
+    impl WALSink for Recorder {
+        async fn write_path_with(
+            &self,
+            path: &Path,
+            _encoding: &Encoding,
+            _compression: &Compression,
+            _meta: &s3::S3SinkItem,
+        ) -> Result<()> {
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let bytes = fs::read(path).await?;
+            self.got.lock().await.push((name, bytes));
+            Ok(())
+        }
+    }
+
+    fn wal_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("tangent-wal-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn write(payload: &str) -> SinkWrite {
+        SinkWrite {
+            sink_name: Arc::from("logs"),
+            payload: BytesMut::from(payload),
+            s3: Some(s3::S3SinkItem {
+                bucket_name: Arc::from(""),
+                key_prefix: None,
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn flush_seals_and_sends_what_is_open_and_returns() {
+        let dir = wal_dir("flush");
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            1 << 20,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        wal.write(write("{\"n\":1}\n")).await.unwrap();
+        wal.write(write("{\"n\":2}\n")).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(10), wal.flush())
+            .await
+            .expect("flush returns")
+            .unwrap();
+        let got = rec.got.lock().await;
+        assert!(!got.is_empty());
+        assert_eq!(got[0].1, b"{\"n\":1}\n{\"n\":2}\n");
+        // what is left is the next file, opened by the rotation and empty
+        for f in std::fs::read_dir(&dir).unwrap() {
+            let f = f.unwrap();
+            let name = f.file_name().into_string().unwrap();
+            assert!(!is_sealed_file_name(&name), "{name} was sent and removed");
+            if name.ends_with(".bin") {
+                assert_eq!(f.metadata().unwrap().len(), 0, "{name} holds nothing");
+            }
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
