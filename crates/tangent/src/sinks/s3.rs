@@ -227,6 +227,7 @@ fn object_key_from(
     let stem = base.file_name().unwrap().to_string_lossy();
 
     let mut name = String::from(stem.as_ref());
+    name.push('.');
     name.push_str(enc.extension());
     name.push_str(comp.extension());
 
@@ -238,5 +239,25 @@ fn object_key_from(
         }
     } else {
         name
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn object_key_is_the_wal_files_name_then_its_extensions() {
+        let enc = Encoding::NDJSON;
+        let zstd = Compression::Zstd { level: 3 };
+        let sealed = Path::new("/wal/01JBX4N3V2.bin.sealed.zst");
+        assert_eq!(
+            object_key_from(sealed, Some("logs/"), &enc, &zstd),
+            "logs/01JBX4N3V2.ndjson.zst"
+        );
+        assert_eq!(
+            object_key_from(sealed, None, &enc, &Compression::None),
+            "01JBX4N3V2.ndjson"
+        );
     }
 }
