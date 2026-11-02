@@ -129,7 +129,7 @@ impl DurableFileSink {
                                 .collect()
                         };
                         for k in to_rotate {
-                            let _ = s_cloned.rotate_route(k).await;
+                            let _ = s_cloned.rotate_route(k, None).await;
                         }
                     }
                 }
@@ -140,13 +140,16 @@ impl DurableFileSink {
         Ok(s)
     }
 
-    async fn rotate_route(&self, rkey: RouteKey) -> anyhow::Result<()> {
+    /// Seals the route's open file and opens the next; with `only`, only if
+    /// the open file is still that one, so writers that each found it full
+    /// seal it once between them.
+    async fn rotate_route(&self, rkey: RouteKey, only: Option<&Path>) -> anyhow::Result<()> {
         let (sealed_ready, sealed_bytes, meta) = {
             let mut routes = self.routes.lock().await;
             let rs = routes
                 .get_mut(&rkey)
                 .ok_or_else(|| anyhow::anyhow!("route missing"))?;
-            if rs.cur.bytes == 0 {
+            if rs.cur.bytes == 0 || only.is_some_and(|p| p != rs.cur.path) {
                 return Ok(());
             }
 
@@ -324,38 +327,30 @@ impl Sink for DurableFileSink {
             prefix: meta.key_prefix.clone(),
         };
 
-        let mut need_create = false;
         {
-            let routes = self.routes.lock().await;
+            // opened under the lock: concurrent first writes open one file,
+            // not one each, the losers' left empty in the WAL
+            let mut routes = self.routes.lock().await;
             if !routes.contains_key(&rkey) {
-                need_create = true;
-            }
-        }
-
-        if need_create {
-            let cur = open_route_current(
-                &self.dir,
-                &WalMeta {
-                    bucket_name: meta.bucket_name.clone(),
-                    key_prefix: meta.key_prefix.clone(),
-                    encoding: self.encoding.clone(),
-                    compression: self.compression.clone(),
-                },
-            )
-            .await?;
-            {
-                let mut routes = self.routes.lock().await;
-                if !routes.contains_key(&rkey) {
-                    routes.insert(
-                        rkey.clone(),
-                        RouteState {
-                            cur,
-                            meta: meta.clone(),
-                            last_used: Instant::now(),
-                        },
-                    );
-                    // TODO: enforce self.max_open_routes
-                }
+                let cur = open_route_current(
+                    &self.dir,
+                    &WalMeta {
+                        bucket_name: meta.bucket_name.clone(),
+                        key_prefix: meta.key_prefix.clone(),
+                        encoding: self.encoding.clone(),
+                        compression: self.compression.clone(),
+                    },
+                )
+                .await?;
+                routes.insert(
+                    rkey.clone(),
+                    RouteState {
+                        cur,
+                        meta: meta.clone(),
+                        last_used: Instant::now(),
+                    },
+                );
+                // TODO: enforce self.max_open_routes
             }
         }
 
@@ -371,8 +366,9 @@ impl Sink for DurableFileSink {
                 rs.last_used = Instant::now();
                 break;
             }
+            let full = rs.cur.path.clone();
             drop(routes);
-            self.rotate_route(rkey.clone()).await?;
+            self.rotate_route(rkey.clone(), Some(&full)).await?;
         }
 
         Ok(())
@@ -396,7 +392,7 @@ impl Sink for DurableFileSink {
                 .collect()
         };
         for k in keys {
-            let _ = self.rotate_route(k).await;
+            let _ = self.rotate_route(k, None).await;
         }
 
         loop {
@@ -870,6 +866,52 @@ mod tests {
                 b"{\"n\":2}\n".to_vec()
             ]
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn concurrent_writers_fill_each_file_and_open_one_at_a_time() {
+        let dir = wal_dir("concurrent");
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            64,
+            1000,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        // 100 bytes a write: a file is sealed with 901 to 1000 bytes in it
+        let payload = format!("{{\"pad\":\"{}\"}}\n", "x".repeat(89));
+        assert_eq!(payload.len(), 100);
+        let writers: Vec<_> = (0..16)
+            .map(|_| {
+                let (wal, payload) = (wal.clone(), payload.clone());
+                tokio::spawn(async move {
+                    for _ in 0..50 {
+                        wal.write(write(&payload)).await.unwrap();
+                    }
+                })
+            })
+            .collect();
+        for w in writers {
+            w.await.unwrap();
+        }
+        let open: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|n| n.ends_with(".bin"))
+            .collect();
+        assert_eq!(open.len(), 1, "one open file: {open:?}");
+        wal.flush().await.unwrap();
+        let got = rec.got.lock().await;
+        let total: usize = got.iter().map(|g| g.1.len()).sum();
+        assert_eq!(total, 16 * 50 * 100);
+        let small = got.iter().filter(|g| g.1.len() <= 900).count();
+        assert!(small <= 1, "{small} files sealed before they were full");
         let _ = std::fs::remove_dir_all(dir);
     }
 }
