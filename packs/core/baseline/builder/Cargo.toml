@@ -1,15 +1,15 @@
 [package]
-name = "baseline"
+name = "baseline_builder"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]   # rlib: the renderer's tests fold records with it
 
 [workspace]
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
+baselinekit = { path = "../kit" }
 serde_json = "1"
 wit-bindgen = "0.48.0"
 

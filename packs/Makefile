@@ -14,10 +14,12 @@ test: $(addprefix test-,$(PACKS)) test-baseline test-shared
 test-%:
 	cd $* && $(TANGENT) plugin compile --config ingest.yaml && $(TANGENT) plugin test --config ingest.yaml
 
-# Core's baseline plugin: its unit tests, then a sign-in story through it in
-# `mode: both`, from core/baseline/test.yaml.
+# Core's baseline: the unit tests of its kit, builder and renderer, then a
+# sign-in story through the renderer and the builder over one state
+# (core/baseline/story.sh).
 test-baseline:
-	cd core/baseline && cargo test && $(TANGENT) plugin compile --config test.yaml && $(TANGENT) plugin test --config test.yaml
+	for c in kit builder renderer; do (cd core/baseline/$$c && cargo test) || exit 1; done
+	core/baseline/story.sh
 
 # The shared libraries' own tests.
 test-shared:
@@ -28,6 +30,6 @@ fixtures-%:
 	./fixtures.sh $*
 
 fixtures-baseline:
-	CONFIG=test.yaml ./fixtures.sh core/baseline
+	core/baseline/story.sh write
 
 .PHONY: test test-baseline test-shared fixtures-baseline

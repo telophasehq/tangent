@@ -14,10 +14,10 @@ GitHub audit log ──▶ github ─────┤
 Okta ──▶ okta ───────────────────┼──▶ logs.sqlite        (ingest.yaml)
 Google Workspace ──▶ google_workspace
 NDJSON on :9400 ──▶ each pack ───┤   (CI, runner egress, your product's logs)
-                                 └──▶ baseline ──▶ state.sqlite
+                                 └──▶ baseline_builder ──▶ state.sqlite
 
-logs.sqlite ──▶ actors ──▶ baseline ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson  (judge.yaml)
-state.sqlite ─────────────────┘                    └──▶ verdicts.ndjson
+logs.sqlite ──▶ actors ──▶ baseline_renderer ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson  (judge.yaml)
+state.sqlite ─────────────────┘                             └──▶ verdicts.ndjson
 ```
 
 - **The packs** ([aws](/packs/aws), [github](/packs/github), [okta](/packs/okta),
@@ -33,11 +33,11 @@ state.sqlite ─────────────────┘             
   kinds you watch. Every record goes on.
 - **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two
   partitions: the org, and the org and actor.
-- **baseline** folds every record into `state.sqlite` too: when each actor
-  first did each thing, from where and with what, how much an hour, and each
-  person's sign-ins and credential changes in every source (`people` in the
-  profile says which names are one person). That ends ingest, one process;
-  the judge is another, so nothing in ingest waits on a model.
+- **baseline_builder** folds every record into `state.sqlite` too: when each
+  actor first did each thing, from where and with what, how much an hour, and
+  each person's sign-ins and credential changes in every source (`people` in
+  the profile says which names are one person). That ends ingest, one
+  process; the judge is another, so nothing in ingest waits on a model.
 - **actors** reads `logs.sqlite` back forty records of one actor at a time,
   oldest first. A quiet actor's go once the oldest is an hour older than the
   newest record stored, or once nothing new has been stored for an hour,
@@ -45,9 +45,9 @@ state.sqlite ─────────────────┘             
   `_context`. A record that arrives late waits with the actor's others. Rows
   are marked once their verdicts are written, and only then do the actor's
   next go; a restart sends again what the judge had not finished.
-- **baseline** again, in the judge, reads that state without its lock and
-  puts the same `_baseline` on each of an actor's records: what was known of
-  the actor before its first record, facts, not verdicts
+- **baseline_renderer**, in the judge, reads that state without its lock
+  and puts the same `_baseline` on each of an actor's records: what was known
+  of the actor before its first record, facts, not verdicts
   ([packs/core](/packs/core#baseline) has what is in it).
 - **judge** reads an actor's records together, as **actors** sends them and
   never two actors in one request, and writes a verdict per record: a pass is

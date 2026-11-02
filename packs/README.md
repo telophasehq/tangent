@@ -8,7 +8,7 @@ says about it in `_facts`. How to use them is in the main
 
 | directory | what it is |
 |---|---|
-| [core](core) | not a provider: what every pack needs. `ingest.yaml`: the enrichment tables, the `logs` sink and `baseline`, which learns each actor's history; `judge.yaml`: `baseline` again, stamping `_baseline`, and the judge. Its README has the record contract and the profile's keys. Every config includes it. |
+| [core](core) | not a provider: what every pack needs. `ingest.yaml`: the enrichment tables, the `logs` sink and `baseline_builder`, which learns each actor's history; `judge.yaml`: `baseline_renderer`, stamping `_baseline`, and the judge. Its README has the record contract and the profile's keys. Every config includes it. |
 | [aws](aws) | `cloudtrail` |
 | [github](github) | `github_audit`, `gha_ci`, `runner_egress` |
 | [okta](okta) | `okta` |

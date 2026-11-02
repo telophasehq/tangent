@@ -9,12 +9,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "baseline"
+name = "baseline_builder"
+version = "0.1.0"
+dependencies = [
+ "baselinekit",
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "baseline_renderer"
+version = "0.1.0"
+dependencies = [
+ "baseline_builder",
+ "baselinekit",
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "baselinekit"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "wit-bindgen",
 ]
 
 [[package]]
