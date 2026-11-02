@@ -14,9 +14,9 @@ test: $(addprefix test-,$(PACKS)) test-baseline test-shared
 test-%:
 	cd $* && $(TANGENT) plugin compile --config ingest.yaml && $(TANGENT) plugin test --config ingest.yaml
 
-# Core's baseline: the unit tests of its kit.
+# Core's baseline: the unit tests of its kit and builder.
 test-baseline:
-	for c in kit; do (cd core/baseline/$$c && cargo test) || exit 1; done
+	for c in kit builder; do (cd core/baseline/$$c && cargo test) || exit 1; done
 
 # The shared libraries' own tests.
 test-shared:

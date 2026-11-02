@@ -7,6 +7,8 @@ Each customer's actors are kept and judged apart, forty records at a time.
 
 ```
 app audit log, agent logs ──▶ app ──▶ logs.sqlite ──▶ actors ──▶ judge ──▶ alerts.ndjson
+                               │
+                               └──▶ baseline_builder ──▶ state.sqlite
                         (org = the customer's tenant id)
 ```
 

@@ -13,7 +13,8 @@ CloudTrail ──▶ aws ──────────────┐
 GitHub audit log ──▶ github ─────┤
 Okta ──▶ okta ───────────────────┼──▶ logs.sqlite        (ingest.yaml)
 Google Workspace ──▶ google_workspace
-NDJSON on :9400 ──▶ each pack ───┘   (CI, runner egress, your product's logs)
+NDJSON on :9400 ──▶ each pack ───┤   (CI, runner egress, your product's logs)
+                                 └──▶ baseline_builder ──▶ state.sqlite
 
 logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson   (judge.yaml)
                                        └──▶ verdicts.ndjson
@@ -31,8 +32,12 @@ logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged �
   or nobody known; whether the address, destination and target are usual; which
   kinds you watch. Every record goes on.
 - **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two
-  partitions: the org, and the org and actor. That ends ingest, one process;
-  the judge is another, so nothing in ingest waits on a model.
+  partitions: the org, and the org and actor.
+- **baseline_builder** folds every record into `state.sqlite` too: when each
+  actor first did each thing, from where and with what, how much an hour, and
+  each person's sign-ins and credential changes in every source (`people` in
+  the profile says which names are one person). That ends ingest, one
+  process; the judge is another, so nothing in ingest waits on a model.
 - **actors** reads `logs.sqlite` back forty records of one actor at a time,
   oldest first. A quiet actor's go once the oldest is an hour older than the
   newest record stored, or once nothing new has been stored for an hour,

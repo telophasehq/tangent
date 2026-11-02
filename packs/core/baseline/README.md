@@ -2,7 +2,16 @@
 
 | directory | plugin | where | what it does |
 |---|---|---|---|
+| [builder](builder) | `baseline_builder` | ingest | folds every record into state, each person with what they did; emits nothing |
 | [kit](kit) | | both link it | the keys, the event read off each source's record, the time helpers, the store as `Kv` |
+
+Who is who is resolved in ingest, where the profile is. An actor's person is
+its record's `_norm.person`, which the pack's plugin wrote from the profile's
+`people`, else the actor lowercased; both plugins read it so. The builder asks
+`people` itself ([identitykit](../../shared/identitykit)) only for the other
+names a record holds: the persons a credential change was done to, and a
+federated user's issuer. It files a person with each row that names someone,
+and the actors each person was seen as.
 
 ## Keys
 
@@ -37,5 +46,5 @@ instead, and this table would go.
 ## Tests
 
 ```bash
-make -C packs test-baseline      # cargo test in kit
+make -C packs test-baseline      # cargo test in kit and builder
 ```

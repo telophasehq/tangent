@@ -4,8 +4,9 @@ Not a provider: what every pack needs, and the judge. Every config includes
 it, beside the packs it uses.
 
 ```
-your sources ──▶ a pack's plugin ──▶ logs.sqlite                                      (ingest.yaml)
-                   reads the tables geo, asn, networks and profile
+your sources ──▶ a pack's plugin ──┬──▶ logs.sqlite                                   (ingest.yaml)
+                   reads the       └──▶ baseline_builder ──▶ state.sqlite
+                   tables geo, asn, networks and profile
 
 logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson              (judge.yaml)
                                        └──▶ verdicts.ndjson
@@ -29,9 +30,13 @@ logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged �
 - **`logs`**, the sink every pack's plugin has an edge to: `logs.sqlite`, each
   record once, at its `ts`, with two partitions, the org and the org and actor.
   Nothing is deleted; trimming it is yours to do.
-- **The runtime**: two workers, plugins compiled into `plugins/` beside the
-  config you run, and the state store at `state.sqlite`, where the API
-  sources keep their place.
+- **`baseline_builder`**, the plugin every pack's plugin has an edge to as
+  well: it folds each record into the state store, under the namespace
+  `baseline`, and passes nothing on ([below](#baseline)).
+- **The runtime**: one worker, baseline's one writer ([below](#baseline));
+  plugins compiled into `plugins/` beside the config you run; and the state
+  store at `state.sqlite`, where the API sources keep their place and
+  baseline its keys.
 
 No sources and no profile: your config adds them, and sends each source to
 its pack.
@@ -172,6 +177,50 @@ the first of them it has, so a record the model could not judge says why. A
 field's value is escaped: a log line cannot mention anyone, link or start a
 line in the message. A post that fails is logged and dropped.
 
+## baseline
+
+In ingest, `baseline_builder` ([baseline](baseline)) learns what each actor
+does, for the question one window of forty records cannot answer: "is this
+normal for this identity?"
+
+**What it learns** (ingest, `baseline_builder`), from every record with a
+`_norm.actor` whose `source` it knows: `cloudtrail`, `github_audit`, `okta`,
+`google_workspace`, `app`, `gha_ci` and `runner_egress`, and any other with an
+`event`, as the app pack's audit shape under a name of yours. Others, `agent`
+among them, it passes over.
+
+- when the actor was first seen, and its events per day and per five minutes,
+  by category: read, write, IAM or policy on someone else, its own
+  credentials, delete, sign-in;
+- when it first called each API, touched each resource (bucket, role, user,
+  secret, repository, document, path, ...), used each client, OAuth app, Okta
+  device and GitHub token, from each source; only what succeeded counts as
+  seen, since anyone can fail in someone's name;
+- the networks (ASN, country, /24 or /48) each person and the org have used,
+  and which actors have used each address;
+- the actors each person the profile names has been seen as;
+- each person's sign-ins, failed sign-ins and credential changes (MFA,
+  passwords, keys, grants, OAuth grants), filed under the person they were
+  done to as well;
+- who assumed each role session, and when.
+
+Each is a minimum, a sum or a row keyed by the event's time, so records that
+arrive out of order leave the same state. Keys begin with `_norm.org`, so
+orgs stay apart in one namespace, `baseline`, and never expire.
+
+- **People**: `people` in the profile ([above](#the-profile)) says which names
+  are one person, as an IAM user `dave` is `dave@example.com`; a name not
+  there is its own person, and one other name may be written bare
+  (`dave@example.com: dave`). Who is who is resolved once, in ingest: a
+  pack's plugin writes the actor's person on the record as `_norm.person`,
+  and the builder files each person with what they did: the actors they were
+  seen as, their sign-ins and credential changes, the role sessions they
+  assumed.
+- **One writer**: ingest runs one worker, and your ingest config must keep it
+  so, since it wins over core's. The builder reads an hour's counts, adds to
+  them and writes them back, as it does first-seen times and role sessions:
+  two workers lose updates.
+
 ## Writing a pack's plugin
 
 A pack's plugin links [packs/shared](/packs/shared) by path:
@@ -185,6 +234,12 @@ A pack's plugin links [packs/shared](/packs/shared) by path:
 - `factskit::kit(lookup)` reads the profile and the tables once per instance,
   and `kit.write(out, record, norm)` folds the org, names the person,
   enriches the addresses, adds the facts and writes the record as one line.
+
+The pack's `ingest.yaml` gives the plugin an edge to `baseline_builder`
+beside `logs`. Baseline reads a source it knows from its own table
+([baseline/kit/src/kinds](baseline/kit/src/kinds)); a new pack's records pass
+through it unlearned until the table knows their `source`, unless they carry
+an `event`, which it reads as the app pack's audit shape.
 
 ## What include cannot do
 
