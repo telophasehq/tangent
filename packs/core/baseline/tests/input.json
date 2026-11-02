@@ -54,6 +54,7 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
+   "person": "dave@acme.io",
    "org": "acme"
   },
   "_facts": {
@@ -91,6 +92,7 @@
   },
   "_norm": {
    "actor": "dave",
+   "person": "dave@acme.io",
    "org": "acme"
   },
   "_facts": {
@@ -139,6 +141,7 @@
   ],
   "_norm": {
    "actor": "dave",
+   "person": "dave@acme.io",
    "org": "acme"
   },
   "_facts": {
@@ -206,6 +209,7 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
+   "person": "dave@acme.io",
    "org": "acme"
   },
   "_facts": {
@@ -341,6 +345,7 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
+   "person": "dave@acme.io",
    "org": "acme"
   },
   "_facts": {
@@ -410,6 +415,7 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
+   "person": "dave@acme.io",
    "org": "acme"
   },
   "_facts": {
@@ -479,6 +485,7 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
+   "person": "dave@acme.io",
    "org": "acme"
   },
   "_facts": {
@@ -548,6 +555,7 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
+   "person": "dave@acme.io",
    "org": "acme"
   },
   "_facts": {
@@ -585,6 +593,7 @@
   },
   "_norm": {
    "actor": "dave",
+   "person": "dave@acme.io",
    "org": "acme"
   },
   "_facts": {
@@ -634,6 +643,7 @@
   },
   "_norm": {
    "actor": "dave",
+   "person": "dave@acme.io",
    "org": "acme"
   },
   "_facts": {

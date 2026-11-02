@@ -14,30 +14,30 @@ GitHub audit log ──▶ github ─────┤
 Okta ──▶ okta ───────────────────┼──▶ logs.sqlite        (ingest.yaml)
 Google Workspace ──▶ google_workspace
 NDJSON on :9400 ──▶ each pack ───┤   (CI, runner egress, your product's logs)
-                                 └──▶ baseline ──▶ state.sqlite
+                                 └──▶ baseline_builder ──▶ state.sqlite
 
-logs.sqlite ──▶ actors ──▶ baseline ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson  (judge.yaml)
-state.sqlite ─────────────────┘                    └──▶ verdicts.ndjson
+logs.sqlite ──▶ actors ──▶ baseline_renderer ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson  (judge.yaml)
+state.sqlite ─────────────────┘                             └──▶ verdicts.ndjson
 ```
 
 - **The packs** ([aws](/packs/aws), [github](/packs/github), [okta](/packs/okta),
   [google_workspace](/packs/google_workspace), [app](/packs/app)) each turn
   their provider's records into finished ones with one plugin: every source's
-  shape into one, `_norm.{actor, org, kind, ip, country, dest, target}`; the
-  record trimmed to what it means (ids, hashes, protocol details and bulk go);
-  the address described from the runtime's tables (country, network and owner,
-  cloud or datacenter, Tor exit, VPN, one of yours), all loaded once for the
-  process, nothing leaving the machine; and what your profile knows about it
-  in `_facts`: whether the actor is AWS itself, a member, a service, a key or
-  nobody known; whether the address, destination and target are usual; which
+  shape into one, `_norm.{actor, person, org, kind, ip, country, dest, target}`;
+  the record trimmed to what it means (ids, hashes, protocol details and bulk
+  go); the address described from the runtime's tables (country, network and
+  owner, cloud or datacenter, Tor exit, VPN, one of yours), all loaded once for
+  the process, nothing leaving the machine; and what your profile knows about
+  it in `_facts`: whether the actor is AWS itself, a member, a service, a key
+  or nobody known; whether the address, destination and target are usual; which
   kinds you watch. Every record goes on.
 - **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two
   partitions: the org, and the org and actor.
-- **baseline** folds every record into `state.sqlite` too: when each actor
-  first did each thing, from where and with what, how much an hour, and each
-  person's sign-ins and credential changes in every source (`people` in the
-  profile says which names are one person). That ends ingest, one process;
-  the judge is another, so nothing in ingest waits on a model.
+- **baseline_builder** folds every record into `state.sqlite` too: when each
+  actor first did each thing, from where and with what, how much an hour, and
+  each person's sign-ins and credential changes in every source (`people` in
+  the profile says which names are one person). That ends ingest, one
+  process; the judge is another, so nothing in ingest waits on a model.
 - **actors** reads `logs.sqlite` back forty records of one actor at a time,
   oldest first. A quiet actor's go once the oldest is an hour older than the
   newest record stored, or once nothing new has been stored for an hour,
@@ -45,9 +45,9 @@ state.sqlite ─────────────────┘             
   `_context`. A record that arrives late waits with the actor's others. Rows
   are marked once their verdicts are written, and only then do the actor's
   next go; a restart sends again what the judge had not finished.
-- **baseline** again, in the judge, reads that state without its lock and
-  puts the same `_baseline` on each of an actor's records: what was known of
-  the actor before its first record, facts, not verdicts
+- **baseline_renderer**, in the judge, reads that state without its lock
+  and puts the same `_baseline` on each of an actor's records: what was known
+  of the actor before its first record, facts, not verdicts
   ([packs/core](/packs/core#baseline) has what is in it).
 - **judge** reads an actor's records together, as **actors** sends them and
   never two actors in one request, and writes a verdict per record: a pass is

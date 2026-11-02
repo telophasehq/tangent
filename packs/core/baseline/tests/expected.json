@@ -1,7 +1,7 @@
 [
  {
   "_baseline": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "actor": "human (profile member); here as okta user; privilege used before: none",
    "auth": "last 72h, person dave@acme.io: no logins or credential changes",
    "links": "ip 203.0.113.10 new for this actor, no other actor used it before",
    "seen": "none: first seen in this window"
@@ -17,7 +17,8 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
-   "org": "acme"
+   "org": "acme",
+   "person": "dave@acme.io"
   },
   "actor": {
    "alternateId": "dave@acme.io",
@@ -74,7 +75,7 @@
  },
  {
   "_baseline": {
-   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: none",
+   "actor": "human (profile member); person dave@acme.io (dave@acme.io); here as IAM user; privilege used before: none",
    "auth": "last 72h, person dave@acme.io: 1 login (okta 1), 0 failed; no mfa, password, key or grant changes; last login okta 5m before from 203.0.113.10 ASN 64500 US, mfa unknown",
    "links": "window ip 203.0.113.10 matches okta login by dave@acme.io 5m before; ip 203.0.113.10 new for this actor, used before by 1 other actor (dave@acme.io)",
    "seen": "none: first seen in this window"
@@ -90,7 +91,8 @@
   },
   "_norm": {
    "actor": "dave",
-   "org": "acme"
+   "org": "acme",
+   "person": "dave@acme.io"
   },
   "additionalEventData": {
    "LoginTo": "https://us-west-2.console.aws.amazon.com/console/home?hashArgs=%23&isauthcode=true&nc2=h_ct&region=us-west-2&src=header-signin&state=hashArgsFromTB_us-west-2_0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
@@ -139,7 +141,8 @@
   },
   "_norm": {
    "actor": "dave",
-   "org": "acme"
+   "org": "acme",
+   "person": "dave@acme.io"
   },
   "awsRegion": "us-west-2",
   "eventName": "ListObjects",
@@ -201,7 +204,8 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
-   "org": "acme"
+   "org": "acme",
+   "person": "dave@acme.io"
   },
   "actor": {
    "alternateId": "dave@acme.io",
@@ -355,7 +359,8 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
-   "org": "acme"
+   "org": "acme",
+   "person": "dave@acme.io"
   },
   "actor": {
    "alternateId": "dave@acme.io",
@@ -436,7 +441,8 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
-   "org": "acme"
+   "org": "acme",
+   "person": "dave@acme.io"
   },
   "actor": {
    "alternateId": "dave@acme.io",
@@ -517,7 +523,8 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
-   "org": "acme"
+   "org": "acme",
+   "person": "dave@acme.io"
   },
   "actor": {
    "alternateId": "dave@acme.io",
@@ -597,7 +604,8 @@
   },
   "_norm": {
    "actor": "dave@acme.io",
-   "org": "acme"
+   "org": "acme",
+   "person": "dave@acme.io"
   },
   "actor": {
    "alternateId": "dave@acme.io",
@@ -681,7 +689,8 @@
   },
   "_norm": {
    "actor": "dave",
-   "org": "acme"
+   "org": "acme",
+   "person": "dave@acme.io"
   },
   "awsRegion": "us-west-2",
   "eventName": "PutBucketPolicy",
@@ -732,7 +741,8 @@
   },
   "_norm": {
    "actor": "dave",
-   "org": "acme"
+   "org": "acme",
+   "person": "dave@acme.io"
   },
   "awsRegion": "us-west-2",
   "eventName": "AssumeRole",

@@ -9,12 +9,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "baseline"
+name = "baseline_builder"
+version = "0.1.0"
+dependencies = [
+ "baselinekit",
+ "identitykit",
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "baseline_renderer"
+version = "0.1.0"
+dependencies = [
+ "baseline_builder",
+ "baselinekit",
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "baselinekit"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "wit-bindgen",
 ]
 
 [[package]]
@@ -61,6 +80,13 @@ name = "id-arena"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
+
+[[package]]
+name = "identitykit"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "indexmap"

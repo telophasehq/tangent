@@ -4,12 +4,12 @@ Not a provider: what every pack needs, and the judge. Every config includes
 it, beside the packs it uses.
 
 ```
-your sources ──▶ a pack's plugin ──┬──▶ logs.sqlite                                   (ingest.yaml)
-                   reads the       └──▶ baseline ──▶ state.sqlite
+your sources ──▶ a pack's plugin ──┬──▶ logs.sqlite                                            (ingest.yaml)
+                   reads the       └──▶ baseline_builder ──▶ state.sqlite
                    tables geo, asn, networks and profile
 
-logs.sqlite ──▶ actors ──▶ baseline ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson (judge.yaml)
-state.sqlite ─────────────────┘                    └──▶ verdicts.ndjson
+logs.sqlite ──▶ actors ──▶ baseline_renderer ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson (judge.yaml)
+state.sqlite ─────────────────┘                             └──▶ verdicts.ndjson
 ```
 
 ## ingest.yaml
@@ -30,9 +30,9 @@ state.sqlite ─────────────────┘             
 - **`logs`**, the sink every pack's plugin has an edge to: `logs.sqlite`, each
   record once, at its `ts`, with two partitions, the org and the org and actor.
   Nothing is deleted; trimming it is yours to do.
-- **`baseline`**, the plugin every pack's plugin has an edge to as well, in
-  `mode: learn`: it folds each record into the state store, under the
-  namespace `baseline`, and passes nothing on ([below](#baseline)).
+- **`baseline_builder`**, the plugin every pack's plugin has an edge to as
+  well: it folds each record into the state store, under the namespace
+  `baseline`, and passes nothing on ([below](#baseline)).
 - **The runtime**: one worker and no `partition`, baseline's one writer
   ([below](#baseline)); plugins compiled into `plugins/` beside the config you
   run; and the state store at `state.sqlite`, where the API sources keep their
@@ -53,6 +53,7 @@ speak for the pipeline.
 | field | what it is |
 |---|---|
 | `actor` | who acted: a user, role or key; for CI and an agent's run, the repository or nothing |
+| `person` | the person the actor is, when the profile's `people` names them |
 | `org` | whose it is: your org for your own sources (the profile's `org` and `own_sources`), else the record's own tenant |
 | `kind` | what happened: the event's name |
 | `ip` | the address it came from; this one is enriched |
@@ -60,8 +61,8 @@ speak for the pipeline.
 | `dest` | the host it went to |
 | `target` | what it touched: a bucket, role, repository, application |
 
-`actor` and `org` are always kept, since they route the record; the others
-only when the record does not already hold the value.
+`actor` and `org` are always kept, since they route the record, and so is
+`person`; the others only when the record does not already hold the value.
 
 `_facts`, what the profile and the tables say:
 
@@ -83,8 +84,9 @@ A pack adds what only its provider's log says: `aws` adds `root` and
 ## The profile
 
 Every fact about your company that no log carries, as the `profile` table: a
-YAML file your ingest config names. The judge config needs none: what baseline
-needs of it, `people`, ingest files in the state store.
+YAML file your ingest config names. The judge config needs none: who is who is
+resolved in ingest, and reaches the judge on the records (`_norm.person`) and
+in the state store.
 
 ```yaml
 enrichment_tables:
@@ -98,10 +100,10 @@ enrichment_tables:
 | `cloud` | where your services run | a note when a service acts from any other hosting |
 | `networks` | your own addresses: office, VPN, CI egress | `ip.ours`; never a person's odd location |
 | `members` | people: IdP emails, GitHub handles | `principal: member`; anyone else is `unknown` |
+| `people` | each person's other names, a list or one: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_norm.person` when the actor is the person or one of their names; `principal` still comes from `members`, so list the names there too; in `_baseline`, their history, sign-ins and networks as one person's |
 | `services` | IAM users and roles, bots | `principal: service`, held to `cloud` |
 | `keys` | API keys and the networks each calls from | `principal: key`, `key_known_network` |
 | `about` | who an actor is, when its name does not say | `about`, in place of the "nobody it knows" note |
-| `people` | a person's other names: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_baseline`: their history, sign-ins and networks as one person's |
 | `hosts` | hosts your systems talk to (`*.suffix` allowed) | `dest_known` |
 | `sensitive` | buckets, repos, tables | `sensitive_target` |
 | `watch` | kinds a person wants seen every time | `watch` |
@@ -115,12 +117,12 @@ would go on as nobody the org knows, in the provider's org rather than yours.
 - **actors** reads `logs.sqlite` back forty records of one actor at a time,
   oldest first, topped up with the actor's latest records already judged,
   marked `_context`.
-- **baseline**, in `mode: header`, reads ingest's `state.sqlite` and puts the
-  same `_baseline` on each of an actor's records ([below](#baseline)). The
-  state is opened `read_only`, without ingest's lock, so ingest starts first:
-  the judge refuses a file that is not there yet.
-  `drop_on_error: false`: when baseline fails, the records go to the model
-  without `_baseline` rather than not at all.
+- **baseline_renderer** reads ingest's `state.sqlite` and puts the same
+  `_baseline` on each of an actor's records ([below](#baseline)). The state
+  is opened `read_only`, without ingest's lock, so ingest starts first: the
+  judge refuses a file that is not there yet.
+  `drop_on_error: false`: when the renderer fails, the records go to the
+  model without `_baseline` rather than not at all.
 - **judge** reads an actor's records together and writes a verdict per record,
   with [judge.md](judge.md) as its brief and
   [judge.schema.json](judge.schema.json) as the verdict's shape.
@@ -200,14 +202,14 @@ line in the message. A post that fails is logged and dropped.
 
 ## baseline
 
-One plugin, [baseline](baseline), in both configs: in ingest it learns what
-each actor does, in the judge it tells the model. It answers the question one
-window of forty records cannot, "is this normal for this identity?", from the
-state store alone, and only from what happened before the actor's first
-record in the request: nothing at or after it counts, so a window never
-explains itself.
+Two plugins, in [baseline](baseline): in ingest `baseline_builder` learns
+what each actor does, in the judge `baseline_renderer` tells the model. They
+answer the question one window of forty records cannot, "is this normal for
+this identity?", from the state store alone, and only from what happened
+before the actor's first record in the request: nothing at or after it
+counts, so a window never explains itself.
 
-**What it learns** (ingest, `mode: learn`), from every record with a
+**What it learns** (ingest, `baseline_builder`), from every record with a
 `_norm.actor` whose `source` it knows: `cloudtrail`, `github_audit`, `okta`,
 `google_workspace`, `app`, `gha_ci` and `runner_egress`, and any other with an
 `event`, as the app pack's audit shape under a name of yours. Others, `agent`
@@ -222,23 +224,23 @@ among them, it passes over.
   seen, since anyone can fail in someone's name;
 - the networks (ASN, country, /24 or /48) each person and the org have used,
   and which actors have used each address;
+- the actors each person the profile names has been seen as;
 - each person's sign-ins, failed sign-ins and credential changes (MFA,
   passwords, keys, grants, OAuth grants), filed under the person they were
   done to as well;
 - who assumed each role session, and when.
 
 Each is a minimum, a sum or a row keyed by the event's time, so records that
-arrive out of order leave the same state. Keys begin with `_norm.org` (all
-but `people`), so orgs stay apart in one namespace, `baseline`, and never
-expire.
+arrive out of order leave the same state. Keys begin with `_norm.org`, so
+orgs stay apart in one namespace, `baseline`, and never expire.
 
-**What it stamps** (judge, `mode: header`): `_baseline`, one object, the same
-on each of an actor's records in the request, `_context` ones included; a key
-is left out when it has nothing to say.
+**What it stamps** (judge, `baseline_renderer`): `_baseline`, one object,
+the same on each of an actor's records in the request, `_context` ones
+included; a key is left out when it has nothing to say.
 
 | key | what it says |
 |---|---|
-| `actor` | who it is to the profile, its person and that person's other names, the identities seen here (IAM user, assumed role, okta user, ...); for a role, who assumed it, and who assumed them, up to four hops and twelve hours back, or its SSO permission set; the privilege it used before (admin, write, read-only, none); a session's MFA against its earlier sessions' |
+| `actor` | who it is to the profile, its person and the actors that person was seen as before (when they name anyone but the actor), the identities seen here (IAM user, assumed role, okta user, ...); for a role, who assumed it, and who assumed them, up to four hops and twelve hours back, or its SSO permission set; the privilege it used before (admin, write, read-only, none); a session's MFA against its earlier sessions' |
 | `seen` | how long it has been seen, its events and active days, from which sources; or `none: first seen in this window` |
 | `new` | what it does here for the first time, or first did within the hour: `api`, `resource`, `client`, `network` (with `(new to org)`), `source`, `oauth`, `device`, `token`; or `nothing: ...` |
 | `volume` | the last hour against the p90 of its active hours in 28 days, in total and per category, as `normal`, `2-5x`, `5-10x`, `>10x` or `none before` |
@@ -253,13 +255,15 @@ share; JSON lines repeat it on every record ([the cost](#judgeyaml)).
 - **People**: `people` in the profile ([above](#the-profile)) says which names
   are one person, as an IAM user `dave` is `dave@example.com`; a name not
   there is its own person, and one other name may be written bare
-  (`dave@example.com: dave`). Ingest's baseline reads it from the `profile`
-  table and files it in the state store, under `people`, where the judge's
-  reads it: the two cannot disagree on who is who, and the judge config names
-  no profile.
+  (`dave@example.com: dave`). Who is who is resolved once, in ingest: a
+  pack's plugin writes the actor's person on the record as `_norm.person`,
+  and the builder files each person with what they did: the actors they were
+  seen as, their sign-ins and credential changes, the role sessions they
+  assumed. The renderer reads persons off the records and out of state and
+  resolves no one, so the judge config names no profile.
 - **One writer**: ingest runs one worker and no `runtime.partition`, and your
-  ingest config must keep it so, since it wins over core's. Baseline reads an
-  hour's counts, adds to them and writes them back, as it does first-seen
+  ingest config must keep it so, since it wins over core's. The builder reads
+  an hour's counts, adds to them and writes them back, as it does first-seen
   times and role sessions: two workers lose updates. A partition files every
   key under it, where the judge, which has none, does not look; baseline's keys
   carry the org instead.
@@ -271,8 +275,8 @@ share; JSON lines repeat it on every record ([the cost](#judgeyaml)).
 - **Fail-open**: in the judge, `drop_on_error: false`: when a call fails, the
   records go on without `_baseline`.
 
-[baseline/README.md](baseline/README.md) has the keys it keeps and how it is
-tested.
+[baseline/README.md](baseline/README.md) has the keys they keep and how they
+are tested.
 
 ## Writing a pack's plugin
 
@@ -285,12 +289,12 @@ A pack's plugin links [packs/shared](/packs/shared) by path:
 - `normkit::record`, `scrubbed` and the trim helpers give the record without
   the reserved keys, its per-event ids or its URL signatures.
 - `factskit::kit(lookup)` reads the profile and the tables once per instance,
-  and `kit.write(out, record, norm)` folds the org, enriches the addresses,
-  adds the facts and writes the record as one line.
+  and `kit.write(out, record, norm)` folds the org, names the person,
+  enriches the addresses, adds the facts and writes the record as one line.
 
-The pack's `ingest.yaml` gives the plugin an edge to `baseline` beside `logs`.
-Baseline reads a source it knows from its own table
-([baseline/src/kinds.rs](baseline/src/kinds.rs)); a new pack's records pass
+The pack's `ingest.yaml` gives the plugin an edge to `baseline_builder`
+beside `logs`. Baseline reads a source it knows from its own table
+([baseline/kit/src/kinds](baseline/kit/src/kinds)); a new pack's records pass
 through it unlearned, with no `_baseline`, until the table knows their
 `source`, unless they carry an `event`, which it reads as the app pack's audit
 shape.
@@ -298,10 +302,10 @@ shape.
 ## What include cannot do
 
 - **Take a stage out of, or put one into, core's chain.** Edges add up and none
-  can be removed, so `actors -> baseline -> judge` stays, and so does each
-  pack's edge to `baseline`. Another plugin between them, or a judge without
-  `baseline`, means copying `judge.yaml` instead of including it, or a change
-  here that every config gets, as `baseline` was.
+  can be removed, so `actors -> baseline_renderer -> judge` stays, and so
+  does each pack's edge to `baseline_builder`. Another plugin between them, or
+  a judge without `baseline_renderer`, means copying `judge.yaml` instead of
+  including it, or a change here that every config gets, as baseline was.
 - **Keep a batch's order.** A source routed to several packs hands each its own
   records in turn, so within a batch every `cloudtrail` record reaches
   `logs.sqlite` before every `okta` one. `actors` reads back by time, so only
