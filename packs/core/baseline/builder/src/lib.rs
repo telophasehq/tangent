@@ -9,6 +9,9 @@ mod counts;
 mod firsts;
 mod rows;
 mod sessions;
+// wasm only: the renderer's tests link this crate, and a binary holds one
+// plugin's exports.
+#[cfg(target_arch = "wasm32")]
 mod wit;
 
 use baselinekit::kinds::{ev, Ev};

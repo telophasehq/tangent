@@ -98,7 +98,7 @@ enrichment_tables:
 | `cloud` | where your services run | a note when a service acts from any other hosting |
 | `networks` | your own addresses: office, VPN, CI egress | `ip.ours`; never a person's odd location |
 | `members` | people: IdP emails, GitHub handles | `principal: member`; anyone else is `unknown` |
-| `people` | each person's other names, a list or one: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_norm.person` when the actor is the person or one of their names; `principal` still comes from `members`, so list the names there too |
+| `people` | each person's other names, a list or one: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_norm.person` when the actor is the person or one of their names; `principal` still comes from `members`, so list the names there too; in `_baseline`, their history, sign-ins and networks as one person's |
 | `services` | IAM users and roles, bots | `principal: service`, held to `cloud` |
 | `keys` | API keys and the networks each calls from | `principal: key`, `key_known_network` |
 | `about` | who an actor is, when its name does not say | `about`, in place of the "nobody it knows" note |
@@ -208,6 +208,20 @@ Each is a minimum, a sum or a row keyed by the event's time, so records that
 arrive out of order leave the same state. Keys begin with `_norm.org`, so
 orgs stay apart in one namespace, `baseline`, and never expire.
 
+**What it stamps** (`baseline_renderer`): `_baseline`, one object,
+the same on each of an actor's records in the request, `_context` ones
+included; a key is left out when it has nothing to say.
+
+| key | what it says |
+|---|---|
+| `actor` | who it is to the profile, its person and the actors that person was seen as before (when they name anyone but the actor), the identities seen here (IAM user, assumed role, okta user, ...); for a role, who assumed it, and who assumed them, up to four hops and twelve hours back, or its SSO permission set; the privilege it used before (admin, write, read-only, none); a session's MFA against its earlier sessions' |
+| `seen` | how long it has been seen, its events and active days, from which sources; or `none: first seen in this window` |
+| `new` | what it does here for the first time, or first did within the hour: `api`, `resource`, `client`, `network` (with `(new to org)`), `source`, `oauth`, `device`, `token`; or `nothing: ...` |
+| `volume` | the last hour against the p90 of its active hours in 28 days, in total and per category, as `normal`, `2-5x`, `5-10x`, `>10x` or `none before` |
+| `time` | the window's hours against its usual hours in 28 days, and how long since it was last active; or dormant |
+| `auth` | the last 72 hours of its person, and of whoever is behind a role: logins per source, failed logins, MFA, password, key and grant changes, and the last login's address, network and MFA |
+| `links` | when an OAuth app in the window was first seen; a login from the window's address; a login from a network new for the person in the hour before; an address new for this actor, and who used it before |
+
 - **People**: `people` in the profile ([above](#the-profile)) says which names
   are one person, as an IAM user `dave` is `dave@example.com`; a name not
   there is its own person, and one other name may be written bare
@@ -215,11 +229,15 @@ orgs stay apart in one namespace, `baseline`, and never expire.
   pack's plugin writes the actor's person on the record as `_norm.person`,
   and the builder files each person with what they did: the actors they were
   seen as, their sign-ins and credential changes, the role sessions they
-  assumed.
+  assumed. The renderer reads persons off the records and out of state and
+  resolves no one.
 - **One writer**: ingest runs one worker, and your ingest config must keep it
   so, since it wins over core's. The builder reads an hour's counts, adds to
   them and writes them back, as it does first-seen times and role sessions:
   two workers lose updates.
+
+[baseline/README.md](baseline/README.md) has the keys they keep and how they
+are tested.
 
 ## Writing a pack's plugin
 
@@ -238,8 +256,9 @@ A pack's plugin links [packs/shared](/packs/shared) by path:
 The pack's `ingest.yaml` gives the plugin an edge to `baseline_builder`
 beside `logs`. Baseline reads a source it knows from its own table
 ([baseline/kit/src/kinds](baseline/kit/src/kinds)); a new pack's records pass
-through it unlearned until the table knows their `source`, unless they carry
-an `event`, which it reads as the app pack's audit shape.
+through it unlearned, with no `_baseline`, until the table knows their
+`source`, unless they carry an `event`, which it reads as the app pack's audit
+shape.
 
 ## What include cannot do
 

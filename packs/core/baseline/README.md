@@ -1,9 +1,19 @@
 # baseline
 
+Core's two plugins for `_baseline`: what the state store knew about an actor
+before the first of its records in a call. [packs/core](../README.md#baseline)
+says what they learn and what `_baseline` says; this is how.
+
 | directory | plugin | where | what it does |
 |---|---|---|---|
 | [builder](builder) | `baseline_builder` | ingest | folds every record into state, each person with what they did; emits nothing |
+| [renderer](renderer) | `baseline_renderer` | the judge | puts `_baseline` on each of an actor's records; writes nothing |
 | [kit](kit) | | both link it | the keys, the event read off each source's record, the time helpers, the store as `Kv` |
+
+They run in different processes and share only the keys, so the kit holds
+everything both must agree on. The builder is a file per kind of key it
+writes; the renderer is a file per `_baseline` key, and `before.rs`, which
+every one of them reads state through.
 
 Who is who is resolved in ingest, where the profile is. An actor's person is
 its record's `_norm.person`, which the pack's plugin wrote from the profile's
@@ -11,7 +21,13 @@ its record's `_norm.person`, which the pack's plugin wrote from the profile's
 `people` itself ([identitykit](../../shared/identitykit)) only for the other
 names a record holds: the persons a credential change was done to, and a
 federated user's issuer. It files a person with each row that names someone,
-and the actors each person was seen as.
+and the actors each person was seen as. The renderer has no profile and
+resolves no one: a name that neither a record nor state gives a person is its
+own, lowercased.
+
+Each probe takes every record: one it cannot read, with no `_norm.actor` or
+from a source it does not know, the builder passes over and the renderer
+passes on unchanged. A state call that fails fails the call.
 
 ## Keys
 
@@ -33,6 +49,10 @@ milliseconds in 13 digits. Nothing expires.
 | `<org>\|p\|<person>\|f\|<minute, ms13>` | failed sign-ins that minute |
 | `<org>\|s\|<account>\|<role>\|<session>\|<hour>` | who assumed the session that hour and their person, as JSON |
 
+Every read in the renderer is cut at the window's start: first-seen times
+only when earlier, rows only from before it, whole days and whole five-minute
+slots only when they ended before it.
+
 ## Sources
 
 [kit/src/kinds](kit/src/kinds) reads each source's own fields: its verb,
@@ -46,5 +66,15 @@ instead, and this table would go.
 ## Tests
 
 ```bash
-make -C packs test-baseline      # cargo test in kit and builder
+make -C packs test-baseline      # cargo test in kit, builder and renderer, then story.sh
+make -C packs fixtures-baseline  # story.sh write: tests/expected.json from the story
 ```
+
+`tests/input.json` is a sign-in story, records as the packs write them: office
+logins, a failed one from another country, an MFA reset by an admin, the
+sign-in from the new country, an aliased IAM user's bucket policy twenty
+minutes later, an AssumeRole and the role's call, an SSO session, and an
+agent's record with no actor. [test.yaml](test.yaml) sends each record to the
+renderer and then the builder, a call each, over one state, so its
+`_baseline` is what the records before it taught. `tangent plugin test` runs
+one plugin, so [story.sh](story.sh) runs the pipeline and compares.
