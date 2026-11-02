@@ -23,13 +23,13 @@ state.sqlite ─────────────────┘             
 - **The packs** ([aws](/packs/aws), [github](/packs/github), [okta](/packs/okta),
   [google_workspace](/packs/google_workspace), [app](/packs/app)) each turn
   their provider's records into finished ones with one plugin: every source's
-  shape into one, `_norm.{actor, org, kind, ip, country, dest, target}`; the
-  record trimmed to what it means (ids, hashes, protocol details and bulk go);
-  the address described from the runtime's tables (country, network and owner,
-  cloud or datacenter, Tor exit, VPN, one of yours), all loaded once for the
-  process, nothing leaving the machine; and what your profile knows about it
-  in `_facts`: whether the actor is AWS itself, a member, a service, a key or
-  nobody known; whether the address, destination and target are usual; which
+  shape into one, `_norm.{actor, person, org, kind, ip, country, dest, target}`;
+  the record trimmed to what it means (ids, hashes, protocol details and bulk
+  go); the address described from the runtime's tables (country, network and
+  owner, cloud or datacenter, Tor exit, VPN, one of yours), all loaded once for
+  the process, nothing leaving the machine; and what your profile knows about
+  it in `_facts`: whether the actor is AWS itself, a member, a service, a key
+  or nobody known; whether the address, destination and target are usual; which
   kinds you watch. Every record goes on.
 - **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two
   partitions: the org, and the org and actor.

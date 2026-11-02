@@ -100,7 +100,7 @@ enrichment_tables:
 | `cloud` | where your services run | a note when a service acts from any other hosting |
 | `networks` | your own addresses: office, VPN, CI egress | `ip.ours`; never a person's odd location |
 | `members` | people: IdP emails, GitHub handles | `principal: member`; anyone else is `unknown` |
-| `people` | each person's other names, a list or one: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_norm.person` when the actor is the person or one of their names; in `_baseline`, their history, sign-ins and networks as one person's |
+| `people` | each person's other names, a list or one: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_norm.person` when the actor is the person or one of their names; `principal` still comes from `members`, so list the names there too; in `_baseline`, their history, sign-ins and networks as one person's |
 | `services` | IAM users and roles, bots | `principal: service`, held to `cloud` |
 | `keys` | API keys and the networks each calls from | `principal: key`, `key_known_network` |
 | `about` | who an actor is, when its name does not say | `about`, in place of the "nobody it knows" note |

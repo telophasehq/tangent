@@ -15,7 +15,7 @@ says about it in `_facts`. How to use them is in the main
 | [google_workspace](google_workspace) | `google_workspace` |
 | [app](app) | your product's NDJSON: `app`, `agent`, and names you list |
 | [macos](macos) | planned, not built |
-| [shared](shared) | not a pack: `normkit`, `enrichkit` and `factskit`, the Rust libraries every pack's plugin links |
+| [shared](shared) | not a pack: `normkit`, `enrichkit`, `identitykit` and `factskit`, the Rust libraries every pack's plugin links |
 
 A `source` value belongs to one pack: two packs taking it would store each
 record twice.
