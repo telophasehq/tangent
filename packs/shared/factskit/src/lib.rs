@@ -10,6 +10,7 @@ use std::net::IpAddr;
 use std::sync::OnceLock;
 
 use enrichkit::{parse_net, Ip, Lookup, Tables};
+use identitykit::People;
 use ipnet::IpNet;
 use normkit::Norm;
 use serde_json::{json, Map, Value};
@@ -26,6 +27,7 @@ pub struct Profile {
     keys: BTreeMap<String, Vec<IpNet>>, // empty: any network
     cloud: Option<String>,
     about: BTreeMap<String, String>, // actor: who it is
+    people: People,                  // which names are one person
     hosts: BTreeSet<String>,
     sensitive: BTreeSet<String>,
 }
@@ -69,6 +71,7 @@ impl Profile {
             },
             cloud: f["cloud"].as_str().map(str::to_string),
             about: serde_json::from_value(f["about"].clone()).unwrap_or_default(),
+            people: People::from_value(&f["people"]),
             hosts: strs(&f["hosts"]),
             sensitive: strs(&f["sensitive"]),
         }
@@ -130,6 +133,14 @@ impl Kit {
             {
                 n.org = Some(org.clone());
             }
+        }
+        // The person behind the actor, only when the profile names them.
+        if n.person.is_none() {
+            n.person = n
+                .actor
+                .as_deref()
+                .map(|a| p.people.person(a))
+                .filter(|w| p.people.knows(w));
         }
         let ip = n.ip.as_deref().and_then(|a| self.tables.ip(a));
         let mut facts = facts_of(p, &rec, &n, ip);
@@ -281,8 +292,9 @@ fn facts_of(p: &Profile, rec: &Map<String, Value>, n: &Norm, ip: Option<Ip>) -> 
     facts
 }
 
-/// `_norm` keeps what routes a record (actor, org) and what the log does not
-/// already say: a kind, address or target copied from a field goes.
+/// `_norm` keeps what routes a record (actor, org), the actor's person, and
+/// what the log does not already say: a kind, address or target copied from a
+/// field goes.
 fn unrepeat(rec: &Map<String, Value>, norm: &mut Map<String, Value>) {
     fn values(v: &Value, out: &mut BTreeSet<String>) {
         match v {
@@ -295,7 +307,9 @@ fn unrepeat(rec: &Map<String, Value>, norm: &mut Map<String, Value>) {
     }
     let mut logged = BTreeSet::new();
     rec.values().for_each(|v| values(v, &mut logged));
-    norm.retain(|k, v| matches!(k.as_str(), "actor" | "org") || !logged.contains(&v.to_string()));
+    norm.retain(|k, v| {
+        matches!(k.as_str(), "actor" | "org" | "person") || !logged.contains(&v.to_string())
+    });
 }
 
 #[cfg(test)]
@@ -309,7 +323,7 @@ mod tests {
                    "members":["alice@example.com"],"services":["deploy-bot"],
                    "keys":{"ak_1":["203.0.113.0/24"]},"about":{"VendorRole":"the vendor"},
                    "hosts":["*.example.internal"],"sensitive":["prod-db"],"watch":["StopLogging"],
-                   "networks":["10.0.0.0/8"]}"#
+                   "networks":["10.0.0.0/8"],"people":{"carol@example.com":["Carol-GH"]}}"#
             }
             ("profile", "networks") => r#"["10.0.0.0/8"]"#,
             ("geo", "198.51.100.7") => r#"{"country":{"iso_code":"NL"}}"#,
@@ -470,6 +484,37 @@ mod tests {
         );
         assert_eq!(rec["_facts"]["about"], json!("the vendor"));
         assert_eq!(rec["_facts"]["notes"], json!([]));
+    }
+
+    #[test]
+    fn the_person_an_actor_is() {
+        let actor = |a: &str| Norm {
+            actor: Some(a.into()),
+            ..Norm::default()
+        };
+        let rec = written(
+            r#"{"source":"github_audit","actor":"carol-gh"}"#,
+            actor("carol-gh"),
+        );
+        assert_eq!(
+            rec["_norm"],
+            json!({"actor": "carol-gh", "person": "carol@example.com"})
+        );
+        let rec = written(
+            r#"{"source":"okta","user":"carol@example.com"}"#,
+            actor("Carol@example.com"),
+        );
+        assert_eq!(
+            rec["_norm"],
+            json!({"actor": "Carol@example.com", "person": "carol@example.com"}),
+            "the person's own name, kept though the log holds it"
+        );
+        let rec = written(r#"{"source":"okta"}"#, actor("carol"));
+        assert_eq!(
+            rec["_norm"],
+            json!({"actor": "carol"}),
+            "no one the map names"
+        );
     }
 
     #[test]
