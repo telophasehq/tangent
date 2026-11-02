@@ -12,9 +12,9 @@ wasmtime-wasi =  { git = "https://github.com/bytecodealliance/wasmtime.git", rev
 [workspace.package]
 version = "0.1.9"
 edition = "2021"
-repository = "https://github.com/telophasehq/tangent"
-homepage = "https://github.com/telophasehq/tangent"
-documentation = "https://github.com/telophasehq/tangent"
+repository = "https://github.com/EthanBlackburn/tangent"
+homepage = "https://github.com/EthanBlackburn/tangent"
+documentation = "https://github.com/EthanBlackburn/tangent"
 readme = "README.md"
 
 [profile.dist]

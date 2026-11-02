@@ -6,8 +6,8 @@
 
 
 <p align="center">
-  <a href="https://github.com/telophasehq/tangent/actions">
-  <img height="20" src="https://img.shields.io/github/actions/workflow/status/telophasehq/tangent/scaffold_test.yml?label=build&logo=github" alt="Build status"></a>
+  <a href="https://github.com/EthanBlackburn/tangent/actions">
+  <img height="20" src="https://img.shields.io/github/actions/workflow/status/EthanBlackburn/tangent/scaffold_test.yml?label=build&logo=github" alt="Build status"></a>
   <a href="https://twitter.com/telophasehq">
   <img src="https://img.shields.io/twitter/follow/telophasehq?style=social" alt="X">
   </a>
@@ -19,14 +19,14 @@
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
   <a href="https://discord.gg/ZUHB3BRa8c">Discord</a>
   <span>&nbsp;&nbsp;•&nbsp;&nbsp;</span>
-  <a href="https://github.com/telophasehq/tangent/issues/new">Issues</a>
+  <a href="https://github.com/EthanBlackburn/tangent/issues/new">Issues</a>
 </p>
 
 ## What is Tangent?
 Tangent is a stream‑processing toolkit that treats **plugins** (user‑defined functions) as first‑class citizens – exceptionally easy to write and share. Perfect for vibe-coding those pesky log transformations.
 
 
-Plugins run in a lightweight WASM sandbox with near-native speed and full language flexibility — no DSLs, no vendor-locked runtimes. Plugins are designed to be shareable, so common transformations (e.g. GuardDuty findings → OCSF) can be written once and shared with the [community](https://github.com/telophasehq/tangent-plugins).
+Plugins run in a lightweight WASM sandbox with near-native speed and full language flexibility — no DSLs, no vendor-locked runtimes. Plugins are designed to be shareable, so common transformations (e.g. GuardDuty findings → OCSF) can be written once and shared with the [community](https://github.com/EthanBlackburn/tangent-plugins).
 
 Tangent ships with everything you need to develop, test, and benchmark your own transforms:
 * `tangent plugin scaffold` – generate plugin boilerplate (`--setup` also installs the toolchain)
@@ -41,7 +41,7 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 
 2. **Catch breakage before prod** — `tangent plugin test` for correctness; `tangent bench` for throughput/latency.
 
-3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/telophasehq/tangent-plugins). Each plugin runs in its own lightweight sandbox.
+3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/EthanBlackburn/tangent-plugins). Each plugin runs in its own lightweight sandbox.
 
 ## State and partitioning
 Plugins keep state through the `state` interface: `state.Get`, `state.Set`, `state.Incr`, `state.Del`, and `state.Scan` for a key range, each write with an optional TTL. That state lives in the runtime's **state store**, configured under `runtime.state`:
@@ -351,11 +351,11 @@ brew install tangent-cli
 tangent --version
 
 # with install script
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/telophasehq/tangent/releases/latest/download/tangent-cli-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/EthanBlackburn/tangent/releases/latest/download/tangent-cli-installer.sh | sh
 tangent --version
 
 # cargo
-cargo install --git https://github.com/telophasehq/tangent tangent-cli
+cargo install --git https://github.com/EthanBlackburn/tangent tangent-cli
 
 # docker
 docker pull ghcr.io/telophasehq/tangent-toolchain
