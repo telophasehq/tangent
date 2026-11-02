@@ -204,7 +204,7 @@ Unknown keys aside, a config without `include:` reads as it always has.
 ## Packs
 A pack is what tangent knows about one provider's logs, and it is one plugin, named after the provider. Tangent's own sources read the logs (`cloudtrail`, `github_audit`, `okta` and `google_workspace` read the providers' APIs; `tcp` takes anything else as NDJSON with a `source` field), and the pack's plugin turns each raw record into a finished one:
 
-1. drops the keys only the pipeline writes (`_norm`, `_facts`, `_ip`, `_context`, `_hist`), so a log line cannot speak for it;
+1. drops the keys only the pipeline writes (`_norm`, `_facts`, `_ip`, `_context`, `_baseline`), so a log line cannot speak for it;
 2. normalizes it: `_norm` says who did what, from where, to what (`actor`, `person`, `org`, `kind`, `ip`, `country`, `dest`, `target`), the same way for every provider;
 3. strips what is redundant or never decides a verdict: per-event ids, hashes, pagination, issued credentials, URL signatures;
 4. enriches its address from the [enrichment tables](#enrichment-tables): country, network and owner, hosting provider, Tor exit, VPN, one of yours;

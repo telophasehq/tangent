@@ -44,7 +44,7 @@ its pack.
 ## The record
 
 What a pack's plugin writes, the same for every provider. A raw record's own
-`_norm`, `_facts`, `_ip`, `_context` and `_hist` (and a key naming a field
+`_norm`, `_facts`, `_ip`, `_context` and `_baseline` (and a key naming a field
 under one, such as `_facts.notes`) are dropped first, so a log line cannot
 speak for the pipeline.
 
