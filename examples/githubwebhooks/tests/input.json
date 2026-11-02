@@ -1,26 +1,52 @@
 [
   {
-    "msg": "my log",
-    "msg.level": "info",
-    "seen": 5,
-    "duration": 6.3,
-    "tags": [
-      "tag1"
-    ],
-    "source": {
-      "name": "myservice"
-    }
+    "kind": "github_ci_log",
+    "github": {
+      "run_id": 1001,
+      "repo": "acme/widgets",
+      "sha": "3f2a9c41d07e5b86a1c2f0e9d8b7a6c5e4f3a2b1",
+      "log_file": "build/7_Publish.txt"
+    },
+    "message": "##[group]Run npm publish --access public"
   },
   {
-    "msg": "my log",
-    "msg.level": "info",
-    "seen": 5,
-    "duration": 6.3,
-    "tags": [
-      "tag1"
-    ],
-    "source": {
-      "name": "myservice"
-    }
+    "kind": "github_ci_log",
+    "github": {
+      "run_id": 1001,
+      "repo": "acme/widgets",
+      "sha": "3f2a9c41d07e5b86a1c2f0e9d8b7a6c5e4f3a2b1",
+      "log_file": "build/7_Publish.txt"
+    },
+    "message": "npm notice name: acme-widgets"
+  },
+  {
+    "kind": "github_ci_log",
+    "github": {
+      "run_id": 1001,
+      "repo": "acme/widgets",
+      "sha": "3f2a9c41d07e5b86a1c2f0e9d8b7a6c5e4f3a2b1",
+      "log_file": "build/7_Publish.txt"
+    },
+    "message": "npm notice shasum: 9c1e7b2a4d6f8e0c3b5a7d9f1e2c4b6a8d0f2e4c"
+  },
+  {
+    "kind": "github_ci_log",
+    "github": {
+      "run_id": 1001,
+      "repo": "acme/widgets",
+      "sha": "3f2a9c41d07e5b86a1c2f0e9d8b7a6c5e4f3a2b1",
+      "log_file": "build/7_Publish.txt"
+    },
+    "message": "+ acme-widgets@1.4.2"
+  },
+  {
+    "kind": "github_ci_log",
+    "github": {
+      "run_id": 1001,
+      "repo": "acme/widgets",
+      "sha": "77b0e1d2c3f4a5968778695a4b3c2d1e0f9a8b7c",
+      "log_file": "build/7_Publish.txt"
+    },
+    "message": "+ acme-widgets@1.4.3"
   }
 ]
