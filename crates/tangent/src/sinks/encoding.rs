@@ -1,7 +1,7 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use apache_avro::Codec;
 use arrow_json::ReaderBuilder;
-use arrow_schema::Schema;
+use arrow_schema::{Schema, SchemaRef};
 use bytes::{BufMut, Bytes, BytesMut};
 use memchr::{memchr, memchr_iter};
 use parquet::basic::{Compression as PqCompression, GzipLevel, ZstdLevel};
@@ -90,11 +90,11 @@ pub fn write_parquet<R: BufRead, W: Write + Send>(
     arrow_schema_json: &str,
     comp: &Compression,
 ) -> Result<W> {
-    let schema = Arc::new(serde_json::from_str::<Schema>(arrow_schema_json)?);
+    let (schema, props) = parquet_setup(arrow_schema_json, comp)?;
     let mut decoder = ReaderBuilder::new(Arc::clone(&schema))
         .with_batch_size(PARQUET_BATCH_LINES)
         .build_decoder()?;
-    let mut writer = ArrowWriter::try_new(out, schema, Some(parquet_props_from(comp)?))?;
+    let mut writer = ArrowWriter::try_new(out, schema, Some(props))?;
 
     // the batch's lines back to back, without their line breaks, and where each ends
     let mut chunk = Vec::<u8>::new();
@@ -137,6 +137,36 @@ pub fn write_parquet<R: BufRead, W: Write + Send>(
         }
     }
     Ok(writer.into_inner()?)
+}
+
+/// The schema read out of each line and the writer's properties: what a
+/// file's encoding fails on before its first line, if it fails at all.
+fn parquet_setup(
+    arrow_schema_json: &str,
+    comp: &Compression,
+) -> Result<(SchemaRef, WriterProperties)> {
+    let schema: Schema = serde_json::from_str(arrow_schema_json)
+        .context("the parquet schema is not an Arrow schema")?;
+    Ok((Arc::new(schema), parquet_props_from(comp)?))
+}
+
+/// What a sink's encoding would fail on at every file, found when the sink
+/// is made rather than after writes are acked into its WAL: a Parquet
+/// schema that does not parse, or that arrow-json or the writer cannot take,
+/// a compression Parquet does not have; an Avro schema that does not parse.
+pub fn check(enc: &Encoding, comp: &Compression) -> Result<()> {
+    match enc {
+        Encoding::Parquet { schema } => {
+            let (schema, props) = parquet_setup(schema, comp)?;
+            ReaderBuilder::new(Arc::clone(&schema)).build_decoder()?;
+            ArrowWriter::try_new(std::io::sink(), schema, Some(props))?;
+        }
+        Encoding::Avro { schema } => {
+            apache_avro::Schema::parse_str(schema)?;
+        }
+        Encoding::NDJSON | Encoding::JSON => {}
+    }
+    Ok(())
 }
 
 fn parquet_props_from(comp: &Compression) -> Result<WriterProperties> {
@@ -346,5 +376,23 @@ mod tests {
         assert!(ndjson_to_parquet(two.as_bytes(), &schema(), &comp).is_err());
         let split = "{\"n\":\n1}\n";
         assert!(ndjson_to_parquet(split.as_bytes(), &schema(), &comp).is_err());
+    }
+
+    #[test]
+    fn check_finds_what_every_file_would_fail_on() {
+        let zstd = Compression::Zstd { level: 3 };
+        let parquet = |schema: &str| Encoding::Parquet {
+            schema: schema.to_string(),
+        };
+        assert!(check(&parquet(&schema()), &zstd).is_ok());
+        assert!(check(&Encoding::NDJSON, &zstd).is_ok());
+        assert!(check(&parquet("{\"fields\":"), &zstd).is_err());
+        let snappy = Compression::Snappy { level: 3 };
+        assert!(check(&parquet(&schema()), &snappy).is_err());
+        let avro = |schema: &str| Encoding::Avro {
+            schema: schema.to_string(),
+        };
+        assert!(check(&avro(r#"{"type":"record","name":"r","fields":[]}"#), &zstd).is_ok());
+        assert!(check(&avro("{\"type\":"), &zstd).is_err());
     }
 }

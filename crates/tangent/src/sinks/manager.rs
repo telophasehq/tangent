@@ -1,5 +1,5 @@
 use ahash::AHasher;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use rand::{rng, Rng};
@@ -13,6 +13,7 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{sleep, Instant};
 
 use crate::sinks::blackhole;
+use crate::sinks::encoding;
 use crate::sinks::file;
 use crate::sinks::s3::S3SinkItem;
 use crate::sinks::slack;
@@ -67,6 +68,10 @@ pub struct SinkManager {
 impl SinkManager {
     pub async fn new(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<Self> {
         check_wal_dirs(cfgs)?;
+        for (name, cfg) in cfgs {
+            encoding::check(&cfg.common.encoding, &cfg.common.compression)
+                .with_context(|| format!("sink '{name}'"))?;
+        }
         let mut sinks: HashMap<Arc<str>, SinkEntry> = HashMap::with_capacity(cfgs.len());
 
         let total_inflight: usize = cfgs.values().map(|c| c.common.in_flight_limit).sum();
