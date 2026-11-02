@@ -5811,6 +5811,7 @@ dependencies = [
  "futures",
  "hdrhistogram",
  "lazy_static",
+ "libc",
  "prometheus",
  "prometheus-parse",
  "prometheus_exporter",
