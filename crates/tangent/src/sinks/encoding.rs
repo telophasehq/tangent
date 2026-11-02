@@ -22,18 +22,28 @@ pub fn ndjson_ensure_newline(mut raw: BytesMut) -> BytesMut {
 }
 
 pub fn ndjson_to_json_array(raw: &[u8]) -> Result<BytesMut> {
-    let mut values = Vec::<serde_json::Value>::new();
-    for line in raw.split(|&b| b == b'\n') {
+    let out = write_json_array(raw, BytesMut::new().writer())?;
+    Ok(out.into_inner())
+}
+
+/// [`ndjson_to_json_array`] from a reader to a writer, a line in memory at
+/// a time.
+pub fn write_json_array<R: BufRead, W: Write>(input: R, mut out: W) -> Result<W> {
+    out.write_all(b"[")?;
+    let mut first = true;
+    for line in input.split(b'\n') {
+        let line = line?;
         if line.is_empty() {
             continue;
         }
-        let v: serde_json::Value = serde_json::from_slice(line)?;
-        values.push(v);
+        let v: serde_json::Value = serde_json::from_slice(&line)?;
+        if !first {
+            out.write_all(b",")?;
+        }
+        serde_json::to_writer(&mut out, &v)?;
+        first = false;
     }
-
-    let arr = serde_json::Value::Array(values);
-    let mut out = BytesMut::new();
-    serde_json::to_writer((&mut out).writer(), &arr)?;
+    out.write_all(b"]")?;
     Ok(out)
 }
 
@@ -50,22 +60,30 @@ pub fn normalize_from_ndjson(
     }
 }
 
-fn ndjson_iter_lines(raw: &[u8]) -> impl Iterator<Item = &[u8]> {
-    raw.split(|&b| b == b'\n').filter(|line| !line.is_empty())
+pub fn ndjson_to_avro(raw: &[u8], avro_schema_json: &str, comp: &Compression) -> Result<BytesMut> {
+    let out = write_avro(raw, BytesMut::new().writer(), avro_schema_json, comp)?;
+    Ok(out.into_inner())
 }
 
-pub fn ndjson_to_avro(raw: &[u8], avro_schema_json: &str, comp: &Compression) -> Result<BytesMut> {
-    let codec = avro_codec_from(comp);
+/// [`ndjson_to_avro`] from a reader to a writer, a line in memory at a time
+/// (and a block, in the Avro writer).
+pub fn write_avro<R: BufRead, W: Write>(
+    input: R,
+    out: W,
+    avro_schema_json: &str,
+    comp: &Compression,
+) -> Result<W> {
     let schema = apache_avro::Schema::parse_str(avro_schema_json)?;
-    let mut writer = apache_avro::Writer::with_codec(&schema, Vec::<u8>::new(), codec);
-
-    for line in ndjson_iter_lines(raw) {
-        let value: serde_json::Value = serde_json::from_slice(line)?;
+    let mut writer = apache_avro::Writer::with_codec(&schema, out, avro_codec_from(comp));
+    for line in input.split(b'\n') {
+        let line = line?;
+        if line.is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_slice(&line)?;
         writer.append_ser(value)?;
     }
-
-    let bytes = writer.into_inner()?;
-    Ok(BytesMut::from(bytes.as_slice()))
+    Ok(writer.into_inner()?)
 }
 
 /// Lines in one Arrow batch, and the bytes they may come to: past either,
@@ -445,6 +463,24 @@ mod tests {
             .iter()
             .collect();
         assert_eq!(n, [Some(1), Some(5)], "the good lines, in order");
+    }
+
+    #[test]
+    fn json_and_avro_stream_what_they_made_whole() {
+        let ndjson = "{\"n\":1,\"m\":\"x\"}\n\n{\"n\":2,\"m\":\"y\"}\n";
+        let json = ndjson_to_json_array(ndjson.as_bytes()).unwrap();
+        assert_eq!(&json[..], br#"[{"n":1,"m":"x"},{"n":2,"m":"y"}]"#);
+
+        // append_ser makes a JSON object an Avro map, so a map schema
+        let schema = r#"{"type":"map","values":"string"}"#;
+        let ndjson = "{\"n\":\"1\"}\n\n{\"n\":\"2\",\"m\":\"y\"}\n";
+        let avro =
+            ndjson_to_avro(ndjson.as_bytes(), schema, &Compression::Zstd { level: 3 }).unwrap();
+        let read: Vec<apache_avro::types::Value> = apache_avro::Reader::new(&avro[..])
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(read.len(), 2);
     }
 
     #[test]

@@ -1,12 +1,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use bytes::BytesMut;
 use flate2::write::GzEncoder;
 use flate2::Compression as f2Compression;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::File as stdFile;
-use std::io::{copy, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{copy, BufReader, BufWriter, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -543,23 +542,26 @@ async fn encode_to_file(
 /// `src`'s records into `tmp` in the encoding, synced.
 fn encode_file(src: &Path, tmp: &Path, enc: &Encoding, comp: &Compression) -> Result<()> {
     let mut out = BufWriter::new(stdFile::create(tmp)?);
-    if let Encoding::Parquet { schema } = enc {
-        let fin = BufReader::new(stdFile::open(src)?);
-        out = encoding::write_parquet(fin, out, schema, comp)?.0;
-    } else {
-        let raw = BytesMut::from(std::fs::read(src)?.as_slice());
-        let bytes = encoding::normalize_from_ndjson(enc, comp, raw)?;
-        // JSON is compressed whole, as NDJSON is; Avro inside the file
-        match (enc, comp) {
-            (Encoding::JSON, Compression::Gzip { level }) => {
-                let mut gz = GzEncoder::new(&mut out, f2Compression::new(*level));
-                gz.write_all(&bytes)?;
-                gz.finish()?;
-            }
-            (Encoding::JSON, Compression::Zstd { level }) => {
-                zstd::stream::copy_encode(&bytes[..], &mut out, *level)?;
-            }
-            _ => out.write_all(&bytes)?,
+    let fin = BufReader::new(stdFile::open(src)?);
+    // a batch, a line or a block in memory at a time, not the file; JSON is
+    // compressed whole, as NDJSON is, Parquet and Avro inside the file
+    match (enc, comp) {
+        (Encoding::Parquet { schema }, _) => {
+            out = encoding::write_parquet(fin, out, schema, comp)?.0
+        }
+        (Encoding::Avro { schema }, _) => out = encoding::write_avro(fin, out, schema, comp)?,
+        (Encoding::JSON, Compression::Gzip { level }) => {
+            let gz = GzEncoder::new(out, f2Compression::new(*level));
+            out = encoding::write_json_array(fin, gz)?.finish()?;
+        }
+        (Encoding::JSON, Compression::Zstd { level }) => {
+            let z = zstd::stream::Encoder::new(out, *level)?;
+            out = encoding::write_json_array(fin, z)?.finish()?;
+        }
+        (Encoding::JSON, _) => out = encoding::write_json_array(fin, out)?,
+        (Encoding::NDJSON, _) => {
+            let mut fin = fin;
+            copy(&mut fin, &mut out)?;
         }
     }
     out.into_inner().map_err(|e| e.into_error())?.sync_data()?;
@@ -814,7 +816,9 @@ async fn open_route_current(dir: &Path, meta: &WalMeta) -> anyhow::Result<Curren
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::BytesMut;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+    use std::io::Write;
 
     /// What reached the inner sink: each file's name and bytes.
     #[derive(Default)]
@@ -1130,6 +1134,13 @@ mod tests {
         let (name, bytes) = sent(Encoding::NDJSON, Compression::None, "plain").await;
         assert!(name.ends_with(".ndjson"), "{name}");
         assert_eq!(bytes, lines.as_bytes());
+
+        let (name, bytes) = sent(Encoding::JSON, Compression::Gzip { level: 6 }, "json").await;
+        assert!(name.ends_with(".json.gz"), "{name}");
+        let mut json = String::new();
+        std::io::Read::read_to_string(&mut flate2::read::GzDecoder::new(&bytes[..]), &mut json)
+            .unwrap();
+        assert_eq!(json, r#"[{"n":1,"m":"x"},{"n":2},{"n":3}]"#);
 
         let schema = arrow_schema::Schema::new(vec![arrow_schema::Field::new(
             "n",
