@@ -1,0 +1,48 @@
+# The sign-in story's pipeline: each record of tests/input.json goes to the
+# renderer and then the builder, over one state, so its `_baseline` is what
+# the records before it taught, as the judge and ingest see it. Every record is
+# over half the 1 KB batch, so each is a call of its own. `tangent plugin test`
+# runs one plugin, so story.sh runs this; `make -C packs test-baseline` runs
+# story.sh.
+runtime:
+  batch_size: 1                  # KB
+  batch_age: 1
+  workers: 1
+  plugins_path: plugins/
+  disable_remote_calls: true
+  state:
+    backend: lru
+    default_ttl_ms: 0
+    max_ttl_ms: 0
+
+sources:
+  story:
+    type: file
+    path: tests/input.json
+    decoding: { format: { type: json-array }, compression: { type: none } }
+
+enrichment_tables:
+  profile: { type: document, path: tests/profile.yaml }   # the builder's: dave is dave@acme.io
+
+plugins:
+  baseline_renderer:
+    module_type: rust
+    path: renderer
+    state_namespace: baseline
+  baseline_builder:
+    module_type: rust
+    path: builder
+    state_namespace: baseline
+
+sinks:
+  out:
+    type: file
+    path: test_out.ndjson
+    compression: { type: none }
+    in_flight_limit: 1           # one write at a time: compared line by line
+
+dag:
+  - from: { kind: source, name: story }
+    to: [{ kind: plugin, name: baseline_renderer }, { kind: plugin, name: baseline_builder }]   # a call each, in this order
+  - from: { kind: plugin, name: baseline_renderer }
+    to: [{ kind: sink, name: out }]

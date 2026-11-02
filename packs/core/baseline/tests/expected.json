@@ -1,0 +1,909 @@
+[
+ {
+  "_baseline": {
+   "actor": "human (profile member); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: no logins or credential changes",
+   "links": "ip 203.0.113.10 new for this actor, no other actor used it before",
+   "seen": "none: first seen in this window"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64500,
+    "country": "US",
+    "org": "Example Cable"
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "org": "acme",
+   "person": "dave@acme.io"
+  },
+  "actor": {
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave",
+   "type": "User"
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER",
+   "credentialType": "PASSWORD"
+  },
+  "client": {
+   "device": "Computer",
+   "geographicalContext": {
+    "city": "San Francisco",
+    "country": "US",
+    "state": "Example"
+   },
+   "ipAddress": "203.0.113.10",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   },
+   "zone": "null"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo1exampledave01",
+   "managed": false,
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "registered": true
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-01-02T16:00:00Z",
+  "securityContext": {
+   "asNumber": 64500,
+   "asOrg": "Example Cable",
+   "isProxy": false,
+   "isp": "Example Cable"
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-01-02T16:00:00Z"
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave@acme.io); here as IAM user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 1 login (okta 1), 0 failed; no mfa, password, key or grant changes; last login okta 5m before from 203.0.113.10 ASN 64500 US, mfa unknown",
+   "links": "window ip 203.0.113.10 matches okta login by dave@acme.io 5m before; ip 203.0.113.10 new for this actor, used before by 1 other actor (dave@acme.io)",
+   "seen": "none: first seen in this window"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64500,
+    "country": "US",
+    "org": "Example Cable"
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dave",
+   "org": "acme",
+   "person": "dave@acme.io"
+  },
+  "additionalEventData": {
+   "LoginTo": "https://us-west-2.console.aws.amazon.com/console/home?hashArgs=%23&isauthcode=true&nc2=h_ct&region=us-west-2&src=header-signin&state=hashArgsFromTB_us-west-2_0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
+   "MFAUsed": "Yes"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ConsoleLogin",
+  "eventSource": "signin.amazonaws.com",
+  "eventTime": "2026-01-02T16:05:00Z",
+  "recipientAccountId": "111122223333",
+  "responseElements": {
+   "ConsoleLogin": "Success"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.10",
+  "ts": "2026-01-02T16:05:00Z",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/dave",
+   "type": "IAMUser",
+   "userName": "dave"
+  }
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 0 failed; no mfa, password, key or grant changes; last login aws console 24h before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "links": "window ip 203.0.113.10 matches okta login by dave@acme.io 24h before",
+   "new": {
+    "api": "s3:ListObjects (1 of 1 in window)",
+    "resource": "bucket:acme-reports (1 of 1 in window)"
+   },
+   "seen": "seen 1.0 days (since 2026-01-02), 1 event on 1 day, from cloudtrail",
+   "time": "window 16 UTC active on 1 of its 1 active day in 28d; usual hours: none yet; last active 24h before",
+   "volume": "last hour vs p90 of its 1 active hour in 28d: total normal, read none before, write -, iam -, own creds -, delete -"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64500,
+    "country": "US",
+    "org": "Example Cable"
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dave",
+   "org": "acme",
+   "person": "dave@acme.io"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "ListObjects",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-01-03T16:10:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "Host": "acme-reports.s3.us-west-2.amazonaws.com",
+   "bucketName": "acme-reports",
+   "delimiter": "/",
+   "encoding-type": "url",
+   "fetch-owner": "true",
+   "list-type": "2",
+   "max-keys": "300",
+   "prefix": "q4/"
+  },
+  "resources": [
+   {
+    "ARN": "arn:aws:s3:::acme-reports",
+    "accountId": "111122223333",
+    "type": "AWS::S3::Bucket"
+   }
+  ],
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.10",
+  "ts": "2026-01-03T16:10:00Z",
+  "userAgent": "[S3Console/0.4, aws-internal/3 aws-sdk-java/1.12.488 Linux/5.10.217 OpenJDK_64-Bit_Server_VM/25.402-b08 java/1.8.0_402]",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/dave",
+   "type": "IAMUser",
+   "userName": "dave"
+  }
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 0 failed; no mfa, password, key or grant changes; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "links": "ip 198.51.100.23 new for this actor, no other actor used it before",
+   "new": {
+    "device": "guo9examplenew02",
+    "network": "ASN 64501 Example Hosting B.V. (new to org), country NL (new to org), net 198.51.100.0/24 (new to org)"
+   },
+   "seen": "seen 2.8 days (since 2026-01-02), 1 event on 1 day, from okta",
+   "time": "window 11 UTC active on 0 of its 1 active day in 28d; usual hours: none yet; last active 2d before",
+   "volume": "last hour vs p90 of its 1 active hour in 28d: total normal, read -, write -, iam -, own creds -, delete -"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64501,
+    "country": "NL",
+    "org": "Example Hosting B.V."
+   },
+   "notes": [
+    "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "org": "acme",
+   "person": "dave@acme.io"
+  },
+  "actor": {
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave",
+   "type": "User"
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER",
+   "credentialType": "PASSWORD"
+  },
+  "client": {
+   "device": "Computer",
+   "geographicalContext": {
+    "city": "Amsterdam",
+    "country": "NL",
+    "state": "Example"
+   },
+   "ipAddress": "198.51.100.23",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   },
+   "zone": "null"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo9examplenew02",
+   "managed": false,
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "registered": true
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "FAILURE"
+  },
+  "published": "2026-01-05T11:00:00Z",
+  "securityContext": {
+   "asNumber": 64501,
+   "asOrg": "Example Hosting B.V.",
+   "isProxy": false,
+   "isp": "Example Hosting B.V."
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-01-05T11:00:00Z"
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); here as okta user; privilege used before: none",
+   "auth": "last 72h, admin@acme.io: no logins or credential changes",
+   "links": "ip 203.0.113.11 new for this actor, no other actor used it before",
+   "seen": "none: first seen in this window"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64500,
+    "country": "US",
+    "org": "Example Cable"
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "admin@acme.io",
+   "org": "acme"
+  },
+  "actor": {
+   "alternateId": "admin@acme.io",
+   "displayName": "Admin",
+   "type": "User"
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER",
+   "credentialType": "PASSWORD"
+  },
+  "client": {
+   "device": "Computer",
+   "geographicalContext": {
+    "city": "San Francisco",
+    "country": "US",
+    "state": "Example"
+   },
+   "ipAddress": "203.0.113.11",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   },
+   "zone": "null"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "displayMessage": "user mfa factor reset all",
+  "eventType": "user.mfa.factor.reset_all",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-01-05T12:30:00Z",
+  "securityContext": {
+   "asNumber": 64500,
+   "asOrg": "Example Cable",
+   "isProxy": false,
+   "isp": "Example Cable"
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "target": [
+   {
+    "alternateId": "dave@acme.io",
+    "displayName": "Dave",
+    "type": "User"
+   }
+  ],
+  "ts": "2026-01-05T12:30:00Z"
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 1 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 9m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "links": "ip 198.51.100.23 new for this actor, no other actor used it before",
+   "new": {
+    "api": "policy.evaluate_sign_on (1 of 1 in window)",
+    "device": "guo9examplenew02",
+    "network": "ASN 64501 Example Hosting B.V. (new to org), country NL (new to org), net 198.51.100.0/24 (new to org)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from okta",
+   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 1h before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64501,
+    "country": "NL",
+    "org": "Example Hosting B.V."
+   },
+   "notes": [
+    "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "org": "acme",
+   "person": "dave@acme.io"
+  },
+  "actor": {
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave",
+   "type": "User"
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER",
+   "credentialType": "PASSWORD"
+  },
+  "client": {
+   "device": "Computer",
+   "geographicalContext": {
+    "city": "Amsterdam",
+    "country": "NL",
+    "state": "Example"
+   },
+   "ipAddress": "198.51.100.23",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   },
+   "zone": "null"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo9examplenew02",
+   "managed": false,
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "registered": true
+  },
+  "displayMessage": "policy evaluate sign on",
+  "eventType": "policy.evaluate_sign_on",
+  "outcome": {
+   "result": "ALLOW"
+  },
+  "published": "2026-01-05T12:39:58Z",
+  "securityContext": {
+   "asNumber": 64501,
+   "asOrg": "Example Hosting B.V.",
+   "isProxy": false,
+   "isp": "Example Hosting B.V."
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-01-05T12:39:58Z"
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 1 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 9m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "new": {
+    "api": "user.authentication.verify (1 of 1 in window)",
+    "device": "guo9examplenew02 (first seen 1s before)",
+    "network": "ASN 64501 Example Hosting B.V. (first seen 1s before), country NL (first seen 1s before), net 198.51.100.0/24 (first seen 1s before)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from okta",
+   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 1h before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64501,
+    "country": "NL",
+    "org": "Example Hosting B.V."
+   },
+   "notes": [
+    "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "org": "acme",
+   "person": "dave@acme.io"
+  },
+  "actor": {
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave",
+   "type": "User"
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER",
+   "credentialType": "PASSWORD"
+  },
+  "client": {
+   "device": "Computer",
+   "geographicalContext": {
+    "city": "Amsterdam",
+    "country": "NL",
+    "state": "Example"
+   },
+   "ipAddress": "198.51.100.23",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   },
+   "zone": "null"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo9examplenew02",
+   "managed": false,
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "registered": true
+  },
+  "displayMessage": "user authentication verify",
+  "eventType": "user.authentication.verify",
+  "outcome": {
+   "result": "FAILURE"
+  },
+  "published": "2026-01-05T12:39:59Z",
+  "securityContext": {
+   "asNumber": 64501,
+   "asOrg": "Example Hosting B.V.",
+   "isProxy": false,
+   "isp": "Example Hosting B.V."
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-01-05T12:39:59Z"
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 10m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "new": {
+    "api": "user.authentication.auth_via_mfa (1 of 1 in window)",
+    "device": "guo9examplenew02 (first seen 2s before)",
+    "network": "ASN 64501 Example Hosting B.V. (first seen 2s before), country NL (first seen 2s before), net 198.51.100.0/24 (first seen 2s before)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 4 events on 2 days, from okta",
+   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 0s before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64501,
+    "country": "NL",
+    "org": "Example Hosting B.V."
+   },
+   "notes": [
+    "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "org": "acme",
+   "person": "dave@acme.io"
+  },
+  "actor": {
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave",
+   "type": "User"
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER",
+   "credentialType": "OTP"
+  },
+  "client": {
+   "device": "Computer",
+   "geographicalContext": {
+    "city": "Amsterdam",
+    "country": "NL",
+    "state": "Example"
+   },
+   "ipAddress": "198.51.100.23",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   },
+   "zone": "null"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo9examplenew02",
+   "managed": false,
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "registered": true
+  },
+  "displayMessage": "user authentication auth via mfa",
+  "eventType": "user.authentication.auth_via_mfa",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-01-05T12:40:00Z",
+  "securityContext": {
+   "asNumber": 64501,
+   "asOrg": "Example Hosting B.V.",
+   "isProxy": false,
+   "isp": "Example Hosting B.V."
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-01-05T12:40:00Z"
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as okta user; privilege used before: none",
+   "auth": "last 72h, person dave@acme.io: 2 logins (okta 1, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 10m before from 203.0.113.11; last login aws console 2d before from 203.0.113.10 ASN 64500 US, mfa yes",
+   "new": {
+    "device": "guo9examplenew02 (first seen 3s before)",
+    "network": "ASN 64501 Example Hosting B.V. (first seen 3s before), country NL (first seen 3s before), net 198.51.100.0/24 (first seen 3s before)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 4 events on 2 days, from okta",
+   "time": "window 12 UTC active on 0 of its 2 active days in 28d; usual hours: none yet; last active 1s before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam -, own creds -, delete -"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64501,
+    "country": "NL",
+    "org": "Example Hosting B.V."
+   },
+   "notes": [
+    "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "org": "acme",
+   "person": "dave@acme.io"
+  },
+  "actor": {
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave",
+   "type": "User"
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER",
+   "credentialType": "PASSWORD"
+  },
+  "client": {
+   "device": "Computer",
+   "geographicalContext": {
+    "city": "Amsterdam",
+    "country": "NL",
+    "state": "Example"
+   },
+   "ipAddress": "198.51.100.23",
+   "userAgent": {
+    "browser": "CHROME",
+    "os": "Mac OS X"
+   },
+   "zone": "null"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=POSITIVE, New Device=POSITIVE, New IP=POSITIVE, New State=POSITIVE, New Country=POSITIVE, Velocity=NEGATIVE, New City=POSITIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo9examplenew02",
+   "managed": false,
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "registered": true
+  },
+  "displayMessage": "user session start",
+  "eventType": "user.session.start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "published": "2026-01-05T12:40:01Z",
+  "securityContext": {
+   "asNumber": 64501,
+   "asOrg": "Example Hosting B.V.",
+   "isProxy": false,
+   "isp": "Example Hosting B.V."
+  },
+  "severity": "INFO",
+  "source": "okta",
+  "ts": "2026-01-05T12:40:01Z"
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: read-only",
+   "auth": "last 72h, person dave@acme.io: 3 logins (okta 2, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 30m before from 203.0.113.11; last login okta 20m before from 198.51.100.23 ASN 64501 NL (new asn/cc for person then), mfa yes (okta: New Geo-Location, New Device, New IP, New State, New Country, New City)",
+   "links": "okta login from a network new for dave@acme.io 20m before this window; ip 192.0.2.77 new for this actor, no other actor used it before",
+   "new": {
+    "api": "s3:PutBucketPolicy (1 of 1 in window)",
+    "client": "aws-cli/2 (cli); before: browser (console)",
+    "network": "ASN 64502 Example VPS (new to org), country NL (first seen 20m before), net 192.0.2.0/24 (new to org)",
+    "resource": "bucket:acme-customer-exports (1 of 1 in window)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from cloudtrail",
+   "time": "window 13 UTC active on 0 of its 2 active days in 28d; usual 16 UTC; last active 44h before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read -, write -, iam none before, own creds -, delete -"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64502,
+    "country": "NL",
+    "org": "Example VPS"
+   },
+   "notes": [
+    "dave acting from NL, 192.0.2.77 (Example VPS)",
+    "PutBucketPolicy is a kind the org watches every time"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dave",
+   "org": "acme",
+   "person": "dave@acme.io"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "PutBucketPolicy",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-01-05T13:00:01Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "Host": "acme-customer-exports.s3.us-west-2.amazonaws.com",
+   "bucketName": "acme-customer-exports",
+   "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"s3:GetObject\"}]}"
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "192.0.2.77",
+  "ts": "2026-01-05T13:00:01Z",
+  "userAgent": "aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/macos#23.5.0 md/arch#arm64 lang/python#3.11.9 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#s3api.put-bucket-policy",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/dave",
+   "type": "IAMUser",
+   "userName": "dave"
+  }
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); person dave@acme.io (dave, dave@acme.io); here as IAM user; privilege used before: admin (iam/policy changes)",
+   "auth": "last 72h, person dave@acme.io: 3 logins (okta 2, aws 1), 2 failed; mfa change user.mfa.factor.reset_all by admin@acme.io 32m before from 203.0.113.11; last login okta 21m before from 198.51.100.23 ASN 64501 NL (new asn/cc for person then), mfa yes (okta: New Geo-Location, New Device, New IP, New State, New Country, New City)",
+   "links": "okta login from a network new for dave@acme.io 21m before this window",
+   "new": {
+    "api": "sts:AssumeRole (1 of 1 in window)",
+    "client": "aws-cli/2 (cli) (first seen 1m before); before: browser (console)",
+    "network": "ASN 64502 Example VPS (first seen 1m before), country NL (first seen 22m before), net 192.0.2.0/24 (first seen 1m before)",
+    "resource": "role:deploy-admin (1 of 1 in window)"
+   },
+   "seen": "seen 2.9 days (since 2026-01-02), 2 events on 2 days, from cloudtrail",
+   "time": "window 13 UTC active on 0 of its 2 active days in 28d; usual 16 UTC; last active 44h before",
+   "volume": "last hour vs p90 of its 2 active hours in 28d: total normal, read normal, write -, iam -, own creds -, delete -"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64502,
+    "country": "NL",
+    "org": "Example VPS"
+   },
+   "notes": [
+    "dave acting from NL, 192.0.2.77 (Example VPS)"
+   ],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "dave",
+   "org": "acme",
+   "person": "dave@acme.io"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "AssumeRole",
+  "eventSource": "sts.amazonaws.com",
+  "eventTime": "2026-01-05T13:02:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "durationSeconds": 3600,
+   "roleArn": "arn:aws:iam::111122223333:role/deploy-admin",
+   "roleSessionName": "dave-cli"
+  },
+  "responseElements": {
+   "assumedRoleUser": {
+    "arn": "arn:aws:sts::111122223333:assumed-role/deploy-admin/dave-cli",
+    "assumedRoleId": "AROAEXAMPLEEXAMPLE01:dave-cli"
+   },
+   "credentials": {
+    "accessKeyId": "ASIAEXAMPLEEXAMPLE01",
+    "expiration": "Jan 5, 2026, 2:02:00 PM",
+    "sessionToken": "IQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLE"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "192.0.2.77",
+  "ts": "2026-01-05T13:02:00Z",
+  "userAgent": "aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/macos#23.5.0 md/arch#arm64 lang/python#3.11.9 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#sts.assume-role",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/dave",
+   "type": "IAMUser",
+   "userName": "dave"
+  }
+ },
+ {
+  "_baseline": {
+   "actor": "not in profile; here as assumed role; chain deploy-admin <- dave (IAM user, 60s before, first time); privilege used before: none",
+   "auth": "last 72h, deploy-admin and person dave@acme.io: 3 logins (okta 2, aws 1), 2 failed; mfa change user.mfa.factor.reset_all on dave@acme.io by admin@acme.io 33m before from 203.0.113.11; last login okta 22m before from 198.51.100.23 ASN 64501 NL (new asn/cc for person then), mfa yes (okta: New Geo-Location, New Device, New IP, New State, New Country, New City)",
+   "links": "okta login from a network new for dave@acme.io 22m before this window; ip 192.0.2.77 new for this actor, used before by 1 other actor (dave)",
+   "seen": "none: first seen in this window"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64502,
+    "country": "NL",
+    "org": "Example VPS"
+   },
+   "notes": [
+    "principal deploy-admin is nobody the org profile knows",
+    "CreateAccessKey is a kind the org watches every time"
+   ],
+   "principal": "unknown"
+  },
+  "_norm": {
+   "actor": "deploy-admin",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "CreateAccessKey",
+  "eventSource": "iam.amazonaws.com",
+  "eventTime": "2026-01-05T13:03:00Z",
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "userName": "ci-deployer"
+  },
+  "responseElements": {
+   "accessKey": {
+    "accessKeyId": "AKIAEXAMPLEEXAMPLE02",
+    "createDate": "Jan 5, 2026, 1:03:00 PM",
+    "status": "Active",
+    "userName": "ci-deployer"
+   }
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "192.0.2.77",
+  "ts": "2026-01-05T13:03:00Z",
+  "userAgent": "aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/macos#23.5.0 md/arch#arm64 lang/python#3.11.9 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#iam.create-access-key",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/deploy-admin/dave-cli",
+   "mfaAuthenticated": "false",
+   "role": "deploy-admin",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "_baseline": {
+   "actor": "human (profile member); here as assumed role; SSO permission set ReadOnly; privilege used before: none",
+   "auth": "last 72h, carol@acme.io: no logins or credential changes",
+   "links": "ip 203.0.113.12 new for this actor, no other actor used it before",
+   "seen": "none: first seen in this window"
+  },
+  "_facts": {
+   "ip": {
+    "asn": 64500,
+    "country": "US",
+    "org": "Example Cable"
+   },
+   "notes": [],
+   "principal": "member"
+  },
+  "_norm": {
+   "actor": "carol@acme.io",
+   "org": "acme"
+  },
+  "awsRegion": "us-west-2",
+  "eventName": "GetObject",
+  "eventSource": "s3.amazonaws.com",
+  "eventTime": "2026-01-05T13:05:00Z",
+  "readOnly": true,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "Host": "acme-reports.s3.us-west-2.amazonaws.com",
+   "bucketName": "acme-reports",
+   "key": "q4/summary.pdf"
+  },
+  "resources": [
+   {
+    "ARN": "arn:aws:s3:::acme-reports/q4/summary.pdf",
+    "type": "AWS::S3::Object"
+   },
+   {
+    "ARN": "arn:aws:s3:::acme-reports",
+    "accountId": "111122223333",
+    "type": "AWS::S3::Bucket"
+   }
+  ],
+  "source": "cloudtrail",
+  "sourceIPAddress": "203.0.113.12",
+  "ts": "2026-01-05T13:05:00Z",
+  "userAgent": "aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/macos#23.5.0 md/arch#arm64 lang/python#3.11.9 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#s3api.get-object",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_ReadOnly_0123456789abcdef/carol@acme.io",
+   "mfaAuthenticated": "false",
+   "role": "AWSReservedSSO_ReadOnly_0123456789abcdef",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "ts": "2026-01-05T13:06:00Z",
+  "source": "agent",
+  "timestamp": "2026-01-05T13:06:00Z",
+  "service": "example-plan-worker",
+  "logger": "example.worker",
+  "level": "info",
+  "event": "plan_started",
+  "host": "ip-10-0-3-41",
+  "organization_id": "org_example",
+  "task_id": "t-5003",
+  "plan_id": "p-33",
+  "target": "s3://acme-reports",
+  "steps": [
+   "read_bucket_policy",
+   "propose_fix",
+   "open_pull_request"
+  ],
+  "_norm": {
+   "org": "org_example"
+  },
+  "_facts": {
+   "notes": []
+  }
+ }
+]

@@ -1,0 +1,779 @@
+[
+ {
+  "ts": "2026-01-02T16:00:00Z",
+  "source": "okta",
+  "published": "2026-01-02T16:00:00Z",
+  "eventType": "user.session.start",
+  "severity": "INFO",
+  "displayMessage": "user session start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave"
+  },
+  "client": {
+   "ipAddress": "203.0.113.10",
+   "zone": "null",
+   "device": "Computer",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "city": "San Francisco",
+    "state": "Example",
+    "country": "US"
+   }
+  },
+  "securityContext": {
+   "asNumber": 64500,
+   "asOrg": "Example Cable",
+   "isp": "Example Cable",
+   "isProxy": false
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialType": "PASSWORD",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo1exampledave01",
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "managed": false,
+   "registered": true
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "person": "dave@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [],
+   "ip": {
+    "asn": 64500,
+    "country": "US",
+    "org": "Example Cable"
+   }
+  }
+ },
+ {
+  "ts": "2026-01-02T16:05:00Z",
+  "source": "cloudtrail",
+  "eventTime": "2026-01-02T16:05:00Z",
+  "eventSource": "signin.amazonaws.com",
+  "eventName": "ConsoleLogin",
+  "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
+  "sourceIPAddress": "203.0.113.10",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "responseElements": {
+   "ConsoleLogin": "Success"
+  },
+  "userIdentity": {
+   "type": "IAMUser",
+   "userName": "dave",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/dave"
+  },
+  "additionalEventData": {
+   "MFAUsed": "Yes",
+   "LoginTo": "https://us-west-2.console.aws.amazon.com/console/home?hashArgs=%23&isauthcode=true&nc2=h_ct&region=us-west-2&src=header-signin&state=hashArgsFromTB_us-west-2_0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b"
+  },
+  "_norm": {
+   "actor": "dave",
+   "person": "dave@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [],
+   "ip": {
+    "asn": 64500,
+    "country": "US",
+    "org": "Example Cable"
+   }
+  }
+ },
+ {
+  "ts": "2026-01-03T16:10:00Z",
+  "source": "cloudtrail",
+  "eventTime": "2026-01-03T16:10:00Z",
+  "eventSource": "s3.amazonaws.com",
+  "eventName": "ListObjects",
+  "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
+  "sourceIPAddress": "203.0.113.10",
+  "userAgent": "[S3Console/0.4, aws-internal/3 aws-sdk-java/1.12.488 Linux/5.10.217 OpenJDK_64-Bit_Server_VM/25.402-b08 java/1.8.0_402]",
+  "requestParameters": {
+   "bucketName": "acme-reports",
+   "list-type": "2",
+   "prefix": "q4/",
+   "delimiter": "/",
+   "encoding-type": "url",
+   "max-keys": "300",
+   "fetch-owner": "true",
+   "Host": "acme-reports.s3.us-west-2.amazonaws.com"
+  },
+  "userIdentity": {
+   "type": "IAMUser",
+   "userName": "dave",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/dave"
+  },
+  "readOnly": true,
+  "resources": [
+   {
+    "type": "AWS::S3::Bucket",
+    "ARN": "arn:aws:s3:::acme-reports",
+    "accountId": "111122223333"
+   }
+  ],
+  "_norm": {
+   "actor": "dave",
+   "person": "dave@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [],
+   "ip": {
+    "asn": 64500,
+    "country": "US",
+    "org": "Example Cable"
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T11:00:00Z",
+  "source": "okta",
+  "published": "2026-01-05T11:00:00Z",
+  "eventType": "user.session.start",
+  "severity": "INFO",
+  "displayMessage": "user session start",
+  "outcome": {
+   "result": "FAILURE"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave"
+  },
+  "client": {
+   "ipAddress": "198.51.100.23",
+   "zone": "null",
+   "device": "Computer",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "city": "Amsterdam",
+    "state": "Example",
+    "country": "NL"
+   }
+  },
+  "securityContext": {
+   "asNumber": 64501,
+   "asOrg": "Example Hosting B.V.",
+   "isp": "Example Hosting B.V.",
+   "isProxy": false
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialType": "PASSWORD",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo9examplenew02",
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "managed": false,
+   "registered": true
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "person": "dave@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [
+    "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
+   ],
+   "ip": {
+    "asn": 64501,
+    "country": "NL",
+    "org": "Example Hosting B.V."
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T12:30:00Z",
+  "source": "okta",
+  "published": "2026-01-05T12:30:00Z",
+  "eventType": "user.mfa.factor.reset_all",
+  "severity": "INFO",
+  "displayMessage": "user mfa factor reset all",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "admin@acme.io",
+   "displayName": "Admin"
+  },
+  "client": {
+   "ipAddress": "203.0.113.11",
+   "zone": "null",
+   "device": "Computer",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "city": "San Francisco",
+    "state": "Example",
+    "country": "US"
+   }
+  },
+  "securityContext": {
+   "asNumber": 64500,
+   "asOrg": "Example Cable",
+   "isp": "Example Cable",
+   "isProxy": false
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialType": "PASSWORD",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "target": [
+   {
+    "type": "User",
+    "alternateId": "dave@acme.io",
+    "displayName": "Dave"
+   }
+  ],
+  "_norm": {
+   "actor": "admin@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [],
+   "ip": {
+    "asn": 64500,
+    "country": "US",
+    "org": "Example Cable"
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T12:39:58Z",
+  "source": "okta",
+  "published": "2026-01-05T12:39:58Z",
+  "eventType": "policy.evaluate_sign_on",
+  "severity": "INFO",
+  "displayMessage": "policy evaluate sign on",
+  "outcome": {
+   "result": "ALLOW"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave"
+  },
+  "client": {
+   "ipAddress": "198.51.100.23",
+   "zone": "null",
+   "device": "Computer",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "city": "Amsterdam",
+    "state": "Example",
+    "country": "NL"
+   }
+  },
+  "securityContext": {
+   "asNumber": 64501,
+   "asOrg": "Example Hosting B.V.",
+   "isp": "Example Hosting B.V.",
+   "isProxy": false
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialType": "PASSWORD",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo9examplenew02",
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "managed": false,
+   "registered": true
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "person": "dave@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [
+    "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
+   ],
+   "ip": {
+    "asn": 64501,
+    "country": "NL",
+    "org": "Example Hosting B.V."
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T12:39:59Z",
+  "source": "okta",
+  "published": "2026-01-05T12:39:59Z",
+  "eventType": "user.authentication.verify",
+  "severity": "INFO",
+  "displayMessage": "user authentication verify",
+  "outcome": {
+   "result": "FAILURE"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave"
+  },
+  "client": {
+   "ipAddress": "198.51.100.23",
+   "zone": "null",
+   "device": "Computer",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "city": "Amsterdam",
+    "state": "Example",
+    "country": "NL"
+   }
+  },
+  "securityContext": {
+   "asNumber": 64501,
+   "asOrg": "Example Hosting B.V.",
+   "isp": "Example Hosting B.V.",
+   "isProxy": false
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialType": "PASSWORD",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo9examplenew02",
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "managed": false,
+   "registered": true
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "person": "dave@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [
+    "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
+   ],
+   "ip": {
+    "asn": 64501,
+    "country": "NL",
+    "org": "Example Hosting B.V."
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T12:40:00Z",
+  "source": "okta",
+  "published": "2026-01-05T12:40:00Z",
+  "eventType": "user.authentication.auth_via_mfa",
+  "severity": "INFO",
+  "displayMessage": "user authentication auth via mfa",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave"
+  },
+  "client": {
+   "ipAddress": "198.51.100.23",
+   "zone": "null",
+   "device": "Computer",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "city": "Amsterdam",
+    "state": "Example",
+    "country": "NL"
+   }
+  },
+  "securityContext": {
+   "asNumber": 64501,
+   "asOrg": "Example Hosting B.V.",
+   "isp": "Example Hosting B.V.",
+   "isProxy": false
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialType": "OTP",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=NEGATIVE, New Device=NEGATIVE, New IP=NEGATIVE, New State=NEGATIVE, New Country=NEGATIVE, Velocity=NEGATIVE, New City=NEGATIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo9examplenew02",
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "managed": false,
+   "registered": true
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "person": "dave@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [
+    "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
+   ],
+   "ip": {
+    "asn": 64501,
+    "country": "NL",
+    "org": "Example Hosting B.V."
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T12:40:01Z",
+  "source": "okta",
+  "published": "2026-01-05T12:40:01Z",
+  "eventType": "user.session.start",
+  "severity": "INFO",
+  "displayMessage": "user session start",
+  "outcome": {
+   "result": "SUCCESS"
+  },
+  "actor": {
+   "type": "User",
+   "alternateId": "dave@acme.io",
+   "displayName": "Dave"
+  },
+  "client": {
+   "ipAddress": "198.51.100.23",
+   "zone": "null",
+   "device": "Computer",
+   "userAgent": {
+    "os": "Mac OS X",
+    "browser": "CHROME"
+   },
+   "geographicalContext": {
+    "city": "Amsterdam",
+    "state": "Example",
+    "country": "NL"
+   }
+  },
+  "securityContext": {
+   "asNumber": 64501,
+   "asOrg": "Example Hosting B.V.",
+   "isp": "Example Hosting B.V.",
+   "isProxy": false
+  },
+  "authenticationContext": {
+   "authenticationProvider": "OKTA_AUTHENTICATION_PROVIDER",
+   "credentialType": "PASSWORD",
+   "credentialProvider": "OKTA_CREDENTIAL_PROVIDER"
+  },
+  "debugData": {
+   "behaviors": "{New Geo-Location=POSITIVE, New Device=POSITIVE, New IP=POSITIVE, New State=POSITIVE, New Country=POSITIVE, Velocity=NEGATIVE, New City=POSITIVE}",
+   "risk": "{level=LOW}",
+   "threatSuspected": "false"
+  },
+  "device": {
+   "id": "guo9examplenew02",
+   "name": "MacBook Pro",
+   "os_platform": "MACOS",
+   "os_version": "14.5.0",
+   "managed": false,
+   "registered": true
+  },
+  "_norm": {
+   "actor": "dave@acme.io",
+   "person": "dave@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [
+    "dave@acme.io acting from NL, 198.51.100.23 (Example Hosting B.V.)"
+   ],
+   "ip": {
+    "asn": 64501,
+    "country": "NL",
+    "org": "Example Hosting B.V."
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T13:00:01Z",
+  "source": "cloudtrail",
+  "eventTime": "2026-01-05T13:00:01Z",
+  "eventSource": "s3.amazonaws.com",
+  "eventName": "PutBucketPolicy",
+  "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
+  "sourceIPAddress": "192.0.2.77",
+  "userAgent": "aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/macos#23.5.0 md/arch#arm64 lang/python#3.11.9 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#s3api.put-bucket-policy",
+  "requestParameters": {
+   "bucketName": "acme-customer-exports",
+   "Host": "acme-customer-exports.s3.us-west-2.amazonaws.com",
+   "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"s3:GetObject\"}]}"
+  },
+  "userIdentity": {
+   "type": "IAMUser",
+   "userName": "dave",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/dave"
+  },
+  "_norm": {
+   "actor": "dave",
+   "person": "dave@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [
+    "dave acting from NL, 192.0.2.77 (Example VPS)",
+    "PutBucketPolicy is a kind the org watches every time"
+   ],
+   "ip": {
+    "asn": 64502,
+    "country": "NL",
+    "org": "Example VPS"
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T13:02:00Z",
+  "source": "cloudtrail",
+  "eventTime": "2026-01-05T13:02:00Z",
+  "eventSource": "sts.amazonaws.com",
+  "eventName": "AssumeRole",
+  "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
+  "sourceIPAddress": "192.0.2.77",
+  "userAgent": "aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/macos#23.5.0 md/arch#arm64 lang/python#3.11.9 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#sts.assume-role",
+  "requestParameters": {
+   "roleArn": "arn:aws:iam::111122223333:role/deploy-admin",
+   "roleSessionName": "dave-cli",
+   "durationSeconds": 3600
+  },
+  "responseElements": {
+   "credentials": {
+    "accessKeyId": "ASIAEXAMPLEEXAMPLE01",
+    "sessionToken": "IQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLEIQoJb3JpZ2luX2VjEXAMPLE",
+    "expiration": "Jan 5, 2026, 2:02:00 PM"
+   },
+   "assumedRoleUser": {
+    "assumedRoleId": "AROAEXAMPLEEXAMPLE01:dave-cli",
+    "arn": "arn:aws:sts::111122223333:assumed-role/deploy-admin/dave-cli"
+   }
+  },
+  "userIdentity": {
+   "type": "IAMUser",
+   "userName": "dave",
+   "accountId": "111122223333",
+   "arn": "arn:aws:iam::111122223333:user/dave"
+  },
+  "_norm": {
+   "actor": "dave",
+   "person": "dave@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [
+    "dave acting from NL, 192.0.2.77 (Example VPS)"
+   ],
+   "ip": {
+    "asn": 64502,
+    "country": "NL",
+    "org": "Example VPS"
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T13:03:00Z",
+  "source": "cloudtrail",
+  "eventTime": "2026-01-05T13:03:00Z",
+  "eventSource": "iam.amazonaws.com",
+  "eventName": "CreateAccessKey",
+  "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
+  "sourceIPAddress": "192.0.2.77",
+  "userAgent": "aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/macos#23.5.0 md/arch#arm64 lang/python#3.11.9 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#iam.create-access-key",
+  "requestParameters": {
+   "userName": "ci-deployer"
+  },
+  "responseElements": {
+   "accessKey": {
+    "accessKeyId": "AKIAEXAMPLEEXAMPLE02",
+    "status": "Active",
+    "userName": "ci-deployer",
+    "createDate": "Jan 5, 2026, 1:03:00 PM"
+   }
+  },
+  "userIdentity": {
+   "type": "AssumedRole",
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/deploy-admin/dave-cli",
+   "role": "deploy-admin",
+   "mfaAuthenticated": "false"
+  },
+  "_norm": {
+   "actor": "deploy-admin",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "unknown",
+   "notes": [
+    "principal deploy-admin is nobody the org profile knows",
+    "CreateAccessKey is a kind the org watches every time"
+   ],
+   "ip": {
+    "asn": 64502,
+    "country": "NL",
+    "org": "Example VPS"
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T13:05:00Z",
+  "source": "cloudtrail",
+  "eventTime": "2026-01-05T13:05:00Z",
+  "eventSource": "s3.amazonaws.com",
+  "eventName": "GetObject",
+  "awsRegion": "us-west-2",
+  "recipientAccountId": "111122223333",
+  "sourceIPAddress": "203.0.113.12",
+  "userAgent": "aws-cli/2.17.0 md/awscrt#0.20.11 ua/2.0 os/macos#23.5.0 md/arch#arm64 lang/python#3.11.9 md/pyimpl#CPython cfg/retry-mode#standard md/installer#exe md/prompt#off md/command#s3api.get-object",
+  "requestParameters": {
+   "bucketName": "acme-reports",
+   "key": "q4/summary.pdf",
+   "Host": "acme-reports.s3.us-west-2.amazonaws.com"
+  },
+  "userIdentity": {
+   "type": "AssumedRole",
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_ReadOnly_0123456789abcdef/carol@acme.io",
+   "role": "AWSReservedSSO_ReadOnly_0123456789abcdef",
+   "mfaAuthenticated": "false"
+  },
+  "readOnly": true,
+  "resources": [
+   {
+    "type": "AWS::S3::Object",
+    "ARN": "arn:aws:s3:::acme-reports/q4/summary.pdf"
+   },
+   {
+    "type": "AWS::S3::Bucket",
+    "ARN": "arn:aws:s3:::acme-reports",
+    "accountId": "111122223333"
+   }
+  ],
+  "_norm": {
+   "actor": "carol@acme.io",
+   "org": "acme"
+  },
+  "_facts": {
+   "principal": "member",
+   "notes": [],
+   "ip": {
+    "asn": 64500,
+    "country": "US",
+    "org": "Example Cable"
+   }
+  }
+ },
+ {
+  "ts": "2026-01-05T13:06:00Z",
+  "source": "agent",
+  "timestamp": "2026-01-05T13:06:00Z",
+  "service": "example-plan-worker",
+  "logger": "example.worker",
+  "level": "info",
+  "event": "plan_started",
+  "host": "ip-10-0-3-41",
+  "organization_id": "org_example",
+  "task_id": "t-5003",
+  "plan_id": "p-33",
+  "target": "s3://acme-reports",
+  "steps": [
+   "read_bucket_policy",
+   "propose_fix",
+   "open_pull_request"
+  ],
+  "_norm": {
+   "org": "org_example"
+  },
+  "_facts": {
+   "notes": []
+  }
+ }
+]
