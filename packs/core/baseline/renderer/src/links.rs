@@ -40,7 +40,7 @@ pub fn links<K: Kv>(
         ));
     }
     for (t, x) in logins {
-        let p = by_of(w.people, x);
+        let p = by_of(x);
         if ws - t <= H && !new_net(b, &p, x, *t)?.is_empty() {
             let l = format!(
                 "{} login from a network new for {p} {} before this window",

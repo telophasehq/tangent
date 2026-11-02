@@ -84,8 +84,9 @@ A pack adds what only its provider's log says: `aws` adds `root` and
 ## The profile
 
 Every fact about your company that no log carries, as the `profile` table: a
-YAML file your ingest config names. The judge config needs none: what baseline
-needs of it, `people`, ingest files in the state store.
+YAML file your ingest config names. The judge config needs none: who is who is
+resolved in ingest, and reaches the judge on the records (`_norm.person`) and
+in the state store.
 
 ```yaml
 enrichment_tables:
@@ -99,11 +100,10 @@ enrichment_tables:
 | `cloud` | where your services run | a note when a service acts from any other hosting |
 | `networks` | your own addresses: office, VPN, CI egress | `ip.ours`; never a person's odd location |
 | `members` | people: IdP emails, GitHub handles | `principal: member`; anyone else is `unknown` |
-| `people` | each person's other names, a list or one: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_norm.person` when the actor is the person or one of their names |
+| `people` | each person's other names, a list or one: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_norm.person` when the actor is the person or one of their names; in `_baseline`, their history, sign-ins and networks as one person's |
 | `services` | IAM users and roles, bots | `principal: service`, held to `cloud` |
 | `keys` | API keys and the networks each calls from | `principal: key`, `key_known_network` |
 | `about` | who an actor is, when its name does not say | `about`, in place of the "nobody it knows" note |
-| `people` | a person's other names: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_baseline`: their history, sign-ins and networks as one person's |
 | `hosts` | hosts your systems talk to (`*.suffix` allowed) | `dest_known` |
 | `sensitive` | buckets, repos, tables | `sensitive_target` |
 | `watch` | kinds a person wants seen every time | `watch` |
@@ -224,15 +224,15 @@ among them, it passes over.
   seen, since anyone can fail in someone's name;
 - the networks (ASN, country, /24 or /48) each person and the org have used,
   and which actors have used each address;
+- the actors each person the profile names has been seen as;
 - each person's sign-ins, failed sign-ins and credential changes (MFA,
   passwords, keys, grants, OAuth grants), filed under the person they were
   done to as well;
 - who assumed each role session, and when.
 
 Each is a minimum, a sum or a row keyed by the event's time, so records that
-arrive out of order leave the same state. Keys begin with `_norm.org` (all
-but `people`), so orgs stay apart in one namespace, `baseline`, and never
-expire.
+arrive out of order leave the same state. Keys begin with `_norm.org`, so
+orgs stay apart in one namespace, `baseline`, and never expire.
 
 **What it stamps** (judge, `baseline_renderer`): `_baseline`, one object,
 the same on each of an actor's records in the request, `_context` ones
@@ -240,7 +240,7 @@ included; a key is left out when it has nothing to say.
 
 | key | what it says |
 |---|---|
-| `actor` | who it is to the profile, its person and that person's other names, the identities seen here (IAM user, assumed role, okta user, ...); for a role, who assumed it, and who assumed them, up to four hops and twelve hours back, or its SSO permission set; the privilege it used before (admin, write, read-only, none); a session's MFA against its earlier sessions' |
+| `actor` | who it is to the profile, its person and the actors that person was seen as before, the identities seen here (IAM user, assumed role, okta user, ...); for a role, who assumed it, and who assumed them, up to four hops and twelve hours back, or its SSO permission set; the privilege it used before (admin, write, read-only, none); a session's MFA against its earlier sessions' |
 | `seen` | how long it has been seen, its events and active days, from which sources; or `none: first seen in this window` |
 | `new` | what it does here for the first time, or first did within the hour: `api`, `resource`, `client`, `network` (with `(new to org)`), `source`, `oauth`, `device`, `token`; or `nothing: ...` |
 | `volume` | the last hour against the p90 of its active hours in 28 days, in total and per category, as `normal`, `2-5x`, `5-10x`, `>10x` or `none before` |
@@ -255,10 +255,12 @@ share; JSON lines repeat it on every record ([the cost](#judgeyaml)).
 - **People**: `people` in the profile ([above](#the-profile)) says which names
   are one person, as an IAM user `dave` is `dave@example.com`; a name not
   there is its own person, and one other name may be written bare
-  (`dave@example.com: dave`). The builder reads it from the `profile` table
-  and files it in the state store, under `people`, where the renderer reads
-  it: the two cannot disagree on who is who, and the judge config names no
-  profile.
+  (`dave@example.com: dave`). Who is who is resolved once, in ingest: a
+  pack's plugin writes the actor's person on the record as `_norm.person`,
+  and the builder files each person with what they did: the actors they were
+  seen as, their sign-ins and credential changes, the role sessions they
+  assumed. The renderer reads persons off the records and out of state and
+  resolves no one, so the judge config names no profile.
 - **One writer**: ingest runs one worker and no `runtime.partition`, and your
   ingest config must keep it so, since it wins over core's. The builder reads
   an hour's counts, adds to them and writes them back, as it does first-seen

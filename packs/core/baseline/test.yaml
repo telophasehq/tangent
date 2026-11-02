@@ -10,20 +10,19 @@ runtime:
   workers: 1
   plugins_path: plugins/
   disable_remote_calls: true
-  state:                         # a file: story.sh's first run files `people` for its second
-    backend: sqlite
-    path: state.sqlite
+  state:
+    backend: lru
     default_ttl_ms: 0
     max_ttl_ms: 0
 
 sources:
   story:
     type: file
-    path: ${STORY:-tests/input.json}
+    path: tests/input.json
     decoding: { format: { type: json-array }, compression: { type: none } }
 
 enrichment_tables:
-  profile: { type: document, path: tests/profile.yaml }   # people: dave is dave@acme.io
+  profile: { type: document, path: tests/profile.yaml }   # the builder's: dave is dave@acme.io
 
 plugins:
   baseline_renderer:

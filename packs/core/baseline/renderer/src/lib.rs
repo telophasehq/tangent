@@ -5,7 +5,8 @@
 //! hours against its own, and its person's sign-ins and credential changes in
 //! every source. It reads what the builder wrote in ingest (../kit has the
 //! keys) and writes nothing. Every read is cut at the window's start, so
-//! nothing at or after it counts.
+//! nothing at or after it counts. It resolves no one: who is who was settled
+//! in ingest, and comes on the records and in state.
 
 mod actor;
 mod auth;
@@ -25,30 +26,21 @@ mod tests;
 use std::collections::BTreeMap;
 
 use baselinekit::kinds::{ev, Ev};
-use baselinekit::people::People;
 use baselinekit::{Kv, R};
 use serde_json::Value;
 
 /// `lines` with `_baseline` on each record of an actor it can read, and the
-/// rest as they came. Who is who is what the builder filed.
+/// rest as they came.
 pub fn render(kv: &mut impl Kv, lines: &[String]) -> R<Vec<u8>> {
-    let people = People::filed(kv)?;
     let recs: Vec<Option<Value>> = lines.iter().map(|l| serde_json::from_str(l).ok()).collect();
-    let evs: Vec<Option<Ev>> = recs
-        .iter()
-        .map(|r| {
-            let mut e = ev(r.as_ref()?)?;
-            e.person = people.person(&e.actor);
-            Some(e)
-        })
-        .collect();
+    let evs: Vec<Option<Ev>> = recs.iter().map(|r| ev(r.as_ref()?)).collect();
     let mut groups: BTreeMap<(&str, &str), Vec<&Ev>> = BTreeMap::new();
     for e in evs.iter().flatten() {
         groups.entry((&e.org, &e.actor)).or_default().push(e);
     }
     let mut baselines = BTreeMap::new();
     for (k, g) in &groups {
-        if let Some(h) = header::header(kv, &people, g)? {
+        if let Some(h) = header::header(kv, g)? {
             baselines.insert(*k, Value::Object(h));
         }
     }

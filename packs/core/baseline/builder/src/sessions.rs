@@ -17,6 +17,7 @@ pub fn write(kv: &mut impl Kv, evs: &[&Ev]) -> R<()> {
             let x = Assume {
                 t,
                 by: a.into(),
+                person: e.named.then(|| e.person.clone()),
                 typ,
                 arn: e.arn.clone(),
             };

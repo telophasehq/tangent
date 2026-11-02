@@ -5,11 +5,6 @@
 # record came out (make -C packs fixtures-baseline); read the diff before
 # committing.
 #
-# It runs the pipeline twice. First over one record of no source, which the
-# builder learns nothing from but files the profile's `people` for, as ingest
-# has before the judge starts; then over the story, so its first record is
-# rendered knowing who dave is.
-#
 #   ./story.sh          (make -C packs test-baseline)
 #   ./story.sh write    (make -C packs fixtures-baseline)
 set -euo pipefail
@@ -18,11 +13,6 @@ T=${TANGENT:-tangent}
 export RUST_LOG=${RUST_LOG:-warn}
 
 "$T" plugin compile --config test.yaml
-rm -f state.sqlite* test_out.ndjson
-seed=$(mktemp)
-trap 'rm -f "$seed"' EXIT
-echo '[{}]' >"$seed"
-STORY=$seed "$T" run --once --config test.yaml
 rm -f test_out.ndjson
 "$T" run --once --config test.yaml
 

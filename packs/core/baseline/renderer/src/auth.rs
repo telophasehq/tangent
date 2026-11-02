@@ -3,11 +3,11 @@
 //! logins, MFA, password, key and grant changes, and the last login's address,
 //! network and MFA.
 
-use baselinekit::people::People;
 use baselinekit::time::{H, M};
 use baselinekit::{Kv, R};
 use serde_json::Value;
 
+use crate::actor::Behind;
 use crate::before::Before;
 use crate::header::Win;
 use crate::text::{ago, join, nn};
@@ -20,12 +20,12 @@ const MFA_NEAR: i64 = 5 * 60_000;
 pub fn auth<K: Kv>(
     b: &mut Before<K>,
     w: &Win,
-    behind: Option<&str>,
+    behind: Option<&Behind>,
 ) -> R<(String, Vec<(i64, Value)>)> {
-    let (a, ws, people) = (w.actor, w.ws, w.people);
+    let (a, ws) = (w.actor, w.ws);
     let own = &w.own;
     let mut whose = vec![own.clone()];
-    whose.extend(behind.map(|r| people.person(r)));
+    whose.extend(behind.map(Behind::person));
     let (mut ents, mut failed) = (Vec::new(), 0);
     for p in &whose {
         ents.extend(b.events(&["p", p, "e"], ws - AUTH)?);
@@ -38,17 +38,11 @@ pub fn auth<K: Kv>(
         .iter()
         .filter(|(_, x)| !matches!(kind(x).as_str(), "login" | "login failed" | "mfa ok"))
         .collect();
-    let named = |x: &str| {
-        let p = people.person(x);
-        if people.names.contains_key(&p) {
-            format!("person {p}")
-        } else {
-            x.to_string()
-        }
-    };
-    let mut s = format!("last 72h, {}", named(a));
+    // a name, or its person when who is who names one
+    let named = |x: &str, p: Option<&String>| p.map_or(x.to_string(), |p| format!("person {p}"));
+    let mut s = format!("last 72h, {}", named(a, w.named.then_some(own)));
     if let Some(r) = behind {
-        s += &format!(" and {}", named(r));
+        s += &format!(" and {}", named(&r.name, r.person.as_ref()));
     }
     s += ": ";
     if logins.is_empty() && failed == 0 && rest.is_empty() {
@@ -74,7 +68,7 @@ pub fn auth<K: Kv>(
             s += &format!(" ({})", join(bysrc.iter().map(|(k, n)| format!("{k} {n}"))));
         }
         s += &format!(", {failed} failed");
-        let mut alike: Vec<([String; 5], i64, i64)> = Vec::new();
+        let mut alike: Vec<([String; 6], i64, i64)> = Vec::new();
         for (t, x) in &rest {
             let [kd, what, by, ip] =
                 ["k", "what", "by", "ip"].map(|f| x[f].as_str().unwrap_or("").to_string());
@@ -82,7 +76,7 @@ pub fn auth<K: Kv>(
             let on = (x["to"].as_array().into_iter().flatten())
                 .filter_map(Value::as_str)
                 .filter(|p| p != own);
-            let k = [kd, what, by, ip, join(on)];
+            let k = [kd, what, by, ip, join(on), by_of(x)];
             match alike.iter_mut().find(|(k2, ..)| *k2 == k) {
                 Some((_, c, last)) => {
                     *c += 1;
@@ -94,13 +88,13 @@ pub fn auth<K: Kv>(
         if alike.is_empty() {
             s += "; no mfa, password, key or grant changes";
         }
-        for ([k, what, by, ip, on], c, t) in alike.iter().skip(alike.len().saturating_sub(4)) {
+        for ([k, what, by, ip, on, p], c, t) in alike.iter().skip(alike.len().saturating_sub(4)) {
             let on = if on.is_empty() {
                 String::new()
             } else {
                 format!(" on {on}")
             };
-            let by = if people.person(by) == *own {
+            let by = if p == own {
                 String::new()
             } else {
                 format!(" by {by}")
@@ -118,7 +112,7 @@ pub fn auth<K: Kv>(
             s += &format!("; {k} {what}{on}{by}{times} {} before{from}", ago(ws - t));
         }
         if let Some((t, x)) = logins.last() {
-            let newnet = new_net(b, &by_of(people, x), x, *t)?;
+            let newnet = new_net(b, &by_of(x), x, *t)?;
             let mut mfa = match x["mfa"] {
                 Value::Bool(true) => "yes",
                 Value::Bool(false) => "no",
@@ -166,9 +160,10 @@ fn kind(x: &Value) -> String {
     x["k"].as_str().unwrap_or("").to_string()
 }
 
-/// The person who signed in, in a login's row.
-pub fn by_of(people: &People, x: &Value) -> String {
-    people.person(x["by"].as_str().unwrap_or(""))
+/// The person who acted, in a row: the builder's, else `by` is its own.
+pub fn by_of(x: &Value) -> String {
+    (x["person"].as_str().map(str::to_string))
+        .unwrap_or_else(|| x["by"].as_str().unwrap_or("").to_lowercase())
 }
 
 /// Which of the login's ASN and country the person first used within this

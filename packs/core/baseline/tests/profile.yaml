@@ -1,5 +1,6 @@
 # What the fixtures were written against: the profile's `people`, the only key
-# baseline reads.
+# the builder reads. tests/input.json's `_norm.person` is what a pack writes
+# from it.
 people:
   dave@acme.io: [dave]
   grace@acme.io: [grace]

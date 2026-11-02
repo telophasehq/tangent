@@ -1,8 +1,9 @@
 //! First-seen times, each a minimum: the actor; what it used, from which
 //! source, where and as what; the networks its person and the org used; which
-//! actors used an address; its sessions' MFA; who assumed a role. Only what
-//! succeeded is learned as seen: anyone can fail a sign-in in someone's name,
-//! from anywhere.
+//! actors used an address; its sessions' MFA; who assumed a role; the actors a
+//! person was seen as, and the person each actor was. Only what succeeded is
+//! learned as seen: anyone can fail a sign-in in someone's name, from
+//! anywhere.
 
 use std::collections::BTreeMap;
 
@@ -19,6 +20,15 @@ pub fn write(kv: &mut impl Kv, evs: &[&Ev]) -> R<()> {
     for e in evs {
         let (o, a, t) = (e.org.as_str(), e.actor.as_str(), e.ms);
         low(key(&[o, "a", a, "first"]), t);
+        // who is who, for the renderer, which has no profile: the actors a
+        // named person was seen as, and back
+        if e.named {
+            low(
+                key(&[o, "p", &e.person, "n", "actor", &a.to_lowercase()]),
+                t,
+            );
+            low(key(&[o, "a", a, "n", "person", &e.person]), t);
+        }
         if e.ok {
             for (dim, v) in values(e) {
                 low(key(&[o, "a", a, "n", dim, &v]), t);

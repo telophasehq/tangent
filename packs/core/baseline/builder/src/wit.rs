@@ -1,4 +1,4 @@
-//! The plugin: the runtime's state as a [`Kv`], and the `profile` table.
+//! The plugin: the runtime's state as a [`Kv`], and the profile's `people`.
 
 wit_bindgen::generate!({
     path: ".tangent/wit",
@@ -8,9 +8,9 @@ wit_bindgen::generate!({
 
 use std::sync::OnceLock;
 
-use baselinekit::people::Profile;
 use baselinekit::{Kv, Scalar, R};
 use exports::tangent::logs::mapper::{Guest, Meta, Selector};
+use identitykit::People;
 use serde_json::Value;
 use tangent::logs::enrichment::lookup;
 use tangent::logs::log::{self, Logview};
@@ -39,18 +39,18 @@ impl Guest for Component {
 
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
         let lines: Vec<String> = input.iter().map(Logview::log).collect();
-        crate::build(&mut Wit, profile(), &lines)?;
+        crate::build(&mut Wit, people(), &lines)?;
         Ok(Vec::new())
     }
 }
 
-/// Read once per instance from the `profile` table: its `people`. None
-/// there, no one has another name.
-fn profile() -> &'static Profile {
-    static P: OnceLock<Profile> = OnceLock::new();
+/// Read once per instance from the `profile` table. None there, no one has
+/// another name.
+fn people() -> &'static People {
+    static P: OnceLock<People> = OnceLock::new();
     P.get_or_init(|| {
-        Profile::from_value(
-            lookup("profile", "people")
+        People::from_value(
+            &lookup("profile", "people")
                 .and_then(|json| serde_json::from_str::<Value>(&json).ok())
                 .unwrap_or(Value::Null),
         )

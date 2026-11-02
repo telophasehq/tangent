@@ -1,5 +1,5 @@
-//! The keys: each but `people` starts with the org, its parts joined by `|`,
-//! with `%` and `|` in a part %-escaped. The table of them is in
+//! The keys: each starts with the org, its parts joined by `|`, with `%` and
+//! `|` in a part %-escaped. The table of them is in
 //! packs/core/baseline/README.md.
 
 use std::collections::BTreeMap;
@@ -63,6 +63,9 @@ pub fn nets(e: &Ev) -> Vec<(&'static str, String)> {
 pub struct Assume {
     pub t: i64,
     pub by: String,
+    /// `by`'s person, when who is who names one
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person: Option<String>,
     #[serde(rename = "type")]
     pub typ: String,
     pub arn: String,

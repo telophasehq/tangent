@@ -1,12 +1,21 @@
-use baseline_builder::build;
-use baselinekit::people::{Profile, PEOPLE};
-use baselinekit::{Mem, Scalar};
+use baseline_builder::{build, People};
+use baselinekit::Mem;
 use serde_json::{json, Value};
 
 use crate::render;
 
-fn profile() -> Profile {
-    Profile::from_value(json!({"dave@acme.io": ["dave"]}))
+/// Ingest's: the renderer has none.
+fn people() -> People {
+    People::from_value(&json!({"dave@acme.io": ["dave"]}))
+}
+
+/// `_norm` as the packs write it: the person, when the profile names them.
+fn norm(actor: &str) -> Value {
+    let people = people();
+    match Some(people.person(actor)).filter(|p| people.knows(p)) {
+        Some(p) => json!({"actor": actor, "org": "acme", "person": p}),
+        None => json!({"actor": actor, "org": "acme"}),
+    }
 }
 
 const HOME: (&str, i64, &str) = ("203.0.113.10", 64500, "US");
@@ -16,7 +25,7 @@ const AWAY: (&str, i64, &str) = ("198.51.100.23", 64501, "NL");
 fn okta(ts: &str, event: &str, (ip, asn, cc): (&str, i64, &str)) -> Value {
     json!({"source": "okta", "ts": format!("2026-{ts}Z"), "eventType": event, "outcome": {"result": "SUCCESS"},
            "actor": {"alternateId": "dave@acme.io", "type": "User"}, "client": {"ipAddress": ip},
-           "_norm": {"actor": "dave@acme.io", "org": "acme"},
+           "_norm": norm("dave@acme.io"),
            "_facts": {"principal": "member", "ip": {"asn": asn, "country": cc}}})
 }
 
@@ -48,19 +57,19 @@ fn ct(who: &str, ts: &str, name: &str, ip: &str, rp: Value) -> Value {
     };
     json!({"source": "cloudtrail", "ts": format!("2026-{ts}Z"), "eventName": name, "eventSource": format!("{svc}.amazonaws.com"),
            "sourceIPAddress": ip, "userAgent": "aws-cli/2.17.0", "requestParameters": rp, "userIdentity": id,
-           "_norm": {"actor": actor, "org": "acme"},
+           "_norm": norm(actor),
            "_facts": {"principal": "member", "ip": {"asn": 64500, "country": "US"}}})
 }
 
 fn fold(recs: &[Value]) -> Mem {
     let mut st = Mem::default();
     let lines: Vec<String> = recs.iter().map(Value::to_string).collect();
-    assert!(build(&mut st, &profile(), &lines).is_ok());
+    assert!(build(&mut st, &people(), &lines).is_ok());
     st
 }
 
 fn baseline(st: &mut Mem, rec: &Value) -> Value {
-    // the judge's: what the builder filed, no profile
+    // the judge's: the record and what the builder filed, no profile
     let out = render(st, &[rec.to_string()]).unwrap_or_default();
     let rec: Value = serde_json::from_slice(&out).unwrap_or_default();
     rec.get("_baseline").cloned().unwrap_or_default()
@@ -278,17 +287,22 @@ fn own_credentials_are_not_admin() {
     has(&h, "auth", "key created access key on deploy-bot");
 }
 
-/// The renderer reads who is who from what the builder filed, not a
-/// profile of its own; a changed profile is filed again.
+/// The renderer resolves no one: the actor's person is the one its record
+/// names, and that person's names are the actors the builder saw them as
+/// before the window.
 #[test]
-fn the_renderer_reads_the_builder_s_people() {
-    let mut st = fold(&[ct(
+fn who_is_who_comes_from_ingest() {
+    let dave = ct(
         "dave",
         "01-01T15:00:00",
         "GetObject",
         HOME.0,
         json!({"bucketName": "x"}),
-    )]);
+    );
+    let okta_win = okta("01-05T13:00:00", "user.session.start", HOME);
+    let h = baseline(&mut fold(std::slice::from_ref(&dave)), &okta_win);
+    has(&h, "actor", "person dave@acme.io (dave);");
+    let mut st = fold(&[dave, okta("01-04T15:00:00", "user.session.start", HOME)]);
     let win = ct(
         "dave",
         "01-05T13:00:00",
@@ -296,17 +310,54 @@ fn the_renderer_reads_the_builder_s_people() {
         HOME.0,
         json!({"bucketName": "x"}),
     );
-    has(
-        &baseline(&mut st, &win),
-        "actor",
-        "person dave@acme.io (dave, dave@acme.io)",
-    );
-    let alone = Profile::from_value(json!({}));
-    assert!(build(&mut st, &alone, &[]).is_ok());
-    assert!(matches!(st.0.get(PEOPLE), Some(Scalar::Str(t)) if t == "{}"));
     let h = baseline(&mut st, &win);
+    has(&h, "actor", "person dave@acme.io (dave, dave@acme.io);");
+    has(
+        &h,
+        "auth",
+        "last 72h, person dave@acme.io: 1 login (okta 1)",
+    );
+    // a record that names no person: its actor is its own
+    let mut bare = win;
+    if let Some(n) = bare.get_mut("_norm").and_then(Value::as_object_mut) {
+        n.remove("person");
+    }
+    let h = baseline(&mut st, &bare);
     let actor = h.get("actor").and_then(Value::as_str).unwrap_or_default();
     assert!(!actor.is_empty() && !actor.contains("person"), "{h}");
+    has(
+        &h,
+        "auth",
+        "last 72h, dave: no logins or credential changes",
+    );
+}
+
+/// A federated user's issuer is its own records' person, as the builder
+/// filed it, and that person's sign-ins count too.
+#[test]
+fn who_is_behind_a_federated_user() {
+    let mut st = fold(&[
+        okta("01-05T12:00:00", "user.session.start", HOME),
+        ct(
+            "dave",
+            "01-05T12:30:00",
+            "GetFederationToken",
+            HOME.0,
+            json!({"name": "build"}),
+        ),
+    ]);
+    let fed = "arn:aws:sts::111122223333:federated-user/build";
+    let rec = json!({"source": "cloudtrail", "ts": "2026-01-05T13:00:00Z", "eventName": "ListBuckets",
+                     "eventSource": "s3.amazonaws.com", "sourceIPAddress": HOME.0,
+                     "userIdentity": {"type": "FederatedUser", "arn": fed, "role": "dave"},
+                     "_norm": norm(fed)});
+    let h = baseline(&mut st, &rec);
+    has(&h, "actor", "federated by dave");
+    has(
+        &h,
+        "auth",
+        &format!("last 72h, {fed} and person dave@acme.io: 2 logins (okta 1, aws 1)"),
+    );
 }
 
 /// The app pack's audit shape under a name of yours (its `sources` or

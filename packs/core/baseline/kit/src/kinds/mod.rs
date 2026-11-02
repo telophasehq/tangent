@@ -28,7 +28,13 @@ pub struct Ev {
     pub src: String,
     pub org: String,
     pub actor: String,
+    /// The actor's person: the record's `_norm.person`, else the actor
+    /// lowercased, its own person. The builder, which has the profile, asks
+    /// its `people` when the record names none.
     pub person: String,
+    /// Who is who names `person`: the record's `_norm.person`, or the
+    /// profile's `people` in the builder.
+    pub named: bool,
     pub ms: i64,
     pub context: bool,
     pub principal: Option<String>,
@@ -62,10 +68,13 @@ pub fn ev(r: &Value) -> Option<Ev> {
     let actor = at(r, "_norm.actor").as_str().filter(|a| !a.is_empty())?;
     let ms = r["ts"].as_str().and_then(ms_of)?;
     let ip = at(r, "_facts.ip");
+    let person = str_of(at(r, "_norm.person")).map(|p| p.to_lowercase());
     let mut e = Ev {
         src: r["source"].as_str()?.to_string(),
         org: at(r, "_norm.org").as_str().unwrap_or("").to_string(),
         actor: actor.to_string(),
+        named: person.is_some(),
+        person: person.unwrap_or_else(|| actor.to_lowercase()),
         ms,
         context: r["_context"] == true,
         principal: str_of(at(r, "_facts.principal")),

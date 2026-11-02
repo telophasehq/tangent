@@ -1,5 +1,5 @@
-//! `actor`: who it is to the profile, its person and that person's other
-//! names, the identities seen here; for a role, who assumed it, and who
+//! `actor`: who it is to the profile, its person and the actors that person
+//! was seen as, the identities seen here; for a role, who assumed it, and who
 //! assumed them, or its SSO permission set; the privilege it used before; a
 //! session's MFA against its earlier sessions'.
 
@@ -13,12 +13,27 @@ use crate::before::{Before, CHAIN};
 use crate::header::Win;
 use crate::text::{ago, join};
 
-/// The line, and who is behind a role or a federated user: their sign-ins
-/// count too.
-pub fn actor<K: Kv>(b: &mut Before<K>, w: &Win) -> R<(String, Option<String>)> {
-    let (a, fresh, people, ws) = (w.actor, &w.fresh, w.people, w.ws);
+/// Who is behind a role or a federated user: their sign-ins count too.
+pub struct Behind {
+    pub name: String,
+    /// their person, when who is who names one
+    pub person: Option<String>,
+}
+
+impl Behind {
+    /// Their person: a name no one is named for is its own.
+    pub fn person(&self) -> String {
+        self.person
+            .clone()
+            .unwrap_or_else(|| self.name.to_lowercase())
+    }
+}
+
+/// The line, and who is behind a role or a federated user.
+pub fn actor<K: Kv>(b: &mut Before<K>, w: &Win) -> R<(String, Option<Behind>)> {
+    let (a, fresh, ws) = (w.actor, &w.fresh, w.ws);
     let own = &w.own;
-    let mut behind: Option<String> = None;
+    let mut behind: Option<Behind> = None;
     let mut parts = vec![match w.e0.principal.as_deref() {
         Some("member") => "human (profile member)",
         Some("service") => "service account (profile)",
@@ -27,8 +42,16 @@ pub fn actor<K: Kv>(b: &mut Before<K>, w: &Win) -> R<(String, Option<String>)> {
         _ => "not in profile",
     }
     .to_string()];
-    if let Some(names) = people.names.get(own).filter(|n| n.len() > 1) {
-        parts.push(format!("person {own} ({})", join(names.iter())));
+    if w.named {
+        // the actors the builder saw the person as
+        let names: BTreeSet<String> = (b.firsts(&["p", own, "n", "actor"])?.into_iter())
+            .map(|(n, _)| n)
+            .collect();
+        parts.push(if names.is_empty() {
+            format!("person {own}")
+        } else {
+            format!("person {own} ({})", join(names.iter()))
+        });
     }
     let types: BTreeSet<&str> = fresh.iter().filter_map(|e| e.typ.as_deref()).collect();
     if !types.is_empty() {
@@ -51,10 +74,15 @@ pub fn actor<K: Kv>(b: &mut Before<K>, w: &Win) -> R<(String, Option<String>)> {
     let issuers: BTreeSet<&str> = fresh.iter().filter_map(|e| e.issuer.as_deref()).collect();
     for iss in issuers {
         parts.push(format!("federated by {iss}"));
-        behind = Some(iss.to_string());
+        // the issuer's person, filed from its own records
+        let person = b.firsts(&["a", iss, "n", "person"])?.pop().map(|(p, _)| p);
+        behind = Some(Behind {
+            name: iss.to_string(),
+            person,
+        });
     }
     // an AWS service signs in nowhere
-    let behind = behind.filter(|r| !r.starts_with("aws:") && people.person(r) != *own);
+    let behind = behind.filter(|r| !r.name.starts_with("aws:") && r.person() != *own);
     let used: BTreeSet<String> = b
         .firsts(&["a", a, "n", "cat"])?
         .into_iter()
@@ -98,7 +126,7 @@ fn chain<K: Kv>(
     sess: &str,
     before: i64,
     depth: usize,
-) -> R<(String, Option<String>)> {
+) -> R<(String, Option<Behind>)> {
     let Some(x) = b.assumed(acct, role, sess, before)? else {
         return Ok((format!(" <- not seen in {}h", CHAIN / H), None));
     };
@@ -113,10 +141,14 @@ fn chain<K: Kv>(
         x.typ,
         ago(b.ws - x.t)
     );
+    let by = Behind {
+        name: x.by,
+        person: x.person,
+    };
     if let Some((a2, r2, s2)) = assumed(&x.arn).filter(|_| depth < 3) {
         let (more, root) = chain(b, &a2, &r2, &s2, x.t, depth + 1)?;
         out += &more;
-        return Ok((out, root.or(Some(x.by))));
+        return Ok((out, root.or(Some(by))));
     }
-    Ok((out, Some(x.by)))
+    Ok((out, Some(by)))
 }

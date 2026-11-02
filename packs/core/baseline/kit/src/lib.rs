@@ -1,12 +1,11 @@
 //! What baseline's two plugins agree on: the keys the builder writes in
 //! ingest and the renderer reads in the judge, in another process; the event
-//! each reads off a record; who is who; the time helpers; and the store, as
-//! [`Kv`]. Nothing else joins them.
+//! each reads off a record; the time helpers; and the store, as [`Kv`].
+//! Nothing else joins them.
 
 pub mod keys;
 pub mod kinds;
 mod mem;
-pub mod people;
 pub mod time;
 
 pub use mem::Mem;

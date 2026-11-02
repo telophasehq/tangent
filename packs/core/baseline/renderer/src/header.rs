@@ -2,7 +2,6 @@
 //! volume.rs, time.rs, auth.rs and links.rs each write theirs.
 
 use baselinekit::kinds::Ev;
-use baselinekit::people::People;
 use baselinekit::{Kv, R};
 use serde_json::{json, Map, Value};
 
@@ -18,16 +17,17 @@ pub struct Win<'a> {
     pub ctx: Vec<&'a Ev>,
     pub e0: &'a Ev,
     pub actor: &'a str,
-    /// the actor's person
+    /// the actor's person, as its first record has it
     pub own: String,
+    /// who is who names `own`
+    pub named: bool,
     /// the window's start and end: its first and last record's time
     pub ws: i64,
     pub we: i64,
-    pub people: &'a People,
 }
 
 /// `_baseline` for one actor's records in a call, or None when all are `_context`.
-pub fn header<K: Kv>(kv: &mut K, people: &People, group: &[&Ev]) -> R<Option<Map<String, Value>>> {
+pub fn header<K: Kv>(kv: &mut K, group: &[&Ev]) -> R<Option<Map<String, Value>>> {
     let fresh: Vec<&Ev> = group.iter().copied().filter(|e| !e.context).collect();
     let (Some(e0), Some(ws), Some(we)) = (
         fresh.first().copied(),
@@ -47,9 +47,9 @@ pub fn header<K: Kv>(kv: &mut K, people: &People, group: &[&Ev]) -> R<Option<Map
         e0,
         actor: &e0.actor,
         own: e0.person.clone(),
+        named: e0.named,
         ws,
         we,
-        people,
     };
     let mut b = Before {
         kv,
@@ -75,7 +75,7 @@ pub fn header<K: Kv>(kv: &mut K, people: &People, group: &[&Ev]) -> R<Option<Map
         let t = time::time(&w, &seen.days, &hourly, last.as_deref());
         h.insert("time".into(), json!(t));
     }
-    let (line, logins) = auth::auth(&mut b, &w, behind.as_deref())?;
+    let (line, logins) = auth::auth(&mut b, &w, behind.as_ref())?;
     h.insert("auth".into(), json!(line));
     links::links(&mut b, &w, &logins, &mut links)?;
     if !links.is_empty() {

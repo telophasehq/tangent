@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]   # rlib: the renderer's tests fold records with
 
 [dependencies]
 baselinekit = { path = "../kit" }
+identitykit = { path = "../../../shared/identitykit" }
 serde_json = "1"
 wit-bindgen = "0.48.0"
 
