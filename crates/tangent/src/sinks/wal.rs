@@ -362,7 +362,9 @@ impl Sink for DurableFileSink {
         loop {
             let mut routes = self.routes.lock().await;
             let rs = routes.get_mut(&rkey).expect("route exists after create");
-            if rs.cur.bytes + req.payload.len() <= self.max_file_size {
+            // a write bigger than a file gets a file of its own: rotating
+            // an empty file does nothing, and would go round for ever
+            if rs.cur.bytes == 0 || rs.cur.bytes + req.payload.len() <= self.max_file_size {
                 let f = rs.cur.file.as_mut().expect("current file missing");
                 f.write_all(&req.payload).await?;
                 rs.cur.bytes += req.payload.len();
@@ -833,5 +835,41 @@ mod tests {
             schema: String::new(),
         };
         assert_eq!(object_name(sealed, &parquet, &zstd), "01JBX4N3V2.parquet");
+    }
+
+    #[tokio::test]
+    async fn a_write_bigger_than_a_file_is_a_file_of_its_own() {
+        let dir = wal_dir("big");
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            16,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        let big = "{\"n\":1,\"m\":\"more than sixteen bytes\"}\n";
+        for payload in ["{\"n\":0}\n", big, "{\"n\":2}\n"] {
+            tokio::time::timeout(Duration::from_secs(10), wal.write(write(payload)))
+                .await
+                .expect("the write returns")
+                .unwrap();
+        }
+        wal.flush().await.unwrap();
+        let mut got: Vec<Vec<u8>> = rec.got.lock().await.iter().map(|g| g.1.clone()).collect();
+        got.sort();
+        assert_eq!(
+            got,
+            [
+                b"{\"n\":0}\n".to_vec(),
+                big.as_bytes().to_vec(),
+                b"{\"n\":2}\n".to_vec()
+            ]
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
