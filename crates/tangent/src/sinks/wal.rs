@@ -1,11 +1,12 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use bytes::BytesMut;
 use flate2::write::GzEncoder;
 use flate2::Compression as f2Compression;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::File as stdFile;
-use std::io::copy;
+use std::io::{copy, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -18,6 +19,7 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::task::{spawn_blocking, JoinHandle, JoinSet};
 use tokio::time::{sleep, Duration, Instant};
 
+use crate::sinks::encoding;
 use crate::sinks::manager::{Sink, SinkWrite};
 use crate::sinks::s3;
 use crate::SINK_BYTES_UNCOMPRESSED_TOTAL;
@@ -70,11 +72,14 @@ struct Current {
     created_at: Instant,
 }
 
+/// Where a sealed file goes once it is in the sink's encoding: `path` holds
+/// the object's bytes, `name` is what to call it (see [`object_name`]).
 #[async_trait]
 pub trait WALSink: Send + Sync {
     async fn write_path_with(
         &self,
         path: &Path,
+        name: &str,
         encoding: &Encoding,
         compression: &Compression,
         meta: &s3::S3SinkItem,
@@ -249,27 +254,24 @@ impl DurableFileSink {
                 compression: compression.clone(),
             });
 
-            let (upload_path, upload_size) = match compression {
-                Compression::None => (sealed_path_clone.clone(), orig_size),
-                Compression::Gzip { level } => match encoding {
-                    Encoding::NDJSON | Encoding::JSON => {
-                        compress_gzip_to_file(&sealed_path_clone, level).await?
-                    }
-                    _ => (sealed_path_clone.clone(), orig_size),
-                },
-                Compression::Zstd { level } => match encoding {
-                    Encoding::NDJSON | Encoding::JSON => {
-                        compress_zstd_to_file(&sealed_path_clone, level).await?
-                    }
-                    _ => (sealed_path_clone.clone(), orig_size),
-                },
-                Compression::Snappy { .. } => (sealed_path_clone.clone(), orig_size),
-                Compression::Deflate { .. } => (sealed_path_clone.clone(), orig_size),
-            };
+            let name = object_name(
+                &sealed_path_clone,
+                &wal_meta.encoding,
+                &wal_meta.compression,
+            );
+            let (upload_path, upload_size) = encode_sealed(
+                &sealed_path_clone,
+                orig_size,
+                &name,
+                &wal_meta.encoding,
+                &wal_meta.compression,
+            )
+            .await?;
 
             inner
                 .write_path_with(
                     &upload_path,
+                    &name,
                     &wal_meta.encoding,
                     &wal_meta.compression,
                     &s3::S3SinkItem {
@@ -417,9 +419,97 @@ impl Sink for DurableFileSink {
     }
 }
 
-async fn compress_zstd_to_file(src: &Path, level: i32) -> Result<(PathBuf, u64)> {
-    let dst = src.with_extension("sealed.zst");
-    let dst_tmp = dst.with_extension("sealed.zst.tmp");
+/// The sealed NDJSON as the object it goes out as, beside it under the
+/// object's name: the sealed file itself for uncompressed NDJSON, a
+/// compressed copy for NDJSON with gzip or zstd, and otherwise the records
+/// encoded, Parquet a batch at a time, JSON and Avro all at once.
+async fn encode_sealed(
+    sealed: &Path,
+    size: u64,
+    name: &str,
+    enc: &Encoding,
+    comp: &Compression,
+) -> Result<(PathBuf, u64)> {
+    let dst = sealed.with_file_name(name);
+    match (enc, comp) {
+        (Encoding::NDJSON, Compression::Gzip { level }) => {
+            compress_gzip_to_file(sealed, &dst, *level).await
+        }
+        (Encoding::NDJSON, Compression::Zstd { level }) => {
+            compress_zstd_to_file(sealed, &dst, *level).await
+        }
+        (Encoding::NDJSON, _) => Ok((sealed.to_path_buf(), size)),
+        _ => encode_to_file(sealed, &dst, enc, comp).await,
+    }
+}
+
+async fn encode_to_file(
+    src: &Path,
+    dst: &Path,
+    enc: &Encoding,
+    comp: &Compression,
+) -> Result<(PathBuf, u64)> {
+    let (src, dst) = (src.to_path_buf(), dst.to_path_buf());
+    let (enc, comp) = (enc.clone(), comp.clone());
+    spawn_blocking(move || -> Result<(PathBuf, u64)> {
+        let tmp = tmp_path(&dst);
+        let mut out = BufWriter::new(stdFile::create(&tmp)?);
+        if let Encoding::Parquet { schema } = &enc {
+            let fin = BufReader::new(stdFile::open(&src)?);
+            out = encoding::write_parquet(fin, out, schema, &comp)?;
+        } else {
+            let raw = BytesMut::from(std::fs::read(&src)?.as_slice());
+            let bytes = encoding::normalize_from_ndjson(&enc, &comp, raw)?;
+            // JSON is compressed whole, as NDJSON is; Avro inside the file
+            match (&enc, &comp) {
+                (Encoding::JSON, Compression::Gzip { level }) => {
+                    let mut gz = GzEncoder::new(&mut out, f2Compression::new(*level));
+                    gz.write_all(&bytes)?;
+                    gz.finish()?;
+                }
+                (Encoding::JSON, Compression::Zstd { level }) => {
+                    zstd::stream::copy_encode(&bytes[..], &mut out, *level)?;
+                }
+                _ => out.write_all(&bytes)?,
+            }
+        }
+        out.into_inner().map_err(|e| e.into_error())?.sync_data()?;
+        std::fs::rename(&tmp, &dst)?;
+        let size = std::fs::metadata(&dst)?.len();
+        Ok((dst, size))
+    })
+    .await?
+}
+
+/// Where a stage is written before it is renamed into place.
+fn tmp_path(dst: &Path) -> PathBuf {
+    let mut tmp = dst.as_os_str().to_owned();
+    tmp.push(".tmp");
+    tmp.into()
+}
+
+/// Whether the encoding is compressed whole, by a compressor around the file
+/// (NDJSON, JSON), rather than inside it (Parquet, Avro).
+pub fn compressed_whole(enc: &Encoding) -> bool {
+    matches!(enc, Encoding::NDJSON | Encoding::JSON)
+}
+
+/// What a sealed file is called once it is out: its ULID, which sorts by the
+/// time the file was opened and is unique, the encoding's extension, and
+/// for an encoding compressed whole, the compression's.
+pub fn object_name(sealed: &Path, enc: &Encoding, comp: &Compression) -> String {
+    let base = base_for(sealed);
+    let stem = base.file_name().unwrap_or_default().to_string_lossy();
+    let mut name = format!("{stem}.{}", enc.extension());
+    if compressed_whole(enc) {
+        name.push_str(comp.extension());
+    }
+    name
+}
+
+async fn compress_zstd_to_file(src: &Path, dst: &Path, level: i32) -> Result<(PathBuf, u64)> {
+    let dst = dst.to_path_buf();
+    let dst_tmp = tmp_path(&dst);
     let src = src.to_path_buf();
     let dst_clone = dst.clone();
     let size = spawn_blocking(move || -> Result<u64> {
@@ -436,9 +526,9 @@ async fn compress_zstd_to_file(src: &Path, level: i32) -> Result<(PathBuf, u64)>
     Ok((dst, size))
 }
 
-async fn compress_gzip_to_file(src: &Path, level: u32) -> Result<(PathBuf, u64)> {
-    let dst = src.with_extension("sealed.gz");
-    let dst_tmp = dst.with_extension("sealed.gz.tmp");
+async fn compress_gzip_to_file(src: &Path, dst: &Path, level: u32) -> Result<(PathBuf, u64)> {
+    let dst = dst.to_path_buf();
+    let dst_tmp = tmp_path(&dst);
     let src = src.to_path_buf();
     let dst_clone = dst.clone();
     let size = spawn_blocking(move || -> Result<u64> {
@@ -551,7 +641,7 @@ async fn open_route_current(dir: &Path, meta: &WalMeta) -> anyhow::Result<Curren
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bytes::BytesMut;
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
     /// What reached the inner sink: each file's name and bytes.
     #[derive(Default)]
@@ -564,13 +654,13 @@ mod tests {
         async fn write_path_with(
             &self,
             path: &Path,
+            name: &str,
             _encoding: &Encoding,
             _compression: &Compression,
             _meta: &s3::S3SinkItem,
         ) -> Result<()> {
-            let name = path.file_name().unwrap().to_string_lossy().into_owned();
             let bytes = fs::read(path).await?;
-            self.got.lock().await.push((name, bytes));
+            self.got.lock().await.push((name.to_string(), bytes));
             Ok(())
         }
     }
@@ -661,5 +751,87 @@ mod tests {
         assert_eq!(got.len(), 1, "sent once");
         assert_eq!(got[0].1, b"{\"n\":1}\n");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    async fn sent(encoding: Encoding, compression: Compression, tag: &str) -> (String, Vec<u8>) {
+        let dir = wal_dir(tag);
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            1 << 20,
+            Duration::from_secs(3600),
+            compression,
+            encoding,
+        )
+        .await
+        .unwrap();
+        wal.write(write("{\"n\":1,\"m\":\"x\"}\n{\"n\":2}\n"))
+            .await
+            .unwrap();
+        wal.write(write("{\"n\":3}\n")).await.unwrap();
+        wal.flush().await.unwrap();
+        let mut got = rec.got.lock().await;
+        assert_eq!(got.len(), 1);
+        for f in std::fs::read_dir(&dir).unwrap() {
+            let f = f.unwrap();
+            let name = f.file_name().into_string().unwrap();
+            assert!(
+                name.ends_with(".bin") || name.ends_with(".meta"),
+                "{name} is gone once sent"
+            );
+        }
+        let _ = std::fs::remove_dir_all(dir);
+        got.pop().unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_sealed_file_goes_out_in_the_sinks_encoding() {
+        let lines = "{\"n\":1,\"m\":\"x\"}\n{\"n\":2}\n{\"n\":3}\n";
+
+        let (name, bytes) = sent(Encoding::NDJSON, Compression::Zstd { level: 3 }, "zst").await;
+        assert!(name.ends_with(".ndjson.zst"), "{name}");
+        assert_eq!(zstd::decode_all(&bytes[..]).unwrap(), lines.as_bytes());
+
+        let (name, bytes) = sent(Encoding::NDJSON, Compression::None, "plain").await;
+        assert!(name.ends_with(".ndjson"), "{name}");
+        assert_eq!(bytes, lines.as_bytes());
+
+        let schema = arrow_schema::Schema::new(vec![arrow_schema::Field::new(
+            "n",
+            arrow_schema::DataType::Int64,
+            true,
+        )]);
+        let parquet = Encoding::Parquet {
+            schema: serde_json::to_string(&schema).unwrap(),
+        };
+        let (name, bytes) = sent(parquet, Compression::Zstd { level: 3 }, "parquet").await;
+        assert!(name.ends_with(".parquet"), "compressed inside: {name}");
+        let rows = ParquetRecordBatchReaderBuilder::try_new(bytes::Bytes::from(bytes))
+            .unwrap()
+            .build()
+            .unwrap()
+            .map(|b| b.unwrap().num_rows())
+            .sum::<usize>();
+        assert_eq!(rows, 3);
+    }
+
+    #[test]
+    fn object_name_is_the_ulid_then_extensions_the_bytes_have() {
+        let sealed = Path::new("/wal/01JBX4N3V2.bin.sealed");
+        let zstd = Compression::Zstd { level: 3 };
+        assert_eq!(
+            object_name(sealed, &Encoding::NDJSON, &zstd),
+            "01JBX4N3V2.ndjson.zst"
+        );
+        assert_eq!(
+            object_name(sealed, &Encoding::JSON, &Compression::None),
+            "01JBX4N3V2.json"
+        );
+        let parquet = Encoding::Parquet {
+            schema: String::new(),
+        };
+        assert_eq!(object_name(sealed, &parquet, &zstd), "01JBX4N3V2.parquet");
     }
 }
