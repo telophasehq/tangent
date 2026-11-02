@@ -29,6 +29,13 @@ use crate::{
     WAL_SEALED_BYTES_TOTAL, WAL_SEALED_FILES_TOTAL,
 };
 
+/// How often a sealed file whose send failed is tried again.
+const RETRY_EVERY: Duration = if cfg!(test) {
+    Duration::from_millis(200)
+} else {
+    Duration::from_secs(30)
+};
+
 pub struct DurableFileSink {
     inner: Arc<dyn WALSink>,
     dir: PathBuf,
@@ -122,16 +129,22 @@ impl DurableFileSink {
         if recovered > 0 {
             tracing::info!(files = recovered, dir = ?s.dir, "WAL sealed files left open by a stop without flush");
         }
-        s.retry_leftovers(false).await;
+        s.retry_leftovers(true).await;
 
         let s_cloned = s.clone();
         let stop = s.stop.clone();
         let handle = tokio::spawn(async move {
-            let tick = max(Duration::from_millis(250), max_file_age / 4);
+            let tick = max(Duration::from_millis(250), max_file_age / 4).min(RETRY_EVERY);
+            let mut retried = Instant::now();
             loop {
                 tokio::select! {
                     () = stop.cancelled() => break,
                     () = sleep(tick) => {
+                        // a file whose send failed is in the WAL still
+                        if retried.elapsed() >= RETRY_EVERY {
+                            s_cloned.retry_leftovers(false).await;
+                            retried = Instant::now();
+                        }
                         // each with the file found aged: a writer may have
                         // sealed it since, and its next one is young
                         let to_rotate: Vec<(RouteKey, PathBuf)> = {
@@ -194,12 +207,15 @@ impl DurableFileSink {
         WAL_PENDING_FILES.inc();
         WAL_PENDING_BYTES.add(sealed_bytes as i64);
 
-        self.spawn_upload_with_meta(sealed_ready, sealed_bytes, meta, true)
+        self.spawn_upload_with_meta(sealed_ready, sealed_bytes, meta)
             .await;
         Ok(())
     }
 
-    async fn retry_leftovers(&self, incr_counters: bool) {
+    /// Sends each sealed file in the WAL not being sent now: at the start,
+    /// what an earlier process left, counted as pending as a file sealed now
+    /// is; later, a file whose send failed.
+    async fn retry_leftovers(&self, at_start: bool) {
         let Ok(mut rd) = fs::read_dir(&self.dir).await else {
             return;
         };
@@ -224,6 +240,10 @@ impl DurableFileSink {
             };
 
             if let Ok(md) = fs::metadata(&p).await {
+                if at_start {
+                    WAL_PENDING_FILES.inc();
+                    WAL_PENDING_BYTES.add(md.len() as i64);
+                }
                 self.spawn_upload_with_meta(
                     p.clone(),
                     md.len(),
@@ -231,7 +251,6 @@ impl DurableFileSink {
                         bucket_name: meta.bucket_name,
                         key_prefix: meta.key_prefix,
                     },
-                    incr_counters,
                 )
                 .await;
             }
@@ -243,7 +262,6 @@ impl DurableFileSink {
         sealed_path: PathBuf,
         orig_size: u64,
         route_meta: s3::S3SinkItem,
-        incr_metrics: bool,
     ) {
         // flush retries what is sealed, which includes what it just sealed
         if !self.sending.lock().insert(sealed_path.clone()) {
@@ -284,7 +302,7 @@ impl DurableFileSink {
             )
             .await?;
 
-            inner
+            let sent = inner
                 .write_path_with(
                     &upload_path,
                     &name,
@@ -295,9 +313,14 @@ impl DurableFileSink {
                         key_prefix: wal_meta.key_prefix,
                     },
                 )
-                .await?;
+                .await;
+            // the encoded copy goes whether or not it went out: a retry makes
+            // it again from the sealed file
+            if upload_path != sealed_path_clone {
+                let _ = fs::remove_file(&upload_path).await;
+            }
+            sent?;
 
-            let _ = fs::remove_file(&upload_path).await;
             let _ = fs::remove_file(&sealed_path_clone).await;
             let _ = fs::remove_file(&meta_path).await;
 
@@ -309,18 +332,18 @@ impl DurableFileSink {
         js.spawn(async move {
             match fut.await {
                 Ok(uploaded) => {
-                    // Don't incr metrics on restart.
-                    if incr_metrics {
-                        SINK_OBJECTS_TOTAL.inc();
-                        SINK_BYTES_TOTAL.inc_by(uploaded);
-                        SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(orig_size);
-                        WAL_PENDING_FILES.dec();
-                        WAL_PENDING_BYTES.sub(orig_size as i64);
-                    }
+                    SINK_OBJECTS_TOTAL.inc();
+                    SINK_BYTES_TOTAL.inc_by(uploaded);
+                    SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(orig_size);
+                    WAL_PENDING_FILES.dec();
+                    WAL_PENDING_BYTES.sub(orig_size as i64);
                     tracing::debug!(bytes = uploaded, "WAL uploaded & removed");
                 }
                 Err(e) => {
-                    tracing::warn!("upload error for {:?}: {e}", sealed_path);
+                    tracing::warn!(
+                        "upload error for {:?}, retried in {RETRY_EVERY:?}: {e}",
+                        sealed_path
+                    );
                 }
             }
             sending.lock().remove(&sealed_path);
@@ -450,7 +473,7 @@ impl Sink for DurableFileSink {
         }
 
         loop {
-            self.retry_leftovers(true).await;
+            self.retry_leftovers(false).await;
             let mut js = {
                 let mut g = self.uploads.lock().await;
                 std::mem::take(&mut *g)
@@ -505,32 +528,42 @@ async fn encode_to_file(
     let (enc, comp) = (enc.clone(), comp.clone());
     spawn_blocking(move || -> Result<(PathBuf, u64)> {
         let tmp = tmp_path(&dst);
-        let mut out = BufWriter::new(stdFile::create(&tmp)?);
-        if let Encoding::Parquet { schema } = &enc {
-            let fin = BufReader::new(stdFile::open(&src)?);
-            out = encoding::write_parquet(fin, out, schema, &comp)?.0;
-        } else {
-            let raw = BytesMut::from(std::fs::read(&src)?.as_slice());
-            let bytes = encoding::normalize_from_ndjson(&enc, &comp, raw)?;
-            // JSON is compressed whole, as NDJSON is; Avro inside the file
-            match (&enc, &comp) {
-                (Encoding::JSON, Compression::Gzip { level }) => {
-                    let mut gz = GzEncoder::new(&mut out, f2Compression::new(*level));
-                    gz.write_all(&bytes)?;
-                    gz.finish()?;
-                }
-                (Encoding::JSON, Compression::Zstd { level }) => {
-                    zstd::stream::copy_encode(&bytes[..], &mut out, *level)?;
-                }
-                _ => out.write_all(&bytes)?,
-            }
+        let made = encode_file(&src, &tmp, &enc, &comp);
+        if made.is_err() {
+            let _ = std::fs::remove_file(&tmp);
         }
-        out.into_inner().map_err(|e| e.into_error())?.sync_data()?;
+        made?;
         std::fs::rename(&tmp, &dst)?;
         let size = std::fs::metadata(&dst)?.len();
         Ok((dst, size))
     })
     .await?
+}
+
+/// `src`'s records into `tmp` in the encoding, synced.
+fn encode_file(src: &Path, tmp: &Path, enc: &Encoding, comp: &Compression) -> Result<()> {
+    let mut out = BufWriter::new(stdFile::create(tmp)?);
+    if let Encoding::Parquet { schema } = enc {
+        let fin = BufReader::new(stdFile::open(src)?);
+        out = encoding::write_parquet(fin, out, schema, comp)?.0;
+    } else {
+        let raw = BytesMut::from(std::fs::read(src)?.as_slice());
+        let bytes = encoding::normalize_from_ndjson(enc, comp, raw)?;
+        // JSON is compressed whole, as NDJSON is; Avro inside the file
+        match (enc, comp) {
+            (Encoding::JSON, Compression::Gzip { level }) => {
+                let mut gz = GzEncoder::new(&mut out, f2Compression::new(*level));
+                gz.write_all(&bytes)?;
+                gz.finish()?;
+            }
+            (Encoding::JSON, Compression::Zstd { level }) => {
+                zstd::stream::copy_encode(&bytes[..], &mut out, *level)?;
+            }
+            _ => out.write_all(&bytes)?,
+        }
+    }
+    out.into_inner().map_err(|e| e.into_error())?.sync_data()?;
+    Ok(())
 }
 
 /// Where a stage is written before it is renamed into place.
@@ -565,12 +598,18 @@ async fn compress_zstd_to_file(src: &Path, dst: &Path, level: i32) -> Result<(Pa
     let src = src.to_path_buf();
     let dst_clone = dst.clone();
     let size = spawn_blocking(move || -> Result<u64> {
-        let mut fin = stdFile::open(&src)?;
-        let mut fout = stdFile::create(&dst_tmp)?;
-        let mut enc = zstd::stream::Encoder::new(&mut fout, level)?;
-        copy(&mut fin, &mut enc)?;
-        enc.finish()?;
-
+        let made = (|| -> Result<()> {
+            let mut fin = stdFile::open(&src)?;
+            let mut fout = stdFile::create(&dst_tmp)?;
+            let mut enc = zstd::stream::Encoder::new(&mut fout, level)?;
+            copy(&mut fin, &mut enc)?;
+            enc.finish()?;
+            Ok(())
+        })();
+        if made.is_err() {
+            let _ = std::fs::remove_file(&dst_tmp);
+        }
+        made?;
         std::fs::rename(&dst_tmp, &dst_clone)?;
         Ok(std::fs::metadata(&dst_clone)?.len())
     })
@@ -584,12 +623,18 @@ async fn compress_gzip_to_file(src: &Path, dst: &Path, level: u32) -> Result<(Pa
     let src = src.to_path_buf();
     let dst_clone = dst.clone();
     let size = spawn_blocking(move || -> Result<u64> {
-        let mut fin = stdFile::open(&src)?;
-        let mut fout = stdFile::create(&dst_tmp)?;
-        let mut enc = GzEncoder::new(&mut fout, f2Compression::new(level));
-        copy(&mut fin, &mut enc)?;
-        enc.finish()?;
-
+        let made = (|| -> Result<()> {
+            let mut fin = stdFile::open(&src)?;
+            let mut fout = stdFile::create(&dst_tmp)?;
+            let mut enc = GzEncoder::new(&mut fout, f2Compression::new(level));
+            copy(&mut fin, &mut enc)?;
+            enc.finish()?;
+            Ok(())
+        })();
+        if made.is_err() {
+            let _ = std::fs::remove_file(&dst_tmp);
+        }
+        made?;
         std::fs::rename(&dst_tmp, &dst_clone)?;
         Ok(std::fs::metadata(&dst_clone)?.len())
     })
@@ -851,6 +896,75 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// Fails its first send, then records as [`Recorder`] does.
+    #[derive(Default)]
+    struct FailsOnce {
+        failed: std::sync::atomic::AtomicBool,
+        rec: Recorder,
+    }
+
+    #[async_trait]
+    impl WALSink for FailsOnce {
+        async fn write_path_with(
+            &self,
+            path: &Path,
+            name: &str,
+            encoding: &Encoding,
+            compression: &Compression,
+            meta: &s3::S3SinkItem,
+        ) -> Result<()> {
+            if !self.failed.swap(true, Ordering::SeqCst) {
+                anyhow::bail!("the disk is full");
+            }
+            self.rec
+                .write_path_with(path, name, encoding, compression, meta)
+                .await
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_send_is_tried_again_without_a_restart() {
+        let dir = wal_dir("retry");
+        let sink = Arc::new(FailsOnce::default());
+        let wal = DurableFileSink::new(
+            sink.clone(),
+            &dir,
+            4,
+            16,
+            Duration::from_secs(3600),
+            Compression::Zstd { level: 3 },
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        // the second write seals the first's file, whose send fails
+        wal.write(write("{\"n\":1,\"pad\":\"x\"}\n")).await.unwrap();
+        wal.write(write("{\"n\":2}\n")).await.unwrap();
+        let mut waited = Duration::ZERO;
+        while sink.rec.got.lock().await.is_empty() && waited < Duration::from_secs(10) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            waited += Duration::from_millis(50);
+        }
+        assert!(sink.failed.load(Ordering::SeqCst));
+        {
+            let got = sink.rec.got.lock().await;
+            assert_eq!(got.len(), 1, "sent on a retry, before any flush");
+            let sent = zstd::decode_all(&got[0].1[..]).unwrap();
+            assert_eq!(sent, b"{\"n\":1,\"pad\":\"x\"}\n");
+        }
+        let left = names_in(&dir);
+        assert!(
+            !left
+                .iter()
+                .any(|n| n.ends_with(".zst") || n.ends_with(".tmp")),
+            "no staged copy left: {left:?}"
+        );
+        wal.flush().await.unwrap();
+        assert_eq!(sink.rec.got.lock().await.len(), 2);
+        assert_eq!(names_in(&dir), Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[tokio::test]
     async fn each_write_ends_its_last_line() {
         let dir = wal_dir("newline");
@@ -928,6 +1042,9 @@ mod tests {
         first.write(write("{\"n\":1}\n")).await.unwrap();
         first.write(write("{\"n\":2}\n")).await.unwrap();
         // it stops without a flush, in the middle of a write it never acked
+        first.stop.cancel();
+        let rotator = first.rotator.lock().await.take().unwrap();
+        rotator.await.unwrap();
         let open = names_in(&dir)
             .into_iter()
             .find(|n| n.ends_with(".bin"))
