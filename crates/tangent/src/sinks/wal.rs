@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use flate2::write::GzEncoder;
 use flate2::Compression as f2Compression;
 use std::cmp::max;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File as stdFile;
 use std::io::copy;
 use std::path::{Path, PathBuf};
@@ -38,6 +38,8 @@ pub struct DurableFileSink {
     encoding: Encoding,
     rotator: Mutex<Option<JoinHandle<()>>>,
     uploads: tokio::sync::Mutex<JoinSet<()>>,
+    /// Sealed files being sent now: a retry passes them by.
+    sending: Arc<parking_lot::Mutex<HashSet<PathBuf>>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -104,6 +106,7 @@ impl DurableFileSink {
             encoding,
             rotator: Mutex::new(None),
             uploads: Mutex::new(JoinSet::new()),
+            sending: Arc::default(),
         });
         s.retry_leftovers(false).await;
 
@@ -221,11 +224,16 @@ impl DurableFileSink {
         route_meta: s3::S3SinkItem,
         incr_metrics: bool,
     ) {
+        // flush retries what is sealed, which includes what it just sealed
+        if !self.sending.lock().insert(sealed_path.clone()) {
+            return;
+        }
         let permit = self.max_inflight.clone().acquire_owned().await.unwrap();
         self.inflight.fetch_add(1, Ordering::AcqRel);
 
         let inner = self.inner.clone();
         let inflight = self.inflight.clone();
+        let sending = self.sending.clone();
         let compression = self.compression.clone();
         let encoding = self.encoding.clone();
         let sealed_path_clone = sealed_path.clone();
@@ -297,6 +305,7 @@ impl DurableFileSink {
                     tracing::warn!("upload error for {:?}: {e}", sealed_path);
                 }
             }
+            sending.lock().remove(&sealed_path);
             inflight.fetch_sub(1, Ordering::AcqRel);
         });
     }
@@ -498,10 +507,10 @@ async fn read_meta(meta_path: &Path) -> anyhow::Result<WalMeta> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
+/// A sealed WAL file. The compressed copy made from one on its way out is
+/// not: it is made again from the sealed file, which stays until it is sent.
 fn is_sealed_file_name(name: &str) -> bool {
     name.ends_with(".bin.sealed")
-        || name.ends_with(".bin.sealed.gz")
-        || name.ends_with(".bin.sealed.zst")
 }
 
 fn make_base_ulid(dir: &Path) -> PathBuf {
@@ -605,7 +614,7 @@ mod tests {
             .expect("flush returns")
             .unwrap();
         let got = rec.got.lock().await;
-        assert!(!got.is_empty());
+        assert_eq!(got.len(), 1, "sent once");
         assert_eq!(got[0].1, b"{\"n\":1}\n{\"n\":2}\n");
         // what is left is the next file, opened by the rotation and empty
         for f in std::fs::read_dir(&dir).unwrap() {
@@ -616,6 +625,41 @@ mod tests {
                 assert_eq!(f.metadata().unwrap().len(), 0, "{name} holds nothing");
             }
         }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_sealed_file_left_from_before_is_sent_once() {
+        let dir = wal_dir("leftover");
+        std::fs::create_dir_all(&dir).unwrap();
+        let meta = WalMeta {
+            bucket_name: Arc::from(""),
+            key_prefix: None,
+            encoding: Encoding::NDJSON,
+            compression: Compression::None,
+        };
+        write_meta_atomic(&dir.join("01LEFT.meta"), &meta)
+            .await
+            .unwrap();
+        std::fs::write(dir.join("01LEFT.bin.sealed"), "{\"n\":1}\n").unwrap();
+        // a compressed copy, made before the process stopped
+        std::fs::write(dir.join("01LEFT.bin.sealed.zst"), "not this").unwrap();
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            1 << 20,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        wal.flush().await.unwrap();
+        let got = rec.got.lock().await;
+        assert_eq!(got.len(), 1, "sent once");
+        assert_eq!(got[0].1, b"{\"n\":1}\n");
         let _ = std::fs::remove_dir_all(dir);
     }
 }
