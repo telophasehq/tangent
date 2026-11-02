@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use apache_avro::Codec;
+use arrow_array::RecordBatch;
 use arrow_json::ReaderBuilder;
 use arrow_schema::{Schema, SchemaRef};
 use bytes::{BufMut, Bytes, BytesMut};
@@ -9,6 +10,8 @@ use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 use std::io::{BufRead, Write};
 use std::sync::Arc;
 use tangent_shared::sinks::common::{Compression, Encoding};
+
+use crate::SINK_RECORDS_UNFIT_TOTAL;
 
 #[must_use]
 pub fn ndjson_ensure_newline(mut raw: BytesMut) -> BytesMut {
@@ -72,29 +75,37 @@ const PARQUET_BATCH_BYTES: usize = 64 << 20;
 
 /// NDJSON as one Parquet file: the columns the Arrow schema names, read out
 /// of each line (a field it does not name is skipped; a nested object it
-/// names is a struct, its fields leaf columns of their own).
+/// names is a struct, its fields leaf columns of their own). A line the
+/// schema cannot read is dropped as [`write_parquet`] says.
 pub fn ndjson_to_parquet(
     raw: &[u8],
     arrow_schema_json: &str,
     comp: &Compression,
 ) -> Result<BytesMut> {
-    let out = write_parquet(raw, Vec::new(), arrow_schema_json, comp)?;
+    let (out, _) = write_parquet(raw, Vec::new(), arrow_schema_json, comp)?;
     Ok(BytesMut::from(out.as_slice()))
 }
 
+/// Lines the schema could not read, dropped.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Unfit {
+    pub dropped: usize,
+}
+
 /// [`ndjson_to_parquet`] from a reader to a writer, a batch of lines in
-/// memory at a time. Each line must be one JSON object, as NDJSON has it.
+/// memory at a time. A line the schema cannot read (not one JSON value, a
+/// type the schema does not have for a field, a time arrow cannot parse)
+/// does not fail the file: it is dropped, counted in
+/// `tangent_sink_records_unfit_total` and returned.
 pub fn write_parquet<R: BufRead, W: Write + Send>(
     mut input: R,
     out: W,
     arrow_schema_json: &str,
     comp: &Compression,
-) -> Result<W> {
+) -> Result<(W, Unfit)> {
     let (schema, props) = parquet_setup(arrow_schema_json, comp)?;
-    let mut decoder = ReaderBuilder::new(Arc::clone(&schema))
-        .with_batch_size(PARQUET_BATCH_LINES)
-        .build_decoder()?;
-    let mut writer = ArrowWriter::try_new(out, schema, Some(props))?;
+    let mut writer = ArrowWriter::try_new(out, Arc::clone(&schema), Some(props))?;
+    let mut unfit = Unfit::default();
 
     // the batch's lines back to back, without their line breaks, and where each ends
     let mut chunk = Vec::<u8>::new();
@@ -110,25 +121,31 @@ pub fn write_parquet<R: BufRead, W: Write + Send>(
         if chunk[start..].iter().all(u8::is_ascii_whitespace) {
             chunk.truncate(start);
         } else {
-            let line = &chunk[start..];
-            if decoder.decode(line)? != line.len() {
-                bail!("a line holds more than one JSON value");
-            }
             ends.push(chunk.len());
         }
         let full = ends.len() == PARQUET_BATCH_LINES || chunk.len() >= PARQUET_BATCH_BYTES;
         if !ends.is_empty() && (full || eof) {
-            let Some(batch) = decoder.flush()? else {
-                bail!("{} lines made no rows", ends.len());
-            };
-            if batch.num_rows() != ends.len() {
-                bail!(
-                    "{} lines made {} rows: each line must be one JSON object",
-                    ends.len(),
-                    batch.num_rows()
-                );
+            let mut from = 0;
+            let lines: Vec<&[u8]> = ends
+                .iter()
+                .map(|&to| {
+                    let line = &chunk[from..to];
+                    from = to;
+                    line
+                })
+                .collect();
+            if let Ok(batch) = rows(&schema, &lines) {
+                writer.write(&batch)?;
+            } else {
+                // a line in the batch the schema cannot read: line by line
+                for line in &lines {
+                    if let Ok(batch) = rows(&schema, &[line]) {
+                        writer.write(&batch)?;
+                    } else {
+                        unfit.dropped += 1;
+                    }
+                }
             }
-            writer.write(&batch)?;
             chunk.clear();
             ends.clear();
         }
@@ -136,7 +153,41 @@ pub fn write_parquet<R: BufRead, W: Write + Send>(
             break;
         }
     }
-    Ok(writer.into_inner()?)
+    if unfit != Unfit::default() {
+        SINK_RECORDS_UNFIT_TOTAL
+            .with_label_values(&["dropped"])
+            .inc_by(unfit.dropped as u64);
+        tracing::warn!(
+            dropped = unfit.dropped,
+            "parquet: lines the schema could not read"
+        );
+    }
+    Ok((writer.into_inner()?, unfit))
+}
+
+/// The lines' rows, one a line, or an error if a line is not one JSON value
+/// the schema can read.
+fn rows(schema: &SchemaRef, lines: &[&[u8]]) -> Result<RecordBatch> {
+    // room for a row more than the lines: a line of two values shows as one
+    let mut decoder = ReaderBuilder::new(Arc::clone(schema))
+        .with_batch_size(lines.len() + 1)
+        .build_decoder()?;
+    for line in lines {
+        if decoder.decode(line)? != line.len() {
+            bail!("a line holds more than one JSON value");
+        }
+    }
+    let Some(batch) = decoder.flush()? else {
+        bail!("{} lines made no rows", lines.len());
+    };
+    if batch.num_rows() != lines.len() {
+        bail!(
+            "{} lines made {} rows: each line must be one JSON value",
+            lines.len(),
+            batch.num_rows()
+        );
+    }
+    Ok(batch)
 }
 
 /// The schema read out of each line and the writer's properties: what a
@@ -256,7 +307,6 @@ mod tests {
     use super::*;
     use arrow_array::cast::AsArray;
     use arrow_array::types::{Int64Type, TimestampMillisecondType};
-    use arrow_array::RecordBatch;
     use arrow_schema::{DataType, Field, TimeUnit};
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
@@ -370,12 +420,31 @@ mod tests {
     }
 
     #[test]
-    fn parquet_wants_one_object_a_line() {
-        let comp = Compression::None;
-        let two = "{\"n\":1}{\"n\":2}\n{\"n\":3}\n";
-        assert!(ndjson_to_parquet(two.as_bytes(), &schema(), &comp).is_err());
-        let split = "{\"n\":\n1}\n";
-        assert!(ndjson_to_parquet(split.as_bytes(), &schema(), &comp).is_err());
+    fn a_line_the_schema_cannot_read_is_dropped() {
+        let good = [r#"{"n":1,"_norm":{"actor":"ann"}}"#, r#"{"n":5}"#];
+        let unread = [
+            r#"{"n":"two","_norm":{"actor":"bob"}}"#, // a string for an Int64
+            r#"{"ts":"yesterday","n":3}"#,            // a time arrow cannot parse
+            r#"[1,2]"#,                               // JSON, not an object
+        ];
+        let not_json = ["{\"n\":", "1}", "{\"n\":4}{\"n\":4}", "not json"];
+        let ndjson = [good[0], unread[0], not_json[0], not_json[1], unread[1]]
+            .iter()
+            .chain(&[not_json[2], unread[2], not_json[3], good[1]])
+            .map(|l| format!("{l}\n"))
+            .collect::<String>();
+
+        let (out, unfit) =
+            write_parquet(ndjson.as_bytes(), Vec::new(), &schema(), &Compression::None).unwrap();
+        assert_eq!(unfit, Unfit { dropped: 7 });
+        let (_, batch) = read(BytesMut::from(out.as_slice()));
+        let n: Vec<Option<i64>> = batch
+            .column_by_name("n")
+            .unwrap()
+            .as_primitive::<Int64Type>()
+            .iter()
+            .collect();
+        assert_eq!(n, [Some(1), Some(5)], "the good lines, in order");
     }
 
     #[test]

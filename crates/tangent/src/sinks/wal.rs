@@ -498,7 +498,7 @@ async fn encode_to_file(
         let mut out = BufWriter::new(stdFile::create(&tmp)?);
         if let Encoding::Parquet { schema } = &enc {
             let fin = BufReader::new(stdFile::open(&src)?);
-            out = encoding::write_parquet(fin, out, schema, &comp)?;
+            out = encoding::write_parquet(fin, out, schema, &comp)?.0;
         } else {
             let raw = BytesMut::from(std::fs::read(&src)?.as_slice());
             let bytes = encoding::normalize_from_ndjson(&enc, &comp, raw)?;
