@@ -318,10 +318,17 @@ impl DurableFileSink {
 
 #[async_trait::async_trait]
 impl Sink for DurableFileSink {
-    async fn write(&self, req: SinkWrite) -> Result<()> {
+    async fn write(&self, mut req: SinkWrite) -> Result<()> {
         let Some(meta) = req.s3 else {
             anyhow::bail!("DurableFileSink requires s3 meta (bucket/prefix)")
         };
+        if req.payload.is_empty() {
+            return Ok(());
+        }
+        // a write's last line must not run into the next write's first
+        if !req.payload.ends_with(b"\n") {
+            req.payload.extend_from_slice(b"\n");
+        }
         let rkey = RouteKey {
             sink_name: req.sink_name,
             prefix: meta.key_prefix.clone(),
@@ -361,7 +368,20 @@ impl Sink for DurableFileSink {
             // an empty file does nothing, and would go round for ever
             if rs.cur.bytes == 0 || rs.cur.bytes + req.payload.len() <= self.max_file_size {
                 let f = rs.cur.file.as_mut().expect("current file missing");
-                f.write_all(&req.payload).await?;
+                // acked once write(2) is done: tokio's write_all returns with
+                // the bytes in its own buffer, and an error writing them out
+                // would surface on the next write instead of this one
+                let wrote = async {
+                    f.write_all(&req.payload).await?;
+                    f.flush().await
+                }
+                .await;
+                if let Err(e) = wrote {
+                    // what part of it reached the file goes, so the retry's
+                    // lines do not follow a torn one
+                    let _ = f.set_len(rs.cur.bytes as u64).await;
+                    return Err(e.into());
+                }
                 rs.cur.bytes += req.payload.len();
                 rs.last_used = Instant::now();
                 break;
@@ -622,9 +642,11 @@ async fn open_route_current(dir: &Path, meta: &WalMeta) -> anyhow::Result<Curren
     write_meta_atomic(&meta_path, meta).await?;
 
     let bin_path = bin_path_from_base(&base);
+    // appending: a write cut back after a failure leaves the end where the
+    // next one goes
     let file = fs::OpenOptions::new()
         .create_new(true)
-        .write(true)
+        .append(true)
         .open(&bin_path)
         .await?;
 
@@ -713,6 +735,30 @@ mod tests {
                 assert_eq!(f.metadata().unwrap().len(), 0, "{name} holds nothing");
             }
         }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn each_write_ends_its_last_line() {
+        let dir = wal_dir("newline");
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            1 << 20,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        for payload in ["{\"n\":1}", "", "{\"n\":2}\n{\"n\":3}"] {
+            wal.write(write(payload)).await.unwrap();
+        }
+        wal.flush().await.unwrap();
+        let got = rec.got.lock().await;
+        assert_eq!(got[0].1, b"{\"n\":1}\n{\"n\":2}\n{\"n\":3}\n");
         let _ = std::fs::remove_dir_all(dir);
     }
 
