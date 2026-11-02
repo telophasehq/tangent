@@ -546,9 +546,13 @@ fn encode_file(src: &Path, tmp: &Path, enc: &Encoding, comp: &Compression) -> Re
     // a batch, a line or a block in memory at a time, not the file; JSON is
     // compressed whole, as NDJSON is, Parquet and Avro inside the file
     match (enc, comp) {
-        (Encoding::Parquet { schema }, _) => {
-            out = encoding::write_parquet(fin, out, schema, comp)?.0
-        }
+        (
+            Encoding::Parquet {
+                schema,
+                record_column,
+            },
+            _,
+        ) => out = encoding::write_parquet(fin, out, schema, record_column.as_deref(), comp)?.0,
         (Encoding::Avro { schema }, _) => out = encoding::write_avro(fin, out, schema, comp)?,
         (Encoding::JSON, Compression::Gzip { level }) => {
             let gz = GzEncoder::new(out, f2Compression::new(*level));
@@ -1149,6 +1153,7 @@ mod tests {
         )]);
         let parquet = Encoding::Parquet {
             schema: serde_json::to_string(&schema).unwrap(),
+            record_column: Some("record".into()),
         };
         let (name, bytes) = sent(parquet, Compression::Zstd { level: 3 }, "parquet").await;
         assert!(name.ends_with(".parquet"), "compressed inside: {name}");
@@ -1175,6 +1180,7 @@ mod tests {
         );
         let parquet = Encoding::Parquet {
             schema: String::new(),
+            record_column: None,
         };
         assert_eq!(object_name(sealed, &parquet, &zstd), "01JBX4N3V2.parquet");
     }

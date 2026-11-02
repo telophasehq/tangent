@@ -1,8 +1,8 @@
 use anyhow::{bail, Context, Result};
 use apache_avro::Codec;
-use arrow_array::RecordBatch;
+use arrow_array::{builder::StringBuilder, new_null_array, ArrayRef, RecordBatch};
 use arrow_json::ReaderBuilder;
-use arrow_schema::{Schema, SchemaRef};
+use arrow_schema::{DataType, Field, FieldRef, Schema, SchemaRef};
 use bytes::{BufMut, Bytes, BytesMut};
 use memchr::{memchr, memchr_iter};
 use parquet::basic::{Compression as PqCompression, GzipLevel, ZstdLevel};
@@ -56,7 +56,10 @@ pub fn normalize_from_ndjson(
         Encoding::NDJSON => Ok(ndjson_ensure_newline(raw)),
         Encoding::JSON => ndjson_to_json_array(&raw),
         Encoding::Avro { schema: s } => ndjson_to_avro(&raw, s, comp),
-        Encoding::Parquet { schema: s } => ndjson_to_parquet(&raw, s, comp),
+        Encoding::Parquet {
+            schema,
+            record_column,
+        } => ndjson_to_parquet(&raw, schema, record_column.as_deref(), comp),
     }
 }
 
@@ -93,36 +96,52 @@ const PARQUET_BATCH_BYTES: usize = 64 << 20;
 
 /// NDJSON as one Parquet file: the columns the Arrow schema names, read out
 /// of each line (a field it does not name is skipped; a nested object it
-/// names is a struct, its fields leaf columns of their own). A line the
-/// schema cannot read is dropped as [`write_parquet`] says.
+/// names is a struct, its fields leaf columns of their own), and, with
+/// `record_column`, each line, in a Utf8 column of that name. A line the
+/// schema cannot read is kept or dropped as [`write_parquet`] says.
 pub fn ndjson_to_parquet(
     raw: &[u8],
     arrow_schema_json: &str,
+    record_column: Option<&str>,
     comp: &Compression,
 ) -> Result<BytesMut> {
-    let (out, _) = write_parquet(raw, Vec::new(), arrow_schema_json, comp)?;
+    let (out, _) = write_parquet(raw, Vec::new(), arrow_schema_json, record_column, comp)?;
     Ok(BytesMut::from(out.as_slice()))
 }
 
-/// Lines the schema could not read, dropped.
+/// Lines the schema could not read: kept whole in the record column with
+/// the typed columns null, or dropped.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Unfit {
+    pub kept: usize,
     pub dropped: usize,
 }
 
 /// [`ndjson_to_parquet`] from a reader to a writer, a batch of lines in
-/// memory at a time. A line the schema cannot read (not one JSON value, a
-/// type the schema does not have for a field, a time arrow cannot parse)
-/// does not fail the file: it is dropped, counted in
-/// `tangent_sink_records_unfit_total` and returned.
+/// memory at a time. The record column holds each line without its line
+/// break (a trailing CR or LF goes), invalid UTF-8 replaced. A line the
+/// schema cannot read (not one JSON value, a type the schema does not have
+/// for a field, a time arrow cannot parse) does not fail the file: with a
+/// record column it is kept there, its typed columns null, if it is JSON at
+/// all and every typed column may be null; otherwise it is dropped. Both are
+/// counted in `tangent_sink_records_unfit_total` and returned.
 pub fn write_parquet<R: BufRead, W: Write + Send>(
     mut input: R,
     out: W,
     arrow_schema_json: &str,
+    record_column: Option<&str>,
     comp: &Compression,
 ) -> Result<(W, Unfit)> {
-    let (schema, props) = parquet_setup(arrow_schema_json, comp)?;
-    let mut writer = ArrowWriter::try_new(out, Arc::clone(&schema), Some(props))?;
+    let (schema, written, props) = parquet_setup(arrow_schema_json, record_column, comp)?;
+    let mut writer = ArrowWriter::try_new(out, Arc::clone(&written), Some(props))?;
+    let with_records = |batch: RecordBatch, lines: &[&[u8]]| -> Result<RecordBatch> {
+        if record_column.is_none() {
+            return Ok(batch);
+        }
+        let mut columns = batch.columns().to_vec();
+        columns.push(record_array(lines));
+        Ok(RecordBatch::try_new(Arc::clone(&written), columns)?)
+    };
     let mut unfit = Unfit::default();
 
     // the batch's lines back to back, without their line breaks, and where each ends
@@ -153,12 +172,15 @@ pub fn write_parquet<R: BufRead, W: Write + Send>(
                 })
                 .collect();
             if let Ok(batch) = rows(&schema, &lines) {
-                writer.write(&batch)?;
+                writer.write(&with_records(batch, &lines)?)?;
             } else {
                 // a line in the batch the schema cannot read: line by line
                 for line in &lines {
                     if let Ok(batch) = rows(&schema, &[line]) {
-                        writer.write(&batch)?;
+                        writer.write(&with_records(batch, &[line])?)?;
+                    } else if let Some(row) = unfit_row(&schema, &written, record_column, line) {
+                        writer.write(&row)?;
+                        unfit.kept += 1;
                     } else {
                         unfit.dropped += 1;
                     }
@@ -173,9 +195,13 @@ pub fn write_parquet<R: BufRead, W: Write + Send>(
     }
     if unfit != Unfit::default() {
         SINK_RECORDS_UNFIT_TOTAL
+            .with_label_values(&["kept"])
+            .inc_by(unfit.kept as u64);
+        SINK_RECORDS_UNFIT_TOTAL
             .with_label_values(&["dropped"])
             .inc_by(unfit.dropped as u64);
         tracing::warn!(
+            kept = unfit.kept,
             dropped = unfit.dropped,
             "parquet: lines the schema could not read"
         );
@@ -208,27 +234,75 @@ fn rows(schema: &SchemaRef, lines: &[&[u8]]) -> Result<RecordBatch> {
     Ok(batch)
 }
 
-/// The schema read out of each line and the writer's properties: what a
-/// file's encoding fails on before its first line, if it fails at all.
+/// The lines as the record column: as SQLite's sink keeps them, invalid
+/// UTF-8 replaced.
+fn record_array(lines: &[&[u8]]) -> ArrayRef {
+    let mut records =
+        StringBuilder::with_capacity(lines.len(), lines.iter().map(|l| l.len()).sum());
+    for line in lines {
+        records.append_value(String::from_utf8_lossy(line));
+    }
+    Arc::new(records.finish())
+}
+
+/// A line the schema cannot read, as a row: in the record column, the
+/// typed columns null. None without a record column, for a line that is not
+/// JSON, or with a typed column that may not be null.
+fn unfit_row(
+    schema: &SchemaRef,
+    written: &SchemaRef,
+    record_column: Option<&str>,
+    line: &[u8],
+) -> Option<RecordBatch> {
+    record_column?;
+    serde_json::from_slice::<serde::de::IgnoredAny>(line).ok()?;
+    let mut columns: Vec<ArrayRef> = schema
+        .fields()
+        .iter()
+        .map(|f| new_null_array(f.data_type(), 1))
+        .collect();
+    columns.push(record_array(&[line]));
+    RecordBatch::try_new(Arc::clone(written), columns).ok()
+}
+
+/// The schema read out of each line, the schema written (with the record
+/// column), and the writer's properties: what a file's encoding fails on
+/// before its first line, if it fails at all.
 fn parquet_setup(
     arrow_schema_json: &str,
+    record_column: Option<&str>,
     comp: &Compression,
-) -> Result<(SchemaRef, WriterProperties)> {
+) -> Result<(SchemaRef, SchemaRef, WriterProperties)> {
     let schema: Schema = serde_json::from_str(arrow_schema_json)
         .context("the parquet schema is not an Arrow schema")?;
-    Ok((Arc::new(schema), parquet_props_from(comp)?))
+    let written = match record_column {
+        None => Arc::new(schema.clone()),
+        Some(column) => {
+            if schema.field_with_name(column).is_ok() {
+                bail!("record_column {column:?} is a column of the schema already");
+            }
+            let mut fields: Vec<FieldRef> = schema.fields().iter().cloned().collect();
+            fields.push(Arc::new(Field::new(column, DataType::Utf8, false)));
+            Arc::new(Schema::new_with_metadata(fields, schema.metadata().clone()))
+        }
+    };
+    Ok((Arc::new(schema), written, parquet_props_from(comp)?))
 }
 
 /// What a sink's encoding would fail on at every file, found when the sink
 /// is made rather than after writes are acked into its WAL: a Parquet
 /// schema that does not parse, or that arrow-json or the writer cannot take,
-/// a compression Parquet does not have; an Avro schema that does not parse.
+/// a record column the schema already has, a compression Parquet does not
+/// have; an Avro schema that does not parse.
 pub fn check(enc: &Encoding, comp: &Compression) -> Result<()> {
     match enc {
-        Encoding::Parquet { schema } => {
-            let (schema, props) = parquet_setup(schema, comp)?;
-            ReaderBuilder::new(Arc::clone(&schema)).build_decoder()?;
-            ArrowWriter::try_new(std::io::sink(), schema, Some(props))?;
+        Encoding::Parquet {
+            schema,
+            record_column,
+        } => {
+            let (schema, written, props) = parquet_setup(schema, record_column.as_deref(), comp)?;
+            ReaderBuilder::new(schema).build_decoder()?;
+            ArrowWriter::try_new(std::io::sink(), written, Some(props))?;
         }
         Encoding::Avro { schema } => {
             apache_avro::Schema::parse_str(schema)?;
@@ -325,7 +399,7 @@ mod tests {
     use super::*;
     use arrow_array::cast::AsArray;
     use arrow_array::types::{Int64Type, TimestampMillisecondType};
-    use arrow_schema::{DataType, Field, TimeUnit};
+    use arrow_schema::TimeUnit;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
     /// ts as a time, `_norm`'s org and actor, and n; nothing else.
@@ -387,7 +461,10 @@ mod tests {
 
     #[test]
     fn parquet_has_the_schemas_columns_a_struct_as_leaves() {
-        let enc = Encoding::Parquet { schema: schema() };
+        let enc = Encoding::Parquet {
+            schema: schema(),
+            record_column: None,
+        };
         let out =
             normalize_from_ndjson(&enc, &Compression::default(), ndjson().as_str().into()).unwrap();
         let (leaves, batch) = read(out);
@@ -418,27 +495,50 @@ mod tests {
     }
 
     #[test]
-    fn parquet_rows_keep_their_order_across_batches() {
+    fn parquet_keeps_each_line_whole_in_the_record_column() {
+        let out = ndjson_to_parquet(
+            ndjson().as_bytes(),
+            &schema(),
+            Some("record"),
+            &Compression::Zstd { level: 3 },
+        )
+        .unwrap();
+        let (leaves, batch) = read(out);
+        assert_eq!(leaves, ["ts", "_norm.org", "_norm.actor", "n", "record"]);
+        let records: Vec<Option<String>> = LINES.iter().map(|l| Some(l.to_string())).collect();
+        assert_eq!(strings(&batch, &["record"]), records);
+        assert_eq!(
+            strings(&batch, &["_norm", "actor"]),
+            [Some("ann".into()), None, Some("bob".into())]
+        );
+    }
+
+    #[test]
+    fn parquet_record_column_stays_paired_across_batches() {
         let lines: Vec<String> = (0..PARQUET_BATCH_LINES * 2 + 5)
             .map(|i| format!(r#"{{"n":{i},"_norm":{{"actor":"a{}"}}}}"#, i % 7))
             .collect();
-        let out =
-            ndjson_to_parquet(lines.join("\n").as_bytes(), &schema(), &Compression::None).unwrap();
+        let out = ndjson_to_parquet(
+            lines.join("\n").as_bytes(),
+            &schema(),
+            Some("record"),
+            &Compression::None,
+        )
+        .unwrap();
         let (_, batch) = read(out);
         assert_eq!(batch.num_rows(), lines.len());
         let n = batch
             .column_by_name("n")
             .unwrap()
             .as_primitive::<Int64Type>();
-        let actors = strings(&batch, &["_norm", "actor"]);
-        for i in 0..lines.len() {
+        for (i, record) in strings(&batch, &["record"]).into_iter().enumerate() {
+            assert_eq!(record.as_deref(), Some(lines[i].as_str()));
             assert_eq!(n.value(i), i as i64);
-            assert_eq!(actors[i], Some(format!("a{}", i % 7)));
         }
     }
 
     #[test]
-    fn a_line_the_schema_cannot_read_is_dropped() {
+    fn a_line_the_schema_cannot_read_is_kept_whole_or_dropped() {
         let good = [r#"{"n":1,"_norm":{"actor":"ann"}}"#, r#"{"n":5}"#];
         let unread = [
             r#"{"n":"two","_norm":{"actor":"bob"}}"#, // a string for an Int64
@@ -451,18 +551,63 @@ mod tests {
             .chain(&[not_json[2], unread[2], not_json[3], good[1]])
             .map(|l| format!("{l}\n"))
             .collect::<String>();
+        let comp = Compression::None;
 
-        let (out, unfit) =
-            write_parquet(ndjson.as_bytes(), Vec::new(), &schema(), &Compression::None).unwrap();
-        assert_eq!(unfit, Unfit { dropped: 7 });
+        let (out, unfit) = write_parquet(
+            ndjson.as_bytes(),
+            Vec::new(),
+            &schema(),
+            Some("record"),
+            &comp,
+        )
+        .unwrap();
+        assert_eq!(
+            unfit,
+            Unfit {
+                kept: 3,
+                dropped: 4
+            }
+        );
         let (_, batch) = read(BytesMut::from(out.as_slice()));
+        let want: Vec<Option<String>> = [good[0], unread[0], unread[1], unread[2], good[1]]
+            .iter()
+            .map(|l| Some(l.to_string()))
+            .collect();
+        assert_eq!(strings(&batch, &["record"]), want, "in order");
         let n: Vec<Option<i64>> = batch
             .column_by_name("n")
             .unwrap()
             .as_primitive::<Int64Type>()
             .iter()
             .collect();
-        assert_eq!(n, [Some(1), Some(5)], "the good lines, in order");
+        assert_eq!(
+            n,
+            [Some(1), None, None, None, Some(5)],
+            "unread: typed null"
+        );
+        assert_eq!(
+            strings(&batch, &["_norm", "actor"]),
+            [Some("ann".into()), None, None, None, None]
+        );
+
+        // without a record column there is nowhere to keep them
+        let (out, unfit) =
+            write_parquet(ndjson.as_bytes(), Vec::new(), &schema(), None, &comp).unwrap();
+        assert_eq!(
+            unfit,
+            Unfit {
+                kept: 0,
+                dropped: 7
+            }
+        );
+        let (_, batch) = read(BytesMut::from(out.as_slice()));
+        assert_eq!(batch.num_rows(), 2);
+
+        let taken = ndjson_to_parquet(b"{\"n\":1}\n", &schema(), Some("n"), &comp);
+        assert!(taken
+            .unwrap_err()
+            .to_string()
+            .contains("column of the schema"));
     }
 
     #[test]
@@ -486,14 +631,16 @@ mod tests {
     #[test]
     fn check_finds_what_every_file_would_fail_on() {
         let zstd = Compression::Zstd { level: 3 };
-        let parquet = |schema: &str| Encoding::Parquet {
+        let parquet = |schema: &str, record: Option<&str>| Encoding::Parquet {
             schema: schema.to_string(),
+            record_column: record.map(str::to_string),
         };
-        assert!(check(&parquet(&schema()), &zstd).is_ok());
+        assert!(check(&parquet(&schema(), Some("record")), &zstd).is_ok());
         assert!(check(&Encoding::NDJSON, &zstd).is_ok());
-        assert!(check(&parquet("{\"fields\":"), &zstd).is_err());
+        assert!(check(&parquet("{\"fields\":", None), &zstd).is_err());
+        assert!(check(&parquet(&schema(), Some("n")), &zstd).is_err());
         let snappy = Compression::Snappy { level: 3 };
-        assert!(check(&parquet(&schema()), &snappy).is_err());
+        assert!(check(&parquet(&schema(), None), &snappy).is_err());
         let avro = |schema: &str| Encoding::Avro {
             schema: schema.to_string(),
         };

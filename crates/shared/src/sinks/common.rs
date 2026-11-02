@@ -55,6 +55,13 @@ pub enum Encoding {
     },
     Parquet {
         schema: String,
+        /// Each record, in a Utf8 column of this name, beside the columns
+        /// `schema` reads out of it: a query can still reach a field the
+        /// schema leaves out. The record is its line without the line break
+        /// (a trailing CR or LF goes), invalid UTF-8 replaced. A record the
+        /// schema cannot read is kept here with its typed columns null.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record_column: Option<String>,
     },
 }
 
