@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
+	tangent_sdk "github.com/ethanblackburn/tangent-sdk-go"
 )
 
 //easyjson:json

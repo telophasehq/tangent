@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
-	"github.com/telophasehq/tangent-sdk-go/http"
-	"github.com/telophasehq/tangent-sdk-go/state"
+	tangent_sdk "github.com/ethanblackburn/tangent-sdk-go"
+	"github.com/ethanblackburn/tangent-sdk-go/http"
+	"github.com/ethanblackburn/tangent-sdk-go/state"
 )
 
 //easyjson:json

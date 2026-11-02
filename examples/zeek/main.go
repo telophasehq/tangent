@@ -9,7 +9,7 @@ import (
 
 	"github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 
-	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
+	tangent_sdk "github.com/ethanblackburn/tangent-sdk-go"
 )
 
 var (

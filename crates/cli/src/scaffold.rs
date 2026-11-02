@@ -412,7 +412,7 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/telophasehq/tangent-sdk-go v0.0.0-20251125161341-27ee39c60b57
+	github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102180530-cda85d226be0
 	go.bytecodealliance.org/cm v0.3.0 // indirect
 )
 
@@ -486,7 +486,7 @@ fn go_main_for(module: &str) -> String {
     let tpl = r#"package main
 
 import (
-	tangent_sdk "github.com/telophasehq/tangent-sdk-go"
+	tangent_sdk "github.com/ethanblackburn/tangent-sdk-go"
 )
 
 //easyjson:json

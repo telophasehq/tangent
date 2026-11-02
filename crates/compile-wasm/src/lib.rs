@@ -180,20 +180,18 @@ fn run_go_compile(
 ) -> Result<()> {
     ensure_tinygo()?;
 
+    let gen = format!("{}/gen", go_sdk_module(entry_point_path));
     let status = Command::new("go")
         .current_dir(&entry_point_path)
         .arg("run")
-        .arg("github.com/telophasehq/tangent-sdk-go/gen")
+        .arg(&gen)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
         .with_context(|| "running go gen")?;
 
     if !status.success() {
-        bail!(
-            "`go run github.com/telophasehq/tangent-sdk-go/gen` failed (exit: {:?})",
-            status.code()
-        );
+        bail!("`go run {gen}` failed (exit: {:?})", status.code());
     }
 
     let status = Command::new("tinygo")
@@ -225,6 +223,26 @@ fn run_go_compile(
     }
 
     Ok(())
+}
+
+const GO_SDK: &str = "github.com/ethanblackburn/tangent-sdk-go";
+const GO_SDK_OLD: &str = "github.com/telophasehq/tangent-sdk-go";
+
+/// The Go SDK's module path as the plugin's go.mod requires it. A plugin
+/// written before the SDK left telophasehq requires the old path, and `go
+/// run` finds only the module the plugin requires.
+fn go_sdk_module(entry_point_path: &Path) -> &'static str {
+    let go_mod = entry_point_path
+        .ancestors()
+        .map(|dir| dir.join("go.mod"))
+        .find(|p| p.is_file())
+        .and_then(|p| fs::read_to_string(p).ok())
+        .unwrap_or_default();
+    if go_mod.contains(GO_SDK_OLD) && !go_mod.contains(GO_SDK) {
+        GO_SDK_OLD
+    } else {
+        GO_SDK
+    }
 }
 
 fn run_rust_compile(entry_point_path: &Path, out_component: &Path) -> Result<()> {
@@ -301,4 +319,28 @@ fn file_stem(p: &Path) -> Result<String> {
         .and_then(|s| s.to_str())
         .ok_or_else(|| anyhow!("bad filename: {}", p.display()))?
         .to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn go_sdk_module_follows_the_plugins_go_mod() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin = dir.path().join("plugin");
+        fs::create_dir(&plugin).unwrap();
+        assert_eq!(go_sdk_module(&plugin), GO_SDK);
+
+        let go_mod = dir.path().join("go.mod");
+        fs::write(
+            &go_mod,
+            format!("module p\n\nrequire {GO_SDK_OLD} v0.0.0\n"),
+        )
+        .unwrap();
+        assert_eq!(go_sdk_module(&plugin), GO_SDK_OLD);
+
+        fs::write(&go_mod, format!("module p\n\nrequire {GO_SDK} v0.0.0\n")).unwrap();
+        assert_eq!(go_sdk_module(&plugin), GO_SDK);
+    }
 }

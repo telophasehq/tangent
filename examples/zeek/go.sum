@@ -12,6 +12,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 h1:UhxFibDNY/bfvqU5CAUmr9zpesgbU6SWc8/B4mflAE4=
 github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7/go.mod h1:cyGadeNEkKy96OOhEzfZl+yxihPEzKnqJwvfuSUqbZE=
+github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102180530-cda85d226be0 h1:Li2ae3kASReV/t1YfIxbt4B4j4d0Nm2mzd1DRVIripY=
+github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102180530-cda85d226be0/go.mod h1:cnkkLXItM3Gas+lYQKEsDl4J+pQ9fqWNXweh9pfQWPk=
 github.com/goccy/go-json v0.10.5 h1:Fq85nIqj+gXn/S5ahsiTlK3TmC85qgirsdTP/+DeaC4=
 github.com/goccy/go-json v0.10.5/go.mod h1:oq7eo15ShAhp70Anwd5lgX2pLfOS3QCiwU/PULtXL6M=
 github.com/golang/snappy v1.0.0 h1:Oy607GVXHs7RtbggtPBnr2RmDArIsAefDwvrdWvRhGs=
@@ -57,16 +59,6 @@ github.com/stretchr/testify v1.10.0 h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOf
 github.com/stretchr/testify v1.10.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
 github.com/telophasehq/go-ocsf v0.2.1 h1:H9JaOK+hSepeUScShQq7vNl7lbVWMUWi9vkFCCj3ZHc=
 github.com/telophasehq/go-ocsf v0.2.1/go.mod h1:klfnTB+NeG2OzMOq/h1RC3bErSiFkeew2yKCJ3xlBfM=
-github.com/telophasehq/tangent-sdk-go v0.0.0-20251110184716-dca78e4f7525 h1:NzfPsNT3aimL9s/Loz2yMCjhBQt1iOP+rApwBpkzh9E=
-github.com/telophasehq/tangent-sdk-go v0.0.0-20251110184716-dca78e4f7525/go.mod h1:Kix+kLK2lqunjZUAPBIqxaj4pSZ4b2WgAeZ/u0tq+6g=
-github.com/telophasehq/tangent-sdk-go v0.0.0-20251110220017-7cef295948af h1:tv5/GAzR9oEWVGttLwa/ooziJpOBXGye7i5kq+reMGY=
-github.com/telophasehq/tangent-sdk-go v0.0.0-20251110220017-7cef295948af/go.mod h1:Kix+kLK2lqunjZUAPBIqxaj4pSZ4b2WgAeZ/u0tq+6g=
-github.com/telophasehq/tangent-sdk-go v0.0.0-20251118220303-15ccc0f29e4a h1:Ac4hMSJhPs0IeBcCMnJyWt8SLv5JvKmnURlpfD5pF2I=
-github.com/telophasehq/tangent-sdk-go v0.0.0-20251118220303-15ccc0f29e4a/go.mod h1:Kix+kLK2lqunjZUAPBIqxaj4pSZ4b2WgAeZ/u0tq+6g=
-github.com/telophasehq/tangent-sdk-go v0.0.0-20251120150230-0b8b366f72c4 h1:uqfNUxRMIwbSiNz+vpuMpQnuj8ndgLKaA8plQA1S2js=
-github.com/telophasehq/tangent-sdk-go v0.0.0-20251120150230-0b8b366f72c4/go.mod h1:Kix+kLK2lqunjZUAPBIqxaj4pSZ4b2WgAeZ/u0tq+6g=
-github.com/telophasehq/tangent-sdk-go v0.0.0-20251125161341-27ee39c60b57 h1:SU5lasBQeQc15/uLJ2pXrm0A7l8Ok8BeTOoEK6QlzCc=
-github.com/telophasehq/tangent-sdk-go v0.0.0-20251125161341-27ee39c60b57/go.mod h1:Kix+kLK2lqunjZUAPBIqxaj4pSZ4b2WgAeZ/u0tq+6g=
 github.com/tetratelabs/wazero v1.9.0 h1:IcZ56OuxrtaEz8UYNRHBrUa9bYeX9oVY93KspZZBf/I=
 github.com/tetratelabs/wazero v1.9.0/go.mod h1:TSbcXCfFP0L2FGkRPxHphadXPjo1T6W+CseNNY7EkjM=
 github.com/ulikunitz/xz v0.5.12 h1:37Nm15o69RwBkXM0J6A5OlE67RZTfzUxTj8fB3dfcsc=
