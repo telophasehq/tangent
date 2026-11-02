@@ -217,7 +217,8 @@
   },
   "_norm": {
    "actor": "dev-sam",
-   "org": "acme"
+   "org": "acme",
+   "person": "sam@acme.io"
   },
   "action": "git.clone",
   "actor": "dev-sam",
@@ -247,7 +248,8 @@
   },
   "_norm": {
    "actor": "dev-sam",
-   "org": "acme"
+   "org": "acme",
+   "person": "sam@acme.io"
   },
   "action": "git.clone",
   "actor": "dev-sam",
@@ -277,7 +279,8 @@
   },
   "_norm": {
    "actor": "dev-sam",
-   "org": "acme"
+   "org": "acme",
+   "person": "sam@acme.io"
   },
   "action": "git.clone",
   "actor": "dev-sam",
@@ -307,7 +310,8 @@
   },
   "_norm": {
    "actor": "dev-sam",
-   "org": "acme"
+   "org": "acme",
+   "person": "sam@acme.io"
   },
   "action": "git.clone",
   "actor": "dev-sam",

@@ -205,7 +205,7 @@ Unknown keys aside, a config without `include:` reads as it always has.
 A pack is what tangent knows about one provider's logs, and it is one plugin, named after the provider. Tangent's own sources read the logs (`cloudtrail`, `github_audit`, `okta` and `google_workspace` read the providers' APIs; `tcp` takes anything else as NDJSON with a `source` field), and the pack's plugin turns each raw record into a finished one:
 
 1. drops the keys only the pipeline writes (`_norm`, `_facts`, `_ip`, `_context`, `_hist`), so a log line cannot speak for it;
-2. normalizes it: `_norm` says who did what, from where, to what (`actor`, `org`, `kind`, `ip`, `country`, `dest`, `target`), the same way for every provider;
+2. normalizes it: `_norm` says who did what, from where, to what (`actor`, `person`, `org`, `kind`, `ip`, `country`, `dest`, `target`), the same way for every provider;
 3. strips what is redundant or never decides a verdict: per-event ids, hashes, pagination, issued credentials, URL signatures;
 4. enriches its address from the [enrichment tables](#enrichment-tables): country, network and owner, hosting provider, Tor exit, VPN, one of yours;
 5. adds under `_facts` what your company profile says about it (a member, a service, a key or nobody known; a usual place, destination and target or not; a kind you watch) and what only that provider's log can say.
@@ -221,7 +221,7 @@ A pack is what tangent knows about one provider's logs, and it is one plugin, na
 
 A pack is a directory: the plugin (`Cargo.toml`, `src/`, Rust compiled to WASM), its fixtures (`tests/`), `ingest.yaml` (the plugin, its fixtures, and its edge to `logs`), `judge.yaml` (how the judge writes the provider's records as logfmt), and a README saying what it reads, writes, drops and enriches, with the lines to paste.
 
-[packs/core](/packs/core) is not a provider but what every pack needs: the enrichment tables and the `logs` sink (`ingest.yaml`), and the judge (`judge.yaml`). The packs' shared code is in [packs/shared](/packs/shared): `normkit` (`_norm` and the scrubs), `enrichkit` (an address from the tables) and `factskit` (the profile's facts), Rust libraries each plugin links.
+[packs/core](/packs/core) is not a provider but what every pack needs: the enrichment tables and the `logs` sink (`ingest.yaml`), and the judge (`judge.yaml`). The packs' shared code is in [packs/shared](/packs/shared): `normkit` (`_norm` and the scrubs), `enrichkit` (an address from the tables), `identitykit` (which names are one person) and `factskit` (the profile's facts), Rust libraries each plugin links.
 
 No pack loads IP data itself. Core's `ingest.yaml` names it as enrichment tables (GeoLite2 Country and ASN, and `networks.csv`, the cloud, datacenter, VPN and Tor ranges in one file), the runtime loads each once when the pipeline starts, and every pack's plugin, on every worker, reads that one copy: five packs load GeoLite2 once. [examples/enrich/setup.sh](/examples/enrich/setup.sh) fetches the files. Your profile is a table too, `profile`, which your config names.
 
