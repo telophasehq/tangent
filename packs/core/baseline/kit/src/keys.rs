@@ -98,3 +98,18 @@ pub fn assumes(v: Option<Scalar>) -> Vec<Assume> {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{key, t13, unesc};
+
+    /// A part holding `|` or `%` comes back whole: the name the builder files
+    /// is the one the renderer reads.
+    #[test]
+    fn a_part_comes_back_whole() {
+        let parts = ["acme", "a", "ci|bot", "%7C%25"];
+        let k = key(&parts);
+        assert_eq!(k.split('|').map(unesc).collect::<Vec<_>>(), parts);
+        assert!(t13(999) < t13(1000), "rows sort by time");
+    }
+}

@@ -17,12 +17,13 @@ every one of them reads state through.
 
 Who is who is resolved in ingest, where the profile is. An actor's person is
 its record's `_norm.person`, which the pack's plugin wrote from the profile's
-`people`; the builder asks `people` itself
-([identitykit](../../shared/identitykit)) only for a record without one, and
-for the persons a credential change was done to. It files a person with each
-row that names someone, and the actors each person was seen as. The renderer
-has no profile and resolves no one: a name that neither a record nor state
-gives a person is its own, lowercased.
+`people`, else the actor lowercased; both plugins read it so. The builder asks
+`people` itself ([identitykit](../../shared/identitykit)) only for the other
+names a record holds: the persons a credential change was done to, and a
+federated user's issuer. It files a person with each row that names someone,
+and the actors each person was seen as. The renderer has no profile and
+resolves no one: a name that neither a record nor state gives a person is its
+own, lowercased.
 
 Each probe takes every record: one it cannot read, with no `_norm.actor` or
 from a source it does not know, the builder passes over and the renderer
@@ -40,7 +41,7 @@ milliseconds in 13 digits. Nothing expires.
 | `<org>\|a\|<actor>\|first` | when first seen (a minimum) |
 | `<org>\|a\|<actor>\|d\|<day>` | events that day |
 | `<org>\|a\|<actor>\|h\|<hour>` | events per five minutes of the hour, by category, as JSON |
-| `<org>\|a\|<actor>\|n\|<dim>\|<value>` | when first seen, for `api`, `src`, `res`, `client`, `oauth`, `device`, `token`, `cat`, `mfa`, `by` (who assumed this role), and `person` (its person, when who is who names one: how a federated user's issuer is found) |
+| `<org>\|a\|<actor>\|n\|<dim>\|<value>` | when first seen, for `api`, `src`, `res`, `client`, `oauth`, `device`, `token`, `cat`, `mfa`, `by` (who assumed this role), and `person` (its person, when who is who names one; for a federated user's issuer, filed from the federated user's records too, so the issuer is named once it or a federated user it issued was seen) |
 | `<org>\|p\|<person>\|n\|<asn, cc or net>\|<value>` | when the person first used that network |
 | `<org>\|p\|<person>\|n\|actor\|<actor, lowercased>` | when the person was first seen as that actor; only a person who is who names |
 | `<org>\|o\|n\|<asn, cc or net>\|<value>` | when the org did |

@@ -1,4 +1,4 @@
-//! How `_baseline` writes durations, counts and lists.
+//! How `_baseline` writes durations, dates, counts and lists.
 
 use serde_json::{Map, Value};
 
@@ -10,6 +10,19 @@ pub fn ago(ms: i64) -> String {
         5400..172_800 => format!("{}h", s / 3600),
         _ => format!("{}d", s / 86_400),
     }
+}
+
+/// Epoch milliseconds to `YYYY-MM-DD`.
+pub fn date(ms: i64) -> String {
+    let z = ms.div_euclid(86_400_000) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    format!("{:04}-{m:02}-{d:02}", yoe + era * 400 + i64::from(m <= 2))
 }
 
 pub fn nn(n: i64, word: &str) -> String {

@@ -3,12 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use baselinekit::time::{date, D, H};
+use baselinekit::time::{D, H};
 use baselinekit::{Kv, R};
 
 use crate::before::Before;
 use crate::header::Win;
-use crate::text::nn;
+use crate::text::{date, nn};
 
 const BASE: i64 = 28 * D;
 

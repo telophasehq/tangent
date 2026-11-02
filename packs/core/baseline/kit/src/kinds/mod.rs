@@ -29,11 +29,9 @@ pub struct Ev {
     pub org: String,
     pub actor: String,
     /// The actor's person: the record's `_norm.person`, else the actor
-    /// lowercased, its own person. The builder, which has the profile, asks
-    /// its `people` when the record names none.
+    /// lowercased, its own person. Both plugins read it so.
     pub person: String,
-    /// Who is who names `person`: the record's `_norm.person`, or the
-    /// profile's `people` in the builder.
+    /// The record names `person` in `_norm.person`.
     pub named: bool,
     pub ms: i64,
     pub context: bool,

@@ -1,7 +1,7 @@
 [
  {
   "_baseline": {
-   "actor": "human (profile member); person dave@acme.io; here as okta user; privilege used before: none",
+   "actor": "human (profile member); here as okta user; privilege used before: none",
    "auth": "last 72h, person dave@acme.io: no logins or credential changes",
    "links": "ip 203.0.113.10 new for this actor, no other actor used it before",
    "seen": "none: first seen in this window"

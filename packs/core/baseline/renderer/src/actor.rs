@@ -43,15 +43,18 @@ pub fn actor<K: Kv>(b: &mut Before<K>, w: &Win) -> R<(String, Option<Behind>)> {
     }
     .to_string()];
     if w.named {
-        // the actors the builder saw the person as
+        // the actors the builder saw the person as; nothing to say of a
+        // person seen by no name but the actor's
         let names: BTreeSet<String> = (b.firsts(&["p", own, "n", "actor"])?.into_iter())
             .map(|(n, _)| n)
             .collect();
-        parts.push(if names.is_empty() {
-            format!("person {own}")
-        } else {
-            format!("person {own} ({})", join(names.iter()))
-        });
+        if *own != a.to_lowercase() || names.iter().any(|n| n != own) {
+            parts.push(if names.is_empty() {
+                format!("person {own}")
+            } else {
+                format!("person {own} ({})", join(names.iter()))
+            });
+        }
     }
     let types: BTreeSet<&str> = fresh.iter().filter_map(|e| e.typ.as_deref()).collect();
     if !types.is_empty() {
@@ -74,7 +77,7 @@ pub fn actor<K: Kv>(b: &mut Before<K>, w: &Win) -> R<(String, Option<Behind>)> {
     let issuers: BTreeSet<&str> = fresh.iter().filter_map(|e| e.issuer.as_deref()).collect();
     for iss in issuers {
         parts.push(format!("federated by {iss}"));
-        // the issuer's person, filed from its own records
+        // the issuer's person, filed from its records or its federated users'
         let person = b.firsts(&["a", iss, "n", "person"])?.pop().map(|(p, _)| p);
         behind = Some(Behind {
             name: iss.to_string(),

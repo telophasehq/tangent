@@ -1,17 +1,18 @@
 //! First-seen times, each a minimum: the actor; what it used, from which
 //! source, where and as what; the networks its person and the org used; which
 //! actors used an address; its sessions' MFA; who assumed a role; the actors a
-//! person was seen as, and the person each actor was. Only what succeeded is
-//! learned as seen: anyone can fail a sign-in in someone's name, from
-//! anywhere.
+//! person was seen as, and the person each actor or federated user's issuer
+//! was. Only what succeeded is learned as seen: anyone can fail a sign-in in
+//! someone's name, from anywhere.
 
 use std::collections::BTreeMap;
 
 use baselinekit::keys::{int, key, nets, values};
 use baselinekit::kinds::Ev;
 use baselinekit::{Kv, Scalar, R};
+use identitykit::People;
 
-pub fn write(kv: &mut impl Kv, evs: &[&Ev]) -> R<()> {
+pub fn write(kv: &mut impl Kv, people: &People, evs: &[&Ev]) -> R<()> {
     let mut mins: BTreeMap<String, i64> = BTreeMap::new();
     let mut low = |k: String, t: i64| {
         let v = mins.entry(k).or_insert(t);
@@ -28,6 +29,13 @@ pub fn write(kv: &mut impl Kv, evs: &[&Ev]) -> R<()> {
                 t,
             );
             low(key(&[o, "a", a, "n", "person", &e.person]), t);
+        }
+        // a federated user's issuer, which need not have acted itself
+        if let Some(iss) = &e.issuer {
+            let p = people.person(iss);
+            if people.knows(&p) {
+                low(key(&[o, "a", iss, "n", "person", &p]), t);
+            }
         }
         if e.ok {
             for (dim, v) in values(e) {

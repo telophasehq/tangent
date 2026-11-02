@@ -302,7 +302,12 @@ fn who_is_who_comes_from_ingest() {
     let okta_win = okta("01-05T13:00:00", "user.session.start", HOME);
     let h = baseline(&mut fold(std::slice::from_ref(&dave)), &okta_win);
     has(&h, "actor", "person dave@acme.io (dave);");
-    let mut st = fold(&[dave, okta("01-04T15:00:00", "user.session.start", HOME)]);
+    // seen by no name but the actor's: nothing to say
+    let okta_before = okta("01-04T15:00:00", "user.session.start", HOME);
+    let h = baseline(&mut fold(std::slice::from_ref(&okta_before)), &okta_win);
+    let actor = h.get("actor").and_then(Value::as_str).unwrap_or_default();
+    assert!(!actor.is_empty() && !actor.contains("person"), "{h}");
+    let mut st = fold(&[dave, okta_before]);
     let win = ct(
         "dave",
         "01-05T13:00:00",
@@ -332,32 +337,45 @@ fn who_is_who_comes_from_ingest() {
     );
 }
 
-/// A federated user's issuer is its own records' person, as the builder
-/// filed it, and that person's sign-ins count too.
+/// A federated user's issuer is the person the builder filed it as, from the
+/// issuer's own records or its federated users' before the window, and that
+/// person's sign-ins count too.
 #[test]
 fn who_is_behind_a_federated_user() {
-    let mut st = fold(&[
-        okta("01-05T12:00:00", "user.session.start", HOME),
-        ct(
-            "dave",
-            "01-05T12:30:00",
-            "GetFederationToken",
-            HOME.0,
-            json!({"name": "build"}),
-        ),
-    ]);
     let fed = "arn:aws:sts::111122223333:federated-user/build";
-    let rec = json!({"source": "cloudtrail", "ts": "2026-01-05T13:00:00Z", "eventName": "ListBuckets",
-                     "eventSource": "s3.amazonaws.com", "sourceIPAddress": HOME.0,
-                     "userIdentity": {"type": "FederatedUser", "arn": fed, "role": "dave"},
-                     "_norm": norm(fed)});
-    let h = baseline(&mut st, &rec);
+    let call = |ts: &str| {
+        json!({"source": "cloudtrail", "ts": format!("2026-{ts}Z"), "eventName": "ListBuckets",
+               "eventSource": "s3.amazonaws.com", "sourceIPAddress": HOME.0,
+               "userIdentity": {"type": "FederatedUser", "arn": fed, "role": "dave"},
+               "_norm": norm(fed)})
+    };
+    let login = okta("01-05T12:00:00", "user.session.start", HOME);
+    let token = ct(
+        "dave",
+        "01-05T12:30:00",
+        "GetFederationToken",
+        HOME.0,
+        json!({"name": "build"}),
+    );
+    let mut st = fold(&[login.clone(), token]);
+    let h = baseline(&mut st, &call("01-05T13:00:00"));
     has(&h, "actor", "federated by dave");
     has(
         &h,
         "auth",
         &format!("last 72h, {fed} and person dave@acme.io: 2 logins (okta 1, aws 1)"),
     );
+    // dave's own call not in yet: the federated user's earlier one names him
+    let mut st = fold(&[login.clone(), call("01-05T12:40:00")]);
+    let h = baseline(&mut st, &call("01-05T13:00:00"));
+    has(
+        &h,
+        "auth",
+        &format!("last 72h, {fed} and person dave@acme.io: 1 login (okta 1)"),
+    );
+    // neither: dave is his own
+    let h = baseline(&mut fold(&[login]), &call("01-05T13:00:00"));
+    has(&h, "auth", &format!("last 72h, {fed} and dave: "));
 }
 
 /// The app pack's audit shape under a name of yours (its `sources` or

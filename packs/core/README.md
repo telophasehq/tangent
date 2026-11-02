@@ -240,7 +240,7 @@ included; a key is left out when it has nothing to say.
 
 | key | what it says |
 |---|---|
-| `actor` | who it is to the profile, its person and the actors that person was seen as before, the identities seen here (IAM user, assumed role, okta user, ...); for a role, who assumed it, and who assumed them, up to four hops and twelve hours back, or its SSO permission set; the privilege it used before (admin, write, read-only, none); a session's MFA against its earlier sessions' |
+| `actor` | who it is to the profile, its person and the actors that person was seen as before (when they name anyone but the actor), the identities seen here (IAM user, assumed role, okta user, ...); for a role, who assumed it, and who assumed them, up to four hops and twelve hours back, or its SSO permission set; the privilege it used before (admin, write, read-only, none); a session's MFA against its earlier sessions' |
 | `seen` | how long it has been seen, its events and active days, from which sources; or `none: first seen in this window` |
 | `new` | what it does here for the first time, or first did within the hour: `api`, `resource`, `client`, `network` (with `(new to org)`), `source`, `oauth`, `device`, `token`; or `nothing: ...` |
 | `volume` | the last hour against the p90 of its active hours in 28 days, in total and per category, as `normal`, `2-5x`, `5-10x`, `>10x` or `none before` |
