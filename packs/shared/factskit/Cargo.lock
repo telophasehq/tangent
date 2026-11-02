@@ -16,9 +16,17 @@ name = "factskit"
 version = "0.1.0"
 dependencies = [
  "enrichkit",
+ "identitykit",
  "ipnet",
  "normkit",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "identitykit"
+version = "0.1.0"
+dependencies = [
  "serde_json",
 ]
 

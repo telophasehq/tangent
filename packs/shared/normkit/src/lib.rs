@@ -23,6 +23,10 @@ fn reserved(k: &str) -> bool {
 pub struct Norm {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actor: Option<String>,
+    /// The person the actor is, when the profile's `people` names them;
+    /// factskit sets it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub person: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub org: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

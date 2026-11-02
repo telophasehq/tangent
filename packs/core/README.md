@@ -48,6 +48,7 @@ speak for the pipeline.
 | field | what it is |
 |---|---|
 | `actor` | who acted: a user, role or key; for CI and an agent's run, the repository or nothing |
+| `person` | the person the actor is, when the profile's `people` names them |
 | `org` | whose it is: your org for your own sources (the profile's `org` and `own_sources`), else the record's own tenant |
 | `kind` | what happened: the event's name |
 | `ip` | the address it came from; this one is enriched |
@@ -55,8 +56,8 @@ speak for the pipeline.
 | `dest` | the host it went to |
 | `target` | what it touched: a bucket, role, repository, application |
 
-`actor` and `org` are always kept, since they route the record; the others
-only when the record does not already hold the value.
+`actor` and `org` are always kept, since they route the record, and so is
+`person`; the others only when the record does not already hold the value.
 
 `_facts`, what the profile and the tables say:
 
@@ -92,6 +93,7 @@ enrichment_tables:
 | `cloud` | where your services run | a note when a service acts from any other hosting |
 | `networks` | your own addresses: office, VPN, CI egress | `ip.ours`; never a person's odd location |
 | `members` | people: IdP emails, GitHub handles | `principal: member`; anyone else is `unknown` |
+| `people` | each person's other names, a list or one: IAM users, GitHub handles (`dave@example.com: [dave]`) | `_norm.person` when the actor is the person or one of their names; `principal` still comes from `members`, so list the names there too |
 | `services` | IAM users and roles, bots | `principal: service`, held to `cloud` |
 | `keys` | API keys and the networks each calls from | `principal: key`, `key_known_network` |
 | `about` | who an actor is, when its name does not say | `about`, in place of the "nobody it knows" note |
@@ -178,8 +180,8 @@ A pack's plugin links [packs/shared](/packs/shared) by path:
 - `normkit::record`, `scrubbed` and the trim helpers give the record without
   the reserved keys, its per-event ids or its URL signatures.
 - `factskit::kit(lookup)` reads the profile and the tables once per instance,
-  and `kit.write(out, record, norm)` folds the org, enriches the addresses,
-  adds the facts and writes the record as one line.
+  and `kit.write(out, record, norm)` folds the org, names the person,
+  enriches the addresses, adds the facts and writes the record as one line.
 
 ## What include cannot do
 
