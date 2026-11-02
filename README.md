@@ -221,9 +221,11 @@ A pack is what tangent knows about one provider's logs, and it is one plugin, na
 
 A pack is a directory: the plugin (`Cargo.toml`, `src/`, Rust compiled to WASM), its fixtures (`tests/`), `ingest.yaml` (the plugin, its fixtures, and its edge to `logs` and `baseline_builder`), `judge.yaml` (how the judge writes the provider's records as logfmt), and a README saying what it reads, writes, drops and enriches, with the lines to paste.
 
-[packs/core](/packs/core) is not a provider but what every pack needs: the enrichment tables, the `logs` sink and `baseline_builder` (`ingest.yaml`), and the judge (`judge.yaml`). The packs' shared code is in [packs/shared](/packs/shared): `normkit` (`_norm` and the scrubs), `enrichkit` (an address from the tables), `identitykit` (which names are one person) and `factskit` (the profile's facts), Rust libraries each plugin links.
+[packs/core](/packs/core) is not a provider but what every pack needs: the enrichment tables, the `logs` sink and `baseline_builder` (`ingest.yaml`), and `baseline_renderer` and the judge (`judge.yaml`). The packs' shared code is in [packs/shared](/packs/shared): `normkit` (`_norm` and the scrubs), `enrichkit` (an address from the tables), `identitykit` (which names are one person) and `factskit` (the profile's facts), Rust libraries each plugin links.
 
 No pack loads IP data itself. Core's `ingest.yaml` names it as enrichment tables (GeoLite2 Country and ASN, and `networks.csv`, the cloud, datacenter, VPN and Tor ranges in one file), the runtime loads each once when the pipeline starts, and every pack's plugin, on every worker, reads that one copy: five packs load GeoLite2 once. [examples/enrich/setup.sh](/examples/enrich/setup.sh) fetches the files. Your profile is a table too, `profile`, which your config names.
+
+The judge also sees each actor's history, which one window of its records cannot show. Core's baseline folds every finished record into ingest's state store (`baseline_builder`), and in the judge puts the same `_baseline` on each of an actor's records (`baseline_renderer`): who it is and, for a role, who assumed it; how long it has been seen; what it does for the first time (an API, a resource, a client, a network, an OAuth app); its volume and hours against its own 28 days; its person's sign-ins and credential changes in every source over three days (the profile's `people` says which names are one person); and addresses it shares with other actors. Only what happened before the actor's first record counts, and it is facts, not verdicts ([packs/core](/packs/core#baseline)). The judge writes records as logfmt, `_baseline` once per request, about 5% more tokens than without it; JSON lines (`encoding: {type: ndjson}`) repeat it on every record, at three times logfmt's tokens ([packs/core](/packs/core#judgeyaml) has the numbers). Baseline keeps one writer: ingest runs one worker and no `runtime.partition`, since more workers lose its counts and a partition files its keys where the judge does not read them.
 
 ### Using packs
 Packs need a tangent built from the same checkout (the first command below): `include:` and `enrichment_tables` are newer than the latest release, which stops at ``missing field `runtime` ``.
@@ -274,8 +276,11 @@ cargo install --path ../tangent/crates/cli --locked   # a tangent that knows inc
 ../tangent/examples/enrich/setup.sh               # once: Rust WASM toolchain; GeoLite2, cloud ranges, Tor exits
 tangent plugin compile --config ingest.yaml && tangent plugin compile --config judge.yaml
 tangent plugin test --config ingest.yaml          # the aws and okta fixtures
-tangent run --config judge.yaml & tangent run --config ingest.yaml
+tangent run --config ingest.yaml & i=$!            # first: it writes state.sqlite
+(while kill -0 $i && [ ! -s state.sqlite ]; do sleep 1; done; sleep 1; kill -0 $i) && tangent run --config judge.yaml
 ```
+
+Ingest starts first: the judge reads its `state.sqlite`, each actor's history, read-only, and refuses to start before the file is there. The second line waits for the file, and starts the judge only while ingest is still running.
 
 The judge is any OpenAI-compatible model: `JUDGE_URL` (a local model on `:8080` by default), `JUDGE_MODEL` (`glm-4.7-flash`), `JUDGE_API_KEY`. Each pack's README has its source's block and credentials, and [packs/core](/packs/core) the profile's keys and the judge's settings.
 

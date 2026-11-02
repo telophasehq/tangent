@@ -1,5 +1,6 @@
-# cloud-infra, judge: packs/core's judge over logs.sqlite, each pack's
-# records written as logfmt as its judge.yaml says.
+# cloud-infra, judge: packs/core's judge over logs.sqlite, with each actor's
+# history from ingest's state.sqlite (start ingest first), each pack's records
+# written as logfmt as its judge.yaml says.
 include:
   - ../../packs/core/judge.yaml
   - ../../packs/aws/judge.yaml
@@ -8,9 +9,10 @@ include:
   - ../../packs/google_workspace/judge.yaml
   - ../../packs/app/judge.yaml
 
-# JSON lines instead (packs/core/README.md):
+# JSON lines instead, at three times the tokens (packs/core/README.md):
 # inference:
 #   judge:
+#     batch_bytes: 48000
 #     encoding:
 #       type: ndjson
 

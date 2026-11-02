@@ -4,12 +4,12 @@ Not a provider: what every pack needs, and the judge. Every config includes
 it, beside the packs it uses.
 
 ```
-your sources ──▶ a pack's plugin ──┬──▶ logs.sqlite                                   (ingest.yaml)
+your sources ──▶ a pack's plugin ──┬──▶ logs.sqlite                                            (ingest.yaml)
                    reads the       └──▶ baseline_builder ──▶ state.sqlite
                    tables geo, asn, networks and profile
 
-logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson              (judge.yaml)
-                                       └──▶ verdicts.ndjson
+logs.sqlite ──▶ actors ──▶ baseline_renderer ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson (judge.yaml)
+state.sqlite ─────────────────┘                             └──▶ verdicts.ndjson
 ```
 
 ## ingest.yaml
@@ -33,10 +33,10 @@ logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged �
 - **`baseline_builder`**, the plugin every pack's plugin has an edge to as
   well: it folds each record into the state store, under the namespace
   `baseline`, and passes nothing on ([below](#baseline)).
-- **The runtime**: one worker, baseline's one writer ([below](#baseline));
-  plugins compiled into `plugins/` beside the config you run; and the state
-  store at `state.sqlite`, where the API sources keep their place and
-  baseline its keys.
+- **The runtime**: one worker and no `partition`, baseline's one writer
+  ([below](#baseline)); plugins compiled into `plugins/` beside the config you
+  run; and the state store at `state.sqlite`, where the API sources keep their
+  place and baseline its keys.
 
 No sources and no profile: your config adds them, and sends each source to
 its pack.
@@ -84,7 +84,9 @@ A pack adds what only its provider's log says: `aws` adds `root` and
 ## The profile
 
 Every fact about your company that no log carries, as the `profile` table: a
-YAML file your ingest config names.
+YAML file your ingest config names. The judge config needs none: who is who is
+resolved in ingest, and reaches the judge on the records (`_norm.person`) and
+in the state store.
 
 ```yaml
 enrichment_tables:
@@ -115,6 +117,12 @@ would go on as nobody the org knows, in the provider's org rather than yours.
 - **actors** reads `logs.sqlite` back forty records of one actor at a time,
   oldest first, topped up with the actor's latest records already judged,
   marked `_context`.
+- **baseline_renderer** reads ingest's `state.sqlite` and puts the same
+  `_baseline` on each of an actor's records ([below](#baseline)). The state
+  is opened `read_only`, without ingest's lock, so ingest starts first: the
+  judge refuses a file that is not there yet.
+  `drop_on_error: false`: when the renderer fails, the records go to the
+  model without `_baseline` rather than not at all.
 - **judge** reads an actor's records together and writes a verdict per record,
   with [judge.md](judge.md) as its brief and
   [judge.schema.json](judge.schema.json) as the verdict's shape.
@@ -142,15 +150,30 @@ llama-server -m GLM-4.7-Flash-Q4_K.gguf --port 8080 -np 1 -c 32768 -ngl 99 -fa o
 For a hosted one: `JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY`.
 
 The records go to the model as logfmt, a line each, each source written as
-its pack's `judge.yaml` says: about half the tokens of JSON lines. Your judge
-config can send JSON lines instead:
+its pack's `judge.yaml` says: about half the tokens of JSON lines, and an
+actor's `_baseline` written once per request. Your judge config can send JSON
+lines instead, where `_baseline` is on every record; give it half the
+`batch_bytes` then, so a request fits a 32k context:
 
 ```yaml
 inference:
   judge:
+    batch_bytes: 48000
     encoding:
       type: ndjson
 ```
+
+Measured on the requests of the corpus the packs are evaluated on, an
+actor's forty records each, with GLM-4.7-Flash's tokenizer, `judge.md` and
+the schema included:
+
+| encoding | `batch_bytes` | requests | tokens, median | 90th percentile | largest |
+|---|---|---|---|---|---|
+| logfmt, without `_baseline` | 48000 | 487 | 6,508 | 8,298 | 15,928 |
+| logfmt (the default) | 96000 | 485 | 6,817 | 8,604 | 18,560 |
+| JSON lines, without `_baseline` | 48000 | 487 | 9,089 | 10,323 | 21,086 |
+| JSON lines | 96000 | 485 | 20,262 | 22,620 | 33,303 |
+| JSON lines | 48000 | 872 | 12,738 | 15,689 | 20,200 |
 
 Logfmt was measured with Claude Haiku 5.5, where it caught what JSON caught;
 the default model has not been measured with either.
@@ -179,9 +202,12 @@ line in the message. A post that fails is logged and dropped.
 
 ## baseline
 
-In ingest, `baseline_builder` ([baseline](baseline)) learns what each actor
-does, for the question one window of forty records cannot answer: "is this
-normal for this identity?"
+Two plugins, in [baseline](baseline): in ingest `baseline_builder` learns
+what each actor does, in the judge `baseline_renderer` tells the model. They
+answer the question one window of forty records cannot, "is this normal for
+this identity?", from the state store alone, and only from what happened
+before the actor's first record in the request: nothing at or after it
+counts, so a window never explains itself.
 
 **What it learns** (ingest, `baseline_builder`), from every record with a
 `_norm.actor` whose `source` it knows: `cloudtrail`, `github_audit`, `okta`,
@@ -208,7 +234,7 @@ Each is a minimum, a sum or a row keyed by the event's time, so records that
 arrive out of order leave the same state. Keys begin with `_norm.org`, so
 orgs stay apart in one namespace, `baseline`, and never expire.
 
-**What it stamps** (`baseline_renderer`): `_baseline`, one object,
+**What it stamps** (judge, `baseline_renderer`): `_baseline`, one object,
 the same on each of an actor's records in the request, `_context` ones
 included; a key is left out when it has nothing to say.
 
@@ -222,6 +248,10 @@ included; a key is left out when it has nothing to say.
 | `auth` | the last 72 hours of its person, and of whoever is behind a role: logins per source, failed logins, MFA, password, key and grant changes, and the last login's address, network and MFA |
 | `links` | when an OAuth app in the window was first seen; a login from the window's address; a login from a network new for the person in the hour before; an address new for this actor, and who used it before |
 
+The text is printable ASCII with no `"`, `\` or `=`, so logfmt writes each
+key as a bare line, once per request with the fields an actor's records
+share; JSON lines repeat it on every record ([the cost](#judgeyaml)).
+
 - **People**: `people` in the profile ([above](#the-profile)) says which names
   are one person, as an IAM user `dave` is `dave@example.com`; a name not
   there is its own person, and one other name may be written bare
@@ -230,11 +260,20 @@ included; a key is left out when it has nothing to say.
   and the builder files each person with what they did: the actors they were
   seen as, their sign-ins and credential changes, the role sessions they
   assumed. The renderer reads persons off the records and out of state and
-  resolves no one.
-- **One writer**: ingest runs one worker, and your ingest config must keep it
-  so, since it wins over core's. The builder reads an hour's counts, adds to
-  them and writes them back, as it does first-seen times and role sessions:
-  two workers lose updates.
+  resolves no one, so the judge config names no profile.
+- **One writer**: ingest runs one worker and no `runtime.partition`, and your
+  ingest config must keep it so, since it wins over core's. The builder reads
+  an hour's counts, adds to them and writes them back, as it does first-seen
+  times and role sessions: two workers lose updates. A partition files every
+  key under it, where the judge, which has none, does not look; baseline's keys
+  carry the org instead.
+- **Read-only state**: the judge opens ingest's `state.sqlite` with
+  `runtime.state.read_only: true`, without the lock, creating nothing, and
+  its writes fail. Start ingest first: the judge refuses a state file that is
+  not there yet. The examples' `make run` waits for it, and starts no judge
+  once ingest has exited.
+- **Fail-open**: in the judge, `drop_on_error: false`: when a call fails, the
+  records go on without `_baseline`.
 
 [baseline/README.md](baseline/README.md) has the keys they keep and how they
 are tested.
@@ -263,9 +302,10 @@ shape.
 ## What include cannot do
 
 - **Take a stage out of, or put one into, core's chain.** Edges add up and none
-  can be removed, so `actors -> judge` stays. A plugin between them (the
-  pending `history` stage, say) means copying `judge.yaml` instead of including
-  it, or a change here that every config gets.
+  can be removed, so `actors -> baseline_renderer -> judge` stays, and so
+  does each pack's edge to `baseline_builder`. Another plugin between them, or
+  a judge without `baseline_renderer`, means copying `judge.yaml` instead of
+  including it, or a change here that every config gets, as baseline was.
 - **Keep a batch's order.** A source routed to several packs hands each its own
   records in turn, so within a batch every `cloudtrail` record reaches
   `logs.sqlite` before every `okta` one. `actors` reads back by time, so only

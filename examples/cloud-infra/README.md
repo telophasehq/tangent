@@ -16,8 +16,8 @@ Google Workspace ──▶ google_workspace
 NDJSON on :9400 ──▶ each pack ───┤   (CI, runner egress, your product's logs)
                                  └──▶ baseline_builder ──▶ state.sqlite
 
-logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson   (judge.yaml)
-                                       └──▶ verdicts.ndjson
+logs.sqlite ──▶ actors ──▶ baseline_renderer ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson  (judge.yaml)
+state.sqlite ─────────────────┘                             └──▶ verdicts.ndjson
 ```
 
 - **The packs** ([aws](/packs/aws), [github](/packs/github), [okta](/packs/okta),
@@ -45,6 +45,10 @@ logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged �
   `_context`. A record that arrives late waits with the actor's others. Rows
   are marked once their verdicts are written, and only then do the actor's
   next go; a restart sends again what the judge had not finished.
+- **baseline_renderer**, in the judge, reads that state without its lock
+  and puts the same `_baseline` on each of an actor's records: what was known
+  of the actor before its first record, facts, not verdicts
+  ([packs/core](/packs/core#baseline) has what is in it).
 - **judge** reads an actor's records together, as **actors** sends them and
   never two actors in one request, and writes a verdict per record: a pass is
   the flag alone, a flag says why. **fresh** drops the `_context` records,
@@ -57,7 +61,7 @@ logs.sqlite ──▶ actors ──▶ judge ──▶ fresh ──▶ flagged �
 make setup          # Rust WASM toolchain; GeoLite2, cloud ranges, Tor exits into examples/enrich/data
 $EDITOR profile/profile.yaml
 make test           # every pack's fixtures; no model needed
-make run            # ingest and the judge, two processes; listens on :9400 for NDJSON records
+make run            # ingest, then the judge once ingest's state.sqlite is there; listens on :9400 for NDJSON records
 ```
 
 The judge defaults to a local model on `:8080`

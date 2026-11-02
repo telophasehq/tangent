@@ -14,8 +14,14 @@ compile: setup
 test: compile
 	$(TANGENT) plugin test --config ingest.yaml
 
-# Two processes over one logs.sqlite, so ingest never waits on the model.
+# Two processes over one logs.sqlite, so ingest never waits on the model. The
+# judge reads ingest's state.sqlite, each actor's history, and refuses to start
+# without it, so ingest starts first; the judge waits for the file, and does not
+# start once ingest has exited (a config error, say).
 run: compile
-	$(TANGENT) run --config judge.yaml & $(TANGENT) run --config ingest.yaml
+	$(TANGENT) run --config ingest.yaml & i=$$!; \
+	while kill -0 $$i 2>/dev/null && [ ! -s state.sqlite ]; do sleep 1; done; sleep 1; \
+	kill -0 $$i 2>/dev/null || { echo "ingest exited; not starting the judge" >&2; exit 1; }; \
+	$(TANGENT) run --config judge.yaml
 
 .PHONY: setup compile test run

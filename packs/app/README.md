@@ -41,7 +41,8 @@ principal.
 Each record goes to `logs` and to core's [baseline](../core#baseline) too,
 which folds the audit shape, under `app` or a name of yours, into its actor's
 baseline: events, paths, keys, addresses, logins, key creations and role
-changes. The agent shape has no actor and passes through it unlearned.
+changes. The agent shape has no actor and passes through it unlearned. That
+is what the judge's `_baseline` says of the actor.
 
 ## What it drops
 

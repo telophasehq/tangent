@@ -22,7 +22,7 @@ its own.
 Each record goes to `logs` and to core's [baseline](../core#baseline) too,
 which folds it into its actor's baseline: events, documents, OAuth apps,
 addresses, sign-ins, 2-step and password changes, and an admin's resets of
-someone else's.
+someone else's. That is what the judge's `_baseline` says of the actor.
 
 ## What it drops
 

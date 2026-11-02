@@ -30,7 +30,7 @@ repository is not a principal, so CI records get no `_facts.principal`.
 Each record goes to `logs` and to core's [baseline](../core#baseline) too,
 which folds it into its actor's baseline: actions, repositories, clients,
 tokens and OAuth apps, addresses, keys and grants; a CI repository's steps and
-egress hosts.
+egress hosts. That is what the judge's `_baseline` says of the actor.
 
 ## What it drops
 

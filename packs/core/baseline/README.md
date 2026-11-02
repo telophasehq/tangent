@@ -27,7 +27,8 @@ own, lowercased.
 
 Each probe takes every record: one it cannot read, with no `_norm.actor` or
 from a source it does not know, the builder passes over and the renderer
-passes on unchanged. A state call that fails fails the call.
+passes on unchanged. A state call that fails fails the call; in the judge,
+`drop_on_error: false` then sends the records on without `_baseline`.
 
 ## Keys
 

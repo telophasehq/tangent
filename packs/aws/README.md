@@ -28,7 +28,7 @@ of an organization trail), or the same records sent as NDJSON.
 Each record goes to `logs` and to core's [baseline](../core#baseline) too,
 which folds it into its actor's baseline: the APIs and resources it touched,
 its clients and addresses, sign-ins, credential changes, and who assumed each
-role session.
+role session. That is what the judge's `_baseline` says of the actor.
 
 ## What it drops
 

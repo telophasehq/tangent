@@ -24,7 +24,8 @@ own.
 Each record goes to `logs` and to core's [baseline](../core#baseline) too,
 which folds it into its actor's baseline: event types, applications, browsers
 and devices, addresses, sign-ins, failed sign-ins, MFA and password changes
-and grants, Okta's positive behaviors on a sign-in.
+and grants, Okta's positive behaviors on a sign-in. That is what the judge's
+`_baseline` says of the actor.
 
 ## What it drops
 
