@@ -5,6 +5,7 @@ use bytes::BytesMut;
 use rand::{rng, Rng};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::Hasher;
+use std::path::{Component, Path, PathBuf};
 use std::{sync::Arc, time::Duration};
 use tangent_shared::sinks::common::{SinkConfig, SinkKind};
 use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
@@ -65,6 +66,7 @@ pub struct SinkManager {
 
 impl SinkManager {
     pub async fn new(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<Self> {
+        check_wal_dirs(cfgs)?;
         let mut sinks: HashMap<Arc<str>, SinkEntry> = HashMap::with_capacity(cfgs.len());
 
         let total_inflight: usize = cfgs.values().map(|c| c.common.in_flight_limit).sum();
@@ -293,6 +295,48 @@ impl SinkManager {
     }
 }
 
+/// Each WAL directory is one sink's. A WAL sends every sealed file it finds
+/// in its directory to its own sink, so two sinks sharing one send each
+/// other's records.
+fn check_wal_dirs(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<()> {
+    let mut wals: Vec<(&str, PathBuf)> = Vec::new();
+    for (name, cfg) in cfgs {
+        if let SinkKind::S3(c) = &cfg.kind {
+            wals.push((name, resolved(&c.wal_path)?));
+        }
+    }
+    for (i, (name, wal)) in wals.iter().enumerate() {
+        if let Some((other, _)) = wals[..i].iter().find(|(_, w)| w == wal) {
+            anyhow::bail!(
+                "sinks '{other}' and '{name}' share the WAL directory {}: give each its own wal_path",
+                wal.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+/// `path` as it would be once it exists: absolute, its symlinks resolved as
+/// far as it does exist, without `.` or `..`.
+fn resolved(path: &Path) -> Result<PathBuf> {
+    let mut out = PathBuf::new();
+    for c in std::path::absolute(path)?.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            c => {
+                out.push(c);
+                if let Ok(real) = out.canonicalize() {
+                    out = real;
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,5 +424,35 @@ mod tests {
         let writes = recorder.take().await;
         assert_eq!(writes.len(), 2);
         assert_eq!(ack.count(), 1);
+    }
+
+    fn s3(wal: &str) -> SinkConfig {
+        let wal = if wal.is_empty() {
+            String::new()
+        } else {
+            format!("wal_path: {wal}\n")
+        };
+        serde_yaml::from_str(&format!("type: s3\nbucket_name: b\n{wal}")).unwrap()
+    }
+
+    #[test]
+    fn a_wal_directory_is_one_sinks() {
+        let root = std::env::temp_dir().join(format!("tangent-s3wal-{}", std::process::id()));
+        let check = |sinks: Vec<(&str, SinkConfig)>| {
+            let cfgs: BTreeMap<Arc<str>, SinkConfig> =
+                sinks.into_iter().map(|(n, c)| (Arc::from(n), c)).collect();
+            check_wal_dirs(&cfgs)
+        };
+        let (a, b) = (root.join("a"), root.join("b"));
+        let (a, b) = (a.to_str().unwrap(), b.to_str().unwrap());
+        assert!(check(vec![("a", s3(a)), ("b", s3(b))]).is_ok());
+
+        // both on the default /tmp/wal
+        let default = check(vec![("a", s3("")), ("b", s3(""))]).unwrap_err();
+        assert!(default.to_string().contains("share the WAL"), "{default}");
+        // the same directory, spelled another way and not there yet
+        let other = root.join("x/../a/.");
+        let shared = check(vec![("a", s3(a)), ("b", s3(other.to_str().unwrap()))]).unwrap_err();
+        assert!(shared.to_string().contains("share the WAL"), "{shared}");
     }
 }
