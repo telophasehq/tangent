@@ -13,7 +13,7 @@ use crate::{
     inference::lines,
     sinks::manager::SinkManager,
     worker::{Ack, Payload, Record, WorkerPool},
-    UNROUTED_TOTAL,
+    CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, UNROUTED_TOTAL,
 };
 
 /// The records in a frame, one per NDJSON line. A frame with one line is
@@ -50,6 +50,16 @@ fn joined(frames: Vec<BytesMut>, cap: usize) -> Vec<BytesMut> {
         }
     }
     out
+}
+
+/// The frames' bytes and records, a record a line as a worker counts them:
+/// a frame of a polling source holds many.
+fn consumed(frames: &[BytesMut]) -> (u64, u64) {
+    frames.iter().fold((0, 0), |(bytes, records), f| {
+        let unended = !f.is_empty() && !f.ends_with(b"\n");
+        let lines = memchr::memchr_iter(b'\n', f).count() + usize::from(unended);
+        (bytes + f.len() as u64, records + lines as u64)
+    })
 }
 
 /// Acks its inner acks once, when the last of `n` deliveries has acked.
@@ -223,6 +233,10 @@ impl Router {
             .iter()
             .filter(|to| matches!(to, NodeRef::Sink { .. }))
             .collect();
+        // a worker counts what it is handed; nothing does on this path
+        let (bytes, records) = consumed(&frames);
+        CONSUMER_BYTES_TOTAL.inc_by(bytes);
+        CONSUMER_OBJECTS_TOTAL.inc_by(records);
         let mut frames = joined(frames, self.sink_batch);
         let deliveries = frames.len() * sinks.len();
         if deliveries == 0 {
@@ -320,6 +334,16 @@ mod tests {
         assert_eq!(unended, ["{\"a\":1}\n{}\n"]);
     }
 
+    #[test]
+    fn consumed_counts_a_record_a_line() {
+        let frames = [
+            BytesMut::from("{\"n\":1}\n{\"n\":2}\n"),
+            BytesMut::from("{\"n\":3}"),
+            BytesMut::new(),
+        ];
+        assert_eq!(consumed(&frames), (23, 3));
+    }
+
     #[derive(Default)]
     struct Writes(tokio::sync::Mutex<Vec<BytesMut>>);
 
@@ -362,6 +386,8 @@ mod tests {
         let router = Router::new(outs, Arc::clone(&manager)).with_sink_batch(1024);
         let mut buf = BytesMut::from("{\"n\":1}\n{\"n\":2}\n{\"n\":3}\n");
         let frames = (0..3).map(|_| buf.split_to(8)).collect();
+        // other tests count too, at the same time: a delta, at least this
+        let (bytes, objects) = (CONSUMER_BYTES_TOTAL.get(), CONSUMER_OBJECTS_TOTAL.get());
         let acked = Arc::new(Acked::default());
         router
             .forward(&source, frames, vec![acked.clone() as Arc<dyn Ack>])
@@ -374,6 +400,11 @@ mod tests {
         manager.join().await.unwrap();
         let writes = writes.0.lock().await;
         assert_eq!(*writes, ["{\"n\":1}\n{\"n\":2}\n{\"n\":3}\n"]);
+        assert!(
+            CONSUMER_BYTES_TOTAL.get() - bytes >= 24,
+            "consumed, counted"
+        );
+        assert!(CONSUMER_OBJECTS_TOTAL.get() - objects >= 3);
         assert_eq!(acked.0.load(Ordering::SeqCst), 1);
     }
 }
