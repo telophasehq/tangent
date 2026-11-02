@@ -1,5 +1,6 @@
-# cloud-infra, judge: packs/core's judge over logs.sqlite, each pack's
-# records written as its judge.yaml says once the encoding is logfmt.
+# cloud-infra, judge: packs/core's judge over logs.sqlite, with each actor's
+# history from ingest's state.sqlite (start ingest first), each pack's records
+# written as logfmt as its judge.yaml says.
 include:
   - ../../packs/core/judge.yaml
   - ../../packs/aws/judge.yaml
@@ -8,10 +9,12 @@ include:
   - ../../packs/google_workspace/judge.yaml
   - ../../packs/app/judge.yaml
 
+# JSON lines instead, at three times the tokens (packs/core/README.md):
 # inference:
 #   judge:
+#     batch_bytes: 48000
 #     encoding:
-#       type: logfmt
+#       type: ndjson
 
 # What flagged keeps, to Slack too (README.md):
 # sinks:

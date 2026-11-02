@@ -1,6 +1,6 @@
-# app-log, ingest: the product's logs into logs.sqlite. The customer's tenant
-# id is the org, so each customer's actors are their own. judge.yaml reads
-# them back.
+# app-log, ingest: the product's logs into logs.sqlite, and each actor's
+# history into state.sqlite. The customer's tenant id is the org, so each
+# customer's actors are their own. judge.yaml reads both back.
 include:
   - ../../packs/core/ingest.yaml              # the tables, logs.sqlite, the runtime
   - ../../packs/app/ingest.yaml               # plugin app: app, agent

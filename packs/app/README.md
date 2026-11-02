@@ -38,6 +38,12 @@ plugins:
 `_facts` is what the profile and the tables say; an agent's run has no
 principal.
 
+Each record goes to `logs` and to core's [baseline](../core#baseline) too,
+which folds the audit shape, under `app` or a name of yours, into its actor's
+baseline: events, paths, keys, addresses, logins, key creations and role
+changes. The agent shape has no actor and passes through it unlearned. That
+is what the judge's `_baseline` says of the actor.
+
 ## What it drops
 
 Records stay as sent, less their per-event ids (`request_id`, `trace_id`,
@@ -79,7 +85,9 @@ dag:
 
 `org` is your customer, not you: leave these sources out of the profile's
 `own_sources`, and each customer's actors are kept and judged apart. In your
-judge config, `../tangent/packs/app/judge.yaml`.
+judge config, `../tangent/packs/app/judge.yaml`; a name of yours in the audit
+shape wants a logfmt row of its own, as `app` has there, for its times and
+the fields on every line.
 
 One profile serves every customer for now, which is wrong in principle and
 fine for a first customer: members, keys and their networks, hosts and

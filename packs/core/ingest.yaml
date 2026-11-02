@@ -3,7 +3,7 @@
 # config names your sources, routes each to its pack, and gives the `profile`
 # table (README.md).
 runtime:
-  workers: 2
+  workers: 1                     # baseline_builder's one writer: keep it, and add no `partition` (README.md)
   plugins_path: plugins/
   state:
     backend: sqlite
@@ -18,6 +18,16 @@ enrichment_tables:
   geo: { type: mmdb, path: ../../examples/enrich/data/GeoLite2-Country.mmdb }
   asn: { type: mmdb, path: ../../examples/enrich/data/GeoLite2-ASN.mmdb }
   networks: { type: cidr, path: ../../examples/enrich/data/networks.csv }
+
+# Every pack's plugin has an edge here too, beside the one to `logs`:
+# baseline_builder folds each record into state.sqlite, what each actor did
+# and from where, which judge.yaml's baseline_renderer reads before the model
+# sees the actor.
+plugins:
+  baseline_builder:              # folds every record into state; emits nothing
+    module_type: rust
+    path: baseline/builder
+    state_namespace: baseline
 
 # Every pack's plugin has an edge here.
 sinks:

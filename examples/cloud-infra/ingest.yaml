@@ -1,6 +1,6 @@
 # cloud-infra, ingest: your own infrastructure's logs, every record kept in
-# logs.sqlite by org and by actor. judge.yaml reads them back; nothing here
-# waits on a model.
+# logs.sqlite by org and by actor, and folded into each actor's history in
+# state.sqlite. judge.yaml reads both back; nothing here waits on a model.
 #
 #   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
 #   make test       the packs' fixtures; no model needed
