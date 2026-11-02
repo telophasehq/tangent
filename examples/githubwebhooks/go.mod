@@ -5,11 +5,11 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102180530-cda85d226be0
+	github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102190949-bf65266c13bb
 	go.bytecodealliance.org/cm v0.3.0 // indirect
 )
 
-require github.com/mailru/easyjson v0.9.1 // indirect
+require github.com/mailru/easyjson v0.9.1
 
 require (
 	github.com/coreos/go-semver v0.3.1 // indirect

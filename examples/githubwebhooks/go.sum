@@ -6,8 +6,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 h1:UhxFibDNY/bfvqU5CAUmr9zpesgbU6SWc8/B4mflAE4=
 github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7/go.mod h1:cyGadeNEkKy96OOhEzfZl+yxihPEzKnqJwvfuSUqbZE=
-github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102180530-cda85d226be0 h1:Li2ae3kASReV/t1YfIxbt4B4j4d0Nm2mzd1DRVIripY=
-github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102180530-cda85d226be0/go.mod h1:cnkkLXItM3Gas+lYQKEsDl4J+pQ9fqWNXweh9pfQWPk=
+github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102190949-bf65266c13bb h1:w3SuIx2LxFKyGQP/yRURPU1jnFiYpoertX+y5YP8ZDg=
+github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102190949-bf65266c13bb/go.mod h1:cnkkLXItM3Gas+lYQKEsDl4J+pQ9fqWNXweh9pfQWPk=
 github.com/josharian/intern v1.0.0 h1:vlS4z54oSdjm0bgjRigI+G1HpF+tI+9rE5LLzOg8HmY=
 github.com/josharian/intern v1.0.0/go.mod h1:5DoeVV0s6jJacbCEi61lwdGj/aVlrQvzHFFd8Hwg//Y=
 github.com/klauspost/compress v1.18.0 h1:c/Cqfb0r+Yi+JtIEq73FWXVkRonBlf0CRNYc8Zttxdo=

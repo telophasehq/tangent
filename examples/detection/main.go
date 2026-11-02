@@ -28,7 +28,8 @@ var selectors = []tangent_sdk.Selector{
 	},
 }
 
-// Triggers a slack alert if source.name is seen twice.
+// Flags a record whose source.name has been seen before, and posts the alert
+// to Slack when SLACK_ACCESS_TOKEN is set.
 func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 	var out Alert
 
@@ -41,7 +42,9 @@ func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 	if ok && seen.(bool) {
 		accessToken := os.Getenv("SLACK_ACCESS_TOKEN")
 		if accessToken == "" {
-			return Alert{}, fmt.Errorf("SLACK_ACCESS_TOKEN not set")
+			// Without a token, as in tests, the alert is flagged but not posted.
+			out.Triggered = true
+			return out, nil
 		}
 
 		type slackPayload struct {
