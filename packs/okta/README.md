@@ -24,10 +24,11 @@ own.
 ## What it drops
 
 Kept: `ts`, `source`, `published`, `eventType`, `displayMessage`, `severity`,
-`outcome`; the actor's `type`, `alternateId` and `displayName`; the client's
-`ipAddress`, `zone`, `device`, the user agent's `os` and `browser`, and the
-city, state and country; `securityContext`'s `asNumber`, `asOrg`, `isp` and
-`isProxy`; each target's `type`, `alternateId` and `displayName`;
+`outcome`, `device` (the registered device); the actor's `type`,
+`alternateId` and `displayName`; the client's `ipAddress`, `zone`, `device`,
+the user agent's `os` and `browser`, and the city, state and country;
+`securityContext`'s `asNumber`, `asOrg`, `isp` and `isProxy`; each target's
+`type`, `alternateId` and `displayName`;
 `authenticationContext`'s provider and credential type; and Okta's own risk
 signals in `debugContext.debugData` (`threatSuspected`, `risk`, `behaviors`,
 `logOnlySecurityData`, `factor`), as `debugData`. Nulls go, and a `zone` of
