@@ -94,3 +94,4 @@ ipnet = "2.11.0"
 
 [dev-dependencies]
 tempfile = "3.23.0"
+arrow-array = "57.0.0"
