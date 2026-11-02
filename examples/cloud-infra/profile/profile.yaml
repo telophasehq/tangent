@@ -36,6 +36,10 @@ services:                        # service principals: IAM users and roles, depl
   - railway-deploy
   - agent-plan-worker
 
+people:                          # one person under each name the sources give them: IAM users, GitHub handles
+  dave@acme.io: [dave]
+  grace@acme.io: [grace]
+
 about:                           # who an actor is, when its name does not say
   VendorAuditRole: "the compliance vendor: reads IAM, credential reports and backups every day"
 

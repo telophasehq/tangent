@@ -267,6 +267,7 @@ org: example
 own_sources: [cloudtrail, okta]      # their records are all this org's
 countries: [US]
 members: [alice@example.com, bob@example.com]
+people: { alice@example.com: [alice] }   # one person under each name: the IAM user alice is alice@example.com
 networks: [203.0.113.0/24]           # your office and VPN egress
 watch: [StopLogging, user.mfa.factor.deactivate]
 ```
