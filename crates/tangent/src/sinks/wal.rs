@@ -18,6 +18,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::{spawn_blocking, JoinHandle, JoinSet};
 use tokio::time::{sleep, Duration, Instant};
+use tokio_util::sync::CancellationToken;
 
 use crate::sinks::encoding;
 use crate::sinks::manager::{Sink, SinkWrite};
@@ -39,6 +40,8 @@ pub struct DurableFileSink {
     compression: Compression,
     encoding: Encoding,
     rotator: Mutex<Option<JoinHandle<()>>>,
+    /// Stops the rotator between its rounds.
+    stop: CancellationToken,
     uploads: tokio::sync::Mutex<JoinSet<()>>,
     /// Sealed files being sent now: a retry passes them by.
     sending: Arc<parking_lot::Mutex<HashSet<PathBuf>>>,
@@ -110,6 +113,7 @@ impl DurableFileSink {
             compression,
             encoding,
             rotator: Mutex::new(None),
+            stop: CancellationToken::new(),
             uploads: Mutex::new(JoinSet::new()),
             sending: Arc::default(),
         });
@@ -121,20 +125,24 @@ impl DurableFileSink {
         s.retry_leftovers(false).await;
 
         let s_cloned = s.clone();
+        let stop = s.stop.clone();
         let handle = tokio::spawn(async move {
             let tick = max(Duration::from_millis(250), max_file_age / 4);
             loop {
                 tokio::select! {
+                    () = stop.cancelled() => break,
                     () = sleep(tick) => {
-                        let to_rotate: Vec<RouteKey> = {
+                        // each with the file found aged: a writer may have
+                        // sealed it since, and its next one is young
+                        let to_rotate: Vec<(RouteKey, PathBuf)> = {
                             let routes = s_cloned.routes.lock().await;
                             routes.iter()
                                 .filter(|(_, rs)| rs.cur.bytes > 0 && rs.cur.created_at.elapsed() >= s_cloned.max_file_age)
-                                .map(|(k, _)| k.clone())
+                                .map(|(k, rs)| (k.clone(), rs.cur.path.clone()))
                                 .collect()
                         };
-                        for k in to_rotate {
-                            let _ = s_cloned.rotate_route(k, None).await;
+                        for (k, path) in to_rotate {
+                            let _ = s_cloned.rotate_route(k, Some(&path)).await;
                         }
                     }
                 }
@@ -400,11 +408,13 @@ impl Sink for DurableFileSink {
     }
 
     async fn flush(&self) -> Result<()> {
-        // The rotator loops for as long as the sink lives: stop it, then seal
-        // what is left below.
+        // The rotator loops for as long as the sink lives: stop it between
+        // rounds, then seal what is left below. Aborted in a round, it could
+        // leave a sealed file marked as being sent with nothing sending it,
+        // or the in-flight count raised for good.
+        self.stop.cancel();
         let value = self.rotator.lock().await.take();
         if let Some(h) = value {
-            h.abort();
             let _ = h.await;
         }
 
