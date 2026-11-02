@@ -6,7 +6,7 @@ use flate2::Compression as f2Compression;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::File as stdFile;
-use std::io::{copy, BufReader, BufWriter, Write};
+use std::io::{copy, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -113,6 +113,11 @@ impl DurableFileSink {
             uploads: Mutex::new(JoinSet::new()),
             sending: Arc::default(),
         });
+        let d = s.dir.clone();
+        let recovered = spawn_blocking(move || recover(&d)).await?;
+        if recovered > 0 {
+            tracing::info!(files = recovered, dir = ?s.dir, "WAL sealed files left open by a stop without flush");
+        }
         s.retry_leftovers(false).await;
 
         let s_cloned = s.clone();
@@ -414,6 +419,25 @@ impl Sink for DurableFileSink {
         for k in keys {
             let _ = self.rotate_route(k, None).await;
         }
+        // each route's next file, opened by the sealing, holds nothing: it
+        // goes, rather than wait in the WAL for the next start
+        let empty: Vec<PathBuf> = {
+            let mut routes = self.routes.lock().await;
+            let mut empty = Vec::new();
+            routes.retain(|_, rs| {
+                if rs.cur.bytes > 0 {
+                    return true;
+                }
+                rs.cur.file.take();
+                empty.push(rs.cur.path.clone());
+                false
+            });
+            empty
+        };
+        for p in empty {
+            let _ = fs::remove_file(&p).await;
+            let _ = fs::remove_file(meta_path_for(&p)).await;
+        }
 
         loop {
             self.retry_leftovers(true).await;
@@ -621,6 +645,80 @@ fn is_sealed_file_name(name: &str) -> bool {
     name.ends_with(".bin.sealed")
 }
 
+/// Makes ready to send what a process that stopped without its flush
+/// (killed, crashed, out of time at shutdown) left in the WAL, and says how
+/// many files it sealed: a file still open is cut back to its last whole
+/// line (a write is acked only once it is whole in the file, so what follows
+/// was never acked) and sealed; an empty one goes, with its meta; and so do
+/// a meta whose file is gone, a half-made stage (`.tmp`), and the compressed
+/// copy an earlier version made beside a sealed file. Only the names a WAL
+/// makes, a ULID and its extensions, are touched.
+fn recover(dir: &Path) -> usize {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let names: HashSet<String> = rd
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .collect();
+    let mut sealed = 0;
+    for name in &names {
+        let Some((base, ext)) = name.split_once('.') else {
+            continue;
+        };
+        if ulid::Ulid::from_string(base).is_err() {
+            continue;
+        }
+        let has = |e: &str| names.contains(&format!("{base}.{e}"));
+        let path = dir.join(name);
+        let done = match ext {
+            "bin" => match whole_lines(&path) {
+                Ok(0) => std::fs::remove_file(&path)
+                    .and_then(|()| std::fs::remove_file(dir.join(format!("{base}.meta")))),
+                Ok(keep) => {
+                    let cut = std::fs::OpenOptions::new()
+                        .write(true)
+                        .open(&path)
+                        .and_then(|f| {
+                            f.set_len(keep)?;
+                            f.sync_all()
+                        });
+                    cut.and_then(|()| {
+                        std::fs::rename(&path, dir.join(format!("{base}.bin.sealed")))
+                    })
+                    .map(|()| sealed += 1)
+                }
+                Err(e) => Err(e),
+            },
+            "bin.sealed.zst" | "bin.sealed.gz" if has("bin.sealed") => std::fs::remove_file(&path),
+            "meta" if !has("bin") && !has("bin.sealed") => std::fs::remove_file(&path),
+            e if e.ends_with("tmp") => std::fs::remove_file(&path),
+            _ => Ok(()),
+        };
+        if let Err(e) = done {
+            tracing::warn!("WAL recovery of {path:?}: {e}");
+        }
+    }
+    sealed
+}
+
+/// The length of the file up to and including its last newline.
+fn whole_lines(path: &Path) -> std::io::Result<u64> {
+    let mut f = stdFile::open(path)?;
+    let mut end = f.metadata()?.len();
+    let mut buf = vec![0u8; 64 << 10];
+    while end > 0 {
+        let start = end.saturating_sub(buf.len() as u64);
+        let chunk = &mut buf[..(end - start) as usize];
+        f.seek(SeekFrom::Start(start))?;
+        f.read_exact(chunk)?;
+        if let Some(i) = memchr::memrchr(b'\n', chunk) {
+            return Ok(start + i as u64 + 1);
+        }
+        end = start;
+    }
+    Ok(0)
+}
+
 fn make_base_ulid(dir: &Path) -> PathBuf {
     dir.join(format!("{}.bin", ulid::Ulid::new()))
         .with_extension("")
@@ -691,6 +789,15 @@ mod tests {
         dir
     }
 
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    }
+
     fn write(payload: &str) -> SinkWrite {
         SinkWrite {
             sink_name: Arc::from("logs"),
@@ -726,15 +833,11 @@ mod tests {
         let got = rec.got.lock().await;
         assert_eq!(got.len(), 1, "sent once");
         assert_eq!(got[0].1, b"{\"n\":1}\n{\"n\":2}\n");
-        // what is left is the next file, opened by the rotation and empty
-        for f in std::fs::read_dir(&dir).unwrap() {
-            let f = f.unwrap();
-            let name = f.file_name().into_string().unwrap();
-            assert!(!is_sealed_file_name(&name), "{name} was sent and removed");
-            if name.ends_with(".bin") {
-                assert_eq!(f.metadata().unwrap().len(), 0, "{name} holds nothing");
-            }
-        }
+        assert_eq!(
+            names_in(&dir),
+            Vec::<String>::new(),
+            "sent, and nothing left"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -797,6 +900,72 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    #[tokio::test]
+    async fn a_restart_sends_what_was_open_when_the_process_stopped() {
+        let dir = wal_dir("restart");
+        let ndjson = |rec: Arc<Recorder>| {
+            DurableFileSink::new(
+                rec,
+                &dir,
+                4,
+                1 << 20,
+                Duration::from_secs(3600),
+                Compression::None,
+                Encoding::NDJSON,
+            )
+        };
+        let first = ndjson(Arc::new(Recorder::default())).await.unwrap();
+        first.write(write("{\"n\":1}\n")).await.unwrap();
+        first.write(write("{\"n\":2}\n")).await.unwrap();
+        // it stops without a flush, in the middle of a write it never acked
+        let open = names_in(&dir)
+            .into_iter()
+            .find(|n| n.ends_with(".bin"))
+            .unwrap();
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(dir.join(&open))
+            .unwrap()
+            .write_all(b"{\"n\":")
+            .unwrap();
+        let meta = WalMeta {
+            bucket_name: Arc::from(""),
+            key_prefix: None,
+            encoding: Encoding::NDJSON,
+            compression: Compression::None,
+        };
+        let ulid = || ulid::Ulid::new().to_string();
+        // a file sealed and compressed by an earlier version, not yet sent
+        let old = ulid();
+        write_meta_atomic(&dir.join(format!("{old}.meta")), &meta)
+            .await
+            .unwrap();
+        std::fs::write(dir.join(format!("{old}.bin.sealed")), "{\"n\":0}\n").unwrap();
+        std::fs::write(dir.join(format!("{old}.bin.sealed.zst")), "a copy").unwrap();
+        // an empty pair, a meta whose file was sent, a half-written meta
+        let empty = ulid();
+        std::fs::write(dir.join(format!("{empty}.bin")), "").unwrap();
+        write_meta_atomic(&dir.join(format!("{empty}.meta")), &meta)
+            .await
+            .unwrap();
+        write_meta_atomic(&dir.join(format!("{}.meta", ulid())), &meta)
+            .await
+            .unwrap();
+        std::fs::write(dir.join(format!("{}.meta.tmp", ulid())), "{").unwrap();
+
+        let rec = Arc::new(Recorder::default());
+        let second = ndjson(rec.clone()).await.unwrap();
+        second.flush().await.unwrap();
+        let mut got: Vec<Vec<u8>> = rec.got.lock().await.iter().map(|g| g.1.clone()).collect();
+        got.sort();
+        assert_eq!(
+            got,
+            [b"{\"n\":0}\n".to_vec(), b"{\"n\":1}\n{\"n\":2}\n".to_vec()]
+        );
+        assert_eq!(names_in(&dir), Vec::<String>::new(), "nothing left");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     async fn sent(encoding: Encoding, compression: Compression, tag: &str) -> (String, Vec<u8>) {
         let dir = wal_dir(tag);
         let rec = Arc::new(Recorder::default());
@@ -818,14 +987,7 @@ mod tests {
         wal.flush().await.unwrap();
         let mut got = rec.got.lock().await;
         assert_eq!(got.len(), 1);
-        for f in std::fs::read_dir(&dir).unwrap() {
-            let f = f.unwrap();
-            let name = f.file_name().into_string().unwrap();
-            assert!(
-                name.ends_with(".bin") || name.ends_with(".meta"),
-                "{name} is gone once sent"
-            );
-        }
+        assert_eq!(names_in(&dir), Vec::<String>::new(), "gone once sent");
         let _ = std::fs::remove_dir_all(dir);
         got.pop().unwrap()
     }
