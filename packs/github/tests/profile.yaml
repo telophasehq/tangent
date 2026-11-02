@@ -8,6 +8,9 @@ countries: [US]                  # where your people sign in from
 members:                         # people: identity-provider emails and GitHub handles
   - dev-sam
 
+people:                          # one person under each name the sources give them: IAM users, GitHub handles
+  sam@acme.io: [dev-sam]
+
 hosts:                           # hosts your systems talk to (*.suffix allowed)
   - github.com
   - ghcr.io

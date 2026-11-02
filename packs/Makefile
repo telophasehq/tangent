@@ -23,7 +23,7 @@ test-baseline:
 
 # The shared libraries' own tests.
 test-shared:
-	for lib in normkit enrichkit factskit; do (cd shared/$$lib && cargo test) || exit 1; done
+	for lib in normkit enrichkit identitykit factskit; do (cd shared/$$lib && cargo test) || exit 1; done
 
 # tests/expected.json from the plugin's output; read the diff before committing.
 fixtures-%:
