@@ -1,5 +1,5 @@
 # cloud-infra, judge: packs/core's judge over logs.sqlite, each pack's
-# records written as its judge.yaml says once the encoding is logfmt.
+# records written as logfmt as its judge.yaml says.
 include:
   - ../../packs/core/judge.yaml
   - ../../packs/aws/judge.yaml
@@ -8,10 +8,11 @@ include:
   - ../../packs/google_workspace/judge.yaml
   - ../../packs/app/judge.yaml
 
+# JSON lines instead (packs/core/README.md):
 # inference:
 #   judge:
 #     encoding:
-#       type: logfmt
+#       type: ndjson
 
 # What flagged keeps, to Slack too (README.md):
 # sinks:

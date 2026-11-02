@@ -42,14 +42,15 @@ inference:
       top_p: 0.95
       chat_template_kwargs:
         enable_thinking: false
-    # JSON lines. `type: logfmt` writes the records as logfmt lines instead,
-    # about half the tokens and nothing lost: the fields in `keep` on every
-    # line, the rest a principal's records share written once, each source as
-    # its pack's judge.yaml says. Measured with Claude Haiku 5.5 only, where it
-    # caught what JSON caught. `keep` holds what every pack writes; a pack's
-    # own `_facts` go in its sources' `keep`, as packs/aws/judge.yaml's do.
+    # logfmt lines, about half the tokens of JSON lines and nothing lost: the
+    # fields in `keep` on every line, the rest a principal's records share
+    # written once, each source as its pack's judge.yaml says. Measured with
+    # Claude Haiku 5.5, where it caught what JSON caught. `type: ndjson` sends
+    # JSON lines instead (README.md). `keep` holds what every pack writes; a
+    # pack's own `_facts` go in its sources' `keep`, as packs/aws/judge.yaml's
+    # do.
     encoding:
-      type: ndjson
+      type: logfmt
       keep: [_context, _norm.actor, _norm.kind, _norm.target, _norm.dest, _facts.principal, _facts.watch, _facts.sensitive_target, _facts.key_known_network, _facts.ip.tor, _facts.ip.vpn]
 
 sinks:

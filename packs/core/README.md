@@ -136,16 +136,19 @@ llama-server -m GLM-4.7-Flash-Q4_K.gguf --port 8080 -np 1 -c 32768 -ngl 99 -fa o
 
 For a hosted one: `JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY`.
 
-The records go to the model as JSON lines. One line in your judge config
-sends them as logfmt instead, about half the tokens, each source written as
-its pack's `judge.yaml` says:
+The records go to the model as logfmt, a line each, each source written as
+its pack's `judge.yaml` says: about half the tokens of JSON lines. Your judge
+config can send JSON lines instead:
 
 ```yaml
 inference:
   judge:
     encoding:
-      type: logfmt
+      type: ndjson
 ```
+
+Logfmt was measured with Claude Haiku 5.5, where it caught what JSON caught;
+the default model has not been measured with either.
 
 ### Slack
 

@@ -1,7 +1,8 @@
-# app, judge: how the judge writes the audit log's records as logfmt, once
-# packs/core/judge.yaml's encoding is `type: logfmt`: the fields naming the
-# principal and the time, and those the model sees on every line. The agent's
-# records have no row; they go without principal groups. Include it in a judge
+# app, judge: how the judge writes the audit log's records as logfmt, the
+# encoding packs/core/judge.yaml sets: the fields naming the principal and the
+# time, and those the model sees on every line. The agent's records have no
+# row; they go without principal groups. A name of yours under `sources` or
+# `extra_sources` wants a row of its own, as `app` has. Include it in a judge
 # config with packs/core/judge.yaml.
 inference:
   judge:
