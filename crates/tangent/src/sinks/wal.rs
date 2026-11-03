@@ -82,7 +82,8 @@ struct Current {
 }
 
 /// Where a sealed file goes once it is in the sink's encoding: `path` holds
-/// the object's bytes, `name` is what to call it (see [`object_name`]).
+/// the object's bytes, `name` is what to call it (see [`object_name`]). The
+/// sink may move `path` away; the WAL removes it if it is still there.
 #[async_trait]
 pub trait WALSink: Send + Sync {
     async fn write_path_with(
