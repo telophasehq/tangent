@@ -15,6 +15,7 @@ use tokio::time::{sleep, Instant};
 use crate::sinks::blackhole;
 use crate::sinks::encoding;
 use crate::sinks::file;
+use crate::sinks::rolling_file;
 use crate::sinks::s3::S3SinkItem;
 use crate::sinks::slack;
 use crate::sinks::sqlite;
@@ -51,9 +52,14 @@ struct Shard {
 
 #[derive(Clone)]
 enum SinkEntry {
-    S3 {
+    /// Through a WAL (`s3`, `rolling_file`): a write carries its route, the
+    /// bucket (s3's; empty for rolling_file) and the key prefix: the edge's,
+    /// below the directory a rolling_file's path renders for the time it is
+    /// routed.
+    Wal {
         sink: Arc<dyn Sink>,
         bucket: Arc<str>,
+        path: Option<Arc<rolling_file::PathTemplate>>,
     },
     Other {
         sink: Arc<dyn Sink>,
@@ -93,9 +99,34 @@ impl SinkManager {
                     .await?;
                     sinks.insert(
                         Arc::clone(&name),
-                        SinkEntry::S3 {
+                        SinkEntry::Wal {
                             sink: s3_sink as Arc<dyn Sink>,
                             bucket: Arc::<str>::from(s3cfg.bucket_name.clone()),
+                            path: None,
+                        },
+                    );
+                }
+                SinkKind::RollingFile(rcfg) => {
+                    let path = Arc::new(
+                        rolling_file::PathTemplate::parse(&rcfg.path)
+                            .with_context(|| format!("sink '{name}'"))?,
+                    );
+                    let wal = wal::DurableFileSink::new(
+                        Arc::new(rolling_file::RollingFileSink::new(path.root())),
+                        rcfg.wal_path.clone(),
+                        cfg.common.in_flight_limit,
+                        cfg.common.object_max_bytes,
+                        Duration::from_secs(rcfg.max_file_age_seconds),
+                        cfg.common.compression.clone(),
+                        cfg.common.encoding.clone(),
+                    )
+                    .await?;
+                    sinks.insert(
+                        Arc::clone(name),
+                        SinkEntry::Wal {
+                            sink: wal,
+                            bucket: Arc::from(""),
+                            path: Some(path),
                         },
                     );
                 }
@@ -151,8 +182,11 @@ impl SinkManager {
                                 }
                             };
 
-                            if let SinkEntry::S3 { bucket, .. } = entry {
-                                let prefix = item.req.s3.as_ref().and_then(|m| m.key_prefix.clone());
+                            if let SinkEntry::Wal { bucket, path, .. } = entry {
+                                let mut prefix = item.req.s3.as_ref().and_then(|m| m.key_prefix.clone());
+                                if let Some(path) = path {
+                                    prefix = path.route(chrono::Utc::now(), prefix.as_deref());
+                                }
                                 item.req.s3 = Some(s3::S3SinkItem {
                                     bucket_name: bucket.clone(),
                                     key_prefix: prefix,
@@ -162,7 +196,7 @@ impl SinkManager {
                             }
 
                             let sink: Arc<dyn Sink> = match entry {
-                                SinkEntry::S3 { sink, .. } => sink.clone(),
+                                SinkEntry::Wal { sink, .. } => sink.clone(),
                                 SinkEntry::Other { sink } => sink.clone(),
                             };
 
@@ -288,7 +322,7 @@ impl SinkManager {
 
         for (nm, entry) in sinks.iter() {
             let sink: &Arc<dyn Sink> = match entry {
-                SinkEntry::S3 { sink, .. } => sink,
+                SinkEntry::Wal { sink, .. } => sink,
                 SinkEntry::Other { sink } => sink,
             };
             if let Err(e) = sink.flush().await {
@@ -300,14 +334,25 @@ impl SinkManager {
     }
 }
 
-/// Each WAL directory is one sink's. A WAL sends every sealed file it finds
-/// in its directory to its own sink, so two sinks sharing one send each
-/// other's records.
+/// Each WAL directory is one sink's, and none is in a rolling_file sink's
+/// directory. A WAL sends every sealed file it finds in its directory to its
+/// own sink, so two sinks sharing one send each other's records; a reader of
+/// an output directory would find the files a WAL in it stages, and a WAL in
+/// the output itself removes each file it stages there, which is the file it
+/// has just put in place.
 fn check_wal_dirs(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<()> {
     let mut wals: Vec<(&str, PathBuf)> = Vec::new();
+    let mut outs: Vec<(&str, PathBuf)> = Vec::new();
     for (name, cfg) in cfgs {
-        if let SinkKind::S3(c) = &cfg.kind {
-            wals.push((name, resolved(&c.wal_path)?));
+        match &cfg.kind {
+            SinkKind::S3(c) => wals.push((name, resolved(&c.wal_path)?)),
+            SinkKind::RollingFile(c) => {
+                wals.push((name, resolved(&c.wal_path)?));
+                let path = rolling_file::PathTemplate::parse(&c.path)
+                    .with_context(|| format!("sink '{name}'"))?;
+                outs.push((name, resolved(path.root())?));
+            }
+            _ => {}
         }
     }
     for (i, (name, wal)) in wals.iter().enumerate() {
@@ -315,6 +360,13 @@ fn check_wal_dirs(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<()> {
             anyhow::bail!(
                 "sinks '{other}' and '{name}' share the WAL directory {}: give each its own wal_path",
                 wal.display()
+            );
+        }
+        if let Some((other, out)) = outs.iter().find(|(_, out)| wal.starts_with(out)) {
+            anyhow::bail!(
+                "sink '{name}' has its WAL in {}, inside sink '{other}''s path {}: put wal_path elsewhere",
+                wal.display(),
+                out.display()
             );
         }
     }
@@ -459,5 +511,56 @@ mod tests {
         let other = root.join("x/../a/.");
         let shared = check(vec![("a", s3(a)), ("b", s3(other.to_str().unwrap()))]).unwrap_err();
         assert!(shared.to_string().contains("share the WAL"), "{shared}");
+    }
+
+    fn rolling_file(path: &Path, wal: &Path) -> SinkConfig {
+        serde_yaml::from_str(&format!(
+            "type: rolling_file\npath: {}\nwal_path: {}\n",
+            path.display(),
+            wal.display()
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_wal_directory_is_one_sinks_and_outside_every_output() {
+        let root = std::env::temp_dir().join(format!("tangent-waldirs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let check = |sinks: Vec<(&str, SinkConfig)>| {
+            let cfgs: BTreeMap<Arc<str>, SinkConfig> =
+                sinks.into_iter().map(|(n, c)| (Arc::from(n), c)).collect();
+            check_wal_dirs(&cfgs)
+        };
+        let (out, wal) = (root.join("out"), root.join("wal"));
+        assert!(check(vec![("a", rolling_file(&out, &wal))]).is_ok());
+
+        let same = check(vec![("a", rolling_file(&out, &out))]).unwrap_err();
+        assert!(
+            same.to_string().contains("inside sink 'a''s path"),
+            "{same}"
+        );
+        let below = check(vec![("a", rolling_file(&out, &out.join("wal")))]).unwrap_err();
+        assert!(below.to_string().contains("inside"), "{below}");
+        // the same directory, spelled another way and not there yet
+        let shared = check(vec![
+            ("a", rolling_file(&out, &wal)),
+            (
+                "b",
+                rolling_file(&root.join("out2"), &root.join("x/../wal/.")),
+            ),
+        ])
+        .unwrap_err();
+        assert!(shared.to_string().contains("share the WAL"), "{shared}");
+        let into_other = check(vec![
+            ("a", rolling_file(&out, &wal)),
+            ("b", rolling_file(&root.join("out2"), &out.join("b-wal"))),
+        ])
+        .unwrap_err();
+        assert!(
+            into_other.to_string().contains("sink 'a''s path"),
+            "{into_other}"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }

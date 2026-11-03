@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::sinks::{blackhole, file, s3, slack, sqlite};
+use crate::sinks::{blackhole, file, rolling_file, s3, slack, sqlite};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SinkConfig {
@@ -18,6 +18,8 @@ pub enum SinkKind {
     S3(s3::S3Config),
     #[serde(rename = "file")]
     File(file::FileConfig),
+    #[serde(rename = "rolling_file")]
+    RollingFile(rolling_file::RollingFileConfig),
     #[serde(rename = "blackhole")]
     Blackhole(blackhole::BlackholeConfig),
     #[serde(rename = "sqlite")]
@@ -55,6 +57,13 @@ pub enum Encoding {
     },
     Parquet {
         schema: String,
+        /// Each record, in a Utf8 column of this name, beside the columns
+        /// `schema` reads out of it: a query can still reach a field the
+        /// schema leaves out. The record is its line without the line break
+        /// (a trailing CR or LF goes), invalid UTF-8 replaced. A record the
+        /// schema cannot read is kept here with its typed columns null.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record_column: Option<String>,
     },
 }
 

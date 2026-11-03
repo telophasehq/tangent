@@ -80,7 +80,7 @@ lazy_static::lazy_static! {
 
     pub static ref SINK_RECORDS_UNFIT_TOTAL: IntCounterVec = register_int_counter_vec!(
         "tangent_sink_records_unfit_total",
-        "Records a sink's schema could not read, by what became of them",
+        "Records a sink's schema could not read: kept (whole, in the record column, typed columns null) or dropped",
         &["fate"]
     ).unwrap();
 

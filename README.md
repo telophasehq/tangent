@@ -151,6 +151,28 @@ sources:
 
 A partition value's records not yet sent go oldest first, `batch_size` to a batch, one batch of a value at a time. Fewer wait until the oldest is `timeout_secs` older than the newest record stored, so a replay of old logs goes as live ones do, or until nothing new has been stored for `timeout_secs`; then they go topped up to `batch_size` with the value's latest records already sent, which carry `"_context": true`. A batch's new records get the time it is through the DAG in `emitted`, NULL until then, and the value's next batch goes then; a restart sends again what was not. Nothing is deleted: the table grows, and trimming it is the operator's job.
 
+A `file` sink appends every write to one file at `path`, which only NDJSON survives, so it takes no other encoding. A `rolling_file` sink keeps records as whole files for a query engine (DataFusion, DuckDB, Spark) to read, starting a new file each time the WAL an `s3` sink uses seals one: a write is acked once it is in the WAL under `wal_path`, a WAL file is sealed at `object_max_bytes` of records or `max_file_age_seconds` after it was opened, and each sealed file becomes one file in the directory, in the sink's `encoding`, synced and renamed into place (copied under a hidden temporary name first if the WAL is on another filesystem), so a reader listing the directory sees whole files only. `path` may hold strftime specifiers, rendered in UTC when a write reaches the sink, so `lake/logs/%Y/%m/%d/%H` puts each hour's files in a directory of their own, which a query engine can skip by path; a file holds records written in that hour, whatever times they carry. A file is named as an `s3` object is, `<ULID>.parquet` (`.ndjson.zst` for zstd NDJSON), and the ULIDs sort by time; an edge's `key_prefix` is a directory below the rendered one. Parquet has the columns its Arrow schema names (a nested object is a struct, its fields columns of their own; a time is read from RFC 3339 text, its zone an offset such as `+00:00`), and `record_column` keeps each record beside them, its line without the line break, for the fields the schema leaves out. A record the schema cannot read (a type it does not give the field, a time arrow cannot parse) does not fail its file: it is kept in `record_column` with its typed columns null, or, without a record column or if it is not JSON, dropped; `tangent_sink_records_unfit_total{fate="kept"|"dropped"}` counts them:
+
+```yaml
+sinks:
+  lake:
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal               # apart from path
+    max_file_age_seconds: 3600
+    object_max_bytes: 67108864       # 64 MiB of records a file
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record
+      # an Arrow schema as arrow-schema's serde writes it, one field shown
+      schema: '{"fields":[{"name":"ts","data_type":{"Timestamp":["Millisecond","+00:00"]},"nullable":true,"dict_id":0,"dict_is_ordered":false,"metadata":{}}],"metadata":{}}'
+```
+
+A write is acked once it is in the open WAL file; that file is synced only when it is sealed. What was acked survives tangent stopping without its flush (killed, crashed, out of time at shutdown): the next start seals and sends the files left open, cut back to their last whole line. It does not survive the machine going down before the file is sealed.
+
+`tangent_sink_bytes_total` counts a file's bytes when it is in place, and `tangent_sink_bytes_uncompressed_total` the records' NDJSON bytes it holds; a write acked into the WAL counts only once its file is sealed and written.
+
 ## Inference
 An `inference` node asks a model about each record. Nodes are configured under `inference:`, each with its own model and prompt, and sit in the DAG as `kind: inference`:
 
