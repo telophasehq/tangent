@@ -13,6 +13,24 @@ use tracing::info;
 
 use crate::synthesize::{Scope, Synth};
 
+/// `buf` whole, a write resuming where the last left off. macOS's loopback
+/// answers a burst from many connections with ENOBUFS once it is out of
+/// mbufs, which passes in a moment: wait, rather than end the run.
+async fn write_out(stream: &mut TcpStream, buf: &[u8]) -> std::io::Result<()> {
+    let mut off = 0;
+    while off < buf.len() {
+        match stream.write(&buf[off..]).await {
+            Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
+            Ok(n) => off += n,
+            Err(e) if e.raw_os_error() == Some(libc::ENOBUFS) => {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
 pub async fn run_bench(
     name: Arc<str>,
     addr: SocketAddr,
@@ -95,7 +113,7 @@ pub async fn run_bench(
                 }
 
                 let buf_len = buf.len();
-                match stream.write_all(&buf).await {
+                match write_out(&mut stream, &buf).await {
                     Ok(()) => {
                         total_events += events_per_buff;
                         BYTES_SENT.fetch_add(buf_len as u64, Ordering::Relaxed);
