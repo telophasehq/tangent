@@ -7,6 +7,7 @@ plugins:
   app:
     module_type: rust
     path: .
+    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
     # config:                       # which `source` values take which shape
     #   sources: [app]              # the audit shape; replaces the default
     #   extra_sources: [billing]    # the audit shape too, beside `sources`

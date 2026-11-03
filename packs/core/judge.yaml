@@ -24,14 +24,17 @@ plugins:
   baseline_renderer:             # the same `_baseline` on each of an actor's records
     module_type: rust
     path: baseline/renderer
+    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
     state_namespace: baseline
     drop_on_error: false         # no `_baseline` rather than no verdict
   fresh:
     module_type: rust
     path: fresh
+    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
   flagged:
     module_type: rust
     path: ../../examples/inference-local/flagged
+    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
 
 inference:
   judge:

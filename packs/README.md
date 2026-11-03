@@ -31,4 +31,9 @@ make test                # each pack alone: compile, then its fixtures; core's b
 make fixtures-okta       # okta/tests/expected.json from the plugin's output; read the diff
                          # (a test that fails for any reason but its output leaves it as it was)
 make fixtures-baseline   # core/baseline/tests/expected.json, the same way
+make dist                # every plugin as a component in ../target/packs, what a release ships (dist.sh)
 ```
+
+A release carries each plugin compiled, with its build's attestation, and
+`tangent plugin fetch` takes them from there: a user needs no toolchain
+([Prebuilt plugins](/README.md#prebuilt-plugins)).

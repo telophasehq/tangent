@@ -31,6 +31,7 @@ Plugins run in a lightweight WASM sandbox with near-native speed and full langua
 Tangent ships with everything you need to develop, test, and benchmark your own transforms:
 * `tangent plugin scaffold` – generate plugin boilerplate (`--setup` also installs the toolchain)
 * `tangent plugin compile` – compile plugins to WASM
+* `tangent plugin fetch` – download plugins a release built, their build's attestation checked; no toolchain
 * `tangent plugin test` – run plugin tests
 * `tangent bench` – measure throughput and latency before deploying
 * `tangent run` – start the Tangent runtime
@@ -228,7 +229,7 @@ No pack loads IP data itself. Core's `ingest.yaml` names it as enrichment tables
 The judge also sees each actor's history, which one window of its records cannot show. Core's baseline folds every finished record into ingest's state store (`baseline_builder`), and in the judge puts the same `_baseline` on each of an actor's records (`baseline_renderer`): who it is and, for a role, who assumed it; how long it has been seen; what it does for the first time (an API, a resource, a client, a network, an OAuth app); its volume and hours against its own 28 days; its person's sign-ins and credential changes in every source over three days (the profile's `people` says which names are one person); and addresses it shares with other actors. Only what happened before the actor's first record counts, and it is facts, not verdicts ([packs/core](/packs/core#baseline)). The judge writes records as logfmt, `_baseline` once per request, about 5% more tokens than without it; JSON lines (`encoding: {type: ndjson}`) repeat it on every record, at three times logfmt's tokens ([packs/core](/packs/core#judgeyaml) has the numbers). Baseline keeps one writer: ingest runs one worker and no `runtime.partition`, since more workers lose its counts and a partition files its keys where the judge does not read them.
 
 ### Using packs
-Packs need a tangent built from the same checkout (the first command below): `include:` and `enrichment_tables` are newer than the latest release, which stops at ``missing field `runtime` ``.
+Packs need a tangent newer than 0.1.9, the latest release as this is written: `include:` and `enrichment_tables` are newer, and that release stops at ``missing field `runtime` ``. Until the next release, build one from the checkout (`cargo install --path ../tangent/crates/cli --locked`) and `tangent plugin compile` the packs where the lines below fetch them: their prebuilt plugins are released with tangent, from the next release on.
 
 Ingest and the judge are two processes over one `logs.sqlite`, so there are two configs, each including core and the packs you want. Your ingest config also names your sources, sends each to its pack, and points the `profile` table at your company. To watch AWS and Okta from a directory beside your tangent checkout:
 
@@ -273,9 +274,9 @@ watch: [StopLogging, user.mfa.factor.deactivate]
 ```
 
 ```bash
-cargo install --path ../tangent/crates/cli --locked   # a tangent that knows include: and enrichment tables
-../tangent/examples/enrich/setup.sh               # once: Rust WASM toolchain; GeoLite2, cloud ranges, Tor exits
-tangent plugin compile --config ingest.yaml && tangent plugin compile --config judge.yaml
+brew install gh                                   # once: it checks each prebuilt plugin's attestation; no login
+../tangent/examples/enrich/setup.sh data          # once: GeoLite2, cloud ranges, Tor exits
+tangent plugin fetch --config ingest.yaml && tangent plugin fetch --config judge.yaml   # the packs' plugins, prebuilt and attested
 tangent plugin test --config ingest.yaml          # the aws and okta fixtures
 tangent run --config ingest.yaml & i=$!            # first: it writes state.sqlite
 (while kill -0 $i && [ ! -s state.sqlite ]; do sleep 1; done; sleep 1; kill -0 $i) && tangent run --config judge.yaml
@@ -283,11 +284,35 @@ tangent run --config ingest.yaml & i=$!            # first: it writes state.sqli
 
 Ingest starts first: the judge reads its `state.sqlite`, each actor's history, read-only, and refuses to start before the file is there. The second line waits for the file, and starts the judge only while ingest is still running.
 
+`tangent plugin compile` in place of `fetch` builds the packs here, from source, for a pack you are changing: it needs the Rust WASM toolchain, which `../tangent/examples/enrich/setup.sh` (without `data`) installs.
+
 The judge is any OpenAI-compatible model: `JUDGE_URL` (a local model on `:8080` by default), `JUDGE_MODEL` (`glm-4.7-flash`), `JUDGE_API_KEY`. Each pack's README has its source's block and credentials, and [packs/core](/packs/core) the profile's keys and the judge's settings.
 
 A `tcp` source can feed several packs: route it to each, and each takes only its own `source` values. A record whose `source` no included pack takes goes no further, and `tangent run` says so. To keep records in your own shape, send them as `source: app`, or list their name under `plugins.app.config.extra_sources`: baseline learns them as it does `app`'s, and the judge's logfmt wants a row for the name, as [packs/app/judge.yaml](/packs/app/judge.yaml) has for `app`, for its times and the fields on every line.
 
 [examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, with the cases it is measured against; [examples/app-log](/examples/app-log) is the app pack, one org per customer.
+
+### Prebuilt plugins
+A plugin is a WASM component, compiled once and run on every machine, so only a pack's author needs the toolchain. Each release of tangent carries every pack's plugin as a release asset, `<plugin>.component.wasm`, built by [packs/dist.sh](/packs/dist.sh) in the release workflow, and a pack's `ingest.yaml` says so:
+
+```yaml
+plugins:
+  aws:
+    module_type: rust
+    path: .                                          # the source, for `tangent plugin compile`
+    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }
+```
+
+`tangent plugin fetch --config ingest.yaml` downloads each `prebuilt` plugin from `repo`'s release of this tangent's version (`release:` names another; `asset:` another file name; `host:` a GitHub Enterprise host) and precompiles it into `runtime.plugins_path`, where `tangent plugin compile` puts it and `tangent run` reads it. A plugin with `prebuilt` and no `path` is fetched only.
+
+A prebuilt plugin is code off the network that reads every record, so before one is kept its build is checked: the release workflow attests each component, on its own, with [GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations) ([.github/workflows/attest-packs.yml](/.github/workflows/attest-packs.yml)), a Sigstore signature naming the component's file name and digest, the repository, the workflow and the commit that built it, with the attestation bundle uploaded beside the component as `<asset>.sigstore.json`. `fetch` has `gh attestation verify`, GitHub's own verifier, check it: signed for `repo` from the release's tag (`--source-ref refs/tags/<release>`), by `workflow` when named; and then that the statement names the file as the asset asked for, not only by its digest, so one attested component of a release cannot be served under another's name. With the bundle on the release nothing asks GitHub's API, so `gh` need not be logged in; a release without the bundle falls back to the API, which needs `gh auth login`. A plugin that does not verify is not kept, and there is no flag to skip the check. `sha256:` pins the component's digest as well, for a lockfile's certainty. The command `fetch` ran is printed, to run again by hand:
+
+```bash
+gh attestation verify plugins/aws.component.wasm --repo EthanBlackburn/tangent --source-ref refs/tags/v0.1.10 \
+  --bundle plugins/aws.component.wasm.sigstore.json --signer-workflow EthanBlackburn/tangent/.github/workflows/attest-packs.yml
+```
+
+A pack of your own is published the same way: a workflow that builds the component with `cargo component build --release --target wasm32-wasip2`, attests it with `actions/attest-build-provenance` under the file name it will have on the release (the step's `bundle-path` output is the bundle), and uploads both to a release; its users write `prebuilt: { repo: you/packs, release: <tag>, workflow: .github/workflows/release.yml }`.
 
 ### Volume and cost
 What a pack costs to run is what its judge's model charges: tangent moves hundreds of MB a second ([Benchmarks](#benchmarks)), and a model is paid by the token. With Claude Haiku 5.5 as the judge ($0.10 a million tokens in, $0.50 out), a day of logs costs about
@@ -331,6 +356,7 @@ These are estimates. Log sizes are measured on samples (CloudTrail on 20k events
 2. `ingest.yaml`: the plugin, named after the pack, with its fixtures under `tests:` and the tables they were written against (`tests/profile.yaml`, and `tests/addresses.yaml` and `tests/networks.csv` for the addresses), and an edge from it to `logs` and `baseline_builder`. Baseline learns a `source` only once [its table](/packs/core/baseline/kit/src/kinds/mod.rs) knows it.
 3. `judge.yaml`: under `inference.judge.encoding.sources.<source>`, the fields naming the principal and the time, and those the model should see on every line. Your pack's own `_facts` keys go in its sources' `keep` too: core's `keep` is every pack's, and a list set in two files is a conflict, not a merge.
 4. `tests/input.json` from synthetic records, two or more, with the tables they read: the company they describe, and what you want their addresses to be (`203.0.113.9` a Tor exit, say). `make -C packs fixtures-<name>` writes `tests/expected.json` from the plugin's output; read it before committing. `make -C packs test` runs every pack's fixtures on its own.
+5. So the release ships it prebuilt: `prebuilt:` on the plugin in `ingest.yaml`, as the other packs have it, and the plugin in [packs/dist.sh](/packs/dist.sh)'s list and [dist-workspace.toml](/dist-workspace.toml)'s `extra-artifacts`. `packs/dist.sh check` (CI runs it) says when the list and the configs disagree; `make -C packs dist` builds what the release would.
 
 ## Benchmarks
 Benchmarks show end-to-end throughput with simple log transformation plugins implemented in [Rust](/examples/rust/src/lib.rs), [Go](/examples/golang/main.go), and [Python](/examples/python/mapper.py). Each plugin is compiled to WASM and run inside Tangent.

@@ -66,18 +66,23 @@ jobs:
       - name: Run cargo test (tangent-shared)
         run: cargo test -p tangent-shared --locked
 
-      # Every pack through include, with core and a profile; no model needed for the test.
+      # Every pack through include, with core and a profile; no model needed for the
+      # test. Compiled here: a tangent built from a checkout has no release to fetch from.
       - name: Run make test (examples/cloud-infra)
-        run: make test
+        run: make test PLUGINS=compile
         working-directory: examples/cloud-infra
 
       - name: Run make test (examples/app-log)
-        run: make test
+        run: make test PLUGINS=compile
         working-directory: examples/app-log
 
       # Each pack alone, so none leans on another's files; and the libraries they share.
       - name: Run make test (packs)
         run: make -C packs test
+
+      # The release builds every plugin the configs mark prebuilt: the list it builds from agrees with them.
+      - name: Check the packs' release list
+        run: packs/dist.sh check
 
       - name: Merge and check the examples' configs
         run: |

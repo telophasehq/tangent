@@ -11,7 +11,14 @@ use which::which;
 
 const WORLD: &str = "processor";
 
-pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()> {
+/// Every plugin of the config at `cfg_path` (or `only`, when given) compiled
+/// from its source into `runtime.plugins_path`. A plugin with `prebuilt` and
+/// no `path` is left to `tangent plugin fetch`.
+pub fn compile_from_config(
+    cfg_path: &PathBuf,
+    wit_path: &PathBuf,
+    only: Option<&str>,
+) -> Result<()> {
     let cfg = Config::from_file(cfg_path)?;
 
     let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
@@ -22,7 +29,22 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
         .canonicalize()
         .with_context(|| "configured plugins path")?;
 
+    if let Some(only) = only {
+        if !cfg.plugins.contains_key(only) {
+            bail!("plugin {only} not found in {}", cfg_path.display());
+        }
+    }
     for (name, plugin) in cfg.plugins {
+        if only.is_some_and(|only| only != name.as_ref()) {
+            continue;
+        }
+        if plugin.path.as_os_str().is_empty() {
+            if plugin.prebuilt.is_some() {
+                println!("· {name}: no source, a prebuilt plugin; `tangent plugin fetch` gets it");
+                continue;
+            }
+            bail!("plugin {name} has no `path`");
+        }
         let entry_point_path = config_dir
             .join(&plugin.path)
             .canonicalize()
@@ -42,12 +64,8 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
             ),
         }
 
-        let engine = tangent_shared::wasm_engine::build()?;
-        let c = Component::from_file(&engine, full_out)?;
-        let bytes = c.serialize()?;
-
         let cwasm_out = &out.join(format!("{name}.cwasm"));
-        std::fs::write(cwasm_out, bytes)?;
+        precompile(full_out, cwasm_out)?;
 
         println!(
             "✅ Compiled {} → {}",
@@ -55,6 +73,18 @@ pub fn compile_from_config(cfg_path: &PathBuf, wit_path: &PathBuf) -> Result<()>
             cwasm_out.display()
         );
     }
+    Ok(())
+}
+
+/// The component at `component` serialized for this machine's wasmtime at
+/// `cwasm`: what `tangent run` loads. A component is portable; its `.cwasm`
+/// is not, so it is made where it runs.
+pub fn precompile(component: &Path, cwasm: &Path) -> Result<()> {
+    let engine = tangent_shared::wasm_engine::build()?;
+    let c = Component::from_file(&engine, component)
+        .with_context(|| format!("loading component {}", component.display()))?;
+    let bytes = c.serialize()?;
+    fs::write(cwasm, bytes).with_context(|| format!("writing {}", cwasm.display()))?;
     Ok(())
 }
 

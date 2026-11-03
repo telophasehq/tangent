@@ -24,5 +24,5 @@ fn main() -> Result<()> {
         .canonicalize()
         .with_context(|| format!("WIT path not found: {}", args.wit.display()))?;
 
-    compile_wasm::compile_from_config(&config, &wit)
+    compile_wasm::compile_from_config(&config, &wit, None)
 }
