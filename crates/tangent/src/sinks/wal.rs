@@ -546,7 +546,6 @@ fn encode_file(src: &Path, tmp: &Path, enc: &Encoding, comp: &Compression) -> Re
         _ => write_whole(enc, fin, out)?,
     };
     out.flush()?;
-    out.get_ref().sync_data()?;
     Ok(())
 }
 
