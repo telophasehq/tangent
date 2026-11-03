@@ -4,8 +4,7 @@ What the judge has to catch, and what it must leave alone, written down as
 event sequences before arguing about designs. Every design question (per
 record or per window, which model, which cadence) is measured against these.
 The packs' fixtures were cut from eight of them; the full set is replayed
-inside ordinary traffic for the numbers in
-[examples/cloud-infra](/examples/cloud-infra#what-it-catches).
+inside a year of ordinary traffic by the harness in [evals](../README.md).
 
 `gen.py` writes every case; edit the case list there, not the files
 (`python3 -I evals/gen.py`). Each case is a directory:
