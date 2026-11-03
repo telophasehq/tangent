@@ -16,7 +16,7 @@ case, acme, is fictional; so are its people, accounts and repos.
 | suite | should flag | must not flag | where |
 |---|---|---|---|
 | our cases | 45 | 16 | [cases/](cases/), written by `gen.py` |
-| Stratus Red Team | 70 | 70 | [stratus/cases.json](stratus/), written by `stratus/splice.py` |
+| Stratus Red Team | 70 | 70 | [stratus/](stratus/), written by `stratus/splice.py` from Datadog's recordings |
 | all | 115 | 86 | 201 cases |
 
 - **Our cases** ([cases/README.md](cases/README.md) lists every one): 61
@@ -246,7 +246,7 @@ evals/
   cases/             61 cases, one directory each (case.yaml, events.ndjson); README.md lists them
   gen.py             writes cases/; stream.py imports its case list
   stream.py          writes runs/stream/: the stream and its truth file
-  stratus/           Stratus Red Team v2.37.0: fetch.py, techniques.json, logs/, splice.py, cases.json, NOTICE, LICENSE
+  stratus/           Stratus Red Team v2.37.0: fetch.py, techniques.json, logs/, splice.py, NOTICE, LICENSE
   profile/           the eval's profile of acme
   harness/           maincfg.py, replay.py, shard.py, past.py, windows.py, and the scorers
   runs/              everything generated (ignored by git)

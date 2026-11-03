@@ -19,7 +19,8 @@ the interesting hour never learns what boring looks like.
 packs compute `_norm.actor` and `_norm.org`) and which two hours a flag must
 touch to count for that case, and whether it should flag.
 
-The Stratus cases come from stratus/cases.json (splice.py's output, committed).
+The Stratus cases come from runs/stratus/cases.json, which stratus/splice.py
+writes from Datadog's recordings; stream.py runs it when the file is missing.
 Everything goes to evals/runs/, which git ignores.
 """
 import json
@@ -39,7 +40,7 @@ START = datetime(2026, 9, 20, 0, 0, tzinfo=timezone.utc)   # history begins
 LIVE = datetime(2026, 10, 20, 13, 0, tzinfo=timezone.utc)   # first case lands
 END = datetime(2026, 10, 28, 0, 0, tzinfo=timezone.utc)
 SHARED_GAP_DAYS = 10
-STRATUS = os.path.join(HERE, "stratus", "cases.json")
+STRATUS = os.path.join(HERE, "runs", "stratus", "cases.json")
 rng = random.Random(7)
 
 SF = gen.SF
@@ -419,14 +420,16 @@ def place(cases, deltas):
 
 def placed_cases(v3=False):
     """Our cases, Stratus Red Team's recorded techniques and their harmless
-    twins (stratus/cases.json, from stratus/splice.py), taken in turn so no
+    twins (runs/stratus/cases.json, from stratus/splice.py), taken in turn so no
     suite gets all the early days, each on its own day (`schedule`). v3's
     cases come last, so every other case keeps its day."""
     ours = sorted(gen.CASES[:gen.V3_FROM], key=lambda c: c["id"])
     if v3:
         ours = [dict(c, events=usual_signins(c["events"])) for c in ours]
-    if not os.path.exists(STRATUS):  # without it the corpus is 140 cases short, and nothing would say so
-        sys.exit(f"{STRATUS} is missing: it is committed; restore it, or run python3 -I evals/stratus/splice.py")
+    if not os.path.exists(STRATUS):  # splice.py's output, made once and kept in runs/
+        sys.path.insert(0, os.path.join(HERE, "stratus"))
+        import splice  # noqa: E402
+        splice.main()
     extra = json.load(open(STRATUS))
     suites = [ours, [c for c in extra if c["id"].startswith("stratus/")], [c for c in extra if c["id"].startswith("control/")]]
     order = [suite[i] for i in range(max(map(len, suites))) for suite in suites if i < len(suite)]

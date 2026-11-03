@@ -4,9 +4,9 @@
 
 - `fetch.py` pulls the catalog at a pinned release (v2.37.0) into `techniques.json`, and each technique's recorded records into `logs/<id>.json`, with the session tokens Datadog's responses carry replaced by `REDACTED`. Stratus scrambled their accounts, regions, addresses and names.
 - `grounding.yaml` says, per technique, what a judge needs to tell it from ordinary work, and which of our cases exercise the same calls.
-- `splice.py` makes `cases.json`: each of the 35 recorded techniques twice, as a member of acme whose credentials were taken, `away` (from a hosting address) and `usual` (from the office), 70 attack cases; and a control for each, the same records with every call made a harmless read in the same service, 70 must-not-flag cases. `stream.py` places them.
+- `splice.py` makes the cases, into `evals/runs/stratus/cases.json` (`stream.py` runs it when the file is missing): each of the 35 recorded techniques twice, as a member of acme whose credentials were taken, `away` (from a hosting address) and `usual` (from the office), 70 attack cases; and a control for each, the same records with every call made a harmless read in the same service, 70 must-not-flag cases. `stream.py` places them.
 
-`cases.json` is committed, not regenerated. `splice.py` numbers the plain names it gives resources in the order of a Python set when two names are the same length, and that order changes with each process's hash seed, so a rerun can renumber the names inside a case (`acme-secret-994c18` for `acme-secret-994c16`). The committed file is the one the earlier runs replayed, with the session tokens redacted. Rerun `splice.py` only to change the splice, and commit what it writes.
+The output is the same on every run: the plain names `splice.py` gives resources are numbered longest first, then in name order. (Until November 2026 equal-length names were numbered in the order of a Python set, which follows the process's hash seed; the runs recorded before then replayed a file in which two cases, `secretsmanager-retrieve-secrets` away and usual, number 16 secret names differently. Nothing else differs.)
 
 | decides | techniques | covered by our cases | with recorded logs |
 |---|---|---|---|

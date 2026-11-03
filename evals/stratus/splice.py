@@ -1,6 +1,6 @@
 """Stratus Red Team's recorded detonations as cases for the replay.
 
-    python3 -I evals/stratus/splice.py       # writes evals/stratus/cases.json; then python3 -I evals/stream.py v3
+    python3 -I evals/stratus/splice.py       # writes evals/runs/stratus/cases.json (stream.py runs it when missing)
 
 Each technique with recorded CloudTrail records becomes two cases, run by a
 member of acme whose credentials were taken:
@@ -53,7 +53,10 @@ def neutral_names(text, tag):
     to the case (`tag`): a role one case sets up is not the next case's, or
     its day of history would hold the other case."""
     names, counts = {}, Counter()
-    for tok in sorted(set(re.findall(r"stratus-red-team[-_][A-Za-z0-9._-]*[A-Za-z0-9]", text)), key=len, reverse=True):
+    # longest first, so no name is rewritten inside a longer one; equal lengths
+    # in name order, so every run numbers them the same
+    toks = set(re.findall(r"stratus-red-team[-_][A-Za-z0-9._-]*[A-Za-z0-9]", text))
+    for tok in sorted(toks, key=lambda t: (-len(t), t)):
         rest = tok[len("stratus-red-team") + 1:].lower()
         if re.fullmatch(r"[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}", rest):
             kind = "session"
@@ -164,7 +167,10 @@ def benign(records, member):
     return out
 
 
-def main():
+OUT = HERE.parent / "runs" / "stratus" / "cases.json"
+
+
+def main(out=OUT):
     cat = {t["id"]: t for t in json.load(open(HERE / "techniques.json"))["techniques"]}
     recorded = [tid for tid in sorted(cat) if json.load(open(HERE / "logs" / f"{tid}.json"))]
     cases, slot = [], 0
@@ -195,7 +201,8 @@ def main():
                     "events": events,
                 })
                 slot += 1
-    json.dump(cases, open(HERE / "cases.json", "w"), indent=1)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    json.dump(cases, open(out, "w"), indent=1)
     n = collections.Counter(c["category"] for c in cases)
     print(f"{n['stratus']} attack cases and {n['control']} controls from {len(recorded)} techniques, {sum(len(c['events']) for c in cases)} records")
 
