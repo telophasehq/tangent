@@ -1,0 +1,13 @@
+id: benign/password-change-new-key-usual-ip
+title: "erin's 90-day rotation: password, a new key, its first calls from the office"
+category: benign
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [cloudtrail]
+events: 8
+expected:
+  flag: false
+  one_line: erin changed her AWS password and made a new access key from the office, and forty minutes later used it there for her usual reads
+  check_first: ""

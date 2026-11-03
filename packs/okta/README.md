@@ -100,5 +100,5 @@ make -C packs fixtures-okta       # after a change; read the diff
 
 Cases in [evals/cases](/evals/cases) with Okta
 records: `identity/admin-login-new-asn`, `identity/impossible-travel`,
-`identity/mfa-disabled`, `negative/oncall-3am-login` and
+`identity/mfa-disabled`, `benign/oncall-3am-login` and
 `vendor/ai-app-oauth-token-stolen-sso-pivot`.

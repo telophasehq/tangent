@@ -111,6 +111,6 @@ make -C packs fixtures-github     # after a change; read the diff
 ```
 
 Cases in [evals/cases](/evals/cases) with GitHub
-records: `github/*`, `supply-chain/*`, four of `negative/` (Dependabot, a repo
+records: `github/*`, `supply-chain/*`, four of `benign/` (Dependabot, a repo
 made public as planned, a scanner action's usual run) and
 `vendor/platform-breach-env-secrets-reused`.

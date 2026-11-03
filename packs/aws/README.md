@@ -155,7 +155,7 @@ make -C packs fixtures-aws      # expected.json again, after a change; read the 
 Cases in [evals/cases](/evals/cases) with CloudTrail
 records: `cloud/*` (root console login, CloudTrail stopped, a bucket made
 public, a security group opened to the world, a role assumed by a new
-principal, a key created with `*`), `data/snapshot-shared-external`,
-`ai-agent/agent-escapes-task-uses-found-credentials`, three of
+principal, a key created with `*`), `data-exfil/snapshot-shared-external`,
+`agents/agent-escapes-task-uses-found-credentials`, three of
 `supply-chain/`, `vendor/platform-breach-env-secrets-reused` and
-`negative/secret-rotation-after-vendor-notice`.
+`benign/secret-rotation-after-vendor-notice`.

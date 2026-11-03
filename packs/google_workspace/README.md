@@ -92,5 +92,5 @@ make -C packs fixtures-google_workspace   # after a change; read the diff
 ```
 
 Cases in [evals/cases](/evals/cases) with Workspace
-records: `data/gmail-forwarding-rule` and
+records: `data-exfil/gmail-forwarding-rule` and
 `vendor/ai-app-oauth-token-stolen-sso-pivot`.

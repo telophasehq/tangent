@@ -310,30 +310,30 @@ case("cloud/s3-bucket-public", "Public access block removed and a bucket policy 
                                                   "Resource": "arn:aws:s3:::acme-customer-exports/*"}]}})])
 
 # -- data
-case("data/bulk-pagination-export", "One API key pages through every finding in four minutes",
-     "data", "P1", "actor", "5m", True, ["app"], True,
+case("data-exfil/bulk-pagination-export", "One API key pages through every finding in four minutes",
+     "data-exfil", "P1", "actor", "5m", True, ["app"], True,
      "ak_9c1 fetched 40 pages of /v1/findings in four minutes, the whole dataset",
      "whose key; whether an export was expected",
      [app(ts(i * 0.1), "api_request", "ak_9c1", "165.227.44.19", method="GET",
           path=f"/v1/findings?page={i + 1}&limit=200", status=200, bytes=410000) for i in range(40)])
 
-case("data/snapshot-shared-external", "An RDS snapshot is shared with another AWS account",
-     "data", "P1", "org", "single", False, ["cloudtrail"], True,
+case("data-exfil/snapshot-shared-external", "An RDS snapshot is shared with another AWS account",
+     "data-exfil", "P1", "org", "single", False, ["cloudtrail"], True,
      "the prod-db snapshot was shared with account 999988887777",
      "whether that account is ours; unshare",
      [ct(ts(0), "rds.amazonaws.com", "ModifyDBSnapshotAttribute", "dave",
          request={"dBSnapshotIdentifier": "prod-db-2026-10-20", "attributeName": "restore",
                   "valuesToAdd": ["999988887777"]})])
 
-case("data/gmail-forwarding-rule", "Finance user's mailbox starts forwarding to an outside Gmail address",
-     "data", "P1", "actor", "single", False, ["google_workspace"], True,
+case("data-exfil/gmail-forwarding-rule", "Finance user's mailbox starts forwarding to an outside Gmail address",
+     "data-exfil", "P1", "actor", "single", False, ["google_workspace"], True,
      "cfo@acme.io's mail is now forwarded to a gmail.com address",
      "classic BEC; check the session that set it",
      [gws(ts(0), "EMAIL_FORWARDING_OUT_OF_DOMAIN", "cfo@acme.io", "185.220.101.4",
           [{"name": "email_forwarding_destination_address", "value": "acme.finance.backup@gmail.com"}])])
 
-case("data/egress-new-destination", "A service that only talks to vendors posts to a file-sharing site",
-     "data", "P2", "org", "5m", True, ["agent"], True,
+case("data-exfil/egress-new-destination", "A service that only talks to vendors posts to a file-sharing site",
+     "data-exfil", "P2", "org", "5m", True, ["agent"], True,
      "the plan worker posted 48 KB to transfer.sh during an IAM key rotation step",
      "the step's code path; what was in the payload",
      [agent(ts(-30), "agent-plan-worker", "outbound_request", task="t-4400", destination="https://api.github.com/repos/acme/web", method="GET"),
@@ -343,8 +343,8 @@ case("data/egress-new-destination", "A service that only talks to vendors posts 
            destination="https://transfer.sh/upload", method="POST", bytes=48213)])
 
 # -- an AI agent's plans
-case("agent/plan-secret-then-unplanned-post", "A plan step reads a secret, a later step POSTs to a host not in the plan",
-     "agent", "P1", "plan", "plan-completion", True, ["agent"], True,
+case("agents/plan-secret-then-unplanned-post", "A plan step reads a secret, a later step POSTs to a host not in the plan",
+     "agents", "P1", "plan", "plan-completion", True, ["agent"], True,
      "plan p-31 read the vault secret for rotate_iam_key and then POSTed to pastebin.com, which no step planned",
      "the step that made the request; the plan's generated code",
      [agent(ts(0), "agent-plan-worker", "plan_started", task="t-5001", plan="p-31",
@@ -356,8 +356,8 @@ case("agent/plan-secret-then-unplanned-post", "A plan step reads a secret, a lat
       agent(ts(1.4), "agent-plan-worker", "step_completed", task="t-5001", plan="p-31", step="s-2", step_name="update_vault", duration_ms=301),
       agent(ts(2.0), "agent-plan-worker", "plan_completed", task="t-5001", plan="p-31", result="success")])
 
-case("agent/plan-retry-shifting-params", "A plan step fails and retries six times with a different role ARN each time",
-     "agent", "P2", "plan", "plan-completion", True, ["agent"], True,
+case("agents/plan-retry-shifting-params", "A plan step fails and retries six times with a different role ARN each time",
+     "agents", "P2", "plan", "plan-completion", True, ["agent"], True,
      "step assume_role retried six times, each with a different role ARN, until one worked",
      "where the ARNs came from; this is probing, not retrying",
      [agent(ts(0), "agent-plan-worker", "plan_started", task="t-5002", plan="p-32", steps=["assume_role", "list_keys"])]
@@ -367,8 +367,8 @@ case("agent/plan-retry-shifting-params", "A plan step fails and retries six time
      + [agent(ts(2.5), "agent-plan-worker", "step_completed", task="t-5002", plan="p-32", step="s-1", step_name="assume_role",
              params={"role_arn": "arn:aws:iam::111122223333:role/break-glass-2"}, duration_ms=640)])
 
-case("agent/tool-output-injection-then-scope-change", "A tool result contains instructions; the next step acts on a different resource",
-     "agent", "P1", "plan", "plan-completion", True, ["agent"], True,
+case("agents/tool-output-injection-then-scope-change", "A tool result contains instructions; the next step acts on a different resource",
+     "agents", "P1", "plan", "plan-completion", True, ["agent"], True,
      "a finding's description told the agent to attach AdministratorAccess to ci-user, and the next step did",
      "the finding text (prompt injection); undo the policy attachment",
      [agent(ts(0), "agent-plan-worker", "plan_started", task="t-5003", plan="p-33", target="s3://acme-logs", steps=["fix_bucket_acl"]),
@@ -381,15 +381,15 @@ case("agent/tool-output-injection-then-scope-change", "A tool result contains in
       agent(ts(1.8), "agent-plan-worker", "plan_completed", task="t-5003", plan="p-33", result="success")])
 
 # -- negatives: must not flag
-case("negative/deploy-restart-burst", "A deploy: new version, forty health checks, a few restarts",
-     "negative", "P1", "org", "5m", True, ["agent"], False,
+case("benign/deploy-restart-burst", "A deploy: new version, forty health checks, a few restarts",
+     "benign", "P1", "org", "5m", True, ["agent"], False,
      "deploy of 8f3c2a1 with the usual restart and health-check burst", "",
      [agent(ts(0), "agent-api", "deploy_started", sha="8f3c2a1", actor="github-actions")]
      + [agent(ts(0.2 + i * 0.05), "agent-api", "http_request", method="GET", path="/health", status=200, user_agent="ELB-HealthChecker/2.0") for i in range(40)]
      + [agent(ts(0.6), "agent-api", "service_started", version="8f3c2a1")])
 
-case("negative/scanner-probes", "Internet scanners probe the public API for PHP and WordPress files",
-     "negative", "P1", "org", "5m", True, ["agent"], False,
+case("benign/scanner-probes", "Internet scanners probe the public API for PHP and WordPress files",
+     "benign", "P1", "org", "5m", True, ["agent"], False,
      "Censys and friends probing /phpinfo, /.env and /wp-login.php, all 404", "",
      [agent(ts(i * 0.3), "agent-api", "http_request", method="GET", path=p, status=404,
            user_agent=ua, client_ip=ip)
@@ -397,28 +397,28 @@ case("negative/scanner-probes", "Internet scanners probe the public API for PHP 
                                        ("/wp-login.php", "python-requests/2.31", "45.148.10.4"), ("/.git/config", "Go-http-client/1.1", "185.224.128.17"),
                                        ("/phpinfo.php", "CensysInspect/1.1", "162.142.125.10")])])
 
-case("negative/vendor-429-burst", "Okta rate-limits the poller, which backs off and succeeds",
-     "negative", "P1", "org", "5m", True, ["agent"], False,
+case("benign/vendor-429-burst", "Okta rate-limits the poller, which backs off and succeeds",
+     "benign", "P1", "org", "5m", True, ["agent"], False,
      "Okta 429s during a sync, then success after backoff", "",
      [agent(ts(i * 0.5), "agent-poller", "integration_sync_failed", level="error", vendor="okta", error="HTTP 429 Too Many Requests", retry_in_s=60) for i in range(8)]
      + [agent(ts(5), "agent-poller", "integration_sync_completed", vendor="okta", objects=1412)])
 
-case("negative/top-of-hour-sync-fanout", "The poller fans out to GitHub at the top of the hour",
-     "negative", "P1", "org", "5m", True, ["agent"], False,
+case("benign/top-of-hour-sync-fanout", "The poller fans out to GitHub at the top of the hour",
+     "benign", "P1", "org", "5m", True, ["agent"], False,
      "the hourly GitHub sync: sixty repo reads in a minute", "",
      [agent(ts(i * 0.015), "agent-poller", "outbound_request", destination=f"https://api.github.com/repos/acme/{r}/actions", method="GET", status=200)
       for i, r in enumerate([f"repo-{n:02d}" for n in range(60)])])
 
-case("negative/dependabot-prs", "Dependabot opens its weekly batch of PRs and CI runs them",
-     "negative", "P1", "org", "1h", True, ["github_audit"], False,
+case("benign/dependabot-prs", "Dependabot opens its weekly batch of PRs and CI runs them",
+     "benign", "P1", "org", "1h", True, ["github_audit"], False,
      "five Dependabot PRs and their CI runs", "",
      sum([[gh(ts(i), "pull_request.create", "dependabot[bot]", repo="web", title=f"build(deps): bump {d}", token="github app",
               files_changed=["package.json", "package-lock.json"]),
            gh(ts(i + 0.2), "workflows.created_workflow_run", "dependabot[bot]", repo="web", workflow="ci.yml", event="pull_request", token="github app")]
           for i, d in enumerate(["eslint from 9.1 to 9.2", "vite from 6.0.1 to 6.0.3", "typescript from 5.6 to 5.7", "zod from 3.23 to 3.24", "react from 19.0 to 19.1"])], []))
 
-case("negative/oncall-3am-login", "The on-call engineer signs in at 3 a.m. from home, as every time they are paged",
-     "negative", "P1", "actor", "1h", True, ["okta", "app"], False,
+case("benign/oncall-3am-login", "The on-call engineer signs in at 3 a.m. from home, as every time they are paged",
+     "benign", "P1", "actor", "1h", True, ["okta", "app"], False,
      "on-call login at 03:12 from the same home IP as always, then the usual dashboards", "",
      [okta(ts(days=-7, hours=14, minutes=5), "user.session.start", "oncall-frank@acme.io", ip="67.180.22.4", country="US", city="Oakland", asn=7922, as_org="Comcast Cable"),
       okta(ts(days=-3, hours=13, minutes=48), "user.session.start", "oncall-frank@acme.io", ip="67.180.22.4", country="US", city="Oakland", asn=7922, as_org="Comcast Cable"),
@@ -426,8 +426,8 @@ case("negative/oncall-3am-login", "The on-call engineer signs in at 3 a.m. from 
       app(ts(days=1, hours=14, minutes=13), "page.view", "oncall-frank@acme.io", "67.180.22.4", path="/dashboards/errors"),
       app(ts(days=1, hours=14, minutes=20), "incident.ack", "oncall-frank@acme.io", "67.180.22.4", incident="INC-2210")])
 
-case("negative/admin-usual-ip-then-export", "An admin at the usual IP exports their own org's report",
-     "negative", "P1", "actor", "1h", True, ["app"], False,
+case("benign/admin-usual-ip-then-export", "An admin at the usual IP exports their own org's report",
+     "benign", "P1", "actor", "1h", True, ["app"], False,
      "alice, from the office, exported the monthly compliance report as she does each month", "",
      [app(ts(days=-30), "org.export.started", "alice@acme.io", "73.162.14.9", scope="compliance_report"),
       app(ts(0), "auth.login", "alice@acme.io", "73.162.14.9", method="sso", mfa=True, result="success"),
@@ -547,9 +547,9 @@ case("saas/provider-keys-stolen-from-vendor-console",
      [app(ts(i * 1.5), "api_request", "ak_c4d", [TOR, HETZNER["ip"], NL_HOST["ip"], "103.6.150.77", "198.235.24.7"][i % 5],
           method="POST", path="/v1/analyze", status=200, tokens_in=12000) for i in range(40)])
 
-case("ai-agent/repo-settings-redirect-model-credentials",
+case("agents/repo-settings-redirect-model-credentials",
      "A cloned repository's assistant settings point the agent's model calls, API key included, at an attacker host (Claude Code CVE-2026-21852)",
-     "ai-agent", "P1", "plan", "run-completion", True, ["agent"], True,
+     "agents", "P1", "plan", "run-completion", True, ["agent"], True,
      "plan p-71 cloned a customer repo, loaded its .claude/settings.json, and the worker's model calls went to api.anthropic-relay.dev instead of api.anthropic.com, key in the header",
      "revoke the model key; the repository's settings file; whether the agent honors repo-provided settings before the trust prompt",
      [agent(ts(0), "agent-plan-worker", "plan_started", task="t-7101", plan="p-71", steps=["clone_repo", "run_assistant", "open_pr"]),
@@ -563,9 +563,9 @@ case("ai-agent/repo-settings-redirect-model-credentials",
            destination="https://api.anthropic-relay.dev/v1/messages", method="POST", status=200, bytes_out=5100),
       agent(ts(1.5), "agent-plan-worker", "step_completed", task="t-7101", plan="p-71", step="run_assistant")])
 
-case("ai-agent/agent-escapes-task-uses-found-credentials",
+case("agents/agent-escapes-task-uses-found-credentials",
      "An agent given one credential finds more and uses them across services in minutes (OpenAI's evaluation-sandbox escape, July 2026)",
-     "ai-agent", "P1", "plan", "5m", True, ["agent", "cloudtrail"], True,
+     "agents", "P1", "plan", "5m", True, ["agent", "cloudtrail"], True,
      "plan p-72 read the vault token its step needed, then within four minutes assumed the prod admin role, read six secrets and called three services none of its steps named",
      "stop the plan; what the agent was asked against what it did; rotate the six secrets",
      [agent(ts(0), "agent-plan-worker", "plan_started", task="t-7201", plan="p-72", steps=["fetch_finding", "propose_fix"]),
@@ -593,9 +593,9 @@ case("saas/integration-token-stolen-bulk-read",
       for i in range(40)]
      + [app(ts(6.2), "api_request", "ak_drift", NL_HOST["ip"], method="GET", path="/v1/users", status=200, bytes=120000)])
 
-case("ai-agent/mcp-server-copies-every-message-out",
+case("agents/mcp-server-copies-every-message-out",
      "A malicious MCP server release sends a copy of everything it handles to its author (postmark-mcp 1.0.16, Sept 2025)",
-     "ai-agent", "P1", "plan", "run-completion", True, ["agent"], True,
+     "agents", "P1", "plan", "run-completion", True, ["agent"], True,
      "every notify step of plan p-73 posted to api.postmarkapp.com and, a second later, the same bytes to relay.mcp-mail.co, a host no plan has named",
      "pin the MCP server to a reviewed version; what the three notifications contained",
      [agent(ts(0), "agent-plan-worker", "plan_started", task="t-7301", plan="p-73", steps=["summarize_findings", "notify_owners"])]
@@ -643,8 +643,8 @@ case("vendor/ai-app-oauth-token-stolen-sso-pivot",
         for i, prj in enumerate(["payments", "web", "billing", "infra", "mobile", "docs", "sdk", "data"])])
 
 # -- the look-alikes
-case("negative/secret-rotation-after-vendor-notice", "Admins rotate keys the morning after a vendor's breach notice",
-     "negative", "P1", "org", "1h", True, ["cloudtrail", "app"], False,
+case("benign/secret-rotation-after-vendor-notice", "Admins rotate keys the morning after a vendor's breach notice",
+     "benign", "P1", "org", "1h", True, ["cloudtrail", "app"], False,
      "admin rotated three access keys and two API keys from the office in twenty minutes, deleting the old ones", "",
      sum([[ct(ts(i * 4), "iam.amazonaws.com", "CreateAccessKey", "admin", ip="73.162.14.9", agent="console.amazonaws.com", mfa="Yes",
               request={"userName": u}),
@@ -656,8 +656,8 @@ case("negative/secret-rotation-after-vendor-notice", "Admins rotate keys the mor
         app(ts(16), "api_key.create", "admin@acme.io", "73.162.14.9", key_id="ak_2b8", scope="read"),
         app(ts(16.5), "api_key.revoke", "admin@acme.io", "73.162.14.9", key_id="ak_drift")])
 
-case("negative/dependabot-bumps-axios", "Dependabot bumps axios to a clean release and CI runs it",
-     "negative", "P1", "org", "1h", True, ["github_audit", "gha_ci", "runner_egress"], False,
+case("benign/dependabot-bumps-axios", "Dependabot bumps axios to a clean release and CI runs it",
+     "benign", "P1", "org", "1h", True, ["github_audit", "gha_ci", "runner_egress"], False,
      "a Dependabot PR bumping axios, its CI run, egress to the registry only", "",
      [gh(ts(0), "pull_request.create", "dependabot[bot]", repo="web", title="build(deps): bump axios from 1.13.4 to 1.13.5",
          token="github app", files_changed=["package.json", "package-lock.json"]),
@@ -666,8 +666,8 @@ case("negative/dependabot-bumps-axios", "Dependabot bumps axios to a clean relea
       egress(ts(1), "acme/web", 61070, "registry.npmjs.org", method="GET", path="/axios/-/axios-1.13.5.tgz", bytes_out=500),
       ci(ts(2), "acme/web", 61070, "npm run build", "build complete in 40s")])
 
-case("negative/scanner-action-usual-run", "The image scan step runs as it does on every build",
-     "negative", "P1", "org", "1h", True, ["gha_ci", "runner_egress"], False,
+case("benign/scanner-action-usual-run", "The image scan step runs as it does on every build",
+     "benign", "P1", "org", "1h", True, ["gha_ci", "runner_egress"], False,
      "trivy-action downloaded its database from ghcr.io and scanned the image", "",
      [ci(ts(0), "acme/api", 61075, "Run aquasecurity/trivy-action@0.28.0", "Downloading action archive"),
       egress(ts(0.1), "acme/api", 61075, "github.com", method="GET", path="/aquasecurity/trivy-action/archive/refs/tags/0.28.0.tar.gz", bytes_out=300),
@@ -675,8 +675,8 @@ case("negative/scanner-action-usual-run", "The image scan step runs as it does o
       egress(ts(0.2), "acme/api", 61075, "ghcr.io", method="GET", path="/v2/aquasecurity/trivy-db/manifests/2", bytes_out=600),
       ci(ts(0.5), "acme/api", 61075, "Run aquasecurity/trivy-action@0.28.0", "2 vulnerabilities found (LOW)")])
 
-case("negative/repo-made-public-as-planned", "An admin makes the docs repo public, as the README it pushed first announces",
-     "negative", "P1", "actor", "1h", True, ["github_audit"], False,
+case("benign/repo-made-public-as-planned", "An admin makes the docs repo public, as the README it pushed first announces",
+     "benign", "P1", "actor", "1h", True, ["github_audit"], False,
      "grace pushed 'going public' to docs and ten minutes later made that one repo public, from the office", "",
      [gh(ts(0), "git.push", "grace", repo="docs", ref="refs/heads/main", files=["README.md"], message="docs: going public"),
       gh(ts(10), "repo.access", "grace", repo="docs", visibility="public")])
@@ -870,11 +870,11 @@ case("identity/okta-new-country-then-aws", "An Okta sign-in from a new country, 
      "dave's Okta password and push were accepted from Singapore on a device Okta never saw; twenty minutes later his AWS console session (IAM Identity Center, `dave`) listed instances, buckets and databases from an OVH host in Britain",
      "whether dave is in Singapore; end his Okta and AWS sessions",
      okta_then_aws(SG_ISP, "51.89.160.12", device("dave@acme.io", "sg"), BEHAVIORS[:5] + ("New City",)))
-case("negative/okta-usual-country-then-aws", "dave signs in to Okta at the office, then reads AWS as he does",
-     "negative", "P1", "actor", "1h", True, ["okta", "cloudtrail"], False,
+case("benign/okta-usual-country-then-aws", "dave signs in to Okta at the office, then reads AWS as he does",
+     "benign", "P1", "actor", "1h", True, ["okta", "cloudtrail"], False,
      "dave signed in to Okta from the office on his laptop and twenty minutes later opened the AWS console there, as he does", "",
      okta_then_aws(OFFICE, OFFICE["ip"], device("dave@acme.io"), ()))
-twin("identity/okta-new-country-then-aws", "negative/okta-usual-country-then-aws")
+twin("identity/okta-new-country-then-aws", "benign/okta-usual-country-then-aws")
 
 
 def okta_then_github(net, gh_ip, cc, dev, new):
@@ -892,11 +892,11 @@ case("identity/okta-new-country-then-github", "An Okta sign-in from a new countr
      "grace signed in to Okta from a Dutch hosting address on a new device and opened GitHub; fifteen minutes later her token cloned docs and web and pushed to docs from a Hetzner host in Finland",
      "whether grace is travelling; revoke her token and Okta sessions; what the push changed",
      okta_then_github(NL_ALSY, "65.108.22.91", "FI", device("grace@acme.io", "nl"), BEHAVIORS[:5] + ("New City",)))
-case("negative/okta-usual-country-then-github", "grace signs in at the office, then clones and pushes docs as she does",
-     "negative", "P1", "actor", "1h", True, ["okta", "github_audit"], False,
+case("benign/okta-usual-country-then-github", "grace signs in at the office, then clones and pushes docs as she does",
+     "benign", "P1", "actor", "1h", True, ["okta", "github_audit"], False,
      "grace signed in from the office, opened GitHub, cloned docs and web, pushed to docs and opened a PR", "",
      okta_then_github(OFFICE, OFFICE["ip"], "US", device("grace@acme.io"), ()))
-twin("identity/okta-new-country-then-github", "negative/okta-usual-country-then-github")
+twin("identity/okta-new-country-then-github", "benign/okta-usual-country-then-github")
 
 
 # (b) a burst of failed sign-ins, then one that works
@@ -914,11 +914,11 @@ case("identity/okta-failed-burst-then-success", "Twelve failed Okta sign-ins fro
      "twelve wrong passwords for bob in fourteen minutes from a Vultr host in Germany, then the right one with his push accepted, then the app from the same host",
      "whether bob approved that push; reset his password and end his sessions",
      failed_then_in(DE_VULTR, device("bob@acme.io", "de"), 12, BEHAVIORS[:5] + ("New City",)))
-case("negative/okta-typo-then-success", "bob mistypes his password once at the office",
-     "negative", "P1", "actor", "1h", True, ["okta", "app"], False,
+case("benign/okta-typo-then-success", "bob mistypes his password once at the office",
+     "benign", "P1", "actor", "1h", True, ["okta", "app"], False,
      "one wrong password for bob at the office, the right one a minute later, then the app as usual", "",
      failed_then_in(OFFICE, device("bob@acme.io"), 1, ()))
-twin("identity/okta-failed-burst-then-success", "negative/okta-typo-then-success")
+twin("identity/okta-failed-burst-then-success", "benign/okta-typo-then-success")
 
 
 # (c) the helpdesk resets a person's MFA; a new factor is enrolled and used
@@ -936,11 +936,11 @@ case("identity/mfa-reset-then-new-factor-new-asn", "The helpdesk resets a person
      "admin reset carol's MFA; 35 minutes later a new factor was enrolled for her from a Hetzner address on a new device and used to sign in to Okta and AWS",
      "whether carol asked for the reset; who holds the new factor",
      reset_then_enroll(US_HETZ, device("carol@acme.io", "us"), ("New Device", "New IP", "New City", "New State")))
-case("negative/mfa-reset-then-new-factor-office", "The helpdesk resets a person's MFA for a new phone; she enrolls it at the office",
-     "negative", "P1", "actor", "1h", True, ["okta", "cloudtrail"], False,
+case("benign/mfa-reset-then-new-factor-office", "The helpdesk resets a person's MFA for a new phone; she enrolls it at the office",
+     "benign", "P1", "actor", "1h", True, ["okta", "cloudtrail"], False,
      "admin reset carol's MFA for her new phone; she enrolled it from the office on her laptop and signed in to Okta and AWS", "",
      reset_then_enroll(OFFICE, device("carol@acme.io"), ()))
-twin("identity/mfa-reset-then-new-factor-new-asn", "negative/mfa-reset-then-new-factor-office")
+twin("identity/mfa-reset-then-new-factor-new-asn", "benign/mfa-reset-then-new-factor-office")
 
 
 # (d) a password change and a new access key; the key's first calls
@@ -962,11 +962,11 @@ case("cloud/password-change-new-key-new-ip", "A password change and a new access
      "erin changed her AWS password and created a second access key from the office; forty minutes later the new key listed buckets, databases and secrets from a DigitalOcean host in Germany",
      "whether erin made that key; disable it and find what was on her laptop",
      rotate_then_use("159.89.214.31", "case"))
-case("negative/password-change-new-key-usual-ip", "erin's 90-day rotation: password, a new key, its first calls from the office",
-     "negative", "P1", "actor", "1h", True, ["cloudtrail"], False,
+case("benign/password-change-new-key-usual-ip", "erin's 90-day rotation: password, a new key, its first calls from the office",
+     "benign", "P1", "actor", "1h", True, ["cloudtrail"], False,
      "erin changed her AWS password and made a new access key from the office, and forty minutes later used it there for her usual reads", "",
      rotate_then_use(OFFICE["ip"], "twin"))
-twin("cloud/password-change-new-key-new-ip", "negative/password-change-new-key-usual-ip")
+twin("cloud/password-change-new-key-new-ip", "benign/password-change-new-key-usual-ip")
 
 
 # ---- write -----------------------------------------------------------------

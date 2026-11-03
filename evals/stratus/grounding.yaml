@@ -8,13 +8,13 @@
 #   volume  many calls in minutes; the count is the signal
 #   data    needs S3 data events, which LookupEvents never returns and a
 #           trail logs only when they are turned on
-# cases: our corpus' cases that exercise the same calls (a `negative/` case
+# cases: our corpus' cases that exercise the same calls (a `benign/` case
 # is the benign twin).
 
 aws.credential-access.ec2-get-password-data:        {decides: volume, cases: []}
 aws.credential-access.ec2-steal-instance-credentials: {decides: actor, note: an instance role's session used from an address outside the instance}
 aws.credential-access.secretsmanager-batch-retrieve-secrets: {decides: event, note: BatchGetSecretValue is rare outside tooling}
-aws.credential-access.secretsmanager-retrieve-secrets: {decides: volume, cases: [ai-agent/agent-escapes-task-uses-found-credentials]}
+aws.credential-access.secretsmanager-retrieve-secrets: {decides: volume, cases: [agents/agent-escapes-task-uses-found-credentials]}
 aws.credential-access.ssm-retrieve-securestring-parameters: {decides: volume}
 
 aws.defense-evasion.cloudtrail-delete:               {decides: event}
@@ -38,7 +38,7 @@ aws.execution.ssm-start-session:                     {decides: actor}
 aws.exfiltration.ec2-security-group-open-port-22-ingress: {decides: event, cases: [cloud/sg-open-world]}
 aws.exfiltration.ec2-share-ami:                      {decides: event}
 aws.exfiltration.ec2-share-ebs-snapshot:             {decides: event}
-aws.exfiltration.rds-share-snapshot:                 {decides: event, cases: [data/snapshot-shared-external]}
+aws.exfiltration.rds-share-snapshot:                 {decides: event, cases: [data-exfil/snapshot-shared-external]}
 aws.exfiltration.s3-backdoor-bucket-policy:          {decides: event, cases: [cloud/s3-bucket-public], note: no recorded logs; ours is a public bucket, not one shared with another account}
 
 aws.impact.bedrock-invoke-model:                     {decides: actor, note: model access enabled and models invoked by a principal that never used Bedrock; volume too}
@@ -54,7 +54,7 @@ aws.lateral-movement.ec2-serial-console-send-ssh-public-key: {decides: event}
 
 aws.persistence.ec2-create-suspicious-keypair:       {decides: actor, note: no recorded logs}
 aws.persistence.iam-backdoor-role:                   {decides: event, note: a trust policy that admits another account}
-aws.persistence.iam-backdoor-user:                   {decides: actor, cases: [negative/secret-rotation-after-vendor-notice], note: a second access key on an existing user; a rotation is the same call}
+aws.persistence.iam-backdoor-user:                   {decides: actor, cases: [benign/secret-rotation-after-vendor-notice], note: a second access key on an existing user; a rotation is the same call}
 aws.persistence.iam-create-admin-user:               {decides: event, cases: [cloud/iam-key-create-attach-star-then-use]}
 aws.persistence.iam-create-backdoor-role:            {decides: event}
 aws.persistence.iam-create-user-login-profile:       {decides: actor}

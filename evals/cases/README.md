@@ -49,7 +49,7 @@ not lines. A few are single lines (root login, CloudTrail stopped, a bucket
 made public, MFA off); the judge reads those like any other, with the
 profile's `watch` and `root` facts beside them.
 
-The negatives are what looks alarming and is not: Dependabot's weekly batch,
+The benign cases are what looks alarming and is not: Dependabot's weekly batch,
 the scanner action's ordinary run, the on-call's 3 a.m. login from home, a
 rotation the morning after a vendor's notice, a repo made public as its README
 announced, a deploy's restart burst, the top-of-the-hour fan-out, scanner
@@ -89,14 +89,14 @@ judge nobody reads.
 | `github/shai-hulud-repo-migration` | flag P1 | `github_audit` | 4 | Shai-Hulud: a repo named Shai-Hulud appears, a private repo goes public as -migration |
 | `github/shai-hulud-workflow-runner` | flag P1 | `github_audit`, `runner_egress` | 4 | Shai-Hulud: a workflow file pushed straight to main, a runner registered, egress to webhook.site |
 
-### Data
+### Data exfiltration
 
 | case | | sources | events | what the logs show |
 |---|---|---|---|---|
-| `data/bulk-pagination-export` | flag P1 | `app` | 40 | One API key pages through every finding in four minutes |
-| `data/egress-new-destination` | flag P2 | `agent` | 4 | A service that only talks to vendors posts to a file-sharing site |
-| `data/gmail-forwarding-rule` | flag P1 | `google_workspace` | 1 | Finance user's mailbox starts forwarding to an outside Gmail address |
-| `data/snapshot-shared-external` | flag P1 | `cloudtrail` | 1 | An RDS snapshot is shared with another AWS account |
+| `data-exfil/bulk-pagination-export` | flag P1 | `app` | 40 | One API key pages through every finding in four minutes |
+| `data-exfil/egress-new-destination` | flag P2 | `agent` | 4 | A service that only talks to vendors posts to a file-sharing site |
+| `data-exfil/gmail-forwarding-rule` | flag P1 | `google_workspace` | 1 | Finance user's mailbox starts forwarding to an outside Gmail address |
+| `data-exfil/snapshot-shared-external` | flag P1 | `cloudtrail` | 1 | An RDS snapshot is shared with another AWS account |
 
 ### Supply chain (CI, dependencies)
 
@@ -125,37 +125,34 @@ judge nobody reads.
 | `saas/integration-token-stolen-bulk-read` | flag P1 | `app` | 41 | A SaaS integration's OAuth token is stolen in the vendor's breach and used to read everything (Salesloft Drift, Aug 2025) |
 | `saas/provider-keys-stolen-from-vendor-console` | flag P2 | `app` | 40 | Keys saved in a third-party developer console are taken in its breach and run up usage from everywhere (OpenCode Console, Oct 2026) |
 
-### AI agents
+### Agents
+
+An AI agent's own log: disclosed agent compromises, and attacks that show in how a plan runs.
 
 | case | | sources | events | what the logs show |
 |---|---|---|---|---|
-| `ai-agent/agent-escapes-task-uses-found-credentials` | flag P1 | `agent`, `cloudtrail` | 14 | An agent given one credential finds more and uses them across services in minutes (OpenAI's evaluation-sandbox escape, July 2026) |
-| `ai-agent/mcp-server-copies-every-message-out` | flag P1 | `agent` | 11 | A malicious MCP server release sends a copy of everything it handles to its author (postmark-mcp 1.0.16, Sept 2025) |
-| `ai-agent/repo-settings-redirect-model-credentials` | flag P1 | `agent` | 6 | A cloned repository's assistant settings point the agent's model calls, API key included, at an attacker host (Claude Code CVE-2026-21852) |
+| `agents/agent-escapes-task-uses-found-credentials` | flag P1 | `agent`, `cloudtrail` | 14 | An agent given one credential finds more and uses them across services in minutes (OpenAI's evaluation-sandbox escape, July 2026) |
+| `agents/mcp-server-copies-every-message-out` | flag P1 | `agent` | 11 | A malicious MCP server release sends a copy of everything it handles to its author (postmark-mcp 1.0.16, Sept 2025) |
+| `agents/repo-settings-redirect-model-credentials` | flag P1 | `agent` | 6 | A cloned repository's assistant settings point the agent's model calls, API key included, at an attacker host (Claude Code CVE-2026-21852) |
+| `agents/plan-retry-shifting-params` | flag P2 | `agent` | 7 | A plan step fails and retries six times with a different role ARN each time |
+| `agents/plan-secret-then-unplanned-post` | flag P1 | `agent` | 6 | A plan step reads a secret, a later step POSTs to a host not in the plan |
+| `agents/tool-output-injection-then-scope-change` | flag P1 | `agent` | 5 | A tool result contains instructions; the next step acts on a different resource |
 
-### Agent plans
-
-| case | | sources | events | what the logs show |
-|---|---|---|---|---|
-| `agent/plan-retry-shifting-params` | flag P2 | `agent` | 7 | A plan step fails and retries six times with a different role ARN each time |
-| `agent/plan-secret-then-unplanned-post` | flag P1 | `agent` | 6 | A plan step reads a secret, a later step POSTs to a host not in the plan |
-| `agent/tool-output-injection-then-scope-change` | flag P1 | `agent` | 5 | A tool result contains instructions; the next step acts on a different resource |
-
-### Must not flag
+### Benign: must not flag
 
 | case | | sources | events | what the logs show |
 |---|---|---|---|---|
-| `negative/admin-usual-ip-then-export` | quiet P1 | `app` | 3 | An admin at the usual IP exports their own org's report |
-| `negative/dependabot-bumps-axios` | quiet P1 | `github_audit`, `gha_ci`, `runner_egress` | 5 | Dependabot bumps axios to a clean release and CI runs it |
-| `negative/dependabot-prs` | quiet P1 | `github_audit` | 10 | Dependabot opens its weekly batch of PRs and CI runs them |
-| `negative/deploy-restart-burst` | quiet P1 | `agent` | 42 | A deploy: new version, forty health checks, a few restarts |
-| `negative/oncall-3am-login` | quiet P1 | `okta`, `app` | 5 | The on-call engineer signs in at 3 a.m. from home, as every time they are paged |
-| `negative/repo-made-public-as-planned` | quiet P1 | `github_audit` | 2 | An admin makes the docs repo public, as the README it pushed first announces |
-| `negative/scanner-action-usual-run` | quiet P1 | `gha_ci`, `runner_egress` | 5 | The image scan step runs as it does on every build |
-| `negative/scanner-probes` | quiet P1 | `agent` | 5 | Internet scanners probe the public API for PHP and WordPress files |
-| `negative/secret-rotation-after-vendor-notice` | quiet P1 | `cloudtrail`, `app` | 10 | Admins rotate keys the morning after a vendor's breach notice |
-| `negative/top-of-hour-sync-fanout` | quiet P1 | `agent` | 60 | The poller fans out to GitHub at the top of the hour |
-| `negative/vendor-429-burst` | quiet P1 | `agent` | 9 | Okta rate-limits the poller, which backs off and succeeds |
+| `benign/admin-usual-ip-then-export` | quiet P1 | `app` | 3 | An admin at the usual IP exports their own org's report |
+| `benign/dependabot-bumps-axios` | quiet P1 | `github_audit`, `gha_ci`, `runner_egress` | 5 | Dependabot bumps axios to a clean release and CI runs it |
+| `benign/dependabot-prs` | quiet P1 | `github_audit` | 10 | Dependabot opens its weekly batch of PRs and CI runs them |
+| `benign/deploy-restart-burst` | quiet P1 | `agent` | 42 | A deploy: new version, forty health checks, a few restarts |
+| `benign/oncall-3am-login` | quiet P1 | `okta`, `app` | 5 | The on-call engineer signs in at 3 a.m. from home, as every time they are paged |
+| `benign/repo-made-public-as-planned` | quiet P1 | `github_audit` | 2 | An admin makes the docs repo public, as the README it pushed first announces |
+| `benign/scanner-action-usual-run` | quiet P1 | `gha_ci`, `runner_egress` | 5 | The image scan step runs as it does on every build |
+| `benign/scanner-probes` | quiet P1 | `agent` | 5 | Internet scanners probe the public API for PHP and WordPress files |
+| `benign/secret-rotation-after-vendor-notice` | quiet P1 | `cloudtrail`, `app` | 10 | Admins rotate keys the morning after a vendor's breach notice |
+| `benign/top-of-hour-sync-fanout` | quiet P1 | `agent` | 60 | The poller fans out to GitHub at the top of the hour |
+| `benign/vendor-429-burst` | quiet P1 | `agent` | 9 | Okta rate-limits the poller, which backs off and succeeds |
 
 ### History: an attack and its twin
 
@@ -172,15 +169,15 @@ are.
 | case | | sources | events | what the logs show |
 |---|---|---|---|---|
 | `identity/okta-new-country-then-aws` | flag P1 | `okta`, `cloudtrail` | 11 | An Okta sign-in from a new country, then the same person's AWS console from another host |
-| `negative/okta-usual-country-then-aws` | quiet P1 | `okta`, `cloudtrail` | 11 | dave signs in to Okta at the office, then reads AWS as he does |
+| `benign/okta-usual-country-then-aws` | quiet P1 | `okta`, `cloudtrail` | 11 | dave signs in to Okta at the office, then reads AWS as he does |
 | `identity/okta-new-country-then-github` | flag P1 | `okta`, `github_audit` | 8 | An Okta sign-in from a new country, then the same person's GitHub token from another host |
-| `negative/okta-usual-country-then-github` | quiet P1 | `okta`, `github_audit` | 8 | grace signs in at the office, then clones and pushes docs as she does |
+| `benign/okta-usual-country-then-github` | quiet P1 | `okta`, `github_audit` | 8 | grace signs in at the office, then clones and pushes docs as she does |
 | `identity/okta-failed-burst-then-success` | flag P1 | `okta`, `app` | 20 | Twelve failed Okta sign-ins from one host, then one that works |
-| `negative/okta-typo-then-success` | quiet P1 | `okta`, `app` | 9 | bob mistypes his password once at the office |
+| `benign/okta-typo-then-success` | quiet P1 | `okta`, `app` | 9 | bob mistypes his password once at the office |
 | `identity/mfa-reset-then-new-factor-new-asn` | flag P1 | `okta`, `cloudtrail` | 11 | The helpdesk resets a person's MFA; a factor is enrolled and used from a new network |
-| `negative/mfa-reset-then-new-factor-office` | quiet P1 | `okta`, `cloudtrail` | 11 | The helpdesk resets a person's MFA for a new phone; she enrolls it at the office |
+| `benign/mfa-reset-then-new-factor-office` | quiet P1 | `okta`, `cloudtrail` | 11 | The helpdesk resets a person's MFA for a new phone; she enrolls it at the office |
 | `cloud/password-change-new-key-new-ip` | flag P1 | `cloudtrail` | 8 | A password change and a new access key at the office; the key's first calls from a new host |
-| `negative/password-change-new-key-usual-ip` | quiet P1 | `cloudtrail` | 8 | erin's 90-day rotation: password, a new key, its first calls from the office |
+| `benign/password-change-new-key-usual-ip` | quiet P1 | `cloudtrail` | 8 | erin's 90-day rotation: password, a new key, its first calls from the office |
 
 ## Cases from disclosed incidents, 2025–2026
 
@@ -200,9 +197,9 @@ are.
 | `vendor/ai-app-oauth-token-stolen-sso-pivot` | Vercel via Context.ai, April 2026 |
 | `saas/integration-token-stolen-bulk-read` | Salesloft Drift, August 2025 |
 | `saas/provider-keys-stolen-from-vendor-console` | OpenCode Console breach, October 2026 |
-| `ai-agent/agent-escapes-task-uses-found-credentials` | OpenAI's evaluation-sandbox escape, July 2026 |
-| `ai-agent/mcp-server-copies-every-message-out` | postmark-mcp 1.0.16, September 2025 |
-| `ai-agent/repo-settings-redirect-model-credentials` | Claude Code CVE-2026-21852, 2026 |
+| `agents/agent-escapes-task-uses-found-credentials` | OpenAI's evaluation-sandbox escape, July 2026 |
+| `agents/mcp-server-copies-every-message-out` | postmark-mcp 1.0.16, September 2025 |
+| `agents/repo-settings-redirect-model-credentials` | Claude Code CVE-2026-21852, 2026 |
 
 Sources: [TeamPCP (Unit 42)](https://unit42.paloaltonetworks.com/teampcp-supply-chain-attacks/),
 [TeamPCP (Arctic Wolf)](https://arcticwolf.com/resources/blog/teampcp-supply-chain-attack-campaign-targets-trivy-checkmarx-kics-and-litellm-potential-downstream-impact-to-additional-projects/),

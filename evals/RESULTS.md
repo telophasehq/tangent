@@ -15,8 +15,9 @@ none of them is this repository's until the runs are repeated with
   `agent`, with renamed services. Every CloudTrail record gen.py writes now
   carries `recipientAccountId`, as the cases have since #48; the Stratus
   session tokens are redacted (the aws pack dropped them before the model
-  either way). Because `agent/*` sorts first, 48 of the 201 cases land on
-  other days.
+  either way). The case directories are named differently (`agents`,
+  `benign`, `data-exfil`), and cases are placed in name order, so many land
+  on other days than in earlier runs.
 
 ## What exists
 

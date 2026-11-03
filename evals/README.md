@@ -55,18 +55,18 @@ Two things limit what these numbers can say:
 two cases that share an actor at least ten days apart) inside thirteen months
 of acme's ordinary traffic from every source: sign-ins, the product's API
 traffic, pushes and pull requests, CI builds, each member's own AWS work, the
-agent's health checks, poller and plans. 200,177 records:
+agent's health checks, poller and plans. 197,367 records:
 
 | source | records |
 |---|---|
-| `agent` | 131,634 |
-| `cloudtrail` | 20,949 |
-| `app` | 19,236 |
-| `okta` | 12,889 |
-| `github_audit` | 8,860 |
-| `gha_ci` | 3,140 |
-| `runner_egress` | 2,612 |
-| `google_workspace` | 857 |
+| `agent` | 129,642 |
+| `cloudtrail` | 20,719 |
+| `app` | 19,002 |
+| `okta` | 12,725 |
+| `github_audit` | 8,725 |
+| `gha_ci` | 3,121 |
+| `runner_egress` | 2,588 |
+| `google_workspace` | 845 |
 
 `truth-v3.json` says, per case, whether it should flag, its actor and org as
 the packs normalize them, the times of its events and the stream lines that
