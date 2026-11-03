@@ -10,7 +10,7 @@ use tangent_shared::sinks::common::{Compression, Encoding};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use crate::sinks::wal::{base_for, WALSink};
+use crate::sinks::wal::{compressed_whole, WALSink};
 
 pub struct S3Sink {
     name: Arc<str>,
@@ -31,20 +31,24 @@ impl WALSink for S3Sink {
     async fn write_path_with(
         &self,
         path: &Path,
+        name: &str,
         encoding: &Encoding,
         compression: &Compression,
         meta: &S3SinkItem,
     ) -> Result<()> {
-        let key = object_key_from(path, meta.key_prefix.as_deref(), encoding, compression);
+        let key = object_key(meta.key_prefix.as_deref(), name);
 
         let content_type = Encoding::content_type(encoding);
+        // Parquet and Avro compress inside the file: the object is not a
+        // zstd or gzip stream, and a client told so would try to decode it
         let content_encoding = match compression {
             Compression::None => None,
             Compression::Gzip { .. } => Some("gzip"),
             Compression::Zstd { .. } => Some("zstd"),
             Compression::Snappy { .. } => None,
             Compression::Deflate { .. } => None,
-        };
+        }
+        .filter(|_| compressed_whole(encoding));
 
         let size = tokio::fs::metadata(path).await?.len();
 
@@ -217,26 +221,25 @@ impl S3Sink {
     }
 }
 
-fn object_key_from(
-    local_path: &Path,
-    prefix: Option<&str>,
-    enc: &Encoding,
-    comp: &Compression,
-) -> String {
-    let base = base_for(local_path);
-    let stem = base.file_name().unwrap().to_string_lossy();
+fn object_key(prefix: Option<&str>, name: &str) -> String {
+    match prefix {
+        Some(p) if !p.is_empty() => format!("{}/{}", p.trim_end_matches('/'), name),
+        _ => name.to_string(),
+    }
+}
 
-    let mut name = String::from(stem.as_ref());
-    name.push_str(enc.extension());
-    name.push_str(comp.extension());
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    if let Some(p) = prefix {
-        if p.is_empty() {
-            name
-        } else {
-            format!("{}/{}", p.trim_end_matches('/'), name)
-        }
-    } else {
-        name
+    #[test]
+    fn object_key_is_the_prefix_then_the_name() {
+        let name = "01JBX4N3V2.ndjson.zst";
+        assert_eq!(
+            object_key(Some("logs/"), name),
+            "logs/01JBX4N3V2.ndjson.zst"
+        );
+        assert_eq!(object_key(Some(""), name), name);
+        assert_eq!(object_key(None, name), name);
     }
 }

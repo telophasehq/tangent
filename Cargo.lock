@@ -5871,6 +5871,7 @@ dependencies = [
  "ahash",
  "anyhow",
  "apache-avro",
+ "arrow-array",
  "arrow-ipc",
  "arrow-json",
  "arrow-schema",

@@ -78,6 +78,12 @@ lazy_static::lazy_static! {
     pub static ref SINK_OBJECTS_TOTAL: IntCounter =
         register_int_counter!("tangent_sink_objects_total", "Objects sent to sink").unwrap();
 
+    pub static ref SINK_RECORDS_UNFIT_TOTAL: IntCounterVec = register_int_counter_vec!(
+        "tangent_sink_records_unfit_total",
+        "Records a sink's schema could not read, by what became of them",
+        &["fate"]
+    ).unwrap();
+
     pub static ref INFLIGHT: IntGauge =
         register_int_gauge!("tangent_inflight", "Batches enqueued but not yet persisted").unwrap();
 
