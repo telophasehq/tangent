@@ -65,4 +65,5 @@ for f in ("verdicts.ndjson", "seen.ndjson", "alerts.ndjson", "judge.log", "heade
             if os.path.exists(p):
                 out.write(open(p, errors="replace").read())
 print("shards exited", codes)
-sys.exit(max(codes))
+# a shard killed by a signal exits negative, which max() would count as success
+sys.exit(0 if all(c == 0 for c in codes) else 1)
