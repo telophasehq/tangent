@@ -157,6 +157,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
             let plugin_config = PluginConfig {
                 module_type: "".to_string(), // not used
                 path: plugins_path,
+                prebuilt: None,
                 tests: vec![],
                 config: plugin_cfg.config.clone(),
                 state_namespace: plugin_cfg.state_namespace.clone(),

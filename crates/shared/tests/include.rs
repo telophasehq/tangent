@@ -1184,7 +1184,8 @@ fn a_bad_edge_names_its_file() {
 fn every_path_field_is_rebased() {
     let PluginConfig {
         module_type: _,
-        path: _,  // PATHS
+        path: _, // PATHS
+        prebuilt: _,
         tests: _, // PATHS: input, expected
         config: _,
         state_namespace: _,

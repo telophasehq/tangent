@@ -6,6 +6,7 @@ plugins:
   okta:
     module_type: rust
     path: .
+    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
     tests:
       - input: tests/input.json
         expected: tests/expected.json

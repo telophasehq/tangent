@@ -58,11 +58,20 @@ state.sqlite ─────────────────┘             
 ## Install and run
 
 ```bash
-make setup          # Rust WASM toolchain; GeoLite2, cloud ranges, Tor exits into examples/enrich/data
+make setup          # GeoLite2, cloud ranges, Tor exits into examples/enrich/data
 $EDITOR profile/profile.yaml
-make test           # every pack's fixtures; no model needed
+make test           # the packs' plugins from the release, then every pack's fixtures; no model needed
 make run            # ingest, then the judge once ingest's state.sqlite is there; listens on :9400 for NDJSON records
 ```
+
+Nothing is compiled: `make test` and `make run` take the packs' plugins
+prebuilt. `tangent plugin fetch` downloads each from the tangent release of
+this tangent's version and has `gh attestation verify` check, before it is
+kept, that this repository's release workflow built it from that tag
+([Prebuilt plugins](/README.md#prebuilt-plugins)); it needs `gh`, not a
+login. To build them here instead, for a pack you are changing or a tangent
+built from a checkout: `make run PLUGINS=compile`, and `make setup` installs
+the Rust WASM toolchain first.
 
 The judge defaults to a local model on `:8080`
 ([packs/core](/packs/core#judgeyaml) says how to serve it). For a hosted one:

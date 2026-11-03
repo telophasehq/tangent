@@ -25,6 +25,12 @@ test-baseline:
 test-shared:
 	for lib in normkit enrichkit identitykit factskit; do (cd shared/$$lib && cargo test) || exit 1; done
 
+# What a release ships: every pack's plugin as a component, in
+# ../target/packs (dist.sh), which `tangent plugin fetch` downloads from the
+# release and checks GitHub's attestation of.
+dist:
+	./dist.sh
+
 # tests/expected.json from the plugin's output; read the diff before committing.
 fixtures-%:
 	./fixtures.sh $*
@@ -32,4 +38,4 @@ fixtures-%:
 fixtures-baseline:
 	core/baseline/story.sh write
 
-.PHONY: test test-baseline test-shared fixtures-baseline
+.PHONY: test test-baseline test-shared dist fixtures-baseline

@@ -8,6 +8,7 @@ use tracing_subscriber::EnvFilter;
 use tangent_bench::BenchOptions;
 use tangent_runtime::RuntimeOptions;
 
+mod fetch;
 mod scaffold;
 mod state;
 mod test;
@@ -136,6 +137,21 @@ enum PluginCommands {
         /// Path to WIT directory (folder with the `processor` world)
         #[arg(long, default_value = ".tangent/wit", value_name = "DIR")]
         wit: PathBuf,
+        /// Compile one plugin, not every plugin in the config
+        #[arg(long)]
+        plugin: Option<String>,
+    },
+
+    /// Download the plugins a config names as `prebuilt`, compiled by their
+    /// repository's CI, and check GitHub's attestation of each before it is
+    /// kept: no WASM toolchain needed, only `gh`
+    Fetch {
+        /// Path to YAML config
+        #[arg(long, value_name = "FILE")]
+        config: PathBuf,
+        /// Fetch one plugin, not every prebuilt plugin in the config
+        #[arg(long)]
+        plugin: Option<String>,
     },
 }
 
@@ -191,11 +207,23 @@ async fn main() -> Result<()> {
         }
 
         Commands::Plugin { command } => match command {
-            PluginCommands::Compile { config, wit } => {
+            PluginCommands::Compile {
+                config,
+                wit,
+                plugin,
+            } => {
                 // resolve to absolute paths to help downstream error messages
                 let cfg = config.canonicalize().unwrap_or(config);
                 let wit = wit.canonicalize().unwrap_or(wit);
-                compile_wasm::compile_from_config(&cfg, &wit)?;
+                compile_wasm::compile_from_config(&cfg, &wit, plugin.as_deref())?;
+            }
+            PluginCommands::Fetch { config, plugin } => {
+                let config = config.canonicalize().unwrap_or(config);
+                fetch::run(fetch::FetchOptions {
+                    config_path: config,
+                    plugin,
+                })
+                .await?;
             }
             PluginCommands::Scaffold { name, lang, setup } => {
                 scaffold::scaffold(&name, &lang, setup)?

@@ -37,5 +37,5 @@ and fine for a first customer. What it still needs:
   the others have.
 
 ```bash
-make setup && make test && make run
+make setup && make test && make run      # the packs' plugins prebuilt, as in cloud-infra; PLUGINS=compile builds them here
 ```
