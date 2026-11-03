@@ -20,4 +20,4 @@ plugins:
 
 dag:
   - from: { kind: plugin, name: google_workspace }
-    to: [{ kind: sink, name: logs }, { kind: plugin, name: baseline_builder }]   # packs/core/ingest.yaml's: logs.sqlite, and each actor's baseline
+    to: [{ kind: sink, name: logs }, { kind: sink, name: lake }, { kind: plugin, name: baseline_builder }]   # packs/core/ingest.yaml's: the judge's queue, the lake, each actor's baseline

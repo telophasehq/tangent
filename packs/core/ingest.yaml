@@ -19,7 +19,7 @@ enrichment_tables:
   asn: { type: mmdb, path: ../../examples/enrich/data/GeoLite2-ASN.mmdb }
   networks: { type: cidr, path: ../../examples/enrich/data/networks.csv }
 
-# Every pack's plugin has an edge here too, beside the one to `logs`:
+# Every pack's plugin has an edge here too, beside the ones to `logs` and `lake`:
 # baseline_builder folds each record into state.sqlite, what each actor did
 # and from where, which judge.yaml's baseline_renderer reads before the model
 # sees the actor.
@@ -30,9 +30,9 @@ plugins:
     prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
     state_namespace: baseline
 
-# Every pack's plugin has an edge here.
+# Every pack's plugin has an edge to both.
 sinks:
-  logs:
+  logs:                          # the judge's queue: judge.yaml's `actors` deletes what it judged, but what tops up each actor's next batch
     type: sqlite
     path: logs.sqlite
     table: logs
@@ -40,3 +40,16 @@ sinks:
     partitions:
       org: [_norm.org]
       actor: [_norm.org, _norm.actor]
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }

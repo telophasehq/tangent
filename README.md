@@ -371,7 +371,7 @@ Rough ranges for a company of 50 people, each active about eight hours a day, pr
 
 A person costs about a cent a day or less in each source that sees them, however little they do. A trail that also logs data events (S3 objects, Lambda invocations) can have ten to a hundred times aws's events. AWS VPC Flow Logs have no pack: a startup writes 5M–30M flow records a day of about 0.1 KB, $80–500 a day by the rule and more than one judge keeps up with, so a pack for them would roll flows up before the judge.
 
-`logs.sqlite` keeps every finished log, about a day's volume each day until you trim it; baseline's `state.sqlite` grows with actors, their active hours, role sessions and sign-ins, not with logs. A local model, the default, costs only the machine it runs on.
+Core keeps every finished log once in its lake, Parquet files in a directory an hour, about 20 bytes a log on a day of CloudTrail, which deleting old hours trims; `logs.sqlite` is the judge's queue, what it has not judged and what tops up each actor's next batch, so it stays small; baseline's `state.sqlite` grows with actors, their active hours, role sessions and sign-ins, not with logs. A local model, the default, costs only the machine it runs on.
 
 These are estimates. Log sizes are measured on samples (CloudTrail on 20k events, the others on tens to hundreds), tokens with Claude Haiku 4.5's count scaled to 5.5's, and the volumes are typical of startups, not yours: a day of your own ingest in `logs.sqlite` says what yours are.
 
