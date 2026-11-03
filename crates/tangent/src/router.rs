@@ -13,7 +13,7 @@ use crate::{
     inference::lines,
     sinks::manager::SinkManager,
     worker::{Ack, Payload, Record, WorkerPool},
-    UNROUTED_TOTAL,
+    CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, UNROUTED_TOTAL,
 };
 
 /// The records in a frame, one per NDJSON line. A frame with one line is
@@ -31,6 +31,35 @@ fn records_in(frame: BytesMut) -> Vec<BytesMut> {
             b
         })
         .collect()
+}
+
+/// The frames, in order, as writes of up to `cap` bytes each, a frame never
+/// split: one bigger than `cap` is a write of its own. A source's frames are
+/// cut from one buffer, so joining them back is mostly free.
+fn joined(frames: Vec<BytesMut>, cap: usize) -> Vec<BytesMut> {
+    let mut out: Vec<BytesMut> = Vec::with_capacity(1);
+    for frame in frames {
+        match out.last_mut() {
+            Some(w) if w.len() + frame.len() <= cap => {
+                if !w.ends_with(b"\n") {
+                    w.extend_from_slice(b"\n");
+                }
+                w.unsplit(frame);
+            }
+            _ => out.push(frame),
+        }
+    }
+    out
+}
+
+/// The frames' bytes and records, a record a line as a worker counts them:
+/// a frame of a polling source holds many.
+fn consumed(frames: &[BytesMut]) -> (u64, u64) {
+    frames.iter().fold((0, 0), |(bytes, records), f| {
+        let unended = !f.is_empty() && !f.ends_with(b"\n");
+        let lines = memchr::memchr_iter(b'\n', f).count() + usize::from(unended);
+        (bytes + f.len() as u64, records + lines as u64)
+    })
 }
 
 /// Acks its inner acks once, when the last of `n` deliveries has acked.
@@ -70,6 +99,8 @@ pub struct Router {
     in_flight: Arc<AtomicUsize>,
     /// Nodes already named for a record none of their targets took.
     unrouted: Mutex<HashSet<NodeRef>>,
+    /// The bytes a source's frames are joined into for one sink write.
+    sink_batch: usize,
 }
 
 impl Router {
@@ -80,7 +111,18 @@ impl Router {
             sink_manager,
             in_flight: Arc::new(AtomicUsize::new(0)),
             unrouted: Mutex::new(HashSet::default()),
+            sink_batch: 0,
         }
+    }
+
+    /// A source wired straight to sinks has its frames joined into writes of
+    /// up to `bytes`, as a worker's batch is, rather than a write a frame: a
+    /// line-oriented source makes a frame of each line, and a write costs a
+    /// sink a transaction, an append, a task.
+    #[must_use]
+    pub fn with_sink_batch(mut self, bytes: usize) -> Self {
+        self.sink_batch = bytes;
+        self
     }
 
     /// Records between a source and a sink right now.
@@ -140,7 +182,8 @@ impl Router {
     /// Records from a source into the DAG. With a plugin or an inference node
     /// among the source's outputs, each record goes to the worker pool once,
     /// and the worker walks the DAG from the source, its sinks included; with
-    /// only sinks, the frames go to them whole, as they are.
+    /// only sinks, the frames go to them whole, joined into writes of up to
+    /// the sink batch.
     pub async fn forward(
         &self,
         from: &NodeRef,
@@ -190,6 +233,11 @@ impl Router {
             .iter()
             .filter(|to| matches!(to, NodeRef::Sink { .. }))
             .collect();
+        // a worker counts what it is handed; nothing does on this path
+        let (bytes, records) = consumed(&frames);
+        CONSUMER_BYTES_TOTAL.inc_by(bytes);
+        CONSUMER_OBJECTS_TOTAL.inc_by(records);
+        let mut frames = joined(frames, self.sink_batch);
         let deliveries = frames.len() * sinks.len();
         if deliveries == 0 {
             for a in acks {
@@ -264,5 +312,99 @@ mod tests {
         let named = router.unrouted.lock().unwrap();
         assert_eq!(named.len(), 1, "the source, once");
         assert!(named.contains(&source));
+    }
+
+    #[test]
+    fn frames_are_joined_up_to_the_cap_and_never_split() {
+        let mut buf = BytesMut::from("{\"n\":1}\n{\"n\":2}\n{\"n\":3}\n{\"n\":4}");
+        let frames: Vec<BytesMut> = (0..4).map(|_| buf.split_to(8.min(buf.len()))).collect();
+        let writes = joined(frames.clone(), 24);
+        assert_eq!(writes, ["{\"n\":1}\n{\"n\":2}\n{\"n\":3}\n", "{\"n\":4}"]);
+        assert_eq!(
+            joined(frames.clone(), 0).len(),
+            4,
+            "no cap, a write a frame"
+        );
+        let big = joined(vec![BytesMut::from("{\"a\":1}"), BytesMut::from("{}")], 4);
+        assert_eq!(big, ["{\"a\":1}", "{}"]);
+        let unended = joined(
+            vec![BytesMut::from("{\"a\":1}"), BytesMut::from("{}\n")],
+            64,
+        );
+        assert_eq!(unended, ["{\"a\":1}\n{}\n"]);
+    }
+
+    #[test]
+    fn consumed_counts_a_record_a_line() {
+        let frames = [
+            BytesMut::from("{\"n\":1}\n{\"n\":2}\n"),
+            BytesMut::from("{\"n\":3}"),
+            BytesMut::new(),
+        ];
+        assert_eq!(consumed(&frames), (23, 3));
+    }
+
+    #[derive(Default)]
+    struct Writes(tokio::sync::Mutex<Vec<BytesMut>>);
+
+    #[async_trait]
+    impl crate::sinks::manager::Sink for Writes {
+        async fn write(&self, req: crate::sinks::manager::SinkWrite) -> Result<()> {
+            self.0.lock().await.push(req.payload);
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct Acked(AtomicUsize);
+
+    #[async_trait]
+    impl Ack for Acked {
+        async fn ack(&self) -> Result<()> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_sources_lines_reach_a_sink_in_batches_and_are_acked_once() {
+        let writes = Arc::new(Writes::default());
+        let sinks: Vec<(Arc<str>, Arc<dyn crate::sinks::manager::Sink>)> =
+            vec![(Arc::from("logs"), writes.clone())];
+        let manager = Arc::new(SinkManager::for_test(sinks, 1));
+        let source = NodeRef::Source {
+            name: Arc::from("lines"),
+        };
+        let mut outs = HashMap::default();
+        outs.insert(
+            source.clone(),
+            vec![NodeRef::Sink {
+                name: Arc::from("logs"),
+                key_prefix: None,
+            }],
+        );
+        let router = Router::new(outs, Arc::clone(&manager)).with_sink_batch(1024);
+        let mut buf = BytesMut::from("{\"n\":1}\n{\"n\":2}\n{\"n\":3}\n");
+        let frames = (0..3).map(|_| buf.split_to(8)).collect();
+        // other tests count too, at the same time: a delta, at least this
+        let (bytes, objects) = (CONSUMER_BYTES_TOTAL.get(), CONSUMER_OBJECTS_TOTAL.get());
+        let acked = Arc::new(Acked::default());
+        router
+            .forward(&source, frames, vec![acked.clone() as Arc<dyn Ack>])
+            .await
+            .unwrap();
+        drop(router);
+        let Ok(manager) = Arc::try_unwrap(manager) else {
+            panic!("the router held the only other reference")
+        };
+        manager.join().await.unwrap();
+        let writes = writes.0.lock().await;
+        assert_eq!(*writes, ["{\"n\":1}\n{\"n\":2}\n{\"n\":3}\n"]);
+        assert!(
+            CONSUMER_BYTES_TOTAL.get() - bytes >= 24,
+            "consumed, counted"
+        );
+        assert!(CONSUMER_OBJECTS_TOTAL.get() - objects >= 3);
+        assert_eq!(acked.0.load(Ordering::SeqCst), 1);
     }
 }

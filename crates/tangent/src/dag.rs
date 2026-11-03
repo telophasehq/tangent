@@ -116,10 +116,11 @@ impl DagRuntime {
             outs.entry(e.from.clone()).or_default().extend(e.to.clone());
         }
 
-        let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
-
         let batch_size = cfg.batch_size_kb();
         let batch_age = cfg.batch_age_ms();
+
+        let router =
+            Arc::new(Router::new(outs, Arc::clone(&sink_manager)).with_sink_batch(batch_size));
 
         // Every worker hosts every plugin and every inference node, and walks
         // the DAG for the records it is handed.
