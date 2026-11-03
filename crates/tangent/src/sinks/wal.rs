@@ -145,7 +145,7 @@ impl DurableFileSink {
                             retried = Instant::now();
                         }
                         // each with the file found aged: a writer may have
-                        // sealed it since, and its next one is young
+                        // sealed it since
                         let to_rotate: Vec<(RouteKey, PathBuf)> = {
                             let routes = s_cloned.routes.lock().await;
                             routes.iter()
@@ -165,15 +165,16 @@ impl DurableFileSink {
         Ok(s)
     }
 
-    /// Seals the route's open file and opens the next; with `only`, only if
-    /// the open file is still that one, so writers that each found it full
-    /// seal it once between them.
+    /// Seals the route's open file and closes the route: its next file is
+    /// opened by the write that needs it. With `only`, only if the open file
+    /// is still that one, so writers that each found it full seal it once
+    /// between them.
     async fn rotate_route(&self, rkey: RouteKey, only: Option<&Path>) -> anyhow::Result<()> {
         let (sealed_ready, sealed_bytes, meta) = {
             let mut routes = self.routes.lock().await;
-            let rs = routes
-                .get_mut(&rkey)
-                .ok_or_else(|| anyhow::anyhow!("route missing"))?;
+            let Some(rs) = routes.get_mut(&rkey) else {
+                return Ok(());
+            };
             if rs.cur.bytes == 0 || only.is_some_and(|p| p != rs.cur.path) {
                 return Ok(());
             }
@@ -186,19 +187,10 @@ impl DurableFileSink {
             sealed.set_extension("bin.sealed");
             fs::rename(&rs.cur.path, &sealed).await?;
             let sealed_bytes = rs.cur.bytes as u64;
+            let meta = rs.meta.clone();
+            routes.remove(&rkey);
 
-            rs.cur = open_route_current(
-                &self.dir,
-                &WalMeta {
-                    bucket_name: rs.meta.bucket_name.clone(),
-                    key_prefix: rs.meta.key_prefix.clone(),
-                    encoding: self.encoding.clone(),
-                    compression: self.compression.clone(),
-                },
-            )
-            .await?;
-
-            (sealed, sealed_bytes, rs.meta.clone())
+            (sealed, sealed_bytes, meta)
         };
 
         WAL_SEALED_FILES_TOTAL.inc();
@@ -369,10 +361,11 @@ impl Sink for DurableFileSink {
             prefix: meta.key_prefix.clone(),
         };
 
-        {
-            // opened under the lock: concurrent first writes open one file,
-            // not one each, the losers' left empty in the WAL
+        loop {
             let mut routes = self.routes.lock().await;
+            // a route has a file only while a write needs one, opened under
+            // the lock: concurrent writes open one file, not one each, the
+            // losers' left empty in the WAL
             if !routes.contains_key(&rkey) {
                 let cur = open_route_current(
                     &self.dir,
@@ -394,11 +387,7 @@ impl Sink for DurableFileSink {
                 );
                 // TODO: enforce self.max_open_routes
             }
-        }
-
-        loop {
-            let mut routes = self.routes.lock().await;
-            let rs = routes.get_mut(&rkey).expect("route exists after create");
+            let rs = routes.get_mut(&rkey).expect("route opened above");
             // a write bigger than a file gets a file of its own: rotating
             // an empty file does nothing, and would go round for ever
             if rs.cur.bytes == 0 || rs.cur.bytes + req.payload.len() <= self.max_file_size {
@@ -451,8 +440,8 @@ impl Sink for DurableFileSink {
         for k in keys {
             let _ = self.rotate_route(k, None).await;
         }
-        // each route's next file, opened by the sealing, holds nothing: it
-        // goes, rather than wait in the WAL for the next start
+        // a route whose only write failed holds an empty file: it goes,
+        // rather than wait in the WAL for the next start
         let empty: Vec<PathBuf> = {
             let mut routes = self.routes.lock().await;
             let mut empty = Vec::new();
@@ -901,6 +890,39 @@ mod tests {
             Vec::<String>::new(),
             "sent, and nothing left"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_route_sealed_by_age_leaves_no_file_open() {
+        let dir = wal_dir("idle");
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            1 << 20,
+            Duration::from_millis(300),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        // routes that stop getting writes, as an hour's directory does
+        for hour in ["h1", "h2", "h3"] {
+            let mut w = write("{\"n\":1}\n");
+            w.s3.as_mut().unwrap().key_prefix = Some(Arc::from(hour));
+            wal.write(w).await.unwrap();
+        }
+        // sent, and nothing left: no empty file opened for a next write
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while rec.got.lock().await.len() < 3 || !names_in(&dir).is_empty() {
+                sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("each route sealed, sent and gone by age");
+        assert_eq!(wal.routes.lock().await.len(), 0, "no route kept open");
         let _ = std::fs::remove_dir_all(dir);
     }
 
