@@ -90,6 +90,25 @@ enum Commands {
         config: PathBuf,
     },
 
+    /// Replay a past range of the ingest config's sources through it and a
+    /// judge config together, an hour at a time, as if it arrived live, then
+    /// say what each file sink got. Only the sources whose past replay can
+    /// read run; Slack and S3 sinks are left out
+    Replay {
+        /// The ingest config, whose sources say where their past is
+        #[arg(long, value_name = "FILE")]
+        ingest: PathBuf,
+        /// The judge config, reading what ingest stores
+        #[arg(long, value_name = "FILE")]
+        judge: PathBuf,
+        /// A date (2026-10-01, midnight UTC) or an RFC 3339 time
+        #[arg(long)]
+        from: String,
+        /// The end, not included
+        #[arg(long)]
+        to: String,
+    },
+
     /// Inspect a pipeline's state store (read-only, works while it runs)
     State {
         /// Path to YAML config; the store is found from `runtime.state`
@@ -200,6 +219,21 @@ async fn main() -> Result<()> {
         }
 
         Commands::Config { config } => print!("{}", show_config(&config)?),
+
+        Commands::Replay {
+            ingest,
+            judge,
+            from,
+            to,
+        } => {
+            tangent_runtime::replay::replay(tangent_runtime::replay::ReplayOptions {
+                ingest: ingest.canonicalize().unwrap_or(ingest),
+                judge: judge.canonicalize().unwrap_or(judge),
+                from,
+                to,
+            })
+            .await?
+        }
 
         Commands::State { config, command } => {
             let cfg = config.canonicalize().unwrap_or(config);
