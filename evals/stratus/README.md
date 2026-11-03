@@ -6,7 +6,7 @@
 - `grounding.yaml` says, per technique, what a judge needs to tell it from ordinary work, and which of our cases exercise the same calls.
 - `splice.py` makes the cases, into `evals/runs/stratus/cases.json` (`stream.py` runs it when the file is missing): each of the 35 recorded techniques twice, as a member of acme whose credentials were taken, `away` (from a hosting address) and `usual` (from the office), 70 attack cases; and a control for each, the same records with every call made a harmless read in the same service, 70 must-not-flag cases. `stream.py` places them.
 
-The output is the same on every run: the plain names `splice.py` gives resources are numbered longest first, then in name order. (Until November 2026 equal-length names were numbered in the order of a Python set, which follows the process's hash seed; the runs recorded before then replayed a file in which two cases, `secretsmanager-retrieve-secrets` away and usual, number 16 secret names differently. Nothing else differs.)
+The output is the same on every run: the plain names `splice.py` gives resources are numbered longest first, then in name order. The runs recorded before November 2026 replayed an earlier output: equal-length names were numbered in the order of a Python set, which follows the process's hash seed, so two cases (`secretsmanager-retrieve-secrets` away and usual) number 16 secret names differently; and its controls had the two faults fixed below.
 
 | decides | techniques | covered by our cases | with recorded logs |
 |---|---|---|---|
@@ -26,15 +26,20 @@ Stratus covers AWS, Azure, GCP, Entra ID and Kubernetes; it says nothing about O
 
 ## Not citable yet
 
-An audit on 2026-10-28 found that the splice can be told from acme's own traffic by things that have nothing to do with the attack, and every number measured on these cases so far is withdrawn until that is fixed:
+An audit on 2026-10-28 found that the splice could be told from acme's own traffic by things that have nothing to do with the attack, and every number measured on these cases so far is withdrawn until the runs are repeated. Two of the six tells are fixed; four remain.
 
-- every control is on a different member from its attack;
-- the controls carry `requestParameters` on none of their 620 records, the attacks on 600;
+Fixed in November 2026:
+
+- every control was on a different member from its attack: the member and address came from the case's position in the output, and 70 attacks is not a multiple of nine members. They now come from the technique and the variant, so attack and control share both.
+- the controls carried `requestParameters` on none of their 620 records, the attacks on 600. Each read now carries the request CloudTrail records for it, shaped as the service writes it and naming what the attack named (the same instances, secret, trail, function or role). Null remains only where the service records null (`GetCallerIdentity`, `GetAccountSummary`, `ListFoundationModels`, `DescribeOrganization`): 56 control records to the attacks' 20.
+
+Still there:
+
 - the IAM user name in Datadog's recording survives in 20 attack records across 6 cases, and in no control;
 - all 140 spliced cases start at 13:00Z, an hour in which members' own IAM-user records never appear;
 - all four spliced console sign-ins carry the CLI's user agent;
 - none of the roles the techniques' warm-up creates is in the profile.
 
-In every run since, the controls were flagged about as often as the attacks (from away, all 35; from the office, 18 to 29 of 35), so on Stratus the corpus measures what gets escalated, not whether the judge tells an attack from its harmless twin. Stratus has been public since 2022 and documents its detections, so a model may also know these techniques.
+In every run before the fixes, the controls were flagged about as often as the attacks (from away, all 35; from the office, 18 to 29 of 35), so on Stratus the corpus measured what gets escalated, not whether the judge tells an attack from its harmless twin. No run has been scored on the fixed controls yet. Stratus has been public since 2022 and documents its detections, so a model may also know these techniques.
 
-`recipientAccountId` is not one of them. The spliced records carry it, and so did every ordinary CloudTrail record of the members they are spliced onto (their own AWS work, 7,675 records in the v3 stream), before and after the generator began writing it on every CloudTrail record, as the cases have carried it since #48. The records that gained it belong to other principals (the deploy, read-only and backup service users, and the IAM users `dave` and `admin`) and to our cases.
+`recipientAccountId` is not one of the tells. The spliced records carry it, and so did every ordinary CloudTrail record of the members they are spliced onto (their own AWS work, 7,675 records in the v3 stream), before and after the generator began writing it on every CloudTrail record, as the cases have carried it since #48. The records that gained it belong to other principals (the deploy, read-only and backup service users, and the IAM users `dave` and `admin`) and to our cases.

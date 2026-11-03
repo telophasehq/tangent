@@ -118,19 +118,73 @@ def rewrite(records, member, ip, tag):
 # harmless read in the same service, everything else as the attack had it
 # (who, from where, when, how many, with what client). A judge that flags
 # these from the office is reacting to the splice, not the attack.
+#
+# Each read carries the request CloudTrail would record for it, shaped as the
+# service writes it and naming what the attack named (its instances, secret,
+# trail, function, role), so the control differs from the attack in the call
+# and nothing else. `None` is the parameters a service really records as
+# null (GetCallerIdentity, GetAccountSummary, DescribeOrganization). A read
+# that needs a name the records do not give is skipped for one that does not.
+ID = re.compile(r"\bi-[0-9A-Za-z]{8,17}\b")
+SECRET_ARN = re.compile(r"arn:aws:secretsmanager:[^\"\s]+")
+NEED = object()  # a read this record cannot carry
+
+
+def named(r, *keys):
+    """The first of `keys` the record's request names."""
+    rp = r.get("requestParameters") or {}
+    return next((rp[k] for k in keys if isinstance(rp.get(k), str)), None)
+
+
+def call_text(r):
+    return json.dumps([r.get(f) for f in CALL_FIELDS])
+
+
 READS = {
-    "ssm.amazonaws.com": ["DescribeInstanceInformation", "DescribeParameters", "ListCommands"],
-    "ec2.amazonaws.com": ["DescribeInstances", "DescribeSecurityGroups", "DescribeVolumes", "DescribeRegions"],
-    "secretsmanager.amazonaws.com": ["DescribeSecret", "ListSecretVersionIds"],
-    "sts.amazonaws.com": ["GetCallerIdentity"],
-    "bedrock.amazonaws.com": ["ListFoundationModels", "GetFoundationModel"],
-    "iam.amazonaws.com": ["GetAccountSummary", "ListRoles", "GetUser"],
-    "cloudtrail.amazonaws.com": ["DescribeTrails", "GetTrailStatus"],
-    "lambda.amazonaws.com": ["ListFunctions20150331", "GetFunction20150331v2"],
-    "rolesanywhere.amazonaws.com": ["ListTrustAnchors"],
-    "route53resolver.amazonaws.com": ["ListResolverQueryLogConfigs"],
-    "organizations.amazonaws.com": ["DescribeOrganization"],
-    "rds.amazonaws.com": ["DescribeDBInstances"],
+    "ssm.amazonaws.com": [
+        ("DescribeInstanceInformation", lambda r, m: {"filters": [{"key": "InstanceIds", "values": ids}]} if (ids := sorted(set(ID.findall(call_text(r))))[:5]) else {"maxResults": 50}),
+        ("DescribeParameters", lambda r, m: {"maxResults": 10}),
+        ("ListCommands", lambda r, m: {"instanceId": ids[0]} if (ids := sorted(set(ID.findall(call_text(r))))) else {"maxResults": 50}),
+    ],
+    "ec2.amazonaws.com": [
+        ("DescribeInstances", lambda r, m: {"filterSet": {}, "instancesSet": {"items": [{"instanceId": i} for i in ids]} if (ids := sorted(set(ID.findall(call_text(r))))[:5]) else {}}),
+        ("DescribeSecurityGroups", lambda r, m: {"securityGroupSet": {}, "securityGroupIdSet": {"items": [{"groupId": g}]} if (g := named(r, "groupId")) else {}, "filterSet": {}}),
+        ("DescribeVolumes", lambda r, m: {"volumeSet": {}, "filterSet": {}}),
+        ("DescribeImages", lambda r, m: {"imagesSet": {"items": [{"imageId": i}]}, "filterSet": {}} if (i := named(r, "imageId")) else NEED),
+        ("DescribeSnapshots", lambda r, m: {"snapshotSet": {"items": [{"snapshotId": i}]}, "filterSet": {}} if (i := named(r, "snapshotId")) else NEED),
+        ("DescribeRegions", lambda r, m: {"regionSet": {}}),
+    ],
+    "secretsmanager.amazonaws.com": [
+        ("DescribeSecret", lambda r, m: {"secretId": s} if (s := named(r, "secretId") or next(iter(SECRET_ARN.findall(call_text(r))), None)) else NEED),
+        ("ListSecretVersionIds", lambda r, m: {"secretId": s} if (s := named(r, "secretId") or next(iter(SECRET_ARN.findall(call_text(r))), None)) else NEED),
+        ("ListSecrets", lambda r, m: {"maxResults": 20}),
+    ],
+    "sts.amazonaws.com": [("GetCallerIdentity", lambda r, m: None)],
+    "bedrock.amazonaws.com": [
+        ("GetFoundationModel", lambda r, m: {"modelIdentifier": i} if (i := named(r, "modelId")) else NEED),
+        ("ListFoundationModels", lambda r, m: None),
+    ],
+    "iam.amazonaws.com": [
+        ("GetUser", lambda r, m: {"userName": named(r, "userName") or m}),
+        ("GetRole", lambda r, m: {"roleName": n} if (n := named(r, "roleName")) else NEED),
+        ("ListRoles", lambda r, m: {"maxItems": 100}),
+        ("GetAccountSummary", lambda r, m: None),
+    ],
+    "cloudtrail.amazonaws.com": [
+        ("GetTrailStatus", lambda r, m: {"name": n} if (n := named(r, "name", "trailName")) else NEED),
+        ("DescribeTrails", lambda r, m: {"trailNameList": [n] if (n := named(r, "name", "trailName")) else [], "includeShadowTrails": True}),
+    ],
+    "lambda.amazonaws.com": [
+        ("GetFunction20150331v2", lambda r, m: {"functionName": n} if (n := named(r, "functionName")) else NEED),
+        ("ListFunctions20150331", lambda r, m: {"maxItems": 50}),
+    ],
+    "rolesanywhere.amazonaws.com": [("ListTrustAnchors", lambda r, m: {"pageSize": 50})],
+    "route53resolver.amazonaws.com": [("ListResolverQueryLogConfigs", lambda r, m: {"maxResults": 10})],
+    "organizations.amazonaws.com": [("DescribeOrganization", lambda r, m: None)],
+    "rds.amazonaws.com": [
+        ("DescribeDBSnapshots", lambda r, m: {"dBSnapshotIdentifier": i} if (i := named(r, "dBSnapshotIdentifier")) else NEED),
+        ("DescribeDBInstances", lambda r, m: {"maxRecords": 100}),
+    ],
 }
 # A call these services do not answer with a read becomes one EC2 answers.
 ELSEWHERE = {"ec2-instance-connect.amazonaws.com": "ec2.amazonaws.com"}
@@ -156,13 +210,14 @@ def benign(records, member):
             out.append(r)
             continue
         source = ELSEWHERE.get(r.get("eventSource"), r.get("eventSource"))
-        names = READS.get(source) or READS["sts.amazonaws.com"]
         if source not in READS:
             source = "sts.amazonaws.com"
+        reads = [(name, params) for name, make in READS[source] if (params := make(r, member)) is not NEED]
+        name, params = reads[k % len(reads)]
         for f in CALL_FIELDS:
             r.pop(f, None)
-        r.update(eventSource=source, eventName=names[k % len(names)], eventType="AwsApiCall", readOnly=True,
-                 managementEvent=True, eventCategory="Management", requestParameters=None, responseElements=None)
+        r.update(eventSource=source, eventName=name, eventType="AwsApiCall", readOnly=True,
+                 managementEvent=True, eventCategory="Management", requestParameters=params, responseElements=None)
         out.append(r)
     return out
 
@@ -173,12 +228,15 @@ OUT = HERE.parent / "runs" / "stratus" / "cases.json"
 def main(out=OUT):
     cat = {t["id"]: t for t in json.load(open(HERE / "techniques.json"))["techniques"]}
     recorded = [tid for tid in sorted(cat) if json.load(open(HERE / "logs" / f"{tid}.json"))]
-    cases, slot = [], 0
+    cases = []
     for kind in ("stratus", "control"):
-        for tid in recorded:
+        for i, tid in enumerate(recorded):
             raw = sorted(json.load(open(HERE / "logs" / f"{tid}.json")), key=lambda r: r["eventTime"])
             t0 = datetime.strptime(raw[0]["eventTime"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-            for variant in ("away", "usual"):
+            for v, variant in enumerate(("away", "usual")):
+                # By technique and variant, not by position in the output: the
+                # control is the same member from the same address as its attack.
+                slot = 2 * i + v
                 member = MEMBERS[slot % len(MEMBERS)]
                 ip = AWAY[slot % len(AWAY)] if variant == "away" else USUAL
                 tag = hashlib.sha1(f"{kind}/{variant}/{tid}".encode()).hexdigest()[:4]
@@ -200,7 +258,6 @@ def main(out=OUT):
                                  "check_first": cat[tid]["detection"][:200] if attack else "nothing"},
                     "events": events,
                 })
-                slot += 1
     out.parent.mkdir(parents=True, exist_ok=True)
     json.dump(cases, open(out, "w"), indent=1)
     n = collections.Counter(c["category"] for c in cases)

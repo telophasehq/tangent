@@ -44,10 +44,12 @@ Two things limit what these numbers can say:
   does what it was built to do, not how it does on attacks nobody here wrote.
 - **Stratus numbers are not citable yet.** An audit on 2026-10-28 found that
   the splice can be told from acme's own traffic by things unrelated to the
-  attack (every control is on another member than its attack, controls carry
-  no request parameters, every spliced case starts at 13:00Z, and more). In
-  every run since, the controls were flagged about as often as the attacks.
-  [stratus/README.md](stratus/README.md#not-citable-yet) lists the tells.
+  attack (every spliced case starts at 13:00Z, its sign-ins carry the CLI's
+  user agent, and more). In every run so far, the controls were flagged about
+  as often as the attacks. Two of the tells are fixed and unmeasured: every
+  control was on another member than its attack, and carried no request
+  parameters. [stratus/README.md](stratus/README.md#not-citable-yet) lists
+  them all.
 
 ## The stream
 
@@ -55,18 +57,18 @@ Two things limit what these numbers can say:
 two cases that share an actor at least ten days apart) inside thirteen months
 of acme's ordinary traffic from every source: sign-ins, the product's API
 traffic, pushes and pull requests, CI builds, each member's own AWS work, the
-agent's health checks, poller and plans. 197,367 records:
+agent's health checks, poller and plans. 203,081 records:
 
 | source | records |
 |---|---|
-| `agent` | 129,642 |
-| `cloudtrail` | 20,719 |
-| `app` | 19,002 |
-| `okta` | 12,725 |
-| `github_audit` | 8,725 |
-| `gha_ci` | 3,121 |
-| `runner_egress` | 2,588 |
-| `google_workspace` | 845 |
+| `agent` | 133,626 |
+| `cloudtrail` | 21,063 |
+| `app` | 19,518 |
+| `okta` | 13,070 |
+| `github_audit` | 9,051 |
+| `gha_ci` | 3,212 |
+| `runner_egress` | 2,672 |
+| `google_workspace` | 869 |
 
 `truth-v3.json` says, per case, whether it should flag, its actor and org as
 the packs normalize them, the times of its events and the stream lines that
