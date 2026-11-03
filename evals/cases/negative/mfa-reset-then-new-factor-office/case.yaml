@@ -1,0 +1,13 @@
+id: negative/mfa-reset-then-new-factor-office
+title: "The helpdesk resets a person's MFA for a new phone; she enrolls it at the office"
+category: negative
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [okta, cloudtrail]
+events: 11
+expected:
+  flag: false
+  one_line: "admin reset carol's MFA for her new phone; she enrolled it from the office on her laptop and signed in to Okta and AWS"
+  check_first: ""

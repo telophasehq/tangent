@@ -7,7 +7,8 @@ The packs' fixtures were cut from eight of them; the full set is replayed
 inside ordinary traffic for the numbers in
 [examples/cloud-infra](/examples/cloud-infra#what-it-catches).
 
-Each case is a directory:
+`gen.py` writes every case; edit the case list there, not the files
+(`python3 -I evals/gen.py`). Each case is a directory:
 
 ```
 cases/<category>/<name>/
@@ -37,9 +38,9 @@ live in a product's own logs (`app`, `agent`) by
 Every event also carries `ts`, so mixed sources order. `app` and `agent`
 carry the customer (`org`, `organization_id`), which is their partition.
 
-## The 51 cases
+## The 61 cases
 
-40 should flag, 11 must not. `P1` is the first corpus to pass; `P2` is next.
+45 should flag, 16 must not. `P1` is the first corpus to pass; `P2` is next.
 
 Most positives are sequences of lines innocent on their own
 (`alone_innocent: true` in `case.yaml`): a login and a token, a role change
@@ -156,6 +157,31 @@ judge nobody reads.
 | `negative/secret-rotation-after-vendor-notice` | quiet P1 | `cloudtrail`, `app` | 10 | Admins rotate keys the morning after a vendor's breach notice |
 | `negative/top-of-hour-sync-fanout` | quiet P1 | `agent` | 60 | The poller fans out to GitHub at the top of the hour |
 | `negative/vendor-429-burst` | quiet P1 | `agent` | 9 | Okta rate-limits the poller, which backs off and succeeds |
+
+### History: an attack and its twin
+
+Ten cases a single window cannot decide: five attacks, each with a twin that
+is the same person, hour and actions from where they always are. Only the
+person's history tells them apart: where they sign in, from which device,
+what they do in AWS and GitHub, the auth events before the window. They take
+the shapes `stream.py v3`'s ordinary days write: an Okta sign-in as Okta
+writes it (sign-on policy, password, push, the laptop's device id), a
+member's own IAM user named by email, their IAM Identity Center sessions
+named by username (`dave`), so only the profile's `people:` says whose they
+are.
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `identity/okta-new-country-then-aws` | flag P1 | `okta`, `cloudtrail` | 11 | An Okta sign-in from a new country, then the same person's AWS console from another host |
+| `negative/okta-usual-country-then-aws` | quiet P1 | `okta`, `cloudtrail` | 11 | dave signs in to Okta at the office, then reads AWS as he does |
+| `identity/okta-new-country-then-github` | flag P1 | `okta`, `github_audit` | 8 | An Okta sign-in from a new country, then the same person's GitHub token from another host |
+| `negative/okta-usual-country-then-github` | quiet P1 | `okta`, `github_audit` | 8 | grace signs in at the office, then clones and pushes docs as she does |
+| `identity/okta-failed-burst-then-success` | flag P1 | `okta`, `app` | 20 | Twelve failed Okta sign-ins from one host, then one that works |
+| `negative/okta-typo-then-success` | quiet P1 | `okta`, `app` | 9 | bob mistypes his password once at the office |
+| `identity/mfa-reset-then-new-factor-new-asn` | flag P1 | `okta`, `cloudtrail` | 11 | The helpdesk resets a person's MFA; a factor is enrolled and used from a new network |
+| `negative/mfa-reset-then-new-factor-office` | quiet P1 | `okta`, `cloudtrail` | 11 | The helpdesk resets a person's MFA for a new phone; she enrolls it at the office |
+| `cloud/password-change-new-key-new-ip` | flag P1 | `cloudtrail` | 8 | A password change and a new access key at the office; the key's first calls from a new host |
+| `negative/password-change-new-key-usual-ip` | quiet P1 | `cloudtrail` | 8 | erin's 90-day rotation: password, a new key, its first calls from the office |
 
 ## Cases from disclosed incidents, 2025–2026
 
