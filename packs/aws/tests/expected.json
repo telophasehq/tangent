@@ -1401,7 +1401,7 @@
    "ip": {},
    "notes": [
     "AuthorizeSecurityGroupIngress is a kind the org watches every time",
-    "opened to 0.0.0.0/0",
+    "opened to every address (0.0.0.0/0)",
     "principal alice@example.com is nobody the org profile knows"
    ],
    "principal": "unknown",
@@ -1446,6 +1446,124 @@
   "source": "cloudtrail",
   "sourceIPAddress": "198.51.100.23",
   "ts": "2026-10-22T04:05:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_Admin_0123456789abcdef/alice@example.com",
+   "mfaAuthenticated": "true",
+   "role": "AWSReservedSSO_Admin_0123456789abcdef",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "_facts": {
+   "ip": {},
+   "notes": [
+    "AuthorizeSecurityGroupIngress is a kind the org watches every time",
+    "opened to every address (198.51.100.7/0)",
+    "principal alice@example.com is nobody the org profile knows"
+   ],
+   "principal": "unknown",
+   "watch": true,
+   "world_open": true
+  },
+  "_norm": {
+   "actor": "alice@example.com",
+   "org": "acme"
+  },
+  "awsRegion": "us-east-1",
+  "eventName": "AuthorizeSecurityGroupIngress",
+  "eventSource": "ec2.amazonaws.com",
+  "eventTime": "2026-10-22T04:07:00Z",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "groupId": "sg-0123456789abcdef0",
+   "ipPermissions": {
+    "items": [
+     {
+      "fromPort": 3389,
+      "groups": {},
+      "ipProtocol": "tcp",
+      "ipRanges": {
+       "items": [
+        {
+         "cidrIp": "198.51.100.7/0"
+        }
+       ]
+      },
+      "ipv6Ranges": {},
+      "prefixListIds": {},
+      "toPort": 3389
+     }
+    ]
+   }
+  },
+  "responseElements": {
+   "_return": true
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "198.51.100.23",
+  "ts": "2026-10-22T04:07:00Z",
+  "userAgent": "aws-cli/2.17.0",
+  "userIdentity": {
+   "accountId": "111122223333",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_Admin_0123456789abcdef/alice@example.com",
+   "mfaAuthenticated": "true",
+   "role": "AWSReservedSSO_Admin_0123456789abcdef",
+   "type": "AssumedRole"
+  }
+ },
+ {
+  "_facts": {
+   "ip": {},
+   "notes": [
+    "AuthorizeSecurityGroupIngress is a kind the org watches every time",
+    "opened to every address (::/0)",
+    "principal alice@example.com is nobody the org profile knows"
+   ],
+   "principal": "unknown",
+   "watch": true,
+   "world_open": true
+  },
+  "_norm": {
+   "actor": "alice@example.com",
+   "org": "acme"
+  },
+  "awsRegion": "us-east-1",
+  "eventName": "AuthorizeSecurityGroupIngress",
+  "eventSource": "ec2.amazonaws.com",
+  "eventTime": "2026-10-22T04:08:00Z",
+  "readOnly": false,
+  "recipientAccountId": "111122223333",
+  "requestParameters": {
+   "groupId": "sg-0123456789abcdef0",
+   "ipPermissions": {
+    "items": [
+     {
+      "fromPort": 443,
+      "groups": {},
+      "ipProtocol": "tcp",
+      "ipRanges": {},
+      "ipv6Ranges": {
+       "items": [
+        {
+         "cidrIpv6": "::/0"
+        }
+       ]
+      },
+      "prefixListIds": {},
+      "toPort": 443
+     }
+    ]
+   }
+  },
+  "responseElements": {
+   "_return": true
+  },
+  "source": "cloudtrail",
+  "sourceIPAddress": "198.51.100.23",
+  "ts": "2026-10-22T04:08:00Z",
   "userAgent": "aws-cli/2.17.0",
   "userIdentity": {
    "accountId": "111122223333",

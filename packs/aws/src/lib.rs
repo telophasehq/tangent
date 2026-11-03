@@ -126,11 +126,26 @@ fn facts(rec: &Map<String, Value>, n: &mut Norm) {
     {
         n.fact("root", "AWS root credentials used");
     }
-    if rec
-        .get("requestParameters")
-        .is_some_and(|rp| rp.to_string().contains("0.0.0.0/0"))
-    {
-        n.fact("world_open", "opened to 0.0.0.0/0");
+    if let Some(cidr) = rec.get("requestParameters").and_then(open_cidr) {
+        n.fact("world_open", format!("opened to every address ({cidr})"));
+    }
+}
+
+/// A CIDR among `v`'s strings with a prefix of 0, which takes in every
+/// address whatever the address before it says: `0.0.0.0/0`, `::/0`, or
+/// `198.51.100.7/0`.
+fn open_cidr(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => s
+            .split(|c: char| c == ',' || c.is_whitespace())
+            .find(|t| {
+                t.strip_suffix("/0")
+                    .is_some_and(|a| a.parse::<std::net::IpAddr>().is_ok())
+            })
+            .map(str::to_string),
+        Value::Array(a) => a.iter().find_map(open_cidr),
+        Value::Object(o) => o.values().find_map(open_cidr),
+        _ => None,
     }
 }
 

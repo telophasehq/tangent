@@ -1199,5 +1199,121 @@
     }
    }
   }
+ },
+ {
+  "ts": "2026-10-22T04:07:00Z",
+  "source": "cloudtrail",
+  "eventVersion": "1.09",
+  "eventTime": "2026-10-22T04:07:00Z",
+  "eventSource": "ec2.amazonaws.com",
+  "eventName": "AuthorizeSecurityGroupIngress",
+  "eventType": "AwsApiCall",
+  "awsRegion": "us-east-1",
+  "eventID": "2b3c4d5e-EXAMPLE",
+  "requestID": "6f7a8b9c-EXAMPLE",
+  "recipientAccountId": "111122223333",
+  "sourceIPAddress": "198.51.100.23",
+  "userAgent": "aws-cli/2.17.0",
+  "readOnly": false,
+  "requestParameters": {
+   "groupId": "sg-0123456789abcdef0",
+   "ipPermissions": {
+    "items": [
+     {
+      "ipProtocol": "tcp",
+      "fromPort": 3389,
+      "toPort": 3389,
+      "groups": {},
+      "ipRanges": {
+       "items": [
+        {
+         "cidrIp": "198.51.100.7/0"
+        }
+       ]
+      },
+      "ipv6Ranges": {},
+      "prefixListIds": {}
+     }
+    ]
+   }
+  },
+  "responseElements": {
+   "requestId": "5e6f7a8b-EXAMPLE",
+   "_return": true
+  },
+  "userIdentity": {
+   "type": "AssumedRole",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_Admin_0123456789abcdef/alice@example.com",
+   "accountId": "111122223333",
+   "sessionContext": {
+    "sessionIssuer": {
+     "type": "Role",
+     "userName": "AWSReservedSSO_Admin_0123456789abcdef",
+     "arn": "arn:aws:iam::111122223333:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_Admin_0123456789abcdef",
+     "accountId": "111122223333"
+    },
+    "attributes": {
+     "mfaAuthenticated": "true"
+    }
+   }
+  }
+ },
+ {
+  "ts": "2026-10-22T04:08:00Z",
+  "source": "cloudtrail",
+  "eventVersion": "1.09",
+  "eventTime": "2026-10-22T04:08:00Z",
+  "eventSource": "ec2.amazonaws.com",
+  "eventName": "AuthorizeSecurityGroupIngress",
+  "eventType": "AwsApiCall",
+  "awsRegion": "us-east-1",
+  "eventID": "3c4d5e6f-EXAMPLE",
+  "requestID": "7a8b9c0d-EXAMPLE",
+  "recipientAccountId": "111122223333",
+  "sourceIPAddress": "198.51.100.23",
+  "userAgent": "aws-cli/2.17.0",
+  "readOnly": false,
+  "requestParameters": {
+   "groupId": "sg-0123456789abcdef0",
+   "ipPermissions": {
+    "items": [
+     {
+      "ipProtocol": "tcp",
+      "fromPort": 443,
+      "toPort": 443,
+      "groups": {},
+      "ipRanges": {},
+      "ipv6Ranges": {
+       "items": [
+        {
+         "cidrIpv6": "::/0"
+        }
+       ]
+      },
+      "prefixListIds": {}
+     }
+    ]
+   }
+  },
+  "responseElements": {
+   "requestId": "5e6f7a8b-EXAMPLE",
+   "_return": true
+  },
+  "userIdentity": {
+   "type": "AssumedRole",
+   "arn": "arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_Admin_0123456789abcdef/alice@example.com",
+   "accountId": "111122223333",
+   "sessionContext": {
+    "sessionIssuer": {
+     "type": "Role",
+     "userName": "AWSReservedSSO_Admin_0123456789abcdef",
+     "arn": "arn:aws:iam::111122223333:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_Admin_0123456789abcdef",
+     "accountId": "111122223333"
+    },
+    "attributes": {
+     "mfaAuthenticated": "true"
+    }
+   }
+  }
  }
 ]

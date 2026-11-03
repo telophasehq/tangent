@@ -23,7 +23,7 @@ of an organization trail), or the same records sent as NDJSON.
 |---|---|---|
 | `principal: aws` | AWS acted on its own | |
 | `root` | `userIdentity.type` is `Root` | AWS root credentials used |
-| `world_open` | the call's parameters hold `0.0.0.0/0` | opened to 0.0.0.0/0 |
+| `world_open` | the call's parameters hold a CIDR with a `/0` prefix, every address (`0.0.0.0/0`, `::/0`, or any address before the `/0`) | opened to every address (`<cidr>`) |
 
 Each record goes to `logs` and to core's [baseline](../core#baseline) too,
 which folds it into its actor's baseline: the APIs and resources it touched,
