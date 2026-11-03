@@ -5,7 +5,7 @@ use flate2::Compression as f2Compression;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::File as stdFile;
-use std::io::{copy, BufReader, BufWriter, Read, Seek, SeekFrom};
+use std::io::{copy, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -483,10 +483,9 @@ impl Sink for DurableFileSink {
     }
 }
 
-/// The sealed NDJSON as the object it goes out as, beside it under the
-/// object's name: the sealed file itself for uncompressed NDJSON, a
-/// compressed copy for NDJSON with gzip or zstd, and otherwise the records
-/// encoded, Parquet a batch at a time, JSON and Avro all at once.
+/// The sealed NDJSON as the object it goes out as: the sealed file itself
+/// for NDJSON left uncompressed, and otherwise an encoded copy beside it
+/// under the object's name.
 async fn encode_sealed(
     sealed: &Path,
     size: u64,
@@ -494,17 +493,10 @@ async fn encode_sealed(
     enc: &Encoding,
     comp: &Compression,
 ) -> Result<(PathBuf, u64)> {
-    let dst = sealed.with_file_name(name);
-    match (enc, comp) {
-        (Encoding::NDJSON, Compression::Gzip { level }) => {
-            compress_gzip_to_file(sealed, &dst, *level).await
-        }
-        (Encoding::NDJSON, Compression::Zstd { level }) => {
-            compress_zstd_to_file(sealed, &dst, *level).await
-        }
-        (Encoding::NDJSON, _) => Ok((sealed.to_path_buf(), size)),
-        _ => encode_to_file(sealed, &dst, enc, comp).await,
+    if matches!(enc, Encoding::NDJSON) && !compresses_whole(comp) {
+        return Ok((sealed.to_path_buf(), size));
     }
+    encode_to_file(sealed, &sealed.with_file_name(name), enc, comp).await
 }
 
 async fn encode_to_file(
@@ -529,37 +521,48 @@ async fn encode_to_file(
     .await?
 }
 
-/// `src`'s records into `tmp` in the encoding, synced.
+/// `src`'s records into `tmp` in the encoding, a batch, a line or a block in
+/// memory at a time, not the file. NDJSON and JSON are compressed whole,
+/// Parquet and Avro inside the file.
 fn encode_file(src: &Path, tmp: &Path, enc: &Encoding, comp: &Compression) -> Result<()> {
-    let mut out = BufWriter::new(stdFile::create(tmp)?);
     let fin = BufReader::new(stdFile::open(src)?);
-    // a batch, a line or a block in memory at a time, not the file; JSON is
-    // compressed whole, as NDJSON is, Parquet and Avro inside the file
-    match (enc, comp) {
+    let out = BufWriter::new(stdFile::create(tmp)?);
+    let mut out = match (enc, comp) {
         (
             Encoding::Parquet {
                 schema,
                 record_column,
             },
             _,
-        ) => out = encoding::write_parquet(fin, out, schema, record_column.as_deref(), comp)?.0,
-        (Encoding::Avro { schema }, _) => out = encoding::write_avro(fin, out, schema, comp)?,
-        (Encoding::JSON, Compression::Gzip { level }) => {
+        ) => encoding::write_parquet(fin, out, schema, record_column.as_deref(), comp)?.0,
+        (Encoding::Avro { schema }, _) => encoding::write_avro(fin, out, schema, comp)?,
+        (_, Compression::Gzip { level }) => {
             let gz = GzEncoder::new(out, f2Compression::new(*level));
-            out = encoding::write_json_array(fin, gz)?.finish()?;
+            write_whole(enc, fin, gz)?.finish()?
         }
-        (Encoding::JSON, Compression::Zstd { level }) => {
-            let z = zstd::stream::Encoder::new(out, *level)?;
-            out = encoding::write_json_array(fin, z)?.finish()?;
+        (_, Compression::Zstd { level }) => {
+            write_whole(enc, fin, zstd::stream::Encoder::new(out, *level)?)?.finish()?
         }
-        (Encoding::JSON, _) => out = encoding::write_json_array(fin, out)?,
-        (Encoding::NDJSON, _) => {
-            let mut fin = fin;
-            copy(&mut fin, &mut out)?;
-        }
-    }
-    out.into_inner().map_err(|e| e.into_error())?.sync_data()?;
+        _ => write_whole(enc, fin, out)?,
+    };
+    out.flush()?;
+    out.get_ref().sync_data()?;
     Ok(())
+}
+
+/// NDJSON as it is, or JSON as one array.
+fn write_whole<W: Write>(enc: &Encoding, mut fin: impl BufRead, mut out: W) -> Result<W> {
+    if matches!(enc, Encoding::JSON) {
+        return encoding::write_json_array(fin, out);
+    }
+    copy(&mut fin, &mut out)?;
+    Ok(out)
+}
+
+/// Whether the compression is applied around a whole NDJSON or JSON file
+/// (gzip, zstd); the others are Parquet's and Avro's own.
+fn compresses_whole(comp: &Compression) -> bool {
+    matches!(comp, Compression::Gzip { .. } | Compression::Zstd { .. })
 }
 
 /// Where a stage is written before it is renamed into place.
@@ -586,56 +589,6 @@ pub fn object_name(sealed: &Path, enc: &Encoding, comp: &Compression) -> String 
         name.push_str(comp.extension());
     }
     name
-}
-
-async fn compress_zstd_to_file(src: &Path, dst: &Path, level: i32) -> Result<(PathBuf, u64)> {
-    let dst = dst.to_path_buf();
-    let dst_tmp = tmp_path(&dst);
-    let src = src.to_path_buf();
-    let dst_clone = dst.clone();
-    let size = spawn_blocking(move || -> Result<u64> {
-        let made = (|| -> Result<()> {
-            let mut fin = stdFile::open(&src)?;
-            let mut fout = stdFile::create(&dst_tmp)?;
-            let mut enc = zstd::stream::Encoder::new(&mut fout, level)?;
-            copy(&mut fin, &mut enc)?;
-            enc.finish()?;
-            Ok(())
-        })();
-        if made.is_err() {
-            let _ = std::fs::remove_file(&dst_tmp);
-        }
-        made?;
-        std::fs::rename(&dst_tmp, &dst_clone)?;
-        Ok(std::fs::metadata(&dst_clone)?.len())
-    })
-    .await??;
-    Ok((dst, size))
-}
-
-async fn compress_gzip_to_file(src: &Path, dst: &Path, level: u32) -> Result<(PathBuf, u64)> {
-    let dst = dst.to_path_buf();
-    let dst_tmp = tmp_path(&dst);
-    let src = src.to_path_buf();
-    let dst_clone = dst.clone();
-    let size = spawn_blocking(move || -> Result<u64> {
-        let made = (|| -> Result<()> {
-            let mut fin = stdFile::open(&src)?;
-            let mut fout = stdFile::create(&dst_tmp)?;
-            let mut enc = GzEncoder::new(&mut fout, f2Compression::new(level));
-            copy(&mut fin, &mut enc)?;
-            enc.finish()?;
-            Ok(())
-        })();
-        if made.is_err() {
-            let _ = std::fs::remove_file(&dst_tmp);
-        }
-        made?;
-        std::fs::rename(&dst_tmp, &dst_clone)?;
-        Ok(std::fs::metadata(&dst_clone)?.len())
-    })
-    .await??;
-    Ok((dst, size))
 }
 
 #[must_use]
@@ -1157,6 +1110,13 @@ mod tests {
         let (name, bytes) = sent(Encoding::NDJSON, Compression::Zstd { level: 3 }, "zst").await;
         assert!(name.ends_with(".ndjson.zst"), "{name}");
         assert_eq!(zstd::decode_all(&bytes[..]).unwrap(), lines.as_bytes());
+
+        let (name, bytes) = sent(Encoding::NDJSON, Compression::Gzip { level: 6 }, "gz").await;
+        assert!(name.ends_with(".ndjson.gz"), "{name}");
+        let mut ndjson = String::new();
+        std::io::Read::read_to_string(&mut flate2::read::GzDecoder::new(&bytes[..]), &mut ndjson)
+            .unwrap();
+        assert_eq!(ndjson, lines);
 
         let (name, bytes) = sent(Encoding::NDJSON, Compression::None, "plain").await;
         assert!(name.ends_with(".ndjson"), "{name}");
