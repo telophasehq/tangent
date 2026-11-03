@@ -82,6 +82,7 @@ pub fn compile_from_config(
 pub fn precompile(component: &Path, cwasm: &Path) -> Result<()> {
     let engine = tangent_shared::wasm_engine::build()?;
     let c = Component::from_file(&engine, component)
+        .map_err(anyhow::Error::from)
         .with_context(|| format!("loading component {}", component.display()))?;
     let bytes = c.serialize()?;
     fs::write(cwasm, bytes).with_context(|| format!("writing {}", cwasm.display()))?;

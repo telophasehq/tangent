@@ -6,8 +6,9 @@ resolver = "2"
 prometheus = "0.13.4"
 prometheus_exporter = "0.8.5"
 lazy_static = "1"
-wasmtime      =  { git = "https://github.com/bytecodealliance/wasmtime.git", rev = "b676f1e7779410648cd77b2e43b5be58603797f8"}
-wasmtime-wasi =  { git = "https://github.com/bytecodealliance/wasmtime.git", rev = "b676f1e7779410648cd77b2e43b5be58603797f8" }
+# The 48 line is wasmtime's long-term-support release: patch releases for two years.
+wasmtime      = "48.0.8"
+wasmtime-wasi = "48.0.8"
 
 [workspace.package]
 version = "0.1.9"

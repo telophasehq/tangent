@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store};
-use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
+use wasmtime_wasi::{FsPerms, WasiCtxBuilder};
 
 use crate::enrichment::Tables;
 use crate::state::{StateStore, PLUGIN_NS};
@@ -65,7 +65,7 @@ impl WasmEngine {
     }
 
     pub fn load_component(&self, loc: &Path) -> Result<Component> {
-        Component::from_file(&self.engine, loc)
+        Ok(Component::from_file(&self.engine, loc)?)
     }
 
     pub fn load_precompiled(
@@ -101,7 +101,8 @@ impl WasmEngine {
         wasi.inherit_stdout().inherit_stderr().inherit_env();
         if let Some(dir) = self.data.get(component_name) {
             // The plugin's data directory, read-only, at /data in the guest.
-            wasi.preopened_dir(dir, "/data", DirPerms::READ, FilePerms::READ)
+            wasi.preopened_dir(dir, "/data", FsPerms::ReadOnly)
+                .map_err(anyhow::Error::from)
                 .with_context(|| {
                     format!(
                         "opening data directory {} for plugin {component_name}",
@@ -129,6 +130,6 @@ impl WasmEngine {
         store: &mut Store<HostEngine>,
         component: &Component,
     ) -> Result<Processor> {
-        Processor::instantiate_async(store, component, &self.linker).await
+        Ok(Processor::instantiate_async(store, component, &self.linker).await?)
     }
 }
