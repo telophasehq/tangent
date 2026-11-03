@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::dag::{Edge, NodeRef};
-use crate::sinks::common::{SinkConfig, SinkKind};
+use crate::sinks::common::{Encoding, SinkConfig, SinkKind};
 use crate::sinks::rolling_file;
 use crate::sources::common::SourceConfig;
 
@@ -126,6 +126,20 @@ impl Config {
             );
         }
 
+        // a file sink appends each write's encoding to one file, which only
+        // NDJSON survives: a Parquet, Avro or JSON file after another is not one
+        for (name, sink) in &self.sinks {
+            if let SinkKind::File(_) = &sink.kind {
+                if !matches!(sink.common.encoding, Encoding::NDJSON) {
+                    anyhow::bail!(
+                        "sink '{name}': a file sink appends to one file, which only NDJSON \
+                         survives; write {} with a rolling_file sink",
+                        sink.common.encoding.extension()
+                    );
+                }
+            }
+        }
+
         // a rolling_file sink's key prefix is a directory below its path
         for t in self.dag.iter().flat_map(|e| &e.to) {
             if let NodeRef::Sink {
@@ -179,6 +193,25 @@ mod tests {
         for bad in ["../up", "/abs", "a/../../b"] {
             let e = with_prefix(bad).validate().unwrap_err();
             assert!(format!("{e:#}").contains("relative path"), "{bad}: {e:#}");
+        }
+    }
+
+    #[test]
+    fn a_file_sink_takes_ndjson_only() {
+        let file = |encoding: &str| -> Config {
+            serde_yaml::from_str(&format!(
+                "sources:\n  lines: {{ type: tcp, bind_address: \"127.0.0.1:9\" }}\n\
+                 sinks:\n  out: {{ type: file, path: /tmp/out, encoding: {encoding} }}\n\
+                 dag:\n  - from: {{ kind: source, name: lines }}\n    \
+                 to: [{{ kind: sink, name: out }}]\n"
+            ))
+            .unwrap()
+        };
+        assert!(file("{ type: ndjson }").validate().is_ok());
+        let parquet = r#"{ type: parquet, schema: '{"fields":[],"metadata":{}}' }"#;
+        for enc in [parquet, "{ type: json }"] {
+            let e = file(enc).validate().unwrap_err();
+            assert!(e.to_string().contains("rolling_file"), "{enc}: {e}");
         }
     }
 }
