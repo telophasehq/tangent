@@ -1,14 +1,19 @@
 # The packs' components on a release come with their build's attestation,
 # which `tangent plugin fetch` checks before it keeps one. dist's release
 # workflow calls this once the release exists (dist-workspace.toml's
-# publish-jobs), with the components the run built: each is attested here,
-# with GitHub's artifact attestations, and the attestation bundle is uploaded
-# to the release beside each component as <asset>.sigstore.json, so a check
-# needs no GitHub login:
+# publish-jobs), with the components the run built: each is attested here on
+# its own, with GitHub's artifact attestations, and its attestation bundle is
+# uploaded to the release beside it as <asset>.sigstore.json, so a check needs
+# no GitHub login:
 #
 #   gh attestation verify aws.component.wasm --repo EthanBlackburn/tangent \
 #     --bundle aws.component.wasm.sigstore.json --source-ref refs/tags/<tag> \
 #     --signer-workflow EthanBlackburn/tangent/.github/workflows/attest-packs.yml
+#
+# One statement per component, not one over all of them: gh accepts a file
+# whose digest is any subject of the statement, and a bundle over nine
+# components would vouch for any of the nine under any name. `fetch` checks
+# the subject's name as well; this keeps the by-hand check honest too.
 #
 # The actions are pinned by commit: a moved tag is how tj-actions was turned.
 name: Attest the packs
@@ -21,34 +26,54 @@ on:
         type: string
 
 jobs:
-  attest:
+  # The components this run built, by name, for the matrix below.
+  list:
     runs-on: ubuntu-latest
     permissions:
-      contents: write        # the bundles onto the release
+      contents: read
+    outputs:
+      components: ${{ steps.list.outputs.components }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: artifacts-build-global
+          path: artifacts
+      - id: list
+        run: |
+          set -euo pipefail
+          components=$(cd artifacts && ls -- *.component.wasm | jq -R . | jq -sc .)
+          echo "$components"
+          echo "components=$components" >> "$GITHUB_OUTPUT"
+
+  attest:
+    needs: list
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJson(needs.list.outputs.components) }}
+    permissions:
+      contents: write        # the bundle onto the release
       id-token: write        # to sign as this workflow
-      attestations: write    # to store the attestations
+      attestations: write    # to store the attestation
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: ${{ fromJson(inputs.plan).announcement_tag }}
+      COMPONENT: ${{ matrix.component }}
     steps:
-      - name: Fetch the components this run built
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: artifacts-*
+          name: artifacts-build-global
           path: artifacts
-          merge-multiple: true
-      - name: Attest them
+      - name: Attest ${{ matrix.component }}
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: artifacts/*.component.wasm
-      - name: Upload the bundle beside each component
+          subject-path: artifacts/${{ matrix.component }}
+      - name: Upload the bundle beside it
         run: |
           set -euo pipefail
-          ls artifacts/*.component.wasm
-          for c in artifacts/*.component.wasm; do
-            cp "$BUNDLE" "$c.sigstore.json"
-          done
-          gh release upload "$TAG" artifacts/*.component.wasm.sigstore.json --clobber --repo "$GITHUB_REPOSITORY"
+          cp -- "$BUNDLE" "artifacts/$COMPONENT.sigstore.json"
+          gh release upload "$TAG" "artifacts/$COMPONENT.sigstore.json" --clobber --repo "$GITHUB_REPOSITORY"
         env:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}

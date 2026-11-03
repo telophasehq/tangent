@@ -8,8 +8,11 @@
 //! component's attestation (a Sigstore bundle, the asset beside it on the
 //! release) must be signed by `repo`'s workflow, for the release's tag, and
 //! name the component's digest. With the bundle on the release nothing asks
-//! GitHub's API, so no login is needed. There is no way to skip the check:
-//! a plugin reads every record and this one came off the network.
+//! GitHub's API, so no login is needed. The statement must also name the
+//! file as the asset asked for, not only carry its digest, so one attested
+//! component of a release cannot be passed off as another. There is no way
+//! to skip the check: a plugin reads every record and this one came off the
+//! network.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -143,6 +146,7 @@ async fn fetch_one(
     let verified = verify(
         name,
         &asset,
+        &digest,
         &component,
         bundle.as_deref(),
         p,
@@ -244,6 +248,7 @@ fn verify_args(
 fn verify(
     name: &str,
     asset: &str,
+    digest: &str,
     component: &Path,
     bundle: Option<&Path>,
     p: &Prebuilt,
@@ -273,8 +278,8 @@ fn verify(
         }
         bail!("{name}: {asset} did not verify, and is not kept:\n{err}");
     }
-    let mut verified = summarize(&output.stdout)
-        .ok_or_else(|| anyhow!("{name}: gh attestation verify said nothing tangent could read"))?;
+    let mut verified = attested_as(&output.stdout, digest, asset)
+        .with_context(|| format!("{name}: {asset} did not verify, and is not kept"))?;
     // The same check on the files as they are kept.
     verified.by_hand = format!(
         "gh {}",
@@ -283,28 +288,67 @@ fn verify(
     Ok(verified)
 }
 
-/// Who built what, from `gh attestation verify --format json`.
-fn summarize(stdout: &[u8]) -> Option<Verified> {
-    let v: Value = serde_json::from_slice(stdout).ok()?;
-    let cert = v
-        .as_array()?
-        .first()?
-        .pointer("/verificationResult/signature/certificate")?;
-    let field = |k: &str| {
+/// The attestation, among those `gh attestation verify --format json`
+/// accepted, whose statement names the file with `digest` as `asset`, and
+/// who built it. gh accepts a file whose digest is any subject of a
+/// statement, and a statement may cover several files; checked by digest
+/// alone, one attested component of a release passed off as another (the
+/// asset swapped on the release) would be kept under the other's name and
+/// run with its config. So the subject must also be named as the asset.
+fn attested_as(stdout: &[u8], digest: &str, asset: &str) -> Result<Verified> {
+    let v: Value =
+        serde_json::from_slice(stdout).context("reading gh attestation verify's output")?;
+    let attestations = v
+        .as_array()
+        .filter(|a| !a.is_empty())
+        .ok_or_else(|| anyhow!("gh attestation verify accepted no attestation"))?;
+    let mut named = Vec::new();
+    for a in attestations {
+        let subjects = a
+            .pointer("/verificationResult/statement/subject")
+            .and_then(Value::as_array)
+            .ok_or_else(|| anyhow!("an accepted attestation's statement has no subjects"))?;
+        for s in subjects {
+            let sha = s.pointer("/digest/sha256").and_then(Value::as_str);
+            let name = s.get("name").and_then(Value::as_str).unwrap_or("");
+            if sha.is_some_and(|sha| sha.eq_ignore_ascii_case(digest)) {
+                if name == asset {
+                    return summarize(a);
+                }
+                named.push(name.to_string());
+            }
+        }
+    }
+    if named.is_empty() {
+        bail!("no accepted attestation names a file with sha256 {digest}");
+    }
+    bail!(
+        "the file with sha256 {digest} is attested as {}, not as {asset}: another file of the \
+         release under this asset's name",
+        named.join(", ")
+    )
+}
+
+/// Who built it, from one attestation gh accepted.
+fn summarize(attestation: &Value) -> Result<Verified> {
+    let cert = attestation
+        .pointer("/verificationResult/signature/certificate")
+        .ok_or_else(|| anyhow!("the attestation has no certificate in gh's output"))?;
+    let field = |k: &str| -> Result<String> {
         cert.get(k)
             .and_then(Value::as_str)
-            .unwrap_or("?")
-            .to_string()
+            .map(str::to_string)
+            .ok_or_else(|| anyhow!("the attestation's certificate has no {k}"))
     };
-    let signer = field("buildSignerURI");
+    let signer = field("buildSignerURI")?;
     let signer = signer
         .strip_prefix("https://")
         .and_then(|s| s.split_once('/').map(|(_, rest)| rest.to_string()))
         .unwrap_or(signer);
-    Some(Verified {
+    Ok(Verified {
         signer,
-        commit: field("sourceRepositoryDigest"),
-        source_ref: field("sourceRepositoryRef"),
+        commit: field("sourceRepositoryDigest")?,
+        source_ref: field("sourceRepositoryRef")?,
         by_hand: String::new(),
     })
 }
@@ -370,26 +414,68 @@ mod tests {
         );
     }
 
-    #[test]
-    fn summarize_reads_the_signer_the_commit_and_the_ref() {
-        let out = serde_json::json!([{
+    const AWS: &str = "791384b07102b8b4f42972513bec962bc44d6a812668fcd718eef3e3c83a3c0f";
+    const FRESH: &str = "8fdda3d978509a6e84dad3e2f7e21bfe09e66e4b932910c28a26f38093e6e11e";
+
+    /// What gh prints for a statement over two of a release's components.
+    fn accepted() -> Vec<u8> {
+        serde_json::json!([{
             "attestation": {},
             "verificationResult": {
+                "statement": { "subject": [
+                    { "name": "aws.component.wasm", "digest": { "sha256": AWS } },
+                    { "name": "fresh.component.wasm", "digest": { "sha256": FRESH } }
+                ]},
                 "signature": { "certificate": {
                     "buildSignerURI": "https://github.com/EthanBlackburn/tangent/.github/workflows/attest-packs.yml@refs/tags/v0.1.10",
                     "sourceRepositoryDigest": "63837fb778d6a39f02be0ce76ff89f2bc8d74bdc",
                     "sourceRepositoryRef": "refs/tags/v0.1.10"
                 }}
             }
-        }]);
-        let v = summarize(out.to_string().as_bytes()).unwrap();
+        }])
+        .to_string()
+        .into_bytes()
+    }
+
+    #[test]
+    fn the_file_must_be_attested_under_the_assets_name() {
+        let v = attested_as(&accepted(), AWS, "aws.component.wasm").unwrap();
         assert_eq!(
             v.signer,
             "EthanBlackburn/tangent/.github/workflows/attest-packs.yml@refs/tags/v0.1.10"
         );
         assert_eq!(short(&v.commit), "63837fb778d6");
         assert_eq!(v.source_ref, "refs/tags/v0.1.10");
-        assert!(summarize(b"[]").is_none());
-        assert!(summarize(b"not json").is_none());
+
+        // fresh's bytes on the release as aws.component.wasm: attested, but not as aws
+        let err = format!(
+            "{:#}",
+            attested_as(&accepted(), FRESH, "aws.component.wasm").unwrap_err()
+        );
+        assert!(
+            err.contains("attested as fresh.component.wasm, not as aws.component.wasm"),
+            "{err}"
+        );
+        // a digest no statement has, though gh accepted something
+        let other = "0".repeat(64);
+        let err = format!(
+            "{:#}",
+            attested_as(&accepted(), &other, "aws.component.wasm").unwrap_err()
+        );
+        assert!(
+            err.contains("no accepted attestation names a file with sha256 000"),
+            "{err}"
+        );
+        assert!(attested_as(b"[]", AWS, "aws.component.wasm").is_err());
+        assert!(attested_as(b"not json", AWS, "aws.component.wasm").is_err());
+    }
+
+    #[test]
+    fn a_certificate_missing_a_field_is_an_error_not_a_placeholder() {
+        let a = serde_json::json!({ "verificationResult": { "signature": { "certificate": {
+            "buildSignerURI": "https://github.com/x/y/.github/workflows/r.yml@refs/tags/v1"
+        }}}});
+        let err = format!("{:#}", summarize(&a).unwrap_err());
+        assert!(err.contains("no sourceRepositoryDigest"), "{err}");
     }
 }
