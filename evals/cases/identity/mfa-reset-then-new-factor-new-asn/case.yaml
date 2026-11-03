@@ -1,0 +1,13 @@
+id: identity/mfa-reset-then-new-factor-new-asn
+title: "The helpdesk resets a person's MFA; a factor is enrolled and used from a new network"
+category: identity
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [okta, cloudtrail]
+events: 11
+expected:
+  flag: true
+  one_line: "admin reset carol's MFA; 35 minutes later a new factor was enrolled for her from a Hetzner address on a new device and used to sign in to Okta and AWS"
+  check_first: whether carol asked for the reset; who holds the new factor

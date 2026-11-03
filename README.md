@@ -312,7 +312,7 @@ The judge is any OpenAI-compatible model: `JUDGE_URL` (a local model on `:8080` 
 
 A `tcp` source can feed several packs: route it to each, and each takes only its own `source` values. A record whose `source` no included pack takes goes no further, and `tangent run` says so. To keep records in your own shape, send them as `source: app`, or list their name under `plugins.app.config.extra_sources`: baseline learns them as it does `app`'s, and the judge's logfmt wants a row for the name, as [packs/app/judge.yaml](/packs/app/judge.yaml) has for `app`, for its times and the fields on every line.
 
-[examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, with the cases it is measured against; [examples/app-log](/examples/app-log) is the app pack, one org per customer.
+[examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, whose cases in [evals/cases](/evals/cases) it is measured against; [examples/app-log](/examples/app-log) is the app pack, one org per customer.
 
 ### Prebuilt plugins
 A plugin is a WASM component, compiled once and run on every machine, so only a pack's author needs the toolchain. Each release of tangent carries every pack's plugin as a release asset, `<plugin>.component.wasm`, built by [packs/dist.sh](/packs/dist.sh) in the release workflow, and a pack's `ingest.yaml` says so:

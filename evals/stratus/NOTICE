@@ -1,0 +1,26 @@
+Stratus Red Team
+Copyright 2021-Present Datadog, Inc.
+
+This product includes software developed at Datadog (<https://www.datadoghq.com/).>
+
+----
+
+The data in this directory comes from Stratus Red Team v2.37.0
+(https://github.com/DataDog/stratus-red-team/tree/v2.37.0), by Datadog,
+licensed under the Apache License, Version 2.0 (LICENSE in this directory;
+https://www.apache.org/licenses/LICENSE-2.0). The text above is Stratus Red
+Team's own NOTICE.
+
+- techniques.json: each AWS technique's title, tactics, description, steps
+  and detection notes, parsed by fetch.py from
+  docs/attack-techniques/AWS/*.md at v2.37.0.
+- logs/*.json: the CloudTrail records Datadog captured when it detonated each
+  technique, from the same pages, as Datadog published them (Datadog
+  anonymized their accounts, regions, addresses and names), with one change:
+  every `sessionToken` value is replaced by REDACTED (fetch.py's `redacted`).
+- cases.json: those records rewritten by splice.py into cases for the replay
+  (acme's account, a member's identity, plain resource names, the AWS CLI's
+  user agent, and read-only controls); splice.py's docstring lists every
+  change.
+
+fetch.py, splice.py, grounding.yaml and README.md are tangent's.

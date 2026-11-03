@@ -1,0 +1,13 @@
+id: identity/okta-failed-burst-then-success
+title: Twelve failed Okta sign-ins from one host, then one that works
+category: identity
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [okta, app]
+events: 20
+expected:
+  flag: true
+  one_line: twelve wrong passwords for bob in fourteen minutes from a Vultr host in Germany, then the right one with his push accepted, then the app from the same host
+  check_first: whether bob approved that push; reset his password and end his sessions

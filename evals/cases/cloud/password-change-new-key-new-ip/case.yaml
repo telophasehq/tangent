@@ -1,0 +1,13 @@
+id: cloud/password-change-new-key-new-ip
+title: "A password change and a new access key at the office; the key's first calls from a new host"
+category: cloud
+priority: P1
+scope: actor            # the window that reveals it
+cadence: 1h
+alone_innocent: true   # does each line look fine on its own?
+sources: [cloudtrail]
+events: 8
+expected:
+  flag: true
+  one_line: erin changed her AWS password and created a second access key from the office; forty minutes later the new key listed buckets, databases and secrets from a DigitalOcean host in Germany
+  check_first: whether erin made that key; disable it and find what was on her laptop
