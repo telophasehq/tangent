@@ -4,7 +4,8 @@ What the judge has to catch, and what it must leave alone, written down as
 event sequences before arguing about designs. Every design question (per
 record or per window, which model, which cadence) is measured against these.
 The packs' fixtures were cut from eight of them; the full set is replayed
-inside weeks of ordinary traffic for the numbers in the example's README.
+inside ordinary traffic for the numbers in
+[examples/cloud-infra](/examples/cloud-infra#what-it-catches).
 
 Each case is a directory:
 
@@ -15,8 +16,10 @@ cases/<category>/<name>/
 ```
 
 Nothing in here is real: no customer, person, repo or account exists. The
-cases built on a product's own audit log or an AI agent's logs are in the
-[app-log example](../../app-log/cases/).
+cases on a company's own infrastructure (CloudTrail, GitHub, Okta, Workspace,
+CI) are read by [examples/cloud-infra](/examples/cloud-infra); the ones that
+live in a product's own logs (`app`, `agent`) by
+[examples/app-log](/examples/app-log) too.
 
 ## Sources and their shapes
 
@@ -31,24 +34,27 @@ cases built on a product's own audit log or an AI agent's logs are in the
 | `app` | a product's own audit log: `event`, `actor`, `ip`, `org` |
 | `agent` | an AI agent's structlog: `service`, `event`, `organization_id` → `task_id` → `plan_id` → `step_id` |
 
-Every event also carries `ts`, so mixed sources order.
+Every event also carries `ts`, so mixed sources order. `app` and `agent`
+carry the customer (`org`, `organization_id`), which is their partition.
 
-## The 34 cases
+## The 51 cases
 
-28 should flag, 6 must not. `P1` is the first corpus to pass; `P2` is next.
+40 should flag, 11 must not. `P1` is the first corpus to pass; `P2` is next.
 
 Most positives are sequences of lines innocent on their own
 (`alone_innocent: true` in `case.yaml`): a login and a token, a role change
 and an export, a workflow push and a runner registration, a secret read and a
-POST. That is why the judge reads an actor's records together, not lines.
-A few are single lines (root login, CloudTrail stopped, a bucket made public,
-MFA off); the judge reads those like any other, with the profile's `watch`
-and `root` facts beside them.
+POST no plan named. That is why the judge reads an actor's records together,
+not lines. A few are single lines (root login, CloudTrail stopped, a bucket
+made public, MFA off); the judge reads those like any other, with the
+profile's `watch` and `root` facts beside them.
 
 The negatives are what looks alarming and is not: Dependabot's weekly batch,
 the scanner action's ordinary run, the on-call's 3 a.m. login from home, a
 rotation the morning after a vendor's notice, a repo made public as its README
-announced. A judge that flags these is a judge nobody reads.
+announced, a deploy's restart burst, the top-of-the-hour fan-out, scanner
+probes for PHP files, a vendor's rate limit. A judge that flags these is a
+judge nobody reads.
 
 ### Cloud (CloudTrail)
 
@@ -66,8 +72,11 @@ announced. A judge that flags these is a judge nobody reads.
 | case | | sources | events | what the logs show |
 |---|---|---|---|---|
 | `identity/admin-login-new-asn` | flag P1 | `okta` | 5 | Admin console login from a hosting-provider ASN in a new country |
+| `identity/api-key-admin-then-new-ip` | flag P1 | `app` | 3 | An admin-scoped API key is created at the office and first used from a VPS |
 | `identity/impossible-travel` | flag P1 | `okta` | 2 | Two successful logins, two continents, 22 minutes apart |
 | `identity/mfa-disabled` | flag P1 | `okta` | 2 | Admin deactivates their own MFA factor, then signs in without it |
+| `identity/role-change-then-privileged-action` | flag P2 | `app` | 2 | A member is promoted to admin at night and exports the org minutes later |
+| `identity/sso-bypass-password-login` | flag P1 | `app` | 2 | Password login succeeds in an org with SSO enforced |
 
 ### GitHub
 
@@ -84,6 +93,8 @@ announced. A judge that flags these is a judge nobody reads.
 
 | case | | sources | events | what the logs show |
 |---|---|---|---|---|
+| `data/bulk-pagination-export` | flag P1 | `app` | 40 | One API key pages through every finding in four minutes |
+| `data/egress-new-destination` | flag P2 | `agent` | 4 | A service that only talks to vendors posts to a file-sharing site |
 | `data/gmail-forwarding-rule` | flag P1 | `google_workspace` | 1 | Finance user's mailbox starts forwarding to an outside Gmail address |
 | `data/snapshot-shared-external` | flag P1 | `cloudtrail` | 1 | An RDS snapshot is shared with another AWS account |
 
@@ -107,26 +118,48 @@ announced. A judge that flags these is a judge nobody reads.
 | `vendor/ai-app-oauth-token-stolen-sso-pivot` | flag P1 | `google_workspace`, `okta`, `app` | 18 | An AI productivity app an employee connected to her Google account is breached; its OAuth token reads her Drive, then her SSO opens the internal tools (Vercel via Context.ai, April 2026) |
 | `vendor/platform-breach-env-secrets-reused` | flag P1 | `cloudtrail`, `github_audit`, `app` | 24 | A hosting vendor's breach exposes stored environment variables; what was in them is used from a datacenter within a day (Railway, Oct 2026) |
 
+### SaaS and integrations
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `saas/integration-token-stolen-bulk-read` | flag P1 | `app` | 41 | A SaaS integration's OAuth token is stolen in the vendor's breach and used to read everything (Salesloft Drift, Aug 2025) |
+| `saas/provider-keys-stolen-from-vendor-console` | flag P2 | `app` | 40 | Keys saved in a third-party developer console are taken in its breach and run up usage from everywhere (OpenCode Console, Oct 2026) |
+
 ### AI agents
 
 | case | | sources | events | what the logs show |
 |---|---|---|---|---|
 | `ai-agent/agent-escapes-task-uses-found-credentials` | flag P1 | `agent`, `cloudtrail` | 14 | An agent given one credential finds more and uses them across services in minutes (OpenAI's evaluation-sandbox escape, July 2026) |
+| `ai-agent/mcp-server-copies-every-message-out` | flag P1 | `agent` | 11 | A malicious MCP server release sends a copy of everything it handles to its author (postmark-mcp 1.0.16, Sept 2025) |
+| `ai-agent/repo-settings-redirect-model-credentials` | flag P1 | `agent` | 6 | A cloned repository's assistant settings point the agent's model calls, API key included, at an attacker host (Claude Code CVE-2026-21852) |
+
+### Agent plans
+
+| case | | sources | events | what the logs show |
+|---|---|---|---|---|
+| `agent/plan-retry-shifting-params` | flag P2 | `agent` | 7 | A plan step fails and retries six times with a different role ARN each time |
+| `agent/plan-secret-then-unplanned-post` | flag P1 | `agent` | 6 | A plan step reads a secret, a later step POSTs to a host not in the plan |
+| `agent/tool-output-injection-then-scope-change` | flag P1 | `agent` | 5 | A tool result contains instructions; the next step acts on a different resource |
 
 ### Must not flag
 
 | case | | sources | events | what the logs show |
 |---|---|---|---|---|
+| `negative/admin-usual-ip-then-export` | quiet P1 | `app` | 3 | An admin at the usual IP exports their own org's report |
 | `negative/dependabot-bumps-axios` | quiet P1 | `github_audit`, `gha_ci`, `runner_egress` | 5 | Dependabot bumps axios to a clean release and CI runs it |
 | `negative/dependabot-prs` | quiet P1 | `github_audit` | 10 | Dependabot opens its weekly batch of PRs and CI runs them |
+| `negative/deploy-restart-burst` | quiet P1 | `agent` | 42 | A deploy: new version, forty health checks, a few restarts |
 | `negative/oncall-3am-login` | quiet P1 | `okta`, `app` | 5 | The on-call engineer signs in at 3 a.m. from home, as every time they are paged |
 | `negative/repo-made-public-as-planned` | quiet P1 | `github_audit` | 2 | An admin makes the docs repo public, as the README it pushed first announces |
 | `negative/scanner-action-usual-run` | quiet P1 | `gha_ci`, `runner_egress` | 5 | The image scan step runs as it does on every build |
+| `negative/scanner-probes` | quiet P1 | `agent` | 5 | Internet scanners probe the public API for PHP and WordPress files |
 | `negative/secret-rotation-after-vendor-notice` | quiet P1 | `cloudtrail`, `app` | 10 | Admins rotate keys the morning after a vendor's breach notice |
+| `negative/top-of-hour-sync-fanout` | quiet P1 | `agent` | 60 | The poller fans out to GitHub at the top of the hour |
+| `negative/vendor-429-burst` | quiet P1 | `agent` | 9 | Okta rate-limits the poller, which backs off and succeeds |
 
 ## Cases from disclosed incidents, 2025–2026
 
-11 of the cases follow the paths of real compromises as the logs would show them. Hosts, names and addresses are synthetic; the sequence of events is taken from the public write-ups.
+15 of the cases follow the paths of real compromises as the logs would show them. Hosts, names and addresses are synthetic; the sequence of events is taken from the public write-ups.
 
 | case | incident |
 |---|---|
@@ -140,7 +173,11 @@ announced. A judge that flags these is a judge nobody reads.
 | `supply-chain/action-prints-runner-memory` | tj-actions/changed-files, March 2025 |
 | `vendor/platform-breach-env-secrets-reused` | Railway environment-variable breach, October 2026 |
 | `vendor/ai-app-oauth-token-stolen-sso-pivot` | Vercel via Context.ai, April 2026 |
+| `saas/integration-token-stolen-bulk-read` | Salesloft Drift, August 2025 |
+| `saas/provider-keys-stolen-from-vendor-console` | OpenCode Console breach, October 2026 |
 | `ai-agent/agent-escapes-task-uses-found-credentials` | OpenAI's evaluation-sandbox escape, July 2026 |
+| `ai-agent/mcp-server-copies-every-message-out` | postmark-mcp 1.0.16, September 2025 |
+| `ai-agent/repo-settings-redirect-model-credentials` | Claude Code CVE-2026-21852, 2026 |
 
 Sources: [TeamPCP (Unit 42)](https://unit42.paloaltonetworks.com/teampcp-supply-chain-attacks/),
 [TeamPCP (Arctic Wolf)](https://arcticwolf.com/resources/blog/teampcp-supply-chain-attack-campaign-targets-trivy-checkmarx-kics-and-litellm-potential-downstream-impact-to-additional-projects/),
@@ -149,4 +186,6 @@ Sources: [TeamPCP (Unit 42)](https://unit42.paloaltonetworks.com/teampcp-supply-
 [mini Shai-Hulud (Socket)](https://socket.dev/blog/openapi-react-query-codegen-npm-compromise),
 [Railway (TechCrunch)](https://techcrunch.com/2026/10/22/developer-platform-railway-urges-all-users-to-revoke-secret-keys-after-cyberattack/),
 [Vercel via Context.ai (TechCrunch)](https://techcrunch.com/2026/04/20/app-host-vercel-confirms-security-incident-says-customer-data-was-stolen-via-breach-at-context-ai/),
-[OpenAI incident (OpenAI)](https://openai.com/index/hugging-face-incident-and-the-road-ahead/).
+[OpenAI incident (OpenAI)](https://openai.com/index/hugging-face-incident-and-the-road-ahead/),
+[Claude Code leak and CVE (NodeSource)](https://nodesource.com/blog/anthropic-claude-code-source-leak-bun-bug),
+[OpenCode Console (BleepingComputer)](https://bleepingcomputer.com/news/security/opencode-hack-exposes-api-keys-amid-ai-distillation-attacks).

@@ -112,9 +112,8 @@ make -C packs test-app
 make -C packs fixtures-app        # after a change; read the diff
 ```
 
-Cases: all 17 in [examples/app-log](/examples/app-log/cases), and in
-[examples/cloud-infra](/examples/cloud-infra/cases)
-`ai-agent/agent-escapes-task-uses-found-credentials`,
+Cases in [evals/cases](/evals/cases): the 17 that were examples/app-log's,
+and `ai-agent/agent-escapes-task-uses-found-credentials`,
 `negative/oncall-3am-login`, `negative/secret-rotation-after-vendor-notice`,
 `vendor/ai-app-oauth-token-stolen-sso-pivot` and
 `vendor/platform-breach-env-secrets-reused`.

@@ -96,11 +96,12 @@ pack takes goes no further, with a warning.
 [profile/profile.yaml](profile/profile.yaml) is every fact about your company
 that no log carries, the `profile` table `ingest.yaml` names; the model reads
 it as `_facts`. [packs/core](/packs/core#the-profile) lists the keys. It ships
-filled in for the fictional company the cases describe.
+filled in for the fictional company the cases in [evals/cases](/evals/cases)
+describe.
 
 ## What it catches
 
-[cases/](cases/) holds 34 sequences as the real sources write them, 28 that should flag and 6 that must not. Half follow disclosed compromises of 2025 and 2026 ([cases/README.md](cases/README.md) has the table and sources): TeamPCP's Trivy and LiteLLM, the axios hijack, nx/s1ngularity, Shai-Hulud's second wave, tj-actions/changed-files, Railway's environment-variable breach, Vercel via Context.ai. The rest are the classics: root login, CloudTrail stopped, a bucket made public, MFA off, impossible travel, a Gmail forwarding rule, a branch protection removed.
+34 of the sequences in [evals/cases](/evals/cases) are this example's, as the real sources write them, 28 that should flag and 6 that must not. Half follow disclosed compromises of 2025 and 2026 ([evals/cases/README.md](/evals/cases/README.md) has the table and sources): TeamPCP's Trivy and LiteLLM, the axios hijack, nx/s1ngularity, Shai-Hulud's second wave, tj-actions/changed-files, Railway's environment-variable breach, Vercel via Context.ai. The rest are the classics: root login, CloudTrail stopped, a bucket made public, MFA off, impossible travel, a Gmail forwarding rule, a branch protection removed.
 
 This shape, an actor's latest forty records, is not measured yet. The two before it, over the cases of both examples and 38 days of synthetic ordinary traffic: a judge reading every record in batches with each org's history as context (Claude Haiku 4.5) flagged 38 to 39 of the 40 positives, 1 of 11 negatives and 13 of 16,199 ordinary records; a rulebook gate in front of a local 30B judge, 38 of 40 and 2 of 11.
 
@@ -112,5 +113,4 @@ The packs' fixtures were cut from eight of the cases; `make test` runs them, nee
 ingest.yaml           core and the five packs, the sources and their edges, the profile
 judge.yaml            core's judge and the packs' logfmt rows
 profile/profile.yaml  your company (edit this)
-cases/                the sequences, one directory each: case.yaml + events.ndjson
 ```

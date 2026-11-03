@@ -91,6 +91,6 @@ make -C packs test-google_workspace
 make -C packs fixtures-google_workspace   # after a change; read the diff
 ```
 
-Cases in [examples/cloud-infra](/examples/cloud-infra/cases) with Workspace
+Cases in [evals/cases](/evals/cases) with Workspace
 records: `data/gmail-forwarding-rule` and
 `vendor/ai-app-oauth-token-stolen-sso-pivot`.

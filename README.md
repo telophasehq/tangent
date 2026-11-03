@@ -287,7 +287,7 @@ The judge is any OpenAI-compatible model: `JUDGE_URL` (a local model on `:8080` 
 
 A `tcp` source can feed several packs: route it to each, and each takes only its own `source` values. A record whose `source` no included pack takes goes no further, and `tangent run` says so. To keep records in your own shape, send them as `source: app`, or list their name under `plugins.app.config.extra_sources`: baseline learns them as it does `app`'s, and the judge's logfmt wants a row for the name, as [packs/app/judge.yaml](/packs/app/judge.yaml) has for `app`, for its times and the fields on every line.
 
-[examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, with the cases it is measured against; [examples/app-log](/examples/app-log) is the app pack, one org per customer.
+[examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, whose cases in [evals/cases](/evals/cases) it is measured against; [examples/app-log](/examples/app-log) is the app pack, one org per customer.
 
 ### Volume and cost
 What a pack costs to run is what its judge's model charges: tangent moves hundreds of MB a second ([Benchmarks](#benchmarks)), and a model is paid by the token. With Claude Haiku 5.5 as the judge ($0.10 a million tokens in, $0.50 out), a day of logs costs about
