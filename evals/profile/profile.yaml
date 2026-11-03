@@ -40,6 +40,8 @@ services:                        # service principals: IAM users and roles, depl
   - deploy-bot
   - prod-readonly
   - svc-backup2
+  - svc-archive
+  - etl-runner
   - railway-deploy
   - agent-plan-worker
 

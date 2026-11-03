@@ -422,7 +422,8 @@ def placed_cases(v3=False):
     """Our cases, Stratus Red Team's recorded techniques and their harmless
     twins (runs/stratus/cases.json, from stratus/splice.py), taken in turn so no
     suite gets all the early days, each on its own day (`schedule`). v3's
-    cases come last, so every other case keeps its day."""
+    cases come last, then the injected ones, so every other case keeps its
+    day; those get usual sign-ins as the cases they copy do."""
     ours = sorted(gen.CASES[:gen.V3_FROM], key=lambda c: c["id"])
     if v3:
         ours = [dict(c, events=usual_signins(c["events"])) for c in ours]
@@ -434,7 +435,8 @@ def placed_cases(v3=False):
     suites = [ours, [c for c in extra if c["id"].startswith("stratus/")], [c for c in extra if c["id"].startswith("control/")]]
     order = [suite[i] for i in range(max(map(len, suites))) for suite in suites if i < len(suite)]
     if v3:
-        order += sorted(gen.CASES[gen.V3_FROM:], key=lambda c: c["id"])
+        order += sorted(gen.CASES[gen.V3_FROM:gen.INJECTED_FROM], key=lambda c: c["id"])
+        order += [dict(c, events=usual_signins(c["events"])) for c in gen.CASES[gen.INJECTED_FROM:]]
     # The ordinary days exactly as main() makes them (same seed, its own Random).
     ordinary = noise_between(START, END, seed=7)
     gap = actor_gaps(ordinary)
