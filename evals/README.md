@@ -77,6 +77,28 @@ takes no time from the future. `windows.py` makes the judged windows: an hour
 either side of every case event, merged, 211 windows and 434 hours. Records
 outside a window are ingested as history and never judged.
 
+## One command
+
+From the repository root, with Rust ([rustup](https://rustup.rs)) and Python
+3.10 or later with PyYAML importable under `python3 -I`:
+
+```bash
+AWS_PROFILE=... make -C evals     # Claude Haiku 5.5 on Bedrock: about $1 a run
+make -C evals JUDGE=local         # packs/core's judge at JUDGE_URL: free, well over an hour
+make -C evals corpus              # the corpus alone, no model
+```
+
+It first makes whatever is missing or older than what it is made from: the
+corpus, tangent, the packs' plugins, and the enrichment data if there is none
+(`make -C examples/cloud-infra setup` refreshes it). Then it replays the
+corpus in ten shards (`SHARDS`) in a run directory of its own,
+`evals/runs/<judge>-<time>` (`RUN=runs/NAME` names another, relative to
+`evals/`), and prints the score, which `score.txt` there keeps. `TANGENT`
+uses a tangent you built instead of building one. One run at a time in a
+checkout: a run reads the corpus and plugins until it ends, so another
+refuses to start while it does. The sections below are the same steps one at
+a time.
+
 ## Generate (no model)
 
 Python 3.10 or later, with PyYAML importable under `python3 -I` (installed
@@ -252,5 +274,6 @@ evals/
   profile/           the eval's profile of acme
   harness/           maincfg.py, replay.py, shard.py, past.py, windows.py, and the scorers
   runs/              everything generated (ignored by git)
+  Makefile           make -C evals: the corpus, tangent and the plugins as needed, a run, its score
   RESULTS.md
 ```
