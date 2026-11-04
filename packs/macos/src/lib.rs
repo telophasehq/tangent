@@ -19,7 +19,7 @@ wit_bindgen::generate!({
 mod paths;
 
 use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
-use normkit::Norm;
+use normkit::{Norm, Stamp};
 use paths::{group, home, scratch, Group};
 use serde_json::{json, Map, Value};
 use tangent::logs::enrichment::lookup;
@@ -227,8 +227,6 @@ fn finished(rec: &Map<String, Value>) -> Option<(Map<String, Value>, Norm)> {
     };
 
     let mut out = Map::new();
-    put(&mut out, "ts", rec.get("time").cloned());
-    out.insert("source".into(), json!("macos"));
     out.insert("event".into(), json!(kind));
     out.insert("process".into(), actor.json());
     let above = parents(actor.ppid);
@@ -364,9 +362,15 @@ impl Guest for Component {
         let kit = factskit::kit(lookup);
         let mut out = Vec::new();
         for lv in input {
-            let rec = normkit::record(&lv.log())?;
-            if let Some((finished, n)) = finished(&rec) {
-                kit.write(&mut out, finished, n)?;
+            let read = normkit::record(&lv.log())?;
+            if let Some((rec, n)) = finished(&read) {
+                // eslogger's `time`, and no `source`: the stamp is built, not read
+                let mut stamp = Stamp::of(&read);
+                if let Some(t) = read.get("time").and_then(Value::as_str) {
+                    stamp.ts = t.to_string();
+                }
+                stamp.source = "macos".into();
+                kit.write(&mut out, stamp, rec, n)?;
             }
         }
         Ok(out)
