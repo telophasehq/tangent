@@ -1,4 +1,5 @@
 pub mod cloudtrail;
+pub mod cloudtrail_history;
 pub mod decoding;
 pub mod file;
 pub mod github_audit;
