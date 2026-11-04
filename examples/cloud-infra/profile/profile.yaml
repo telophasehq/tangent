@@ -2,7 +2,7 @@
 # about you that no log carries: who your people are, where they are, where
 # your services run, which hosts your systems talk to, which assets matter.
 #
-# The values below describe the fictional company in /evals/cases, so `make test`
+# The values below describe the fictional company in tangent-eval's cases, so `make test`
 # passes out of the box. Replace them with yours before `make run`.
 
 org: acme                        # the org every one of your own infrastructure logs is folded into

@@ -112,7 +112,7 @@ make -C packs test-app
 make -C packs fixtures-app        # after a change; read the diff
 ```
 
-Cases in [evals/cases](/evals/cases): the 17 that were examples/app-log's,
+Cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases): the 17 that were examples/app-log's,
 and `agents/agent-escapes-task-uses-found-credentials`,
 `benign/oncall-3am-login`, `benign/secret-rotation-after-vendor-notice`,
 `vendor/ai-app-oauth-token-stolen-sso-pivot` and

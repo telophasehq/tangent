@@ -152,7 +152,7 @@ make -C packs test-aws          # compile, then the fixtures
 make -C packs fixtures-aws      # expected.json again, after a change; read the diff
 ```
 
-Cases in [evals/cases](/evals/cases) with CloudTrail
+Cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) with CloudTrail
 records: `cloud/*` (root console login, CloudTrail stopped, a bucket made
 public, a security group opened to the world, a role assumed by a new
 principal, a key created with `*`), `data-exfil/snapshot-shared-external`,

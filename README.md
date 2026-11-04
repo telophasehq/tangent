@@ -314,7 +314,7 @@ The judge is any OpenAI-compatible model: `JUDGE_URL` (a local model on `:8080` 
 
 A `tcp` source can feed several packs: route it to each, and each takes only its own `source` values. A record whose `source` no included pack takes goes no further, and `tangent run` says so. To keep records in your own shape, send them as `source: app`, or list their name under `plugins.app.config.extra_sources`: baseline learns them as it does `app`'s, and the judge's logfmt wants a row for the name, as [packs/app/judge.yaml](/packs/app/judge.yaml) has for `app`, for its times and the fields on every line.
 
-[examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, whose cases in [evals/cases](/evals/cases) it is measured against; [examples/app-log](/examples/app-log) is the app pack, one org per customer.
+[examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, whose cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) it is measured against; [examples/app-log](/examples/app-log) is the app pack, one org per customer.
 
 ### Prebuilt plugins
 A plugin is a WASM component, compiled once and run on every machine, so only a pack's author needs the toolchain. Each release of tangent carries every pack's plugin as a release asset, `<plugin>.component.wasm`, built by [packs/dist.sh](/packs/dist.sh) in the release workflow, and a pack's `ingest.yaml` says so:
@@ -381,6 +381,10 @@ These are estimates. Log sizes are measured on samples (CloudTrail on 20k events
 3. `judge.yaml`: under `inference.judge.encoding.sources.<source>`, the fields naming the principal and the time, and those the model should see on every line. Your pack's own `_facts` keys go in its sources' `keep` too: core's `keep` is every pack's, and a list set in two files is a conflict, not a merge.
 4. `tests/input.json` from synthetic records, two or more, with the tables they read: the company they describe, and what you want their addresses to be (`203.0.113.9` a Tor exit, say). `make -C packs fixtures-<name>` writes `tests/expected.json` from the plugin's output; read it before committing. `make -C packs test` runs every pack's fixtures on its own.
 5. So the release ships it prebuilt: `prebuilt:` on the plugin in `ingest.yaml`, as the other packs have it, and the plugin in [packs/dist.sh](/packs/dist.sh)'s list and [dist-workspace.toml](/dist-workspace.toml)'s `extra-artifacts`. `packs/dist.sh check` (CI runs it) says when the list and the configs disagree; `make -C packs dist` builds what the release would.
+
+## How well does it work?
+
+The security packs are measured against [tangent-eval](https://github.com/EthanBlackburn/tangent-eval): 66 cases of attacks and look-alikes across cloud, identity, GitHub, supply chain, SaaS and AI-agent logs, Datadog's 35 recorded AWS attack techniques, and, with the macOS pack, a working week of a developer's Mac, each inside months of ordinary traffic. Its README says what the cases are, what has been measured, and how to run it yourself (`make` there, about $1 on Bedrock or free with a local model).
 
 ## Benchmarks
 Benchmarks show end-to-end throughput with simple log transformation plugins implemented in [Rust](/examples/rust/src/lib.rs), [Go](/examples/golang/main.go), and [Python](/examples/python/mapper.py). Each plugin is compiled to WASM and run inside Tangent.
