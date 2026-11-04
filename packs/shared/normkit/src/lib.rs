@@ -1,6 +1,7 @@
 //! What every pack shares: `_norm`, the one shape every source is put in, and
 //! the scrubs a record goes through first. `factskit` writes the record out.
 
+use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 
@@ -19,7 +20,7 @@ fn reserved(k: &str) -> bool {
 /// Who did what, from where, to what, the same way for every source. The
 /// fields written are `_norm`'s; the rest is what the pack read off the log
 /// for `_facts`.
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, JsonSchema)]
 pub struct Norm {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actor: Option<String>,

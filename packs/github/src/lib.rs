@@ -94,6 +94,10 @@ impl Guest for Component {
         }]
     }
 
+    fn output_schema() -> String {
+        factskit::output_schema()
+    }
+
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
         let kit = factskit::kit(lookup);
         let mut out = Vec::new();

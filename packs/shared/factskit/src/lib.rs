@@ -13,6 +13,7 @@ use enrichkit::{parse_net, Ip, Lookup, Tables};
 use identitykit::People;
 use ipnet::IpNet;
 use normkit::{Norm, Stamp};
+use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 
@@ -20,7 +21,7 @@ use serde_json::{json, Map, Value};
 /// source it was read with, `_norm`, `_facts`, then the provider's fields
 /// the pack kept. A sink can rely on `ts`, `source` and `_norm` being there
 /// in every record; the rest is the provider's, and nothing is promised.
-#[derive(Serialize)]
+#[derive(Serialize, JsonSchema)]
 pub struct Finished {
     pub ts: String,
     pub source: String,
@@ -30,6 +31,12 @@ pub struct Finished {
     pub facts: Map<String, Value>,
     #[serde(flatten)]
     pub rest: Map<String, Value>,
+}
+
+/// The JSON Schema of [`Finished`]: what every pack's plugin returns from
+/// `output-schema`, so sinks fed by a pack are checked against it.
+pub fn output_schema() -> String {
+    schemars::schema_for!(Finished).to_value().to_string()
 }
 
 /// The company, as no log says it.
@@ -573,6 +580,34 @@ mod tests {
             ts.len() == 24 && ts.starts_with("20") && ts.ends_with('Z'),
             "{ts}"
         );
+    }
+
+    /// What a pack's plugin says it writes: ts, source, _norm and _facts in
+    /// every record, `_norm`'s fields each maybe, the provider's unnamed.
+    #[test]
+    fn the_output_schema_is_the_finished_record() {
+        let s: Value = serde_json::from_str(&output_schema()).unwrap();
+        let mut required: Vec<&str> = s["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        required.sort();
+        assert_eq!(required, ["_facts", "_norm", "source", "ts"]);
+        assert_eq!(s["properties"]["ts"]["type"], "string");
+        assert_eq!(s["additionalProperties"], true, "{s}");
+        let norm = &s["$defs"]["Norm"];
+        assert_eq!(
+            norm["properties"]["actor"]["type"],
+            json!(["string", "null"])
+        );
+        assert!(
+            norm.get("required")
+                .is_none_or(|r| r.as_array().unwrap().is_empty()),
+            "{norm}"
+        );
+        assert!(norm["properties"].get("principal").is_none(), "{norm}");
     }
 
     #[test]

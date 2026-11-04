@@ -11,4 +11,5 @@ identitykit = { path = "../identitykit" }
 ipnet = "2"
 normkit = { path = "../normkit" }
 serde = { version = "1", features = ["derive"] }
+schemars = "1.2.3"
 serde_json = { version = "1", features = ["float_roundtrip"] }
