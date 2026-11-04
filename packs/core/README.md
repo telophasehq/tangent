@@ -4,8 +4,9 @@ Not a provider: what every pack needs, and the judge. Every config includes
 it, beside the packs it uses.
 
 ```
-your sources ──▶ a pack's plugin ──┬──▶ logs.sqlite                                            (ingest.yaml)
-                   reads the       └──▶ baseline_builder ──▶ state.sqlite
+your sources ──▶ a pack's plugin ──┬──▶ logs.sqlite, the judge's queue                        (ingest.yaml)
+                   reads the       ├──▶ lake/, every record as Parquet
+                                   └──▶ baseline_builder ──▶ state.sqlite
                    tables geo, asn, networks and profile
 
 logs.sqlite ──▶ actors ──▶ baseline_renderer ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson (judge.yaml)
@@ -27,9 +28,15 @@ state.sqlite ─────────────────┘             
   | `networks` | `cidr` | networks.csv | its labels: `tor` and `vpn` are flags, and any other label names its hosting provider (`aws`, `gcp`, `cloudflare`, `datacenter`; the first in the file wins) |
   | `profile` | `document` | yours | everything else ([below](#the-profile)); your config names it |
 
-- **`logs`**, the sink every pack's plugin has an edge to: `logs.sqlite`, each
+- **`logs`**, a sink every pack's plugin has an edge to: `logs.sqlite`, each
   record once, at its `ts`, with two partitions, the org and the org and actor.
-  Nothing is deleted; trimming it is yours to do.
+  It is the judge's queue: once an actor's records are judged, judge.yaml's
+  `actors` deletes them, all but the 39 that can top up the actor's next batch.
+- **`lake`**, the other: every record, kept, as Parquet files in
+  `lake/logs/<year>/<month>/<day>/<hour>/`, each record whole in `record` and
+  `ts`, `source` and `_norm`'s org, actor, kind and ip as columns, for
+  DataFusion or DuckDB to read. A file is sealed an hour after it opened, and
+  only sealed files are there; delete old hours to trim it.
 - **`baseline_builder`**, the plugin every pack's plugin has an edge to as
   well: it folds each record into the state store, under the namespace
   `baseline`, and passes nothing on ([below](#baseline)).
@@ -116,7 +123,10 @@ would go on as nobody the org knows, in the provider's org rather than yours.
 
 - **actors** reads `logs.sqlite` back forty records of one actor at a time,
   oldest first, topped up with the actor's latest records already judged,
-  marked `_context`.
+  marked `_context`. Once a batch is through, the actor's judged records but
+  its latest 39 (`batch_size` - 1, the most a top-up uses) are deleted, so
+  the queue holds what is not judged and what tops up each actor's next
+  batch.
 - **baseline_renderer** reads ingest's `state.sqlite` and puts the same
   `_baseline` on each of an actor's records ([below](#baseline)). The state
   is opened `read_only`, without ingest's lock, so ingest starts first: the

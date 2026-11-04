@@ -11,9 +11,9 @@ profile.
 ```
 CloudTrail ──▶ aws ──────────────┐
 GitHub audit log ──▶ github ─────┤
-Okta ──▶ okta ───────────────────┼──▶ logs.sqlite        (ingest.yaml)
+Okta ──▶ okta ───────────────────┼──▶ logs.sqlite, the judge's queue   (ingest.yaml)
 Google Workspace ──▶ google_workspace
-NDJSON on :9400 ──▶ each pack ───┤   (CI, runner egress, your product's logs)
+NDJSON on :9400 ──▶ each pack ───┼──▶ lake/, every record as Parquet
                                  └──▶ baseline_builder ──▶ state.sqlite
 
 logs.sqlite ──▶ actors ──▶ baseline_renderer ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson  (judge.yaml)
@@ -31,8 +31,11 @@ state.sqlite ─────────────────┘             
   it in `_facts`: whether the actor is AWS itself, a member, a service, a key
   or nobody known; whether the address, destination and target are usual; which
   kinds you watch. Every record goes on.
-- **logs** keeps every record once in `logs.sqlite`, at its `ts`, with two
-  partitions: the org, and the org and actor.
+- **logs** keeps each record in `logs.sqlite`, at its `ts`, with two
+  partitions, the org and the org and actor, until it is judged: the judge's
+  queue, which keeps each actor's latest 39 judged records for context.
+- **lake** keeps every record, as Parquet files a directory an hour under
+  `lake/`, for DataFusion or DuckDB; delete old hours to trim it.
 - **baseline_builder** folds every record into `state.sqlite` too: when each
   actor first did each thing, from where and with what, how much an hour, and
   each person's sign-ins and credential changes in every source (`people` in
