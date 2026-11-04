@@ -14,7 +14,7 @@ says about it in `_facts`. How to use them is in the main
 | [okta](okta) | `okta` |
 | [google_workspace](google_workspace) | `google_workspace` |
 | [app](app) | your product's NDJSON: `app`, `agent`, and names you list |
-| [macos](macos) | planned, not built |
+| [macos](macos) | `macos`: this Mac's `eslogger` events, the few a model should read; no store, a judge inline |
 | [shared](shared) | not a pack: `normkit`, `enrichkit`, `identitykit` and `factskit`, the Rust libraries every pack's plugin links |
 
 A `source` value belongs to one pack: two packs taking it would store each
