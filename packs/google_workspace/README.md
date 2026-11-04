@@ -91,6 +91,6 @@ make -C packs test-google_workspace
 make -C packs fixtures-google_workspace   # after a change; read the diff
 ```
 
-Cases in [evals/cases](/evals/cases) with Workspace
+Cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) with Workspace
 records: `data-exfil/gmail-forwarding-rule` and
 `vendor/ai-app-oauth-token-stolen-sso-pivot`.

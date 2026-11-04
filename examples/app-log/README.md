@@ -16,7 +16,7 @@ It is built only from [packs](/packs): `ingest.yaml` includes
 [core](/packs/core) and the [app](/packs/app) pack and adds the NDJSON source
 on `:9401` and the profile; `judge.yaml` includes core's judge, which reads
 each actor's history from ingest's `state.sqlite`, and app's logfmt row. The
-17 cases in [evals/cases](/evals/cases) are the ones that live in product logs: a key
+17 cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) are the ones that live in product logs: a key
 paging through a whole dataset, an integration's token used from a host it
 never used, a role change followed by an export, an agent's plan reading a
 secret and posting to a host its steps never named, a malicious MCP server
