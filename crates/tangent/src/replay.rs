@@ -28,6 +28,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::dag::DagRuntime;
 use crate::router::Router;
+use crate::sources::cloudtrail_history;
 use crate::sources::decoding::chunk_ndjson;
 use crate::sources::poll::frame;
 use crate::sources::sqlite::Watch;
@@ -58,7 +59,6 @@ pub trait Past: Send {
 }
 
 /// The past of the source `name`, when replay can read its kind's.
-#[allow(clippy::match_single_binding, unused_variables)] // a kind with a past gets an arm
 async fn past(
     name: &str,
     src: &SourceConfig,
@@ -66,6 +66,9 @@ async fn past(
     to: DateTime<Utc>,
 ) -> Result<Option<Box<dyn Past>>> {
     match src {
+        SourceConfig::Cloudtrail(c) => Ok(Some(Box::new(
+            cloudtrail_history::past(name, c, from, to).await?,
+        ))),
         _ => Ok(None),
     }
 }

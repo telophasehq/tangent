@@ -130,6 +130,24 @@ file, each one an event in a later file. Leave the trail's bucket out of its
 data-event selectors. With a bucket role, these calls carry the session name
 `tangent`.
 
+### Replay
+
+`tangent replay` reads a `cloudtrail` source's past from CloudTrail's Event
+history through LookupEvents, so it needs no trail, queue or bucket. It uses
+the source's `region` and `profile` credentials and reads the account they
+belong to, in every commercial region. An opt-in region the account hasn't
+enabled is skipped, and so, with a warning, is an opt-in region whose endpoint
+can't be reached. An organization trail's other accounts are not included. The
+identity needs `cloudtrail:LookupEvents`. Event history keeps 90 days of
+management events only: a replay gets no data events, and a `from` more than
+90 days back is refused. Each LookupEvents call is a management event too, so
+the range ends when the replay starts, and a call of its own that lands in the
+range anyway (as one does when the machine's clock is ahead of AWS's) is left
+out: each replay's calls carry `tangent-replay-` and an id of its own in their
+`userAgent`. A later replay's range holds an earlier replay's calls.
+LookupEvents allows two calls a second per region and returns 50 events a
+call, so an hour with 5,000 events in one region takes about 50 seconds.
+
 ### Worth watching
 
 Kinds to list under the profile's `watch`: `StopLogging`, `DeleteTrail`,

@@ -18,9 +18,12 @@ use aws_sdk_cloudtrail::primitives::DateTime as AwsTime;
 use aws_sdk_cloudtrail::Client;
 use chrono::{DateTime, SubsecRound, TimeDelta, Utc};
 use serde_json::Value;
+use tangent_shared::sources::cloudtrail::CloudtrailConfig;
 use tokio::time::Instant;
 
-use crate::sources::poll::parse_time;
+use crate::replay::Past;
+use crate::sources::cloudtrail::{aws, SOURCE};
+use crate::sources::poll::{parse_time, stamp};
 
 /// AWS's commercial (`aws` partition) regions: those every account has, then
 /// the opt-in ones an account enables. From botocore's
@@ -434,6 +437,67 @@ async fn region(
             Some(next) => token = Some(next),
             None => return Ok((Answer::Page(Page { events, next: None }), calls)),
         }
+    }
+}
+
+/// The source's past for `tangent replay`: the Event history of the account
+/// its credentials are in, every region's, for `[from, to)` up to when the
+/// replay started.
+pub(crate) async fn past(
+    name: &str,
+    cfg: &CloudtrailConfig,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> Result<History> {
+    let started = Utc::now();
+    let end = range_end(from, to, started).with_context(|| format!("source {name}"))?;
+    let aws = aws(cfg).await;
+    if end < to {
+        tracing::info!(source = %name, %end, "the range ends when the replay started: Event history after then holds the replay's own LookupEvents calls");
+    }
+    if end > started - lag() {
+        tracing::warn!(source = %name, %end, "Event history may not have the range's last few minutes yet: CloudTrail typically has an event within 5 minutes of its call");
+    }
+    let app = app_name();
+    tracing::info!(source = %name, %from, %end, %app, "cloudtrail source reading Event history for a range");
+    Ok(History::new(
+        Box::new(Clients::new(&aws, &app)?),
+        from,
+        end,
+        app,
+    ))
+}
+
+#[async_trait]
+impl Past for History {
+    async fn until(&mut self, t: DateTime<Utc>) -> Result<Vec<Value>> {
+        let mut out = Vec::new();
+        for (at, mut v) in History::until(self, t).await? {
+            stamp(SOURCE, at, &mut v);
+            out.push(v);
+        }
+        Ok(out)
+    }
+    fn size(&self) -> String {
+        let mut out = format!("{} not enabled", self.not_enabled);
+        if self.unreachable > 0 {
+            out += &format!(", {} unreachable", self.unreachable);
+        }
+        format!(
+            "Event history to {} in {} of {ALL_REGIONS} regions ({out}), management events only",
+            self.end().format("%Y-%m-%dT%H:%M:%SZ"),
+            self.regions(),
+        )
+    }
+    fn estimate(&self) -> Option<u64> {
+        History::estimate(self)
+    }
+    fn read(&self) -> String {
+        let mut out = format!("from {} LookupEvents calls", self.calls);
+        if self.own > 0 {
+            out += &format!(" ({} of the replay's own left out)", self.own);
+        }
+        out
     }
 }
 
