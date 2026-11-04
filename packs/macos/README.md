@@ -78,6 +78,45 @@ over, a marketplace refresh that writes hundreds of plugin files in a minute,
 should know of normal is in that brief, so when this Mac's normal differs,
 edit the brief.
 
+## The cases
+
+The question under every record is who touched the agent's steering, and
+whether the agent was steered or made to act. These are the cases the brief
+asks the judge to find, what each looks like in the records, and what looks
+like it and is not.
+
+| case | in the records | not this |
+|---|---|---|
+| A hook planted (catalog H) | a write, create or `rename_over` on `agent_settings` by a package script (node, python, sh under npm, pip, bun, uv), a program from a fresh clone, an extension host, a browser, or a program with no tty | the agent saving its own settings; an editor, when the person is editing them |
+| Instructions poisoned (I) | the same writers on `agent_instructions`: `CLAUDE.md`, `AGENTS.md`, memory | the agent writing its memory; an editor |
+| An MCP server added (M) | the same writers on `agent_mcp`; `~/.claude.json` replaced by a rename | the agent's own tmp-and-rename of `~/.claude.json` |
+| Transcripts read (S) | a read of `agent_state` by anything but the agent that wrote it: a package script, a sync client, an unknown program | the agent appending to its transcript |
+| Extensions swapped (X) | a write to `agent_extensions` by anything but the agent | a marketplace refresh: hundreds of files into `.staging`, live renamed to `.backup`, staging to live, backup unlinked, within a minute |
+| Credentials read | a read of `credentials` by anything but the tool the file belongs to, or by a `scratch_program`, or under an agent | `aws` reading `~/.aws`, `git` and `ssh` reading `~/.ssh`, `npm` reading `~/.npmrc`, `gh` reading `~/.config/gh`, the agent reading the keychain |
+| The agent redirected | an exec with `agent_env`: `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` sends its traffic, prompts and keys included, wherever the URL points; `CLAUDE_CONFIG_DIR` or `CODEX_HOME` makes it read another config; `OTEL_*` sends its telemetry away | the vendor's own URL; a well-known local proxy port |
+| The agent run headless | an exec of the agent with `--dangerously-skip-permissions`, `--dangerously-bypass-approvals-and-sandbox`, `--yolo`, `--trust-all-tools` or `-p`, with node, a package manager or a script among its parents, or no tty | the person typing it in a shell |
+| The agent made to act | under an agent (it is in `parents`), a child that reads credentials or transcripts, writes `persistence`, runs curl or a shell with a URL, pushes, publishes or installs | the agent running `git`, `security`, the shell and the build for its own commands |
+| Persistence | a write to `persistence`: rc files, LaunchAgents, LaunchDaemons, git hooks, `.git/config`, `.github/workflows/`; a `btm_launch_item_add` | an editor on `~/.zshrc`; `git` writing `.git/config` on clone; an installer the person ran |
+| A program from nowhere | a `scratch_program` (from `/tmp`, a cache, Downloads, `node_modules`) or `unsigned` program that then touches any group | a build tool's children |
+| Covering tracks | `rename_over` or an unlink on a transcript; writes to two vendors' agent files from one process | the agent rotating its own files |
+| A permission changed | `tcc_modify` | an installer the person plainly ran |
+
+Each record is judged on its own; the chain is in `parents`, not joined
+across records. One worked case, Shai-Hulud, the npm worm of 2025: `npm
+install` runs its preinstall script, so the judge sees node from
+`node_modules` under `sh ← npm ← zsh` (an exec, `scratch_program`), then bun,
+then a TruffleHog binary from a temp directory. The scanner opens `~/.npmrc`,
+`~/.aws/credentials`, `~/.config/gh/hosts.yml` and `.env` files: credential
+reads by bun, not by npm, aws or gh, flagged at the first one, before
+anything leaves. Its attempt to drive Claude Code, Gemini CLI or Codex is an
+exec of the agent with `-p` and the skip flag under node, tty or not, and the
+agent's children then read credentials under it. `git push`, `curl` to GitHub
+and `npm publish` are execs with the worm's node in their parents; a workflow
+file committed for persistence is a write to `.github/workflows/`; the wipe
+it runs when it finds no token is unlinks of transcripts, settings and
+credentials by bun. The exfiltration request itself and the package's
+contents are not in these records (below).
+
 ## Tests
 
 `tests/input.json` is thirty-five synthetic eslogger records (version 10,
