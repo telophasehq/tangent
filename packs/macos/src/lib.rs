@@ -30,10 +30,10 @@ struct Component;
 
 export!(Component);
 
-/// The environment names a record keeps, by name or prefix. They steer an
-/// agent: where it sends its API traffic, where it keeps its config and
-/// where its telemetry goes. Every other variable is dropped, with its value:
-/// a program's environment is where its keys are.
+/// The environment names a record keeps. They steer an agent: where it
+/// sends its API traffic, where it keeps its config and where its telemetry
+/// goes. Every other variable is dropped, with its value: a program's
+/// environment is where its keys are.
 const ENV_KEEP: &[&str] = &[
     "ANTHROPIC_BASE_URL",
     "OPENAI_BASE_URL",
@@ -42,7 +42,15 @@ const ENV_KEEP: &[&str] = &[
     "CODEX_HOME",
     "GEMINI_CLI_HOME",
 ];
-const ENV_KEEP_PREFIX: &[&str] = &["OTEL_"];
+
+/// The `OTEL_*` names that say where telemetry goes and what it carries
+/// (`OTEL_EXPORTER_OTLP_ENDPOINT`, `..._METRICS_ENDPOINT`, `..._HEADERS`).
+/// The rest say nothing: Claude Code sets
+/// `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` on every child.
+fn otel_matters(name: &str) -> bool {
+    name.starts_with("OTEL_EXPORTER_OTLP_")
+        && (name.ends_with("_ENDPOINT") || name.ends_with("_HEADERS"))
+}
 
 /// Programs above the actor named in a record, nearest first.
 const PARENTS: usize = 6;
@@ -175,7 +183,7 @@ fn environment(env: Option<&Value>) -> (Map<String, Value>, usize) {
         let Some((k, v)) = e.split_once('=') else {
             continue;
         };
-        if ENV_KEEP.contains(&k) || ENV_KEEP_PREFIX.iter().any(|p| k.starts_with(p)) {
+        if ENV_KEEP.contains(&k) || otel_matters(k) {
             kept.insert(k.to_string(), json!(v));
         }
     }
