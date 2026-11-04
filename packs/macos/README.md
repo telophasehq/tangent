@@ -24,6 +24,9 @@ the socket, tangent owns it, and nothing listens on a port. The judge is any
 OpenAI-compatible server, `JUDGE_URL` and `JUDGE_MODEL` naming it; the default
 is a local one (`mlx_lm.server --model mlx-community/GLM-4.7-Flash-4bit --port
 8080`), so the records, which carry process arguments, stay on the machine.
+`judge-haiku.yaml` is the same pipeline with Claude Haiku on Amazon Bedrock
+reading the records, through the AWS credential chain (`AWS_PROFILE`, or the
+profile in the file, after `aws sso login`).
 
 ## What the plugin keeps
 

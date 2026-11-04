@@ -1,0 +1,45 @@
+# macos, judge on Bedrock: the same pipeline as judge.yaml with Claude Haiku
+# reading each record through the Converse API and the AWS credential chain.
+#
+#   aws sso login --profile <your-profile>
+#   tangent plugin compile --config judge-haiku.yaml
+#   tangent run --config judge-haiku.yaml
+#   sudo eslogger exec fork exit open close create rename unlink btm_launch_item_add tcc_modify | nc -U es.sock
+#   tail -f flagged.ndjson
+include:
+  - ingest.yaml
+
+inference:
+  judge:
+    backend: bedrock                # the Converse API, AWS credential chain
+    model: ${JUDGE_MODEL:-anthropic.claude-haiku-5-5}
+    aws:
+      region: ${AWS_REGION:-us-west-2}
+      profile: ${AWS_PROFILE:-prod}   # an SSO profile; the default chain when unset
+    prompt_file: judge.md           # the verdict lands on the record as `judge`
+    schema_file: ../core/judge.schema.json   # {flag}, or {flag, why}
+    batch_bytes: 12000              # ~16 records to a request: a process's burst of writes arrives together
+    concurrency: 8                  # a hosted model takes many requests at once
+    max_tokens: 200                 # per record
+    timeout_ms: 60000
+
+plugins:
+  flagged:                          # keeps judge.flag == true, and records the judge could not read
+    module_type: rust
+    path: ../../examples/inference-local/flagged
+    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }
+
+sinks:
+  flagged:
+    type: file
+    path: flagged.ndjson
+    compression:
+      type: none
+
+dag:
+  - from: { kind: plugin, name: macos }
+    to: [{ kind: inference, name: judge }]
+  - from: { kind: inference, name: judge }
+    to: [{ kind: plugin, name: flagged }]
+  - from: { kind: plugin, name: flagged }
+    to: [{ kind: sink, name: flagged }]
