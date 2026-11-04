@@ -50,7 +50,18 @@ its pack.
 
 ## The record
 
-What a pack's plugin writes, the same for every provider. A raw record's own
+What a pack's plugin writes, the same for every provider (`factskit::Finished`):
+
+| field | always there | what it is |
+|---|---|---|
+| `ts` | yes, text | the record's own `ts`, or the time its pack read it when it had none |
+| `source` | yes, text | the shape it came in as: `cloudtrail`, `okta`, `app`, ... |
+| `_norm` | yes, an object | who did what, from where, to what (below); each field may be missing |
+| `_facts` | yes, an object | what the profile and the tables say (below) |
+| the rest | no | the provider's fields the pack kept, as the pack trimmed them |
+
+A sink can rely on `ts`, `source` and `_norm` and nothing else: the queue
+orders by `ts` and partitions by `_norm`'s org and actor. A raw record's own
 `_norm`, `_facts`, `_ip`, `_context` and `_baseline` (and a key naming a field
 under one, such as `_facts.notes`) are dropped first, so a log line cannot
 speak for the pipeline.
@@ -298,8 +309,10 @@ A pack's plugin links [packs/shared](/packs/shared) by path:
   and `address(field, text)` for another address to enrich.
 - `normkit::record`, `scrubbed` and the trim helpers give the record without
   the reserved keys, its per-event ids or its URL signatures.
+- `normkit::Stamp::of(&read)` takes `ts` and `source` from the record as
+  read, before the trim, so a trim need not keep them.
 - `factskit::kit(lookup)` reads the profile and the tables once per instance,
-  and `kit.write(out, record, norm)` folds the org, names the person,
+  and `kit.write(out, stamp, record, norm)` folds the org, names the person,
   enriches the addresses, adds the facts and writes the record as one line.
 
 The pack's `ingest.yaml` gives the plugin an edge to `baseline_builder`

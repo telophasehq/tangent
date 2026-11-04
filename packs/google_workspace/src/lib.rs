@@ -11,7 +11,7 @@ wit_bindgen::generate!({
 mod trim;
 
 use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
-use normkit::Norm;
+use normkit::{Norm, Stamp};
 use tangent::logs::enrichment::lookup;
 use tangent::logs::log::{Logview, Scalar};
 
@@ -68,8 +68,8 @@ impl Guest for Component {
         let mut out = Vec::new();
         for lv in input {
             let n = norm(&lv);
-            let rec = trim::google_workspace(&normkit::record(&lv.log())?);
-            kit.write(&mut out, rec, n)?;
+            let read = normkit::record(&lv.log())?;
+            kit.write(&mut out, Stamp::of(&read), trim::google_workspace(&read), n)?;
         }
         Ok(out)
     }

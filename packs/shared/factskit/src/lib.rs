@@ -12,8 +12,25 @@ use std::sync::OnceLock;
 use enrichkit::{parse_net, Ip, Lookup, Tables};
 use identitykit::People;
 use ipnet::IpNet;
-use normkit::Norm;
+use normkit::{Norm, Stamp};
+use serde::Serialize;
 use serde_json::{json, Map, Value};
+
+/// What every pack writes for a record, as one line of JSON: the time and
+/// source it was read with, `_norm`, `_facts`, then the provider's fields
+/// the pack kept. A sink can rely on `ts`, `source` and `_norm` being there
+/// in every record; the rest is the provider's, and nothing is promised.
+#[derive(Serialize)]
+pub struct Finished {
+    pub ts: String,
+    pub source: String,
+    #[serde(rename = "_norm")]
+    pub norm: Norm,
+    #[serde(rename = "_facts")]
+    pub facts: Map<String, Value>,
+    #[serde(flatten)]
+    pub rest: Map<String, Value>,
+}
 
 /// The company, as no log says it.
 #[derive(Default)]
@@ -115,22 +132,19 @@ impl Kit {
         }
     }
 
-    /// `rec`, the record as its pack trimmed it, with `_norm` and `_facts`,
-    /// as one line of JSON.
+    /// The [`Finished`] record, as one line of JSON: `stamp` from the record
+    /// the pack read, `rec` as the pack trimmed it, `_norm` and `_facts`.
     pub fn write(
         &self,
         out: &mut Vec<u8>,
+        stamp: Stamp,
         mut rec: Map<String, Value>,
         mut n: Norm,
     ) -> Result<(), String> {
         let p = &self.profile;
         // The company's own infrastructure is one tenant: the company.
         if let Some(org) = &p.org {
-            if rec
-                .get("source")
-                .and_then(Value::as_str)
-                .is_some_and(|s| p.own_sources.contains(s))
-            {
+            if p.own_sources.contains(&stamp.source) {
                 n.org = Some(org.clone());
             }
         }
@@ -143,7 +157,7 @@ impl Kit {
                 .filter(|w| p.people.knows(w));
         }
         let ip = n.ip.as_deref().and_then(|a| self.tables.ip(a));
-        let mut facts = facts_of(p, &rec, &n, ip);
+        let mut facts = facts_of(p, &stamp.source, &n, ip);
         let ips: Map<String, Value> = n
             .addresses
             .iter()
@@ -154,14 +168,17 @@ impl Kit {
         if !ips.is_empty() {
             facts.insert("ips".into(), Value::Object(ips));
         }
-        let mut norm = match serde_json::to_value(&n).map_err(|e| e.to_string())? {
-            Value::Object(m) => m,
-            _ => Map::new(),
+        rec.remove("ts");
+        rec.remove("source");
+        unrepeat(&rec, &stamp, &mut n);
+        let finished = Finished {
+            ts: stamp.ts,
+            source: stamp.source,
+            norm: n,
+            facts,
+            rest: rec,
         };
-        unrepeat(&rec, &mut norm);
-        rec.insert("_norm".into(), Value::Object(norm));
-        rec.insert("_facts".into(), Value::Object(facts));
-        serde_json::to_writer(&mut *out, &rec).map_err(|e| e.to_string())?;
+        serde_json::to_writer(&mut *out, &finished).map_err(|e| e.to_string())?;
         out.push(b'\n');
         Ok(())
     }
@@ -169,10 +186,9 @@ impl Kit {
 
 /// What the profile and the tables know about this record, with the notes a
 /// model reads them by.
-fn facts_of(p: &Profile, rec: &Map<String, Value>, n: &Norm, ip: Option<Ip>) -> Map<String, Value> {
+fn facts_of(p: &Profile, source: &str, n: &Norm, ip: Option<Ip>) -> Map<String, Value> {
     let mut facts = Map::new();
     let mut notes = Vec::new();
-    let source = rec.get("source").and_then(Value::as_str).unwrap_or("");
     let kind = n.kind.clone().unwrap_or_default();
     let actor = n.actor.clone();
 
@@ -295,7 +311,7 @@ fn facts_of(p: &Profile, rec: &Map<String, Value>, n: &Norm, ip: Option<Ip>) -> 
 /// `_norm` keeps what routes a record (actor, org), the actor's person, and
 /// what the log does not already say: a kind, address or target copied from a
 /// field goes.
-fn unrepeat(rec: &Map<String, Value>, norm: &mut Map<String, Value>) {
+fn unrepeat(rec: &Map<String, Value>, stamp: &Stamp, n: &mut Norm) {
     fn values(v: &Value, out: &mut BTreeSet<String>) {
         match v {
             Value::Object(m) => m.values().for_each(|x| values(x, out)),
@@ -307,9 +323,23 @@ fn unrepeat(rec: &Map<String, Value>, norm: &mut Map<String, Value>) {
     }
     let mut logged = BTreeSet::new();
     rec.values().for_each(|v| values(v, &mut logged));
-    norm.retain(|k, v| {
-        matches!(k.as_str(), "actor" | "org" | "person") || !logged.contains(&v.to_string())
-    });
+    for s in [&stamp.ts, &stamp.source] {
+        logged.insert(Value::String(s.clone()).to_string());
+    }
+    // actor, org and person always stay: they route the record
+    for f in [
+        &mut n.kind,
+        &mut n.ip,
+        &mut n.country,
+        &mut n.dest,
+        &mut n.target,
+    ] {
+        if f.as_ref()
+            .is_some_and(|v| logged.contains(&Value::String(v.clone()).to_string()))
+        {
+            *f = None;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -336,8 +366,9 @@ mod tests {
 
     fn written(rec: &str, n: Norm) -> Value {
         let mut out = Vec::new();
+        let rec = normkit::record(rec).unwrap();
         Kit::new(tables)
-            .write(&mut out, normkit::record(rec).unwrap(), n)
+            .write(&mut out, Stamp::of(&rec), rec, n)
             .unwrap();
         assert_eq!(out.last(), Some(&b'\n'));
         serde_json::from_slice(&out).unwrap()
@@ -517,6 +548,33 @@ mod tests {
         );
     }
 
+    /// `ts` and `source` come from the record the pack read, whatever its
+    /// trim kept; a record with no `ts` gets the time it was read.
+    #[test]
+    fn every_record_has_ts_source_and_norm() {
+        let read =
+            normkit::record(r#"{"ts":"2026-10-20T13:00:00Z","source":"okta","x":1}"#).unwrap();
+        let mut out = Vec::new();
+        let kit = Kit::new(|_, _| None);
+        kit.write(&mut out, Stamp::of(&read), Map::new(), Norm::default())
+            .unwrap();
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["ts"], "2026-10-20T13:00:00Z");
+        assert_eq!(v["source"], "okta");
+        assert!(v["_norm"].is_object() && v.get("x").is_none(), "{v}");
+
+        let read = normkit::record(r#"{"source":"app","ts":1760965200}"#).unwrap();
+        let mut out = Vec::new();
+        kit.write(&mut out, Stamp::of(&read), read.clone(), Norm::default())
+            .unwrap();
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        let ts = v["ts"].as_str().unwrap();
+        assert!(
+            ts.len() == 24 && ts.starts_with("20") && ts.ends_with('Z'),
+            "{ts}"
+        );
+    }
+
     #[test]
     fn no_profile_no_tables() {
         let mut out = Vec::new();
@@ -525,12 +583,13 @@ mod tests {
             ip: Some("192.0.2.1".into()),
             ..Norm::default()
         };
+        let rec = normkit::record(r#"{"ts":"2026-10-20T13:00:00Z","source":"app"}"#).unwrap();
         Kit::new(|_, _| None)
-            .write(&mut out, normkit::record(r#"{"source":"app"}"#).unwrap(), n)
+            .write(&mut out, Stamp::of(&rec), rec, n)
             .unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "{\"_facts\":{\"ip\":{},\"notes\":[\"principal bob is nobody the org profile knows\"],\"principal\":\"unknown\"},\"_norm\":{\"actor\":\"bob\",\"ip\":\"192.0.2.1\"},\"source\":\"app\"}\n"
+            "{\"ts\":\"2026-10-20T13:00:00Z\",\"source\":\"app\",\"_norm\":{\"actor\":\"bob\",\"ip\":\"192.0.2.1\"},\"_facts\":{\"ip\":{},\"notes\":[\"principal bob is nobody the org profile knows\"],\"principal\":\"unknown\"}}\n"
         );
     }
 }

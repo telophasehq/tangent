@@ -5,8 +5,6 @@ pub fn github_audit(m: &Map<String, Value>) -> Map<String, Value> {
     let mut out = pick(
         m,
         &[
-            "ts",
-            "source",
             "action",
             "actor",
             "actor_is_bot",

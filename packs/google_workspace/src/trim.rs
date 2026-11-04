@@ -2,7 +2,7 @@ use normkit::{obj, pick};
 use serde_json::{Map, Value};
 
 pub fn google_workspace(m: &Map<String, Value>) -> Map<String, Value> {
-    let mut out = pick(m, &["ts", "source", "ipAddress", "ownerDomain"]);
+    let mut out = pick(m, &["ipAddress", "ownerDomain"]);
     if let Some(id) = obj(m.get("id")) {
         out.insert(
             "id".into(),

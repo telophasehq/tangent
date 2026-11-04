@@ -5,8 +5,6 @@ pub fn okta(m: &Map<String, Value>) -> Map<String, Value> {
     let mut out = pick(
         m,
         &[
-            "ts",
-            "source",
             "published",
             "eventType",
             "displayMessage",

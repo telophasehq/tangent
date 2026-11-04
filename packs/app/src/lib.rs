@@ -14,7 +14,7 @@ wit_bindgen::generate!({
 use std::sync::OnceLock;
 
 use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
-use normkit::Norm;
+use normkit::{Norm, Stamp};
 use serde_json::{Map, Value};
 use tangent::logs::config;
 use tangent::logs::enrichment::lookup;
@@ -125,7 +125,7 @@ impl Guest for Component {
                     datadog(m);
                 }
             })?;
-            kit.write(&mut out, rec, n)?;
+            kit.write(&mut out, Stamp::of(&rec), rec, n)?;
         }
         Ok(out)
     }

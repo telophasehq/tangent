@@ -12,7 +12,7 @@ wit_bindgen::generate!({
 mod trim;
 
 use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
-use normkit::Norm;
+use normkit::{Norm, Stamp};
 use tangent::logs::enrichment::lookup;
 use tangent::logs::log::{Logview, Scalar};
 
@@ -100,12 +100,14 @@ impl Guest for Component {
         for lv in input {
             let source = get(&lv, "source").unwrap_or_default();
             let n = norm(&lv, &source);
-            let rec = if source == "github_audit" {
-                trim::github_audit(&normkit::record(&lv.log())?)
+            let (stamp, rec) = if source == "github_audit" {
+                let read = normkit::record(&lv.log())?;
+                (Stamp::of(&read), trim::github_audit(&read))
             } else {
-                normkit::scrubbed(&lv.log(), |_| {})?
+                let rec = normkit::scrubbed(&lv.log(), |_| {})?;
+                (Stamp::of(&rec), rec)
             };
-            kit.write(&mut out, rec, n)?;
+            kit.write(&mut out, stamp, rec, n)?;
         }
         Ok(out)
     }
