@@ -226,6 +226,8 @@ Unknown keys aside, a config without `include:` reads as it always has.
 
 `tangent run` checks the DAG before it starts: an edge to a node no file defines is an error. It warns about a source with no edge out, and names once a source whose records none of its targets take, as when no included plugin's probe claims a record's `source`; `tangent_unrouted_records_total` counts every record dropped that way, per node.
 
+Every plugin says what its records hold: its `output-schema` export returns their JSON Schema, derived from the type it writes (a Rust struct with schemars, a Go `Wire[T]` struct by `tangentgen`, a Python dataclass). Before it reads anything, `tangent run` checks each sink against the plugins that feed it: a sqlite sink's `timestamp_key` and partition fields and a Parquet encoding's columns must be fields the plugin names, with a type the sink can use, or it stops with a line for each (``sink logs reads `_norm.acter` (its partition actor), which plugin aws does not say it writes``). A plugin that passes records on as they came returns `{}`, and the plugins before it are checked in its place; a source or an inference node says nothing of its records, and the check stops there. `tangent plugin test` checks every record a fixture produces against the plugin's schema too.
+
 ## Packs
 A pack is what tangent knows about one provider's logs, and it is one plugin, named after the provider. Tangent's own sources read the logs (`cloudtrail`, `github_audit`, `okta` and `google_workspace` read the providers' APIs; `tcp` takes anything else as NDJSON with a `source` field), and the pack's plugin turns each raw record into a finished one:
 

@@ -116,15 +116,15 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
 
     // Metrics are worth having, not worth dying for: a second tangent on the
     // box, or anything else on the port, must not keep this one from running.
-    let _exporter_guard = opts
-        .prometheus_bind
-        .and_then(|addr| match prometheus_exporter::start(addr) {
-            Ok(guard) => Some(guard),
-            Err(e) => {
-                tracing::warn!(%addr, "metrics exporter not started: {e}");
-                None
-            }
-        });
+    let _exporter_guard =
+        opts.prometheus_bind
+            .and_then(|addr| match prometheus_exporter::start(addr) {
+                Ok(guard) => Some(guard),
+                Err(e) => {
+                    tracing::warn!(%addr, "metrics exporter not started: {e}");
+                    None
+                }
+            });
 
     if cfg.sources.is_empty() {
         bail!("At least one source is required.");
@@ -185,6 +185,28 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
         .await?;
 
     Ok(())
+}
+
+/// What a compiled plugin says its records hold: its `output-schema`, read
+/// from an instance with no tables, empty state and no network.
+pub async fn plugin_output_schema(
+    name: &str,
+    cwasm: &std::path::Path,
+) -> Result<wasm::schema::Shape> {
+    let store: Arc<dyn state::StateStore> = Arc::new(state::lru::LruStore::new(
+        tangent_shared::runtime::StateConfig::default(),
+    )?);
+    let mut engine = wasm::engine::WasmEngine::new(store, Default::default(), true)?;
+    let name: Arc<str> = Arc::from(name);
+    let component = engine.load_precompiled(
+        Arc::clone(&name),
+        cwasm,
+        Default::default(),
+        None,
+        None,
+        true,
+    )?;
+    wasm::mapper::output_schema(&engine, &name, &component).await
 }
 
 pub async fn wait_for_shutdown_signal() -> Result<()> {

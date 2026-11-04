@@ -205,12 +205,31 @@ pub async fn run(opts: TestOptions) -> Result<()> {
             }
             let diffs = diff_lines(&expected, &produced);
 
-            if diffs.is_empty() {
-                info!("✅ test passed: output matches expected");
-            } else {
+            if !diffs.is_empty() {
                 warn!("❌ test failed: output differs from expected\n{}", diffs);
                 bail!("output differs from expected");
             }
+
+            // Every record it wrote, against what the plugin says it writes.
+            let cwasm = config_root
+                .join(&cfg.runtime.plugins_path)
+                .join(format!("{name}.cwasm"));
+            let shape = tangent_runtime::plugin_output_schema(&name, &cwasm).await?;
+            let records = match &produced {
+                Value::Array(a) => a.iter().collect(),
+                v => vec![v],
+            };
+            let mut broken = String::new();
+            for (i, r) in records.iter().enumerate() {
+                for e in shape.check(r) {
+                    let _ = writeln!(broken, "  record {}: {e}", i + 1);
+                }
+            }
+            if !broken.is_empty() {
+                warn!("❌ test failed: output breaks the plugin's output-schema\n{broken}");
+                bail!("output breaks the plugin's output-schema");
+            }
+            info!("✅ test passed: output matches expected and the plugin's output-schema");
         }
     }
     Ok(())

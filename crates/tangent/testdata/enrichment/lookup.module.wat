@@ -30,6 +30,9 @@
   (data (i32.const 112) "\60\00\00\00\06\00\00\00\68\00\00\00\05\00\00\00")
   ;; probe: one selector, at 136, its lists empty: every record
   (data (i32.const 128) "\88\00\00\00\01\00\00\00")
+  ;; output-schema: "{}", a string at 240 of length 2, its pointer and length at 248
+  (data (i32.const 240) "{}")
+  (data (i32.const 248) "\f0\00\00\00\02\00\00\00")
   ;; get's answer at 168 (option<scalar>), lookup's at 200 (option<string>),
   ;; process-logs' at 216 (result<list<u8>, string>)
 
@@ -67,6 +70,9 @@
 
   (func (export "tangent:logs/mapper@0.1.0#probe") (result i32)
     (i32.const 128))
+
+  (func (export "tangent:logs/mapper@0.1.0#output-schema") (result i32)
+    (i32.const 248))
 
   (func (export "tangent:logs/mapper@0.1.0#process-logs")
     (param $list i32) (param $n i32) (result i32)
