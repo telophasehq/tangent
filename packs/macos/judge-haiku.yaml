@@ -12,7 +12,7 @@ include:
 inference:
   judge:
     backend: bedrock                # the Converse API, AWS credential chain
-    model: ${JUDGE_MODEL:-anthropic.claude-haiku-5-5}
+    model: ${JUDGE_MODEL:-us.anthropic.claude-haiku-5-5}   # an inference profile: Converse rejects the bare model id as on-demand
     aws:
       region: ${AWS_REGION:-us-west-2}
       profile: ${AWS_PROFILE:-prod}   # an SSO profile; the default chain when unset
@@ -22,6 +22,8 @@ inference:
     concurrency: 8                  # a hosted model takes many requests at once
     max_tokens: 200                 # per record
     timeout_ms: 60000
+    extra:                          # Converse's additionalModelRequestFields
+      thinking: { type: disabled }  # Haiku thinks by default and spends the budget on it; a verdict needs none
 
 plugins:
   flagged:                          # keeps judge.flag == true, and records the judge could not read

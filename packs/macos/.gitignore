@@ -12,3 +12,4 @@ out.ndjson
 src/bindings.rs
 *.sock
 flagged.ndjson
+runs/
