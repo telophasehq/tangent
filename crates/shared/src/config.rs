@@ -208,7 +208,7 @@ mod tests {
             .unwrap()
         };
         assert!(file("{ type: ndjson }").validate().is_ok());
-        let parquet = r#"{ type: parquet, schema: '{"fields":[],"metadata":{}}' }"#;
+        let parquet = "{ type: parquet, schema: { n: int } }";
         for enc in [parquet, "{ type: json }"] {
             let e = file(enc).validate().unwrap_err();
             assert!(e.to_string().contains("rolling_file"), "{enc}: {e}");

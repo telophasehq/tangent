@@ -70,7 +70,7 @@ apache-avro = { version = "0.17.0", features = ["zstandard", "snappy"] }
 parquet = "57.0.0"
 arrow-array = "57.0.0"
 arrow-json = "57.0.0"
-arrow-schema = { version = "57.0.0", features = ["serde"] }
+arrow-schema = "57.0.0"
 arrow-ipc = "57.0.0"
 tikv-jemallocator = { version = "0.6.1", features = ["profiling"] }
 tikv-jemalloc-ctl = {version = "0.6.1", features = ["stats", "profiling"], optional=true}

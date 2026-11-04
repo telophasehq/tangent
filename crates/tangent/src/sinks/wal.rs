@@ -1128,13 +1128,8 @@ mod tests {
             .unwrap();
         assert_eq!(json, r#"[{"n":1,"m":"x"},{"n":2},{"n":3}]"#);
 
-        let schema = arrow_schema::Schema::new(vec![arrow_schema::Field::new(
-            "n",
-            arrow_schema::DataType::Int64,
-            true,
-        )]);
         let parquet = Encoding::Parquet {
-            schema: serde_json::to_string(&schema).unwrap(),
+            schema: serde_yaml::from_str("{ n: int }").unwrap(),
             record_column: Some("record".into()),
         };
         let (name, bytes) = sent(parquet, Compression::Zstd { level: 3 }, "parquet").await;
@@ -1161,7 +1156,7 @@ mod tests {
             "01JBX4N3V2.json"
         );
         let parquet = Encoding::Parquet {
-            schema: String::new(),
+            schema: Default::default(),
             record_column: None,
         };
         assert_eq!(object_name(sealed, &parquet, &zstd), "01JBX4N3V2.parquet");
