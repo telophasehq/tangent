@@ -185,6 +185,35 @@ def raw_keys(e):
 
 # ---- ordinary days -----------------------------------------------------------
 
+# The roles the Stratus splice's warm-up made (stratus/splice.py's WARM_UP,
+# the profile's `services`), at acme's work every day so a case's role has
+# a history: the web tier's instance checking in with SSM from the VPC, the
+# nightly org inventory, members looking at instances as ec2-support.
+VPC = "10.0.1.23"
+INSTANCE = "i-0c4e7b2a91d3f5e68"
+SSM_AGENT = "aws-sdk-go/1.44.238 (go1.20.5; linux; amd64) amazon-ssm-agent/3.3.1142.0"
+EC2_READS = ["ec2:DescribeInstances", "ec2:DescribeInstanceStatus", "ec2:DescribeVolumes"]
+
+
+def role_session(t, role, session, call, ip, agent=gen.CLI, request=None):
+    """A call in a session of acme's role `role`, as CloudTrail writes one."""
+    svc, name = call.split(":")
+    e = gen.ct(t, f"{svc}.amazonaws.com", name, role, ip=ip, request=request, agent=agent)
+    rid = "AROA" + gen.h(role)[:17].upper()
+    e["userIdentity"] = {
+        "type": "AssumedRole", "principalId": f"{rid}:{session}",
+        "arn": f"arn:aws:sts::{gen.ACCOUNT}:assumed-role/{role}/{session}", "accountId": gen.ACCOUNT,
+        "accessKeyId": "ASIA" + gen.h(role, session, t[:13])[:16].upper(),
+        "sessionContext": {"sessionIssuer": {"type": "Role", "principalId": rid, "arn": f"arn:aws:iam::{gen.ACCOUNT}:role/{role}",
+                                             "accountId": gen.ACCOUNT, "userName": role},
+                           "attributes": {"creationDate": t, "mfaAuthenticated": "false"}}}
+    e.update(readOnly=name.startswith(("Get", "List", "Describe")), eventType="AwsApiCall", managementEvent=True,
+             eventCategory="Management")
+    if svc == "organizations":
+        e["awsRegion"] = "us-east-1"
+    return e
+
+
 def noise():
     ev = []
     # Okta: everyone signs in on weekdays from the office; the on-call signs in
@@ -330,6 +359,25 @@ def noise():
             ev.append(gen.ci(iso(t + timedelta(seconds=50)), repo, run, "npm run build", f"built in {rng.randint(8, 30)}s"))
             ev.append(gen.egress(iso(t + timedelta(seconds=70)), repo, run, "api.github.com", bytes_out=rng.randint(500, 1500),
                                  method="POST", path=f"/repos/{repo}/statuses/{rng.randrange(16**8):08x}"))
+    # The warm-up roles (above), drawn after everything else so the days
+    # before them are exactly as they were.
+    for d in days():
+        for h in range(0, 24, 2):
+            t = d + timedelta(hours=h) + jitter(30)
+            ev.append(role_session(iso(t), "web-instance", INSTANCE, "ssm:UpdateInstanceInformation", VPC, agent=SSM_AGENT,
+                                   request={"instanceId": INSTANCE, "agentVersion": "3.3.1142.0", "agentStatus": "Active",
+                                            "platformType": "Linux", "platformName": "Amazon Linux", "platformVersion": "2023",
+                                            "iPAddress": VPC, "computerName": "ip-10-0-1-23.us-west-2.compute.internal"}))
+        t = d + timedelta(hours=6, minutes=30) + jitter(10)
+        for i, call in enumerate(("organizations:DescribeOrganization", "organizations:ListAccounts")):
+            ev.append(role_session(iso(t + timedelta(seconds=3 * i)), "org-admin", "org-inventory", call, "10.0.1.50",
+                                   agent="aws-sdk-go/1.44"))
+    for d in weekdays():
+        for u in rng.sample(USERS, rng.randint(1, 2)):
+            t = d + timedelta(hours=16) + jitter(420)
+            for _ in range(rng.randint(2, 4)):
+                t += timedelta(seconds=rng.uniform(5, 60))
+                ev.append(role_session(iso(t), "ec2-support", u, rng.choice(EC2_READS), SF["ip"]))
     return ev
 
 
@@ -518,10 +566,11 @@ def v3_noise(ordinary, start, end, seed):
     """What v3 adds to the ordinary days. Okta sign-ins as Okta writes them
     (policy, password, push, the laptop's device id), now and then a mistyped
     password, a password change, a helpdesk MFA reset and the new factor. Each
-    member's own AWS work: aws-cli reads with their IAM user's key, console
-    sessions through Okta and IAM Identity Center, a password change and a new
-    key every 90 days. GitHub token ids and clones; Workspace's login
-    challenge. And the routine four look-alike cases claim: the scanner step in
+    member's own AWS work: aws-cli reads with their IAM user's key, now and
+    then a look at the instances as ec2-support, console sessions through Okta
+    and IAM Identity Center, a password change and a new key every 90 days.
+    GitHub token ids and clones; Workspace's login challenge. And the routine
+    four look-alike cases claim: the scanner step in
     every api build, CI for Dependabot's PRs, admin's monthly key rotation,
     grace making an example repo public."""
     r = random.Random(seed)
@@ -601,6 +650,14 @@ def v3_noise(ordinary, start, end, seed):
                     t += timedelta(seconds=r.uniform(5, 90))
                     c = r.choice(COSTS if cfo else POOL)
                     out.append(gen.aws(iso(t), c, who, office, gen.key(who, n), request=params(r, c)))
+                if not cfo and r.random() < 0.3:
+                    name = who.split("@")[0]
+                    t += timedelta(seconds=r.uniform(5, 60))
+                    out.append(gen.aws(iso(t), "sts:AssumeRole", who, office, gen.key(who, n),
+                                       request={"roleArn": f"arn:aws:iam::{gen.ACCOUNT}:role/ec2-support", "roleSessionName": name}))
+                    for _ in range(r.randint(2, 4)):
+                        t += timedelta(seconds=r.uniform(5, 60))
+                        out.append(role_session(iso(t), "ec2-support", name, r.choice(EC2_READS), office))
             if who.startswith("oncall") and r.random() < 0.2:
                 t = d + timedelta(hours=9) + jit(120)
                 for _ in range(r.randint(2, 6)):

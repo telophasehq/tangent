@@ -2,8 +2,9 @@
 # into each WORK). examples/cloud-infra/profile/profile.yaml, plus what
 # stream.py v3's ordinary days add: each member's IAM Identity Center username
 # (in `members:`, and in `people:` beside the GitHub handles), admin's IAM
-# user, and the office among `networks`. Edit here for the eval, not in the
-# example.
+# user, and the office among `networks`; and the roles the Stratus techniques'
+# warm-up made, as acme's own (stratus/splice.py's WARM_UP), which stream.py
+# gives ordinary days. Edit here for the eval, not in the example.
 
 org: acme                        # the org every one of your own infrastructure logs is folded into
 own_sources: [cloudtrail, github_audit, okta, google_workspace, gha_ci, runner_egress]
@@ -42,6 +43,11 @@ services:                        # service principals: IAM users and roles, depl
   - svc-backup2
   - railway-deploy
   - agent-plan-worker
+  - ec2-support
+  - org-admin
+  - web-instance
+  - lambda-exec
+  - fleet-anywhere
 
 people:                          # one person under each name the sources give them: IAM users, GitHub handles, IdC usernames
   admin@acme.io: [admin]
@@ -56,6 +62,11 @@ people:                          # one person under each name the sources give t
 
 about:                           # who an actor is, when its name does not say
   VendorAuditRole: "the compliance vendor: reads IAM, credential reports and backups every day"
+  ec2-support: "the role members assume from the office to look at EC2"
+  org-admin: "the nightly org inventory's role: lists the organization's accounts"
+  web-instance: "the web tier's EC2 instance role: checks in with SSM from the VPC"
+  lambda-exec: "the Lambda functions' execution role"
+  fleet-anywhere: "IAM Roles Anywhere's role for the data-center hosts"
 
 keys:                            # API keys and the networks each calls from
   ak_1a1: [165.227.44.19]        # the findings poller

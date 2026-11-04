@@ -43,13 +43,11 @@ Two things limit what these numbers can say:
   to measure the judge's `_baseline`. A score on them says the pipeline still
   does what it was built to do, not how it does on attacks nobody here wrote.
 - **Stratus numbers are not citable yet.** An audit on 2026-10-28 found that
-  the splice can be told from acme's own traffic by things unrelated to the
-  attack (every spliced case starts at 13:00Z, its sign-ins carry the CLI's
+  the splice could be told from acme's own traffic by things unrelated to the
+  attack (every spliced case started at 13:00Z, its sign-ins carried the CLI's
   user agent, and more). In every run so far, the controls were flagged about
-  as often as the attacks. Two of the tells are fixed and unmeasured: every
-  control was on another member than its attack, and carried no request
-  parameters. [stratus/README.md](stratus/README.md#not-citable-yet) lists
-  them all.
+  as often as the attacks. All six tells are fixed and unmeasured.
+  [stratus/README.md](stratus/README.md#not-citable-yet) lists them.
 
 ## The stream
 
