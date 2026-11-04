@@ -4,7 +4,7 @@
 
 - `fetch.py` pulls the catalog at a pinned release (v2.37.0) into `techniques.json`, and each technique's recorded records into `logs/<id>.json`, with the session tokens Datadog's responses carry replaced by `REDACTED`. Stratus scrambled their accounts, regions, addresses and names.
 - `grounding.yaml` says, per technique, what a judge needs to tell it from ordinary work, and which of our cases exercise the same calls.
-- `splice.py` makes the cases, into `evals/runs/stratus/cases.json` (`stream.py` runs it when the file is missing): each of the 35 recorded techniques twice, as a member of acme whose credentials were taken, `away` (from a hosting address) and `usual` (from the office), 70 attack cases; and a control for each, the same records with every call made a harmless read in the same service, 70 must-not-flag cases. `stream.py` places them.
+- `splice.py` makes the cases, into `evals/runs/stratus/cases.json` (`stream.py` runs it when the file is missing): each of the 35 recorded techniques twice, as a member of acme whose credentials were taken, `away` (from a hosting address) and `usual` (from the office), 70 attack cases; and a control for each, the same records with every call made a harmless read in the same service, 70 must-not-flag cases. Each technique runs at an hour of its own in the members' working day, the same for its four cases. The roles the techniques' warm-up created are acme's own (`WARM_UP`: `ec2-support`, `org-admin`, `web-instance`, `lambda-exec`, `fleet-anywhere`), in the profile's `services` and at work on `stream.py`'s ordinary days; the role a detonation creates keeps a new name. `stream.py` places the cases.
 
 The output is the same on every run: the plain names `splice.py` gives resources are numbered longest first, then in name order. The runs recorded before November 2026 replayed an earlier output: equal-length names were numbered in the order of a Python set, which follows the process's hash seed, so two cases (`secretsmanager-retrieve-secrets` away and usual) number 16 secret names differently; and its controls had the two faults fixed below.
 
@@ -26,20 +26,20 @@ Stratus covers AWS, Azure, GCP, Entra ID and Kubernetes; it says nothing about O
 
 ## Not citable yet
 
-An audit on 2026-10-28 found that the splice could be told from acme's own traffic by things that have nothing to do with the attack, and every number measured on these cases so far is withdrawn until the runs are repeated. Two of the six tells are fixed; four remain.
+An audit on 2026-10-28 found that the splice could be told from acme's own traffic by things that have nothing to do with the attack, and every number measured on these cases so far is withdrawn until the runs are repeated. All six tells are fixed; no run has been scored since.
 
 Fixed in November 2026:
 
 - every control was on a different member from its attack: the member and address came from the case's position in the output, and 70 attacks is not a multiple of nine members. They now come from the technique and the variant, so attack and control share both.
 - the controls carried `requestParameters` on none of their 620 records, the attacks on 600. Each read now carries the request CloudTrail records for it, shaped as the service writes it and naming what the attack named (the same instances, secret, trail, function or role). Null remains only where the service records null (`GetCallerIdentity`, `GetAccountSummary`, `ListFoundationModels`, `DescribeOrganization`): 56 control records to the attacks' 20.
 
-Still there:
+- the IAM user name in Datadog's recording survived in 20 attack records across 6 cases, where it stood before a space or a hyphen rather than a quote or a slash: the `is not authorized` message of a denied call, and SSM session ids (`christophe-bkqs75...`). The name is now replaced wherever it stands on its own, and the splice asserts it is gone.
+- all 140 spliced cases started at 13:00Z, an hour in which members' own IAM-user records never appear (their AWS work runs 16:00Z to 23:00Z). Each technique now begins at an hour of its own between 16:00Z and 21:00Z, the same for its attack and control from either address.
+- all four spliced console sign-ins carried the CLI's user agent, since every user agent that named Stratus became the CLI's. A console sign-in now carries the browser's, as the members' own sign-ins do.
+- none of the roles the techniques' warm-up created was in the profile: each case named them afresh (`acme-role-cbb41`), so every role session was a principal nobody knew. They are now acme's own roles (`WARM_UP` in `splice.py`), in the profile's `services` and `about`, and at work on the ordinary days of both streams: the web tier's instance checks in with SSM from the VPC, the nightly org inventory lists the accounts, and members look at instances as `ec2-support` (in v3, after assuming it from their own IAM user). A role the detonation itself creates keeps a new name, as an attacker's would.
 
-- the IAM user name in Datadog's recording survives in 20 attack records across 6 cases, and in no control;
-- all 140 spliced cases start at 13:00Z, an hour in which members' own IAM-user records never appear;
-- all four spliced console sign-ins carry the CLI's user agent;
-- none of the roles the techniques' warm-up creates is in the profile.
+In every run before the fixes, the controls were flagged about as often as the attacks (from away, all 35; from the office, 18 to 29 of 35), so on Stratus the corpus measured what gets escalated, not whether the judge tells an attack from its harmless twin. No run has been scored on the fixed cases yet. Stratus has been public since 2022 and documents its detections, so a model may also know these techniques.
 
-In every run before the fixes, the controls were flagged about as often as the attacks (from away, all 35; from the office, 18 to 29 of 35), so on Stratus the corpus measured what gets escalated, not whether the judge tells an attack from its harmless twin. No run has been scored on the fixed controls yet. Stratus has been public since 2022 and documents its detections, so a model may also know these techniques.
+Not yet looked at: the recorded `roleSessionName` (`aws-go-sdk-<nanoseconds>`, the Go SDK's default) and the recorded access key and principal ids on IAM-user records, which no pack reads.
 
 `recipientAccountId` is not one of the tells. The spliced records carry it, and so did every ordinary CloudTrail record of the members they are spliced onto (their own AWS work, 7,675 records in the v3 stream), before and after the generator began writing it on every CloudTrail record, as the cases have carried it since #48. The records that gained it belong to other principals (the deploy, read-only and backup service users, and the IAM users `dave` and `admin`) and to our cases.

@@ -15,9 +15,14 @@ The records are made to look like acme's: the technique's account becomes
 acme's (another account stays another account), the scrambled regions become
 real ones, the attacking IAM user becomes the member (IAM users here are
 named by email, so their AWS history and their Okta and app history are
-one actor's), and nothing says Stratus or Grimoire (Datadog's capture tool): their user agent becomes the AWS CLI's,
+one actor's), and nothing says Stratus or Grimoire (Datadog's capture tool):
+their user agent becomes the AWS CLI's (a browser's on a console sign-in),
 and every resource it named (`stratus-red-team-malicious-iam-role`) gets a
-plain name by kind (`acme-role-1`)."""
+plain name by kind (`acme-role-1`). The roles the techniques' warm-up made
+are acme's own (`WARM_UP`): named in the profile and at work on its ordinary
+days (stream.py), since a backdoored role or a stolen instance credential is
+one the company already had. Each technique runs at an hour of its own in
+the members' working day, the same for its four cases."""
 import json
 import pathlib
 import re
@@ -35,7 +40,23 @@ MEMBERS = ["alice@acme.io", "bob@acme.io", "carol@acme.io", "cfo@acme.io", "dave
 AWAY = ["159.89.214.31", "5.161.92.17", "45.77.65.211", "51.89.160.12", "139.162.130.8"]  # DigitalOcean, Hetzner, Vultr, OVH, Linode
 USUAL = "73.162.14.9"  # the office
 CLI = "aws-cli/2.17.0"
-BASE = datetime(2026, 10, 20, 13, 0, tzinfo=timezone.utc)  # stream.py's LIVE: placement shifts from here
+BROWSER = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"  # gen.BROWSER
+BASE = datetime(2026, 10, 20, tzinfo=timezone.utc)  # stream.py's LIVE day: placement shifts by whole days from here
+HOURS = (16, 21)  # a case begins between these, UTC: the members' own AWS work runs 16:00Z to 23:00Z (stream.py v3)
+# The roles the techniques' warm-up created, by the names acme has them under
+# (profile.yaml's `services`; stream.py gives them ordinary days). Not the
+# role a detonation creates (`stratus-red-team-malicious-iam-role`), which
+# stays a new name like everything else an attack makes.
+WARM_UP = {
+    "stratus-red-team-ec2-get-password-data-role": "ec2-support",   # assumed by members to look at instances
+    "stratus-red-team-get-usr-data-role": "ec2-support",
+    "stratus-red-team-ec2lui-role-idtzskbvtd": "ec2-support",
+    "stratus-red-team-backdoor-r-role": "ec2-support",              # the role the backdoor technique rewrites
+    "stratus-red-team-leave-org-role": "org-admin",                 # the nightly org inventory's role
+    "stratus-red-team-ec2-steal-credentials-role": "web-instance",  # the web tier's instance role
+    "stratus-red-team-lambda-layer-lambda-role": "lambda-exec",     # the functions' execution role
+    "stratus-red-team-trust-anchor-role": "fleet-anywhere",         # IAM Roles Anywhere's role for the data-center hosts
+}
 REAL_REGION = re.compile(r"^[a-z]{2}(-gov)?-[a-z]+-\d$")
 KINDS = [("anchor", "anchor"), ("profile", "profile"), ("role", "role"), ("user", "user"), ("bucket", "bucket"),
          ("trail", "trail"), ("layer", "layer"), ("func", "fn"), ("lambda", "fn"), ("snapshot", "snap"),
@@ -51,12 +72,16 @@ def iso(t):
 def neutral_names(text, tag):
     """Every name Stratus gave a resource, a plain one of the same kind, unique
     to the case (`tag`): a role one case sets up is not the next case's, or
-    its day of history would hold the other case."""
+    its day of history would hold the other case. The warm-up's roles are the
+    exception (`WARM_UP`): acme's, so every case names the same ones."""
     names, counts = {}, Counter()
     # longest first, so no name is rewritten inside a longer one; equal lengths
     # in name order, so every run numbers them the same
     toks = set(re.findall(r"stratus-red-team[-_][A-Za-z0-9._-]*[A-Za-z0-9]", text))
     for tok in sorted(toks, key=lambda t: (-len(t), t)):
+        if tok in WARM_UP:
+            names[tok] = WARM_UP[tok]
+            continue
         rest = tok[len("stratus-red-team") + 1:].lower()
         if re.fullmatch(r"[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}", rest):
             kind = "session"
@@ -84,20 +109,34 @@ def attacker_session(r):
     return "stratus-red-team" not in issuer
 
 
+def client(r):
+    """The user agent the member's client would send: a browser's on a console
+    sign-in, the CLI's wherever Stratus or Grimoire named itself."""
+    ua = r.get("userAgent") or ""
+    if r.get("eventSource") == "signin.amazonaws.com":
+        return BROWSER
+    return CLI if re.search(r"stratus|grimoire", ua, re.I) else ua
+
+
 def rewrite(records, member, ip, tag):
-    records = [dict(r, userAgent=CLI) if re.search(r"stratus|grimoire", r.get("userAgent") or "", re.I) else r for r in records]
+    records = [dict(r, userAgent=client(r)) for r in records]
     key = "AKIA" + hashlib.sha1(f"{member}{tag}".encode()).hexdigest()[:16].upper()
     records = [dict(r, userIdentity=member_identity(member, key)) if attacker_session(r) else r for r in records]
     text = json.dumps(records)
     primary = Counter(r.get("recipientAccountId") for r in records).most_common(1)[0][0]
-    attacker = Counter((r["userIdentity"].get("arn"), r["userIdentity"].get("userName"))
-                       for r in records if r.get("userIdentity", {}).get("type") == "IAMUser").most_common(1)
+    # The recorded IAM user, when the technique ran as one (else it ran as a
+    # session, already the member's).
+    attacker = Counter(r["userIdentity"].get("userName") for r in records
+                       if r.get("userIdentity", {}).get("type") == "IAMUser").most_common(1)
+    user = attacker[0][0] if attacker and attacker[0][0] != member else None
     for scrambled in {r.get("awsRegion") for r in records if r.get("awsRegion") and not REAL_REGION.match(r["awsRegion"])}:
         text = text.replace(scrambled, REGION)
     text = text.replace(primary, ACCOUNT)
-    if attacker:
-        user = attacker[0][0][1]
-        text = re.sub(rf'(?<=[":/]){re.escape(user)}(?=["/])', member, text)
+    if user:
+        # Wherever the name stands on its own: an ARN, an error message (`User:
+        # arn:...:user/christophe is not authorized`), an SSM session id
+        # (`christophe-bkqs75...`).
+        text = re.sub(rf'(?<![A-Za-z0-9_.@-]){re.escape(user)}(?![A-Za-z0-9_.@])', member, text)
     for old, new in neutral_names(text, tag).items():
         text = text.replace(old, new)
     # What is left: a path segment (`/credentials/stratus-red-team/...`) and
@@ -111,6 +150,7 @@ def rewrite(records, member, ip, tag):
         if r.get("eventSource") in GLOBAL:
             r["awsRegion"] = "us-east-1"
     assert not re.search(r"stratus|grimoire", json.dumps(out), re.I), "a Stratus or Grimoire marker survived"
+    assert not user or user not in json.dumps(out), "the recorded IAM user's name survived"
     return out
 
 
@@ -233,6 +273,10 @@ def main(out=OUT):
         for i, tid in enumerate(recorded):
             raw = sorted(json.load(open(HERE / "logs" / f"{tid}.json")), key=lambda r: r["eventTime"])
             t0 = datetime.strptime(raw[0]["eventTime"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            # The technique's hour, in the members' working day (HOURS), the same
+            # for its attack and control from either address.
+            minute = int(hashlib.sha1(tid.encode()).hexdigest()[:4], 16) % ((HOURS[1] - HOURS[0]) * 60)
+            start = BASE + timedelta(hours=HOURS[0], minutes=minute)
             for v, variant in enumerate(("away", "usual")):
                 # By technique and variant, not by position in the output: the
                 # control is the same member from the same address as its attack.
@@ -245,7 +289,7 @@ def main(out=OUT):
                     records = benign(records, member)
                 events = []
                 for r in records:
-                    t = BASE + (datetime.strptime(r["eventTime"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) - t0)
+                    t = start + (datetime.strptime(r["eventTime"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) - t0)
                     r["eventTime"] = iso(t)
                     events.append({"ts": iso(t), "source": "cloudtrail", **{k: v for k, v in r.items() if k not in ("ts", "source")}})
                 attack = kind == "stratus"
