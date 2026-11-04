@@ -3,7 +3,7 @@ module githubwebhooks
 go 1.25.0
 
 require (
-	github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102190949-bf65266c13bb
+	github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261104042500-62dde5589976
 	go.bytecodealliance.org/cm v0.3.0 // indirect
 )
 
