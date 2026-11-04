@@ -15,21 +15,23 @@ case, acme, is fictional; so are its people, accounts and repos.
 
 | suite | should flag | must not flag | where |
 |---|---|---|---|
-| our cases | 45 | 16 | [cases/](cases/), written by `gen.py` |
+| our cases | 49 | 17 | [cases/](cases/), written by `gen.py` |
 | Stratus Red Team | 70 | 70 | [stratus/](stratus/), written by `stratus/splice.py` from Datadog's recordings |
-| all | 115 | 86 | 201 cases |
+| all | 119 | 87 | 206 cases |
 
-- **Our cases** ([cases/README.md](cases/README.md) lists every one): 61
+- **Our cases** ([cases/README.md](cases/README.md) lists every one): 66
   event sequences in the shapes of CloudTrail, the GitHub audit log, Okta,
   Google Workspace, GitHub Actions job lines, runner egress, a product's audit
-  log and an AI agent's log. 15 of the 45 attacks follow compromises disclosed
+  log and an AI agent's log. 15 of the 49 attacks follow compromises disclosed
   in 2025 and 2026 (TeamPCP, the axios hijack, Shai-Hulud, tj-actions,
   Railway, Vercel via Context.ai, Salesloft Drift, postmark-mcp and others).
   10 are five attacks and their twins, the same person, hour and actions from
-  where they always are, which only history tells apart. The 16 must-not-flag
-  cases are what looks alarming and is not: Dependabot, the on-call's 3 a.m.
-  login, a deploy's restart burst, scanner probes, a rotation after a vendor's
-  notice, and the five twins.
+  where they always are, which only history tells apart. 4 are attacks whose
+  own records talk to the reviewer, vouching for the activity or telling it
+  what to answer. The 17 must-not-flag cases are what looks alarming and is
+  not: Dependabot, the on-call's 3 a.m. login, a deploy's restart burst,
+  scanner probes, a rotation after a vendor's notice, a pull request titled
+  for its reviewers, and the five twins.
 - **Stratus Red Team** ([stratus/README.md](stratus/README.md)): the 35 AWS
   techniques Datadog recorded, each spliced in twice as a member whose
   credentials were taken, once from a hosting address (`away`) and once from
@@ -57,24 +59,24 @@ Two things limit what these numbers can say:
 two cases that share an actor at least ten days apart) inside thirteen months
 of acme's ordinary traffic from every source: sign-ins, the product's API
 traffic, pushes and pull requests, CI builds, each member's own AWS work, the
-agent's health checks, poller and plans. 203,081 records:
+agent's health checks, poller and plans. 207,886 records:
 
 | source | records |
 |---|---|
-| `agent` | 133,626 |
-| `cloudtrail` | 21,063 |
-| `app` | 19,518 |
-| `okta` | 13,070 |
-| `github_audit` | 9,051 |
-| `gha_ci` | 3,212 |
-| `runner_egress` | 2,672 |
-| `google_workspace` | 869 |
+| `agent` | 136,946 |
+| `cloudtrail` | 21,271 |
+| `app` | 20,072 |
+| `okta` | 13,412 |
+| `github_audit` | 9,240 |
+| `gha_ci` | 3,302 |
+| `runner_egress` | 2,750 |
+| `google_workspace` | 893 |
 
 `truth-v3.json` says, per case, whether it should flag, its actor and org as
 the packs normalize them, the times of its events and the stream lines that
 are its records. `past.py` moves both 104 weeks back, because the sqlite sink
 takes no time from the future. `windows.py` makes the judged windows: an hour
-either side of every case event, merged, 211 windows and 434 hours. Records
+either side of every case event, merged, 220 windows and 453 hours. Records
 outside a window are ingested as history and never judged.
 
 ## Generate (no model)
@@ -210,7 +212,7 @@ What `score_v2.py` reports:
   case's actor (or of its org, for a case with no actor; agent records have
   only an org) in the two hours ending at the case's last event. The stricter
   count needs the flag on one of the case's own records.
-- **negatives flagged**: the same rule over the 86 must-not-flag cases.
+- **negatives flagged**: the same rule over the 87 must-not-flag cases.
 - **ordinary**: judged records that are no case's, flagged over judged. They
   are acme's synthetic traffic inside the windows, which sit around business
   hours, so this is a flag rate, not alerts a day for a real company.
@@ -245,7 +247,7 @@ python3 -I evals/harness/score_union.py evals/runs/stream/truth-past-v3.json eva
 
 ```
 evals/
-  cases/             61 cases, one directory each (case.yaml, events.ndjson); README.md lists them
+  cases/             66 cases, one directory each (case.yaml, events.ndjson); README.md lists them
   gen.py             writes cases/; stream.py imports its case list
   stream.py          writes runs/stream/: the stream and its truth file
   stratus/           Stratus Red Team v2.37.0: fetch.py, techniques.json, logs/, splice.py, NOTICE, LICENSE
