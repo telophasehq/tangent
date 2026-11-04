@@ -117,7 +117,6 @@ const RULES: &[Rule] = &[
     rule(Group::Settings, "", "", "/.claude/settings.local.json"),
     rule(Group::Settings, "", "", "/.gemini/settings.json"),
     rule(Group::Settings, "~/.codex/config.toml", "", ""),
-    rule(Group::Settings, "", "/.codex/", ""),
     rule(Group::Settings, "", "", "/.vscode/tasks.json"),
     // instructions and memory (I)
     rule(Group::Instructions, "", "", "/CLAUDE.md"),
@@ -169,6 +168,8 @@ const RULES: &[Rule] = &[
     rule(Group::Persistence, "", "/.git/hooks/", ""),
     rule(Group::Persistence, "", "", "/.git/config"),
     rule(Group::Persistence, "", "/.github/workflows/", ""),
+    // the rest of a Codex home, after its state, memory and skills have their own
+    rule(Group::Settings, "", "/.codex/", ""),
 ];
 
 /// The group a path belongs to, if any.
@@ -225,6 +226,23 @@ mod tests {
         );
         assert_eq!(g("/Users/a/.codex/auth.json"), Some("credentials"));
         assert_eq!(g("/Users/a/.codex/config.toml"), Some("agent_settings"));
+        assert_eq!(
+            g("/Users/a/.codex/sessions/2026/x.jsonl"),
+            Some("agent_state")
+        );
+        assert_eq!(g("/Users/a/.codex/history.jsonl"), Some("agent_state"));
+        assert_eq!(
+            g("/Users/a/.codex/memories/x.md"),
+            Some("agent_instructions")
+        );
+        assert_eq!(
+            g("/Users/a/.codex/skills/x/SKILL.md"),
+            Some("agent_extensions")
+        );
+        assert_eq!(
+            g("/Users/a/.codex/log/codex-tui.log"),
+            Some("agent_settings")
+        );
         assert_eq!(g("/Users/a/code/x/.env"), Some("credentials"));
         assert_eq!(g("/Users/a/code/x/.env.local"), Some("credentials"));
         assert_eq!(
