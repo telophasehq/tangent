@@ -17,25 +17,36 @@ use crate::sinks::sqlite::{index_columns, open, quote};
 use crate::state::now_ms;
 use crate::worker::Ack;
 
-/// Sets a group's rows' emitted to the time the DAG is done with them.
+/// Sets a group's rows' emitted to the time the DAG is done with them, and
+/// deletes the value's emitted rows past the latest `batch_size` - 1, the
+/// most a top-up uses: the table is a queue.
 struct Emitted {
     conn: Arc<Mutex<Connection>>,
     table: Arc<str>,
     ids: Vec<i64>,
+    prune: Option<Prune>,
     tx: mpsc::UnboundedSender<Vec<i64>>,
+}
+
+/// A value's emitted rows past its latest `batch_size` - 1, the most a
+/// top-up uses, to delete.
+struct Prune {
+    sql: Arc<str>,
+    key: Vec<Option<String>>,
+    batch_size: usize,
 }
 
 #[async_trait]
 impl Ack for Emitted {
     async fn ack(&self) -> Result<()> {
-        let res = mark(&self.conn, &self.table, &self.ids);
+        let res = mark(&self.conn, &self.table, &self.ids, self.prune.as_ref());
         // rows that could not be marked go again
         let _ = self.tx.send(self.ids.clone());
         res
     }
 }
 
-fn mark(conn: &Mutex<Connection>, table: &str, ids: &[i64]) -> Result<()> {
+fn mark(conn: &Mutex<Connection>, table: &str, ids: &[i64], prune: Option<&Prune>) -> Result<()> {
     let mut conn = conn.lock();
     let tx = conn.transaction()?;
     {
@@ -46,6 +57,11 @@ fn mark(conn: &Mutex<Connection>, table: &str, ids: &[i64]) -> Result<()> {
         for id in ids {
             st.execute([now, *id])?;
         }
+    }
+    if let Some(p) = prune {
+        let mut args: Vec<&dyn ToSql> = p.key.iter().map(|v| v as &dyn ToSql).collect();
+        args.push(&p.batch_size);
+        tx.prepare_cached(&p.sql)?.execute(&*args)?;
     }
     tx.commit()?;
     Ok(())
@@ -102,7 +118,7 @@ pub async fn run_consumer(
             }
             continue;
         }
-        for (context, ids) in groups {
+        for Group { key, context, ids } in groups {
             while unacked >= 16 {
                 tokio::select! {
                     () = shutdown.cancelled() => return Ok(()),
@@ -118,10 +134,16 @@ pub async fn run_consumer(
             };
             sent.extend(&ids);
             unacked += 1;
+            let prune = part.as_ref().map(|p| Prune {
+                sql: Arc::clone(&p.prune),
+                key,
+                batch_size: cfg.batch_size,
+            });
             let ack: Arc<dyn Ack> = Arc::new(Emitted {
                 conn: Arc::clone(&conn),
                 table: Arc::clone(&table),
                 ids,
+                prune,
                 tx: tx.clone(),
             });
             router.forward(&from, vec![frame], vec![ack]).await?;
@@ -137,6 +159,7 @@ struct Partition {
     cols: usize,
     read: String,
     before: String,
+    prune: Arc<str>,
 }
 
 /// The reads by <table>_<partition>'s columns; None until the sink makes it.
@@ -169,6 +192,12 @@ fn partition(conn: &Connection, cfg: &SqliteConfig) -> Result<Option<Partition>>
             n + 1,
             n + 2
         ),
+        prune: format!(
+            "DELETE FROM \"{t}\" WHERE id IN (SELECT id FROM \"{t}\" INDEXED BY \"{t}_{p}\"
+            WHERE {by}emitted IS NOT NULL ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?{} - 1)",
+            n + 1
+        )
+        .into(),
     }))
 }
 
@@ -185,15 +214,22 @@ fn acked(sent: &mut HashSet<i64>, unacked: &mut usize, ids: Vec<i64>) {
     *unacked -= 1;
 }
 
-/// Ids as (context, pending) per value with none in flight: its first `batch_size` pending rows,
-/// or at the timeout all of them after its latest emitted rows, `batch_size` in all.
+/// A batch: its partition value, the rows that top it up and its pending rows.
+struct Group {
+    key: Vec<Option<String>>,
+    context: Vec<i64>,
+    ids: Vec<i64>,
+}
+
+/// A group per value with none in flight: its first `batch_size` pending rows, or at the
+/// timeout all of them after its latest emitted rows, `batch_size` in all.
 fn due(
     conn: &Mutex<Connection>,
     part: &Partition,
     cfg: &SqliteConfig,
     stored: &mut Stored,
     sent: &HashSet<i64>,
-) -> Result<Vec<(Vec<i64>, Vec<i64>)>> {
+) -> Result<Vec<Group>> {
     let conn = conn.lock();
     let t = &cfg.table;
     let (last, newest): (Option<i64>, Option<i64>) = conn.query_row(
@@ -229,7 +265,7 @@ fn due(
         parts.entry(key).or_default().push((r.get(1)?, id));
     }
 
-    let mut groups: Vec<(i64, Vec<i64>, Vec<i64>)> = Vec::new(); // first at, context, ids
+    let mut groups: Vec<(i64, Group)> = Vec::new(); // by its first row's time
     let mut prior = conn.prepare_cached(&part.before)?;
     for (key, rows) in parts {
         if busy.contains(&key) {
@@ -249,10 +285,10 @@ fn due(
             context.reverse();
         }
         let ids = rows.iter().take(cfg.batch_size).map(|r| r.1).collect();
-        groups.push((rows[0].0, context, ids));
+        groups.push((rows[0].0, Group { key, context, ids }));
     }
     groups.sort_by_key(|g| g.0);
-    Ok(groups.into_iter().map(|g| (g.1, g.2)).collect())
+    Ok(groups.into_iter().map(|g| g.1).collect())
 }
 
 /// The rows' records, those of `context` with `"_context": true`.
@@ -328,6 +364,26 @@ mod tests {
             )
             .unwrap();
         }
+    }
+
+    fn pending(path: &Path) -> i64 {
+        let conn = open(path, "logs", &BTreeMap::new()).unwrap();
+        conn.query_row("SELECT count(*) FROM logs WHERE emitted IS NULL", [], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    }
+
+    /// Each row's time past T0, and whether it is emitted.
+    fn left(path: &Path) -> Vec<(i64, bool)> {
+        let conn = open(path, "logs", &BTreeMap::new()).unwrap();
+        let mut st = conn
+            .prepare("SELECT at, emitted IS NOT NULL FROM logs ORDER BY at")
+            .unwrap();
+        st.query_map([], |r| Ok((r.get::<_, i64>(0)? - T0, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
     }
 
     fn emitted(path: &Path) -> i64 {
@@ -483,7 +539,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_quiet_value_is_topped_up_with_context() {
+    async fn a_quiet_value_is_topped_up_with_context_and_only_that_stays() {
         let path = path("context");
         let a: Vec<(i64, &str)> = (1..=4).map(|k| (T0 + k, "a")).collect();
         let b = [(T0 + 5, "b")];
@@ -492,11 +548,12 @@ mod tests {
         let sink = Arc::new(RecordingSink::default());
         let (stop, h) = start(&path, &sink, 1);
         writes(&sink, 3).await;
-        until(|| emitted(&path) == 5).await;
+        // a value keeps its latest batch_size - 1 sent rows, the most a top-up uses
+        until(|| left(&path) == [(3, true), (4, true), (5, true)]).await;
         let more = [(T0 + 6, "a"), (T0 + 7, "a"), (T0 + 8, "a")];
         insert(&path, &more);
         let got = writes(&sink, 4).await;
-        until(|| emitted(&path) == 8).await;
+        until(|| left(&path) == [(5, true), (7, true), (8, true)]).await;
         stop.cancel();
         h.await.unwrap().unwrap();
         assert_eq!(
@@ -541,7 +598,7 @@ mod tests {
         let sink = Arc::new(RecordingSink::default());
         let (stop, h) = start(&path, &sink, 1);
         writes(&sink, 3).await;
-        until(|| emitted(&path) == 5).await;
+        until(|| pending(&path) == 0).await;
         put(T0 + 6, None);
         let got = writes(&sink, 4).await;
         stop.cancel();
@@ -616,7 +673,7 @@ mod tests {
         let sink = Arc::new(RecordingSink::default());
         let (stop, h) = start(&path, &sink, 3600);
         assert_eq!(writes(&sink, 1).await, [group(&a)], "unacked: again");
-        until(|| emitted(&path) == 3).await;
+        until(|| pending(&path) == 0).await;
         stop.cancel();
         h.await.unwrap().unwrap();
         let (first, last): (i64, i64) = open(&path, "logs", &BTreeMap::new())

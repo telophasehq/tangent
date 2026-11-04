@@ -175,14 +175,18 @@ db = sqlite3.connect(os.path.join(work, sink["path"]), timeout=60, isolation_lev
 judge_log = open(os.path.join(work, "judge.log"), "a")
 sent = 0
 short = 0  # records a plugin dropped: never stored
+gaps = 0  # ids no row will hold: a marker deleted under a newer row
 
 
 def stored():
     global short
     last, still = -1, 0
     while True:
+        # rows stored so far, whatever the judge's source has deleted since (the
+        # table is a queue): ids only grow, but for a deleted marker's
         try:
-            n = db.execute(f'SELECT count(*) FROM "{table}" WHERE emitted IS NOT 0').fetchone()[0]
+            n = db.execute(f'SELECT coalesce(max(id), 0) - (SELECT count(*) FROM "{table}" WHERE emitted = 0) '
+                           f'FROM "{table}"').fetchone()[0] - gaps
         except sqlite3.OperationalError:  # the sink has not made the table yet
             n = 0
         if n + short >= sent:
@@ -276,7 +280,10 @@ def recover(bad):
     ids = [r["eventID"] for r in bad if r.get("eventID")]
     if not PROFILE or len(ids) < len(bad):
         sys.exit(f"{len(bad)} records not judged (see judge.log; credentials?); rerun with FROM_WINDOW={window}")
-    db.executemany(f"UPDATE \"{table}\" SET emitted = NULL WHERE json_extract(record, '$.eventID') = ?", [(i,) for i in ids])
+    put = db.executemany(f"UPDATE \"{table}\" SET emitted = NULL WHERE json_extract(record, '$.eventID') = ?",
+                         [(i,) for i in ids]).rowcount
+    if put < len(ids):  # judged, so the queue may have deleted them
+        sys.exit(f"{len(ids) - put} of {len(bad)} records not judged are gone from logs.sqlite; rerun with FROM_WINDOW={window}")
     log(f"{len(bad)} records not judged ({bad[0]['judge']['error'][:160]}); put back; waiting for {PROFILE} credentials")
     while subprocess.run(["aws", "sts", "get-caller-identity", "--profile", PROFILE], capture_output=True).returncode:
         time.sleep(30)
@@ -370,7 +377,6 @@ for k, (a, b) in enumerate(merged):
             gone.add(c["id"])
             for _, t, *key in c["rows"]:
                 dropped += db.execute(f'DELETE FROM "{table}" WHERE at = ? AND {by_key}', (ms(t), *key)).rowcount
-    short += dropped  # stored, then taken out: not missing
     if window < FROM_WINDOW:
         continue
     if HISTORY:
@@ -382,7 +388,7 @@ for k, (a, b) in enumerate(merged):
         mine = [c for c in cases if any(a <= ms(t) <= b for t in c["times"])]
         window_from(ordinary)
         learn([case_lines[i] for c in mine for i, *_ in c["rows"]], os.path.join(work, "state.window.sqlite"))
-    before = dict(sim)
+    before, sent_before = dict(sim), sent
     if not SIMULATE:
         judge = subprocess.Popen([T, "run", "--config", JUDGE], cwd=work, env=env, stdout=judge_log, stderr=subprocess.STDOUT)
     t = a
@@ -393,12 +399,14 @@ for k, (a, b) in enumerate(merged):
     db.execute(f'INSERT INTO "{table}" (at, record, emitted) VALUES (?, ?, 0)', (b + timeout + 1000, '{"_replay": true}'))
     drain()
     stop_judge()
+    mark, top = db.execute(f'SELECT (SELECT id FROM "{table}" WHERE emitted = 0), (SELECT max(id) FROM "{table}")').fetchone()
     db.execute(f'DELETE FROM "{table}" WHERE emitted = 0')
-    judged = db.execute(f'SELECT count(*) FROM "{table}" WHERE at >= ? AND at < ? AND emitted IS NOT NULL', (a, b)).fetchone()[0]
+    gaps += mark is not None and mark != top  # the top id is given out again, any other is not
+    left = db.execute(f'SELECT count(*) FROM "{table}" WHERE at >= ? AND at < ? AND emitted IS NULL', (a, b)).fetchone()[0]
     if SIMULATE:
         sim["windows"].append({"from": a, "to": b, **{x: sim[x] - before[x] for x in ("groups", "requests", "fresh", "context", "bytes")}})
     log(f"window {k + 1}/{len(merged)} {datetime.fromtimestamp(a / 1000, timezone.utc):%Y-%m-%d %H:%M}: "
-        f"{judged} records judged; {sent} sent in all; {dropped} rows of earlier cases dropped; {time.time() - started:.0f}s")
+        f"{sent - sent_before} records sent, {left} not judged; {sent} sent in all; {dropped} rows of earlier cases dropped; {time.time() - started:.0f}s")
 
 if SIMULATE:
     json.dump(sim, open(os.path.join(work, "sim.json"), "w"))
