@@ -66,6 +66,51 @@ impl Norm {
     }
 }
 
+/// The time and source a finished record carries, taken from the record a
+/// pack read before it trims anything, so no trim can leave them out.
+pub struct Stamp {
+    /// The record's `ts`, or, when it has none as text, the time the pack
+    /// read it, RFC 3339 in UTC.
+    pub ts: String,
+    /// The record's `source`; every pack's probe selects on it.
+    pub source: String,
+}
+
+impl Stamp {
+    pub fn of(m: &Map<String, Value>) -> Self {
+        let text = |k: &str| m.get(k).and_then(Value::as_str).map(str::to_string);
+        Stamp {
+            ts: text("ts").unwrap_or_else(now),
+            source: text("source").unwrap_or_default(),
+        }
+    }
+}
+
+/// Now, as RFC 3339 in UTC to the millisecond.
+fn now() -> String {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64);
+    let (days, rem) = (ms.div_euclid(86_400_000), ms.rem_euclid(86_400_000));
+    // days since 1970-01-01 to a civil date (Howard Hinnant's algorithm)
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z",
+        rem / 3_600_000,
+        rem / 60_000 % 60,
+        rem / 1000 % 60,
+        rem % 1000
+    )
+}
+
 /// The record to trim, less the keys only the pipeline writes.
 pub fn record(line: &str) -> Result<Map<String, Value>, String> {
     let mut m: Map<String, Value> = serde_json::from_str(line).map_err(|e| e.to_string())?;

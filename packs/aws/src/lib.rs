@@ -12,7 +12,7 @@ wit_bindgen::generate!({
 mod trim;
 
 use exports::tangent::logs::mapper::{Guest, Meta, Pred, Selector};
-use normkit::Norm;
+use normkit::{Norm, Stamp};
 use serde_json::{Map, Value};
 use tangent::logs::enrichment::lookup;
 use tangent::logs::log::{Logview, Scalar};
@@ -173,9 +173,10 @@ impl Guest for Component {
         let mut out = Vec::new();
         for lv in input {
             let mut n = norm(&lv);
-            let rec = trim::cloudtrail(&normkit::record(&lv.log())?);
+            let read = normkit::record(&lv.log())?;
+            let rec = trim::cloudtrail(&read);
             facts(&rec, &mut n);
-            kit.write(&mut out, rec, n)?;
+            kit.write(&mut out, Stamp::of(&read), rec, n)?;
         }
         Ok(out)
     }
