@@ -1,15 +1,15 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use apache_avro::Codec;
 use arrow_array::{builder::StringBuilder, new_null_array, ArrayRef, RecordBatch};
 use arrow_json::ReaderBuilder;
-use arrow_schema::{DataType, Field, FieldRef, Schema, SchemaRef};
+use arrow_schema::{DataType, Field, FieldRef, Schema, SchemaRef, TimeUnit};
 use bytes::{BufMut, Bytes, BytesMut};
 use memchr::{memchr, memchr_iter};
 use parquet::basic::{Compression as PqCompression, GzipLevel, ZstdLevel};
 use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 use std::io::{BufRead, Write};
 use std::sync::Arc;
-use tangent_shared::sinks::common::{Compression, Encoding};
+use tangent_shared::sinks::common::{Column, ColumnType, Columns, Compression, Encoding};
 
 use crate::SINK_RECORDS_UNFIT_TOTAL;
 
@@ -94,18 +94,18 @@ pub fn write_avro<R: BufRead, W: Write>(
 const PARQUET_BATCH_LINES: usize = 8192;
 const PARQUET_BATCH_BYTES: usize = 64 << 20;
 
-/// NDJSON as one Parquet file: the columns the Arrow schema names, read out
+/// NDJSON as one Parquet file: the columns the schema names, read out
 /// of each line (a field it does not name is skipped; a nested object it
 /// names is a struct, its fields leaf columns of their own), and, with
 /// `record_column`, each line, in a Utf8 column of that name. A line the
 /// schema cannot read is kept or dropped as [`write_parquet`] says.
 pub fn ndjson_to_parquet(
     raw: &[u8],
-    arrow_schema_json: &str,
+    columns: &Columns,
     record_column: Option<&str>,
     comp: &Compression,
 ) -> Result<BytesMut> {
-    let (out, _) = write_parquet(raw, Vec::new(), arrow_schema_json, record_column, comp)?;
+    let (out, _) = write_parquet(raw, Vec::new(), columns, record_column, comp)?;
     Ok(BytesMut::from(out.as_slice()))
 }
 
@@ -128,11 +128,11 @@ pub struct Unfit {
 pub fn write_parquet<R: BufRead, W: Write + Send>(
     mut input: R,
     out: W,
-    arrow_schema_json: &str,
+    columns: &Columns,
     record_column: Option<&str>,
     comp: &Compression,
 ) -> Result<(W, Unfit)> {
-    let (schema, written, props) = parquet_setup(arrow_schema_json, record_column, comp)?;
+    let (schema, written, props) = parquet_setup(columns, record_column, comp)?;
     let mut writer = ArrowWriter::try_new(out, Arc::clone(&written), Some(props))?;
     let with_records = |batch: RecordBatch, lines: &[&[u8]]| -> Result<RecordBatch> {
         if record_column.is_none() {
@@ -269,12 +269,11 @@ fn unfit_row(
 /// column), and the writer's properties: what a file's encoding fails on
 /// before its first line, if it fails at all.
 fn parquet_setup(
-    arrow_schema_json: &str,
+    columns: &Columns,
     record_column: Option<&str>,
     comp: &Compression,
 ) -> Result<(SchemaRef, SchemaRef, WriterProperties)> {
-    let schema: Schema = serde_json::from_str(arrow_schema_json)
-        .context("the parquet schema is not an Arrow schema")?;
+    let schema = Schema::new(fields(columns));
     let written = match record_column {
         None => Arc::new(schema.clone()),
         Some(column) => {
@@ -289,9 +288,30 @@ fn parquet_setup(
     Ok((Arc::new(schema), written, parquet_props_from(comp)?))
 }
 
+/// The Arrow fields of a schema's columns, each nullable.
+fn fields(columns: &Columns) -> Vec<Field> {
+    columns
+        .0
+        .iter()
+        .map(|(name, col)| {
+            let ty = match col {
+                Column::Type(ColumnType::String) => DataType::Utf8,
+                Column::Type(ColumnType::Int) => DataType::Int64,
+                Column::Type(ColumnType::Float) => DataType::Float64,
+                Column::Type(ColumnType::Bool) => DataType::Boolean,
+                Column::Type(ColumnType::Timestamp) => {
+                    DataType::Timestamp(TimeUnit::Millisecond, Some("+00:00".into()))
+                }
+                Column::Struct(inner) => DataType::Struct(fields(inner).into()),
+            };
+            Field::new(name, ty, true)
+        })
+        .collect()
+}
+
 /// What a sink's encoding would fail on at every file, found when the sink
 /// is made rather than after writes are acked into its WAL: a Parquet
-/// schema that does not parse, or that arrow-json or the writer cannot take,
+/// schema arrow-json or the writer cannot take (a struct with no columns),
 /// a record column the schema already has, a compression Parquet does not
 /// have; an Avro schema that does not parse.
 pub fn check(enc: &Encoding, comp: &Compression) -> Result<()> {
@@ -399,25 +419,12 @@ mod tests {
     use super::*;
     use arrow_array::cast::AsArray;
     use arrow_array::types::{Int64Type, TimestampMillisecondType};
-    use arrow_schema::TimeUnit;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
     /// ts as a time, `_norm`'s org and actor, and n; nothing else.
-    fn schema() -> String {
-        let norm = vec![
-            Field::new("org", DataType::Utf8, true),
-            Field::new("actor", DataType::Utf8, true),
-        ];
-        let schema = Schema::new(vec![
-            Field::new(
-                "ts",
-                DataType::Timestamp(TimeUnit::Millisecond, Some("+00:00".into())),
-                true,
-            ),
-            Field::new("_norm", DataType::Struct(norm.into()), true),
-            Field::new("n", DataType::Int64, true),
-        ]);
-        serde_json::to_string(&schema).unwrap()
+    fn schema() -> Columns {
+        serde_yaml::from_str("{ ts: timestamp, _norm: { org: string, actor: string }, n: int }")
+            .unwrap()
     }
 
     const LINES: [&str; 3] = [
@@ -631,16 +638,17 @@ mod tests {
     #[test]
     fn check_finds_what_every_file_would_fail_on() {
         let zstd = Compression::Zstd { level: 3 };
-        let parquet = |schema: &str, record: Option<&str>| Encoding::Parquet {
-            schema: schema.to_string(),
+        let parquet = |schema: Columns, record: Option<&str>| Encoding::Parquet {
+            schema,
             record_column: record.map(str::to_string),
         };
-        assert!(check(&parquet(&schema(), Some("record")), &zstd).is_ok());
+        assert!(check(&parquet(schema(), Some("record")), &zstd).is_ok());
         assert!(check(&Encoding::NDJSON, &zstd).is_ok());
-        assert!(check(&parquet("{\"fields\":", None), &zstd).is_err());
-        assert!(check(&parquet(&schema(), Some("n")), &zstd).is_err());
+        let empty = serde_yaml::from_str("{ _norm: {} }").unwrap();
+        assert!(check(&parquet(empty, None), &zstd).is_err());
+        assert!(check(&parquet(schema(), Some("n")), &zstd).is_err());
         let snappy = Compression::Snappy { level: 3 };
-        assert!(check(&parquet(&schema(), None), &snappy).is_err());
+        assert!(check(&parquet(schema(), None), &snappy).is_err());
         let avro = |schema: &str| Encoding::Avro {
             schema: schema.to_string(),
         };

@@ -154,17 +154,8 @@ mod tests {
     }
 
     fn parquet() -> Encoding {
-        let norm = vec![arrow_schema::Field::new(
-            "actor",
-            arrow_schema::DataType::Utf8,
-            true,
-        )];
-        let schema = arrow_schema::Schema::new(vec![
-            arrow_schema::Field::new("n", arrow_schema::DataType::Int64, true),
-            arrow_schema::Field::new("_norm", arrow_schema::DataType::Struct(norm.into()), true),
-        ]);
         Encoding::Parquet {
-            schema: serde_json::to_string(&schema).unwrap(),
+            schema: serde_yaml::from_str("{ n: int, _norm: { actor: string } }").unwrap(),
             record_column: Some("record".into()),
         }
     }
@@ -321,12 +312,9 @@ mod tests {
     #[tokio::test]
     async fn a_rolling_file_sink_from_config_has_its_files_by_shutdown() {
         let root = scratch("config");
-        let Encoding::Parquet { schema, .. } = parquet() else {
-            unreachable!()
-        };
         let yaml = format!(
             "type: rolling_file\npath: {}/%Y\nwal_path: {}\nmax_file_age_seconds: 3600\n\
-             encoding: {{type: parquet, record_column: record, schema: '{schema}'}}\n",
+             encoding: {{type: parquet, record_column: record, schema: {{n: int, _norm: {{actor: string}}}}}}\n",
             root.join("out").display(),
             root.join("wal").display(),
         );

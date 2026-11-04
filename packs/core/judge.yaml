@@ -17,7 +17,7 @@ sources:
     path: logs.sqlite
     table: logs
     partition: actor
-    batch_size: 40
+    batch_size: 40               # judged rows then go, but each actor's latest 39: what tops up its next batch
     timeout_secs: 3600
 
 plugins:
