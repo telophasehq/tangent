@@ -138,6 +138,7 @@ fn scaffold_go(name: &str, dir: &Path, setup: bool) -> Result<()> {
 fn scaffold_py(name: &str, dir: &Path, setup: bool) -> Result<()> {
     fs::write(dir.join("pyproject.toml"), py_project_for(name))?;
     fs::write(dir.join("mapper.py"), py_mapper_for(name))?;
+    fs::write(dir.join("tangent_schema.py"), PY_SCHEMA)?;
     fs::write(dir.join("tangent.yaml"), tangent_config_for("python", name))?;
     fs::write(dir.join("Agents.md"), PY_AGENTS_MD)?;
     fs::write(dir.join("requirements.txt"), PYTHON_REQUIREMENTS)?;
@@ -581,6 +582,7 @@ crate-type = ["cdylib"]
 [workspace]
 
 [dependencies]
+schemars = "1.2.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 wit-bindgen = "0.48.0"
@@ -606,7 +608,8 @@ world = "processor"
 }
 
 fn rust_lib_for(module: &str) -> String {
-    let tpl = r#"use serde::Serialize;
+    let tpl = r#"use schemars::JsonSchema;
+use serde::Serialize;
 
 wit_bindgen::generate!({
     path: ".tangent/wit",
@@ -621,7 +624,7 @@ struct Component;
 
 export!(Component);
 
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, JsonSchema)]
 struct ExampleOutput {
     message: String,
     level: String,
@@ -669,6 +672,11 @@ impl Guest for Component {
             ))],
             none: Vec::new(),
         }]
+    }
+
+    /// What every record it writes holds, from the type it writes.
+    fn output_schema() -> String {
+        schemars::schema_for!(ExampleOutput).to_value().to_string()
     }
 
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
@@ -844,14 +852,31 @@ dependencies = []
     tpl.replace("{module}", module)
 }
 
+/// A dataclass's JSON Schema, which a Python plugin's `output-schema` returns.
+const PY_SCHEMA: &str = include_str!("../../../examples/python/tangent_schema.py");
+
 fn py_mapper_for(module: &str) -> String {
     let tpl = r#"
-from typing import List
 
+import dataclasses
 import json
+from dataclasses import dataclass
+from typing import List, Optional
+
 import wit_world
+from tangent_schema import schema_of
 from wit_world.exports import mapper
 from wit_world.imports import log
+
+
+@dataclass
+class ExampleOutput:
+    message: str = ""
+    level: str = ""
+    seen: int = 0
+    duration: float = 0.0
+    service: str = ""
+    tags: Optional[List[str]] = None
 
 
 class Mapper(wit_world.WitWorld):
@@ -872,6 +897,10 @@ class Mapper(wit_world.WitWorld):
             )
         ]
 
+    def output_schema(self) -> str:
+        # What every record it writes holds, from the type it writes.
+        return schema_of(ExampleOutput)
+
     def process_logs(
         self,
         logs: List[log.Logview]
@@ -880,39 +909,32 @@ class Mapper(wit_world.WitWorld):
 
         for lv in logs:
             with lv:
-                out = {
-                    "message": "",
-                    "level": "",
-                    "seen": 0,
-                    "duration": 0.0,
-                    "service": "",
-                    "tags": None,
-                }
+                out = ExampleOutput()
 
                 # get string
                 s = lv.get("msg")
                 if s is not None and hasattr(s, "value"):
-                    out["message"] = s.value
+                    out.message = s.value
 
                 # get dot path
                 s = lv.get("msg.level")
                 if s is not None and hasattr(s, "value"):
-                    out["level"] = s.value
+                    out.level = s.value
 
                 # get int
                 s = lv.get("seen")
                 if s is not None and hasattr(s, "value"):
-                    out["seen"] = s.value
+                    out.seen = s.value
 
                 # get float
                 s = lv.get("duration")
                 if s is not None and hasattr(s, "value"):
-                    out["duration"] = s.value
+                    out.duration = s.value
 
                 # get value from nested json
                 s = lv.get("source.name")
                 if s is not None and hasattr(s, "value"):
-                    out["service"] = s.value
+                    out.service = s.value
 
                 # get string list
                 lst = lv.get_list("tags")
@@ -920,9 +942,9 @@ class Mapper(wit_world.WitWorld):
                     tags: List[str] = []
                     for item in lst:
                         tags.append(item.value)
-                    out["tags"] = tags
+                    out.tags = tags
 
-                buf.extend(json.dumps(out).encode('utf-8') + b"\n")
+                buf.extend(json.dumps(dataclasses.asdict(out)).encode('utf-8') + b'\n')
 
         return bytes(buf)
 "#;

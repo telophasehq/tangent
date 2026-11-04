@@ -269,7 +269,9 @@ fn load() -> Data {
 
 fn is_private(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v) => v.is_private() || v.is_loopback() || v.is_link_local() || v.is_unspecified(),
+        IpAddr::V4(v) => {
+            v.is_private() || v.is_loopback() || v.is_link_local() || v.is_unspecified()
+        }
         IpAddr::V6(v) => {
             v.is_loopback()
                 || v.is_unspecified()
@@ -318,7 +320,9 @@ fn parse_ip(s: &str) -> Option<IpAddr> {
     if let Ok(ip) = s.parse::<IpAddr>() {
         return Some(ip);
     }
-    let s = s.strip_prefix('[').map_or(s, |r| r.split(']').next().unwrap_or(r));
+    let s = s
+        .strip_prefix('[')
+        .map_or(s, |r| r.split(']').next().unwrap_or(r));
     if let Ok(ip) = s.parse::<IpAddr>() {
         return Some(ip);
     }
@@ -354,6 +358,12 @@ impl Guest for Component {
             all: Vec::new(),
             none: Vec::new(),
         }]
+    }
+
+    /// Records go on as they came, with what it found under `output`:
+    /// what feeds it is checked in its place.
+    fn output_schema() -> String {
+        "{}".to_string()
     }
 
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {

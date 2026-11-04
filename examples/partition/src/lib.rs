@@ -5,6 +5,7 @@
 //! org. `count` is therefore "events from this org" and `seen:<event>` is
 //! "has this org done this before", with no org anywhere in the keys.
 
+use schemars::JsonSchema;
 use serde::Serialize;
 
 wit_bindgen::generate!({
@@ -21,7 +22,7 @@ struct Component;
 
 export!(Component);
 
-#[derive(Serialize)]
+#[derive(Serialize, JsonSchema)]
 struct Out {
     org_id: String,
     event: String,
@@ -54,12 +55,23 @@ impl Guest for Component {
         }]
     }
 
+    /// What every record it writes holds, from the type it writes.
+    fn output_schema() -> String {
+        schemars::schema_for!(Out).to_value().to_string()
+    }
+
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
         let mut buf = Vec::new();
 
         for lv in input {
-            let org_id = lv.get("org_id").and_then(string_from_scalar).unwrap_or_default();
-            let event = lv.get("event").and_then(string_from_scalar).unwrap_or_default();
+            let org_id = lv
+                .get("org_id")
+                .and_then(string_from_scalar)
+                .unwrap_or_default();
+            let event = lv
+                .get("event")
+                .and_then(string_from_scalar)
+                .unwrap_or_default();
 
             let n = state::incr("count", 1, None)?;
 

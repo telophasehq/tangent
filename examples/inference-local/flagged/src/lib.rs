@@ -40,6 +40,11 @@ impl Guest for Component {
         ]
     }
 
+    /// Records go on as they came: what feeds it is checked in its place.
+    fn output_schema() -> String {
+        "{}".to_string()
+    }
+
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
         let mut out = Vec::new();
         for lv in input {

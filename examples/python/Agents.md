@@ -36,7 +36,7 @@
 
 ## Mapper contract (what you must implement)
 
-Implement a class that extends the runtime base and the three required methods:
+Implement a class that extends the runtime base and the four required methods:
 
 ```py
 from typing import List
@@ -48,12 +48,14 @@ from wit_world.imports import log
 class Mapper(wit_world.WitWorld):
     def metadata(self) -> mapper.Meta: ...
     def probe(self) -> List[mapper.Selector]: ...
+    def output_schema(self) -> str: ...
     def process_logs(self, logs: List[log.Logview]) -> bytes: ...
 ```
 
 * **`metadata()`**: return `mapper.Meta(name="<unique-name>", version="<semver>")`.
 * **`probe()`**: return a list of `mapper.Selector` with predicates in `any` / `all` / `none`. Use `mapper.Pred_Eq((path, log.Scalar_*))`.
-* **`process_logs()`**: accept `List[log.Logview]`, return **`bytes`** (NDJSON for the entire batch).
+* **`output_schema()`**: return the JSON Schema of the records you write: make each record a `@dataclass` and return `schema_of(YourOutput)` (from `tangent_schema.py`, next to `mapper.py`). An `Optional` field may be missing or null; every other field is required. A sink fed by the plugin is checked against it at startup, and `tangent plugin test` checks every fixture's output against it.
+* **`process_logs()`**: accept `List[log.Logview]`, return **`bytes`** (NDJSON for the entire batch). Write each record with `json.dumps(dataclasses.asdict(out))`.
 
 > The runtime wires these methods via WIT; do **not** rename or change signatures. Raising an exception inside `process_logs` is treated as a **batch failure**.
 

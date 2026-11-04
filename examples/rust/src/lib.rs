@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::Serialize;
 
 wit_bindgen::generate!({
@@ -13,7 +14,7 @@ struct Component;
 
 export!(Component);
 
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, JsonSchema)]
 struct ExampleOutput {
     message: String,
     level: String,
@@ -61,6 +62,11 @@ impl Guest for Component {
             ))],
             none: Vec::new(),
         }]
+    }
+
+    /// What every record it writes holds, from the type it writes.
+    fn output_schema() -> String {
+        schemars::schema_for!(ExampleOutput).to_value().to_string()
     }
 
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
