@@ -491,7 +491,7 @@
  {
   "_facts": {
    "notes": [
-    "runs at login, in every shell, or on every git command"
+    "runs at login, in every shell, on every git command, or in CI on every push"
    ],
    "persistence": true
   },
@@ -521,7 +521,7 @@
  {
   "_facts": {
    "notes": [
-    "runs at login, in every shell, or on every git command"
+    "runs at login, in every shell, on every git command, or in CI on every push"
    ],
    "persistence": true
   },

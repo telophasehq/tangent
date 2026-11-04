@@ -19,7 +19,7 @@ pub enum Group {
     Extensions,
     /// cloud, registry, SSH and signing credentials
     Credentials,
-    /// what runs at login, in every shell, or on every git command
+    /// what runs at login, in every shell, on every git command, or on every push
     Persistence,
 }
 
@@ -44,7 +44,7 @@ impl Group {
             Group::State => "an AI agent's transcripts or session state: every prompt, reply and command it ran",
             Group::Extensions => "an AI agent's plugins, skills or editor extensions: code it loads",
             Group::Credentials => "a credential file: cloud, registry, SSH, signing or API keys",
-            Group::Persistence => "runs at login, in every shell, or on every git command",
+            Group::Persistence => "runs at login, in every shell, on every git command, or in CI on every push",
         }
     }
 
@@ -168,6 +168,7 @@ const RULES: &[Rule] = &[
     rule(Group::Persistence, "/Library/LaunchDaemons/", "", ""),
     rule(Group::Persistence, "", "/.git/hooks/", ""),
     rule(Group::Persistence, "", "", "/.git/config"),
+    rule(Group::Persistence, "", "/.github/workflows/", ""),
 ];
 
 /// The group a path belongs to, if any.
@@ -231,6 +232,10 @@ mod tests {
             Some("persistence")
         );
         assert_eq!(g("/Users/a/.zshrc"), Some("persistence"));
+        assert_eq!(
+            g("/Users/a/code/x/.github/workflows/ci.yml"),
+            Some("persistence")
+        );
         assert_eq!(g("/Users/a/.claude/shell-snapshots/snapshot.sh"), None);
         assert_eq!(g("/Users/a/.claude/statsig/x"), None);
         assert_eq!(g("/Users/a/code/x/src/main.rs"), None);

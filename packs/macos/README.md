@@ -52,7 +52,7 @@ The groups are the catalog's, plus credentials and what runs on its own
 | `agent_state` | `~/.claude/projects/**/*.jsonl`, `~/.claude/history.jsonl`, `~/.codex/sessions/`, `~/.codex/history.jsonl`, `~/.gemini/tmp/` |
 | `agent_extensions` | `~/.claude/plugins/`, `~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/extensions/`, `~/.cursor/extensions/`, `~/.vscode/extensions/` |
 | `credentials` | `~/.aws/`, `~/.ssh/`, `~/.gnupg/`, `~/.npmrc`, `~/.netrc`, `~/.docker/config.json`, `~/.kube/config`, `~/.config/gh/`, `~/.codex/auth.json`, the keychains, `.env` and `.env.*` |
-| `persistence` | `~/.zshrc` and the other rc files, `~/Library/LaunchAgents/`, `/Library/LaunchAgents/`, `/Library/LaunchDaemons/`, `.git/hooks/`, `.git/config` |
+| `persistence` | `~/.zshrc` and the other rc files, `~/Library/LaunchAgents/`, `/Library/LaunchAgents/`, `/Library/LaunchDaemons/`, `.git/hooks/`, `.git/config`, `.github/workflows/` |
 
 Each record carries the program that acted (`process`: path, signer,
 platform, uid, tty, the responsible app) and `parents`, the programs above it
