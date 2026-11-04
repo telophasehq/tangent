@@ -1,0 +1,34 @@
+# macos: eslogger's events from this Mac into the few records a model should
+# read, by one plugin, `macos`: every program run (its environment cut to the
+# names that steer an AI agent), and the writes and telling reads on an
+# agent's settings, instructions, MCP config, transcripts and plugins, on
+# credentials and on what runs at login; the rest dropped. Nothing is stored:
+# judge.yaml includes this and reads each record with a model (README.md).
+#
+#   sudo eslogger exec fork exit open close create rename unlink btm_launch_item_add tcc_modify \
+#     | nc -U es.sock
+runtime:
+  workers: 1                     # the process tree is built in order: fork, exec, exit
+  plugins_path: plugins/
+  state:
+    backend: lru                 # the process tree, gone with the process; nothing to keep
+    default_ttl_ms: 86400000     # a process the tree never saw exit is forgotten after a day
+    max_ttl_ms: 0
+
+sources:
+  es:
+    type: socket
+    socket_path: es.sock         # in this directory; root's nc writes it, you own it; not a port
+
+plugins:
+  macos:
+    module_type: rust
+    path: .
+    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
+    tests:
+      - input: tests/input.json
+        expected: tests/expected.json
+
+dag:
+  - from: { kind: source, name: es }
+    to: [{ kind: plugin, name: macos }]

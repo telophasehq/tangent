@@ -1,0 +1,5631 @@
+[
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "fork": {
+    "child": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 201,
+      "pidversion": 1408,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "0000000000000000000000000000007b9b571248",
+     "codesigning_flags": 570506001,
+     "cs_validation_category": 1,
+     "executable": {
+      "path": "/bin/zsh",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 201,
+     "is_es_client": false,
+     "is_platform_binary": true,
+     "original_ppid": 200,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 200,
+      "pidversion": 1401,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 200,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "com.apple.zsh",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": null,
+     "tty": {
+      "path": "/dev/ttys003",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    }
+   }
+  },
+  "event_type": 11,
+  "global_seq_num": 1,
+  "mach_time": 1001000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "0000000000000000000000000000007b9b571248",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/bin/zsh",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 200,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 100,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 100,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.zsh",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 1,
+  "thread": {
+   "thread_id": 7001
+  },
+  "time": "2026-11-03T20:00:01.000001000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "exec": {
+    "args": [
+     "git",
+     "status"
+    ],
+    "cwd": {
+     "path": "/Users/dev/code/x",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "dyld_exec_path": "/usr/bin/git",
+    "env": [
+     "HOME=/Users/dev",
+     "PATH=/usr/local/bin:/usr/bin:/bin",
+     "SHELL=/bin/zsh",
+     "TERM=xterm-256color",
+     "USER=dev",
+     "LANG=en_US.UTF-8",
+     "GITHUB_TOKEN=ghp_examplesecretvalue0000000000000000",
+     "AWS_SECRET_ACCESS_KEY=exampleSecretKeyValue000000000000000000",
+     "NPM_TOKEN=npm_exampleSecret000000000000",
+     "VAR0=value0",
+     "VAR1=value1",
+     "VAR2=value2"
+    ],
+    "fds": [
+     {
+      "fd": 0,
+      "fdtype": 1
+     },
+     {
+      "fd": 1,
+      "fdtype": 1
+     },
+     {
+      "fd": 2,
+      "fdtype": 1
+     }
+    ],
+    "image_cpusubtype": 0,
+    "image_cputype": 16777228,
+    "last_fd": 2,
+    "script": null,
+    "target": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 201,
+      "pidversion": 1408,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "0000000000000000000000000000007c398e8bf9",
+     "codesigning_flags": 570506001,
+     "cs_validation_category": 1,
+     "executable": {
+      "path": "/usr/bin/git",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 201,
+     "is_es_client": false,
+     "is_platform_binary": true,
+     "original_ppid": 200,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 200,
+      "pidversion": 1401,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 200,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "com.apple.git",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": null,
+     "tty": {
+      "path": "/dev/ttys003",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    }
+   }
+  },
+  "event_type": 9,
+  "global_seq_num": 2,
+  "mach_time": 1002000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 201,
+    "pidversion": 1408,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "0000000000000000000000000000007b9b571248",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/bin/zsh",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 201,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.zsh",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 2,
+  "thread": {
+   "thread_id": 7002
+  },
+  "time": "2026-11-03T20:00:02.000002000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "exit": {
+    "stat": 0
+   }
+  },
+  "event_type": 15,
+  "global_seq_num": 3,
+  "mach_time": 1003000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 201,
+    "pidversion": 1408,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "0000000000000000000000000000007c398e8bf9",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/usr/bin/git",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 201,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.git",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 3,
+  "thread": {
+   "thread_id": 7003
+  },
+  "time": "2026-11-03T20:00:03.000003000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "fork": {
+    "child": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 300,
+      "pidversion": 2101,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "0000000000000000000000000000007b9b571248",
+     "codesigning_flags": 570506001,
+     "cs_validation_category": 1,
+     "executable": {
+      "path": "/bin/zsh",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 300,
+     "is_es_client": false,
+     "is_platform_binary": true,
+     "original_ppid": 200,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 200,
+      "pidversion": 1401,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 200,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "com.apple.zsh",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": null,
+     "tty": {
+      "path": "/dev/ttys003",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    }
+   }
+  },
+  "event_type": 11,
+  "global_seq_num": 4,
+  "mach_time": 1004000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "0000000000000000000000000000007b9b571248",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/bin/zsh",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 200,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 100,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 100,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.zsh",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 4,
+  "thread": {
+   "thread_id": 7004
+  },
+  "time": "2026-11-03T20:00:04.000004000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "exec": {
+    "args": [
+     "agent"
+    ],
+    "cwd": {
+     "path": "/Users/dev/code/x",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "dyld_exec_path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "env": [
+     "HOME=/Users/dev",
+     "PATH=/usr/local/bin:/usr/bin:/bin",
+     "SHELL=/bin/zsh",
+     "TERM=xterm-256color",
+     "USER=dev",
+     "LANG=en_US.UTF-8",
+     "GITHUB_TOKEN=ghp_examplesecretvalue0000000000000000",
+     "AWS_SECRET_ACCESS_KEY=exampleSecretKeyValue000000000000000000",
+     "NPM_TOKEN=npm_exampleSecret000000000000",
+     "ANTHROPIC_BASE_URL=https://proxy.example.com/v1",
+     "VAR0=value0",
+     "VAR1=value1",
+     "VAR2=value2",
+     "VAR3=value3",
+     "VAR4=value4",
+     "VAR5=value5",
+     "VAR6=value6",
+     "VAR7=value7",
+     "VAR8=value8",
+     "VAR9=value9",
+     "VAR10=value10",
+     "VAR11=value11",
+     "VAR12=value12",
+     "VAR13=value13",
+     "VAR14=value14",
+     "VAR15=value15",
+     "VAR16=value16",
+     "VAR17=value17",
+     "VAR18=value18",
+     "VAR19=value19",
+     "VAR20=value20",
+     "VAR21=value21",
+     "VAR22=value22",
+     "VAR23=value23",
+     "VAR24=value24",
+     "VAR25=value25",
+     "VAR26=value26",
+     "VAR27=value27",
+     "VAR28=value28",
+     "VAR29=value29"
+    ],
+    "fds": [
+     {
+      "fd": 0,
+      "fdtype": 1
+     },
+     {
+      "fd": 1,
+      "fdtype": 1
+     },
+     {
+      "fd": 2,
+      "fdtype": 1
+     }
+    ],
+    "image_cpusubtype": 0,
+    "image_cputype": 16777228,
+    "last_fd": 2,
+    "script": null,
+    "target": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 300,
+      "pidversion": 2101,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "000000000000000000000000000000b969029b6c",
+     "codesigning_flags": 536870912,
+     "cs_validation_category": 6,
+     "executable": {
+      "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 300,
+     "is_es_client": false,
+     "is_platform_binary": false,
+     "original_ppid": 200,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 200,
+      "pidversion": 1401,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 200,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "com.example.agent",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": "EXAMPLE123",
+     "tty": {
+      "path": "/dev/ttys003",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    }
+   }
+  },
+  "event_type": 9,
+  "global_seq_num": 5,
+  "mach_time": 1005000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "0000000000000000000000000000007b9b571248",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/bin/zsh",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.zsh",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 5,
+  "thread": {
+   "thread_id": 7005
+  },
+  "time": "2026-11-03T20:00:05.000005000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "open": {
+    "fflag": 1,
+    "file": {
+     "path": "/Users/dev/.claude/settings.json",
+     "path_truncated": false
+    }
+   }
+  },
+  "event_type": 10,
+  "global_seq_num": 6,
+  "mach_time": 1006000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 6,
+  "thread": {
+   "thread_id": 7006
+  },
+  "time": "2026-11-03T20:00:06.000006000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "open": {
+    "fflag": 10,
+    "file": {
+     "path": "/Users/dev/.claude/projects/-Users-dev-code-x/0f3a-session.jsonl",
+     "path_truncated": false
+    }
+   }
+  },
+  "event_type": 10,
+  "global_seq_num": 7,
+  "mach_time": 1007000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 7,
+  "thread": {
+   "thread_id": 7007
+  },
+  "time": "2026-11-03T20:00:07.000007000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "close": {
+    "modified": true,
+    "target": {
+     "path": "/Users/dev/.claude/projects/-Users-dev-code-x/0f3a-session.jsonl",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "was_mapped_writable": false
+   }
+  },
+  "event_type": 12,
+  "global_seq_num": 8,
+  "mach_time": 1008000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 8,
+  "thread": {
+   "thread_id": 7008
+  },
+  "time": "2026-11-03T20:00:08.000008000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "close": {
+    "modified": false,
+    "target": {
+     "path": "/Users/dev/code/x/src/main.rs",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "was_mapped_writable": false
+   }
+  },
+  "event_type": 12,
+  "global_seq_num": 9,
+  "mach_time": 1009000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 9,
+  "thread": {
+   "thread_id": 7009
+  },
+  "time": "2026-11-03T20:00:09.000009000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "close": {
+    "modified": true,
+    "target": {
+     "path": "/dev/ttys003",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "was_mapped_writable": false
+   }
+  },
+  "event_type": 12,
+  "global_seq_num": 10,
+  "mach_time": 1010000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 10,
+  "thread": {
+   "thread_id": 7010
+  },
+  "time": "2026-11-03T20:00:10.000010000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "create": {
+    "acl": null,
+    "destination": {
+     "existing_file": {
+      "path": "/Users/dev/.claude.json.tmp.300.ab12",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    },
+    "destination_type": 0
+   }
+  },
+  "event_type": 13,
+  "global_seq_num": 11,
+  "mach_time": 1011000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 11,
+  "thread": {
+   "thread_id": 7011
+  },
+  "time": "2026-11-03T20:00:11.000011000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "rename": {
+    "source": {
+     "path": "/Users/dev/.claude.json.tmp.300.ab12",
+     "path_truncated": false
+    },
+    "destination": {
+     "existing_file": {
+      "path": "/Users/dev/.claude.json",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    },
+    "destination_type": 0
+   }
+  },
+  "event_type": 25,
+  "global_seq_num": 12,
+  "mach_time": 1012000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 12,
+  "thread": {
+   "thread_id": 7012
+  },
+  "time": "2026-11-03T20:00:12.000012000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "fork": {
+    "child": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 301,
+      "pidversion": 2108,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "000000000000000000000000000000b969029b6c",
+     "codesigning_flags": 536870912,
+     "cs_validation_category": 6,
+     "executable": {
+      "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 301,
+     "is_es_client": false,
+     "is_platform_binary": false,
+     "original_ppid": 300,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 300,
+      "pidversion": 2101,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 300,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "com.example.agent",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": "EXAMPLE123",
+     "tty": {
+      "path": "/dev/ttys003",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    }
+   }
+  },
+  "event_type": 11,
+  "global_seq_num": 13,
+  "mach_time": 1013000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 13,
+  "thread": {
+   "thread_id": 7013
+  },
+  "time": "2026-11-03T20:00:13.000013000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "exec": {
+    "args": [
+     "security",
+     "find-generic-password",
+     "-s",
+     "agent-credentials",
+     "-w"
+    ],
+    "cwd": {
+     "path": "/Users/dev/code/x",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "dyld_exec_path": "/usr/bin/security",
+    "env": [
+     "HOME=/Users/dev",
+     "PATH=/usr/local/bin:/usr/bin:/bin",
+     "SHELL=/bin/zsh",
+     "TERM=xterm-256color",
+     "USER=dev",
+     "LANG=en_US.UTF-8",
+     "GITHUB_TOKEN=ghp_examplesecretvalue0000000000000000",
+     "AWS_SECRET_ACCESS_KEY=exampleSecretKeyValue000000000000000000",
+     "NPM_TOKEN=npm_exampleSecret000000000000",
+     "VAR0=value0",
+     "VAR1=value1",
+     "VAR2=value2",
+     "VAR3=value3",
+     "VAR4=value4",
+     "VAR5=value5",
+     "VAR6=value6",
+     "VAR7=value7",
+     "VAR8=value8",
+     "VAR9=value9",
+     "VAR10=value10",
+     "VAR11=value11",
+     "VAR12=value12",
+     "VAR13=value13",
+     "VAR14=value14",
+     "VAR15=value15",
+     "VAR16=value16",
+     "VAR17=value17",
+     "VAR18=value18",
+     "VAR19=value19",
+     "VAR20=value20",
+     "VAR21=value21",
+     "VAR22=value22",
+     "VAR23=value23",
+     "VAR24=value24",
+     "VAR25=value25",
+     "VAR26=value26",
+     "VAR27=value27",
+     "VAR28=value28",
+     "VAR29=value29",
+     "VAR30=value30"
+    ],
+    "fds": [
+     {
+      "fd": 0,
+      "fdtype": 1
+     },
+     {
+      "fd": 1,
+      "fdtype": 1
+     },
+     {
+      "fd": 2,
+      "fdtype": 1
+     }
+    ],
+    "image_cpusubtype": 0,
+    "image_cputype": 16777228,
+    "last_fd": 2,
+    "script": null,
+    "target": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 301,
+      "pidversion": 2108,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "000000000000000000000000000000ba073a151d",
+     "codesigning_flags": 570506001,
+     "cs_validation_category": 1,
+     "executable": {
+      "path": "/usr/bin/security",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 301,
+     "is_es_client": false,
+     "is_platform_binary": true,
+     "original_ppid": 300,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 300,
+      "pidversion": 2101,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 300,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "com.apple.security",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": null,
+     "tty": {
+      "path": "/dev/ttys003",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    }
+   }
+  },
+  "event_type": 9,
+  "global_seq_num": 14,
+  "mach_time": 1014000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 301,
+    "pidversion": 2108,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 301,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 300,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 300,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 14,
+  "thread": {
+   "thread_id": 7014
+  },
+  "time": "2026-11-03T20:00:14.000014000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "exit": {
+    "stat": 0
+   }
+  },
+  "event_type": 15,
+  "global_seq_num": 15,
+  "mach_time": 1015000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 301,
+    "pidversion": 2108,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000ba073a151d",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/usr/bin/security",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 301,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 300,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 300,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.security",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 15,
+  "thread": {
+   "thread_id": 7015
+  },
+  "time": "2026-11-03T20:00:15.000015000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "close": {
+    "modified": true,
+    "target": {
+     "path": "/Users/dev/.claude/shell-snapshots/snapshot-zsh-1762200000-abc.sh",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "was_mapped_writable": false
+   }
+  },
+  "event_type": 12,
+  "global_seq_num": 16,
+  "mach_time": 1016000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "0000000000000000000000000000007b9b571248",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/bin/zsh",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 200,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 100,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 100,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.zsh",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 16,
+  "thread": {
+   "thread_id": 7016
+  },
+  "time": "2026-11-03T20:00:16.000016000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "fork": {
+    "child": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 302,
+      "pidversion": 2115,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "000000000000000000000000000000b969029b6c",
+     "codesigning_flags": 536870912,
+     "cs_validation_category": 6,
+     "executable": {
+      "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 302,
+     "is_es_client": false,
+     "is_platform_binary": false,
+     "original_ppid": 300,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 300,
+      "pidversion": 2101,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 300,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "com.example.agent",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": "EXAMPLE123",
+     "tty": {
+      "path": "/dev/ttys003",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    }
+   }
+  },
+  "event_type": 11,
+  "global_seq_num": 17,
+  "mach_time": 1017000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 17,
+  "thread": {
+   "thread_id": 7017
+  },
+  "time": "2026-11-03T20:00:17.000017000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "exec": {
+    "args": [
+     "sh",
+     "-c",
+     "npm install"
+    ],
+    "cwd": {
+     "path": "/Users/dev/code/x",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "dyld_exec_path": "/bin/sh",
+    "env": [
+     "HOME=/Users/dev",
+     "PATH=/usr/local/bin:/usr/bin:/bin",
+     "SHELL=/bin/zsh",
+     "TERM=xterm-256color",
+     "USER=dev",
+     "LANG=en_US.UTF-8",
+     "GITHUB_TOKEN=ghp_examplesecretvalue0000000000000000",
+     "AWS_SECRET_ACCESS_KEY=exampleSecretKeyValue000000000000000000",
+     "NPM_TOKEN=npm_exampleSecret000000000000",
+     "VAR0=value0",
+     "VAR1=value1",
+     "VAR2=value2",
+     "VAR3=value3",
+     "VAR4=value4",
+     "VAR5=value5",
+     "VAR6=value6",
+     "VAR7=value7",
+     "VAR8=value8",
+     "VAR9=value9",
+     "VAR10=value10",
+     "VAR11=value11",
+     "VAR12=value12",
+     "VAR13=value13",
+     "VAR14=value14",
+     "VAR15=value15",
+     "VAR16=value16",
+     "VAR17=value17",
+     "VAR18=value18",
+     "VAR19=value19",
+     "VAR20=value20",
+     "VAR21=value21",
+     "VAR22=value22",
+     "VAR23=value23",
+     "VAR24=value24",
+     "VAR25=value25",
+     "VAR26=value26",
+     "VAR27=value27",
+     "VAR28=value28",
+     "VAR29=value29",
+     "VAR30=value30",
+     "VAR31=value31"
+    ],
+    "fds": [
+     {
+      "fd": 0,
+      "fdtype": 1
+     },
+     {
+      "fd": 1,
+      "fdtype": 1
+     },
+     {
+      "fd": 2,
+      "fdtype": 1
+     }
+    ],
+    "image_cpusubtype": 0,
+    "image_cputype": 16777228,
+    "last_fd": 2,
+    "script": null,
+    "target": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 302,
+      "pidversion": 2115,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "000000000000000000000000000000baa5718ece",
+     "codesigning_flags": 570506001,
+     "cs_validation_category": 1,
+     "executable": {
+      "path": "/bin/sh",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 302,
+     "is_es_client": false,
+     "is_platform_binary": true,
+     "original_ppid": 300,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 300,
+      "pidversion": 2101,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 300,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "com.apple.sh",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": null,
+     "tty": {
+      "path": "/dev/ttys003",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    }
+   }
+  },
+  "event_type": 9,
+  "global_seq_num": 18,
+  "mach_time": 1018000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 302,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 300,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 300,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 18,
+  "thread": {
+   "thread_id": 7018
+  },
+  "time": "2026-11-03T20:00:18.000018000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "fork": {
+    "child": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 303,
+      "pidversion": 2122,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "000000000000000000000000000000baa5718ece",
+     "codesigning_flags": 570506001,
+     "cs_validation_category": 1,
+     "executable": {
+      "path": "/bin/sh",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 303,
+     "is_es_client": false,
+     "is_platform_binary": true,
+     "original_ppid": 302,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 302,
+      "pidversion": 2115,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 302,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "com.apple.sh",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": null,
+     "tty": {
+      "path": "/dev/ttys003",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     }
+    }
+   }
+  },
+  "event_type": 11,
+  "global_seq_num": 19,
+  "mach_time": 1019000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000baa5718ece",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/bin/sh",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 302,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 300,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 300,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.sh",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 19,
+  "thread": {
+   "thread_id": 7019
+  },
+  "time": "2026-11-03T20:00:19.000019000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "exec": {
+    "args": [
+     "node",
+     "/Users/dev/code/x/node_modules/evil-pkg/postinstall.js"
+    ],
+    "cwd": {
+     "path": "/Users/dev/code/x",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "dyld_exec_path": "/usr/local/bin/node",
+    "env": [
+     "HOME=/Users/dev",
+     "PATH=/usr/local/bin:/usr/bin:/bin",
+     "SHELL=/bin/zsh",
+     "TERM=xterm-256color",
+     "USER=dev",
+     "LANG=en_US.UTF-8",
+     "GITHUB_TOKEN=ghp_examplesecretvalue0000000000000000",
+     "AWS_SECRET_ACCESS_KEY=exampleSecretKeyValue000000000000000000",
+     "NPM_TOKEN=npm_exampleSecret000000000000",
+     "VAR0=value0",
+     "VAR1=value1",
+     "VAR2=value2",
+     "VAR3=value3",
+     "VAR4=value4",
+     "VAR5=value5",
+     "VAR6=value6",
+     "VAR7=value7",
+     "VAR8=value8",
+     "VAR9=value9",
+     "VAR10=value10",
+     "VAR11=value11",
+     "VAR12=value12",
+     "VAR13=value13",
+     "VAR14=value14",
+     "VAR15=value15",
+     "VAR16=value16",
+     "VAR17=value17",
+     "VAR18=value18",
+     "VAR19=value19",
+     "VAR20=value20",
+     "VAR21=value21",
+     "VAR22=value22",
+     "VAR23=value23",
+     "VAR24=value24",
+     "VAR25=value25",
+     "VAR26=value26",
+     "VAR27=value27",
+     "VAR28=value28",
+     "VAR29=value29",
+     "VAR30=value30",
+     "VAR31=value31",
+     "VAR32=value32",
+     "VAR33=value33",
+     "VAR34=value34",
+     "VAR35=value35"
+    ],
+    "fds": [
+     {
+      "fd": 0,
+      "fdtype": 1
+     },
+     {
+      "fd": 1,
+      "fdtype": 1
+     },
+     {
+      "fd": 2,
+      "fdtype": 1
+     }
+    ],
+    "image_cpusubtype": 0,
+    "image_cputype": 16777228,
+    "last_fd": 2,
+    "script": null,
+    "target": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 303,
+      "pidversion": 2122,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "000000000000000000000000000000bb43a9087f",
+     "codesigning_flags": 536870912,
+     "cs_validation_category": 6,
+     "executable": {
+      "path": "/usr/local/bin/node",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 303,
+     "is_es_client": false,
+     "is_platform_binary": false,
+     "original_ppid": 302,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 302,
+      "pidversion": 2115,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 302,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": null,
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": "NODEJS1234",
+     "tty": null
+    }
+   }
+  },
+  "event_type": 9,
+  "global_seq_num": 20,
+  "mach_time": 1020000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000baa5718ece",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/bin/sh",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 303,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 302,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 302,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.sh",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 20,
+  "thread": {
+   "thread_id": 7020
+  },
+  "time": "2026-11-03T20:00:20.000020000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "open": {
+    "fflag": 1,
+    "file": {
+     "path": "/Users/dev/.aws/credentials",
+     "path_truncated": false
+    }
+   }
+  },
+  "event_type": 10,
+  "global_seq_num": 21,
+  "mach_time": 1021000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000bb43a9087f",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/usr/local/bin/node",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 303,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 302,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 302,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": null,
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "NODEJS1234",
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 21,
+  "thread": {
+   "thread_id": 7021
+  },
+  "time": "2026-11-03T20:00:21.000021000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "open": {
+    "fflag": 1,
+    "file": {
+     "path": "/Users/dev/.claude/projects/-Users-dev-code-x/0f3a-session.jsonl",
+     "path_truncated": false
+    }
+   }
+  },
+  "event_type": 10,
+  "global_seq_num": 22,
+  "mach_time": 1022000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000bb43a9087f",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/usr/local/bin/node",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 303,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 302,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 302,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": null,
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "NODEJS1234",
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 22,
+  "thread": {
+   "thread_id": 7022
+  },
+  "time": "2026-11-03T20:00:22.000022000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "open": {
+    "fflag": 1,
+    "file": {
+     "path": "/Users/dev/code/x/src/index.js",
+     "path_truncated": false
+    }
+   }
+  },
+  "event_type": 10,
+  "global_seq_num": 23,
+  "mach_time": 1023000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000bb43a9087f",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/usr/local/bin/node",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 303,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 302,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 302,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": null,
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "NODEJS1234",
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 23,
+  "thread": {
+   "thread_id": 7023
+  },
+  "time": "2026-11-03T20:00:23.000023000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "create": {
+    "acl": null,
+    "destination": {
+     "new_path": {
+      "dir": {
+       "path": "/Users/dev/code/x/.claude",
+       "path_truncated": false,
+       "stat": {
+        "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+        "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+        "st_blksize": 4096,
+        "st_blocks": 8,
+        "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+        "st_dev": 16777234,
+        "st_flags": 0,
+        "st_gen": 0,
+        "st_gid": 20,
+        "st_ino": 123456,
+        "st_mode": 33188,
+        "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+        "st_nlink": 1,
+        "st_rdev": 0,
+        "st_size": 1024,
+        "st_uid": 501
+       }
+      },
+      "filename": "settings.local.json"
+     }
+    },
+    "destination_type": 1
+   }
+  },
+  "event_type": 13,
+  "global_seq_num": 24,
+  "mach_time": 1024000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000bb43a9087f",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/usr/local/bin/node",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 303,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 302,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 302,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": null,
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "NODEJS1234",
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 24,
+  "thread": {
+   "thread_id": 7024
+  },
+  "time": "2026-11-03T20:00:24.000024000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "close": {
+    "modified": true,
+    "target": {
+     "path": "/Users/dev/code/x/.claude/settings.local.json",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "was_mapped_writable": false
+   }
+  },
+  "event_type": 12,
+  "global_seq_num": 25,
+  "mach_time": 1025000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000bb43a9087f",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/usr/local/bin/node",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 303,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 302,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 302,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": null,
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "NODEJS1234",
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 25,
+  "thread": {
+   "thread_id": 7025
+  },
+  "time": "2026-11-03T20:00:25.000025000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "close": {
+    "modified": true,
+    "target": {
+     "path": "/Users/dev/code/x/CLAUDE.md",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "was_mapped_writable": false
+   }
+  },
+  "event_type": 12,
+  "global_seq_num": 26,
+  "mach_time": 1026000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000bb43a9087f",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/usr/local/bin/node",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 303,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 302,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 302,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": null,
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "NODEJS1234",
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 26,
+  "thread": {
+   "thread_id": 7026
+  },
+  "time": "2026-11-03T20:00:26.000026000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "fork": {
+    "child": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 304,
+      "pidversion": 2129,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "000000000000000000000000000000bb43a9087f",
+     "codesigning_flags": 536870912,
+     "cs_validation_category": 6,
+     "executable": {
+      "path": "/usr/local/bin/node",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 304,
+     "is_es_client": false,
+     "is_platform_binary": false,
+     "original_ppid": 303,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 303,
+      "pidversion": 2122,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 303,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": null,
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": "NODEJS1234",
+     "tty": null
+    }
+   }
+  },
+  "event_type": 11,
+  "global_seq_num": 27,
+  "mach_time": 1027000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000bb43a9087f",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/usr/local/bin/node",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 303,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 302,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 302,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": null,
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "NODEJS1234",
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 27,
+  "thread": {
+   "thread_id": 7027
+  },
+  "time": "2026-11-03T20:00:27.000027000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "exec": {
+    "args": [
+     "./agentd"
+    ],
+    "cwd": {
+     "path": "/private/tmp/.x",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "dyld_exec_path": "/private/tmp/.x/agentd",
+    "env": [
+     "HOME=/Users/dev",
+     "PATH=/usr/local/bin:/usr/bin:/bin",
+     "SHELL=/bin/zsh",
+     "TERM=xterm-256color",
+     "USER=dev",
+     "LANG=en_US.UTF-8",
+     "GITHUB_TOKEN=ghp_examplesecretvalue0000000000000000",
+     "AWS_SECRET_ACCESS_KEY=exampleSecretKeyValue000000000000000000",
+     "NPM_TOKEN=npm_exampleSecret000000000000",
+     "VAR0=value0",
+     "VAR1=value1",
+     "VAR2=value2",
+     "VAR3=value3",
+     "VAR4=value4",
+     "VAR5=value5",
+     "VAR6=value6",
+     "VAR7=value7",
+     "VAR8=value8",
+     "VAR9=value9",
+     "VAR10=value10",
+     "VAR11=value11",
+     "VAR12=value12",
+     "VAR13=value13",
+     "VAR14=value14",
+     "VAR15=value15",
+     "VAR16=value16",
+     "VAR17=value17",
+     "VAR18=value18",
+     "VAR19=value19",
+     "VAR20=value20",
+     "VAR21=value21",
+     "VAR22=value22",
+     "VAR23=value23",
+     "VAR24=value24",
+     "VAR25=value25",
+     "VAR26=value26",
+     "VAR27=value27",
+     "VAR28=value28",
+     "VAR29=value29",
+     "VAR30=value30",
+     "VAR31=value31",
+     "VAR32=value32",
+     "VAR33=value33",
+     "VAR34=value34",
+     "VAR35=value35"
+    ],
+    "fds": [
+     {
+      "fd": 0,
+      "fdtype": 1
+     },
+     {
+      "fd": 1,
+      "fdtype": 1
+     },
+     {
+      "fd": 2,
+      "fdtype": 1
+     }
+    ],
+    "image_cpusubtype": 0,
+    "image_cputype": 16777228,
+    "last_fd": 2,
+    "script": null,
+    "target": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 304,
+      "pidversion": 2129,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "000000000000000000000000000000bbe1e08230",
+     "codesigning_flags": 536870912,
+     "cs_validation_category": 6,
+     "executable": {
+      "path": "/private/tmp/.x/agentd",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 304,
+     "is_es_client": false,
+     "is_platform_binary": false,
+     "original_ppid": 303,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 303,
+      "pidversion": 2122,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 303,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 100,
+      "pidversion": 701,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": null,
+     "tty": null
+    }
+   }
+  },
+  "event_type": 9,
+  "global_seq_num": 28,
+  "mach_time": 1028000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 304,
+    "pidversion": 2129,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000bb43a9087f",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/usr/local/bin/node",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 304,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 303,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 303,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": null,
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "NODEJS1234",
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 28,
+  "thread": {
+   "thread_id": 7028
+  },
+  "time": "2026-11-03T20:00:28.000028000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "create": {
+    "acl": null,
+    "destination": {
+     "new_path": {
+      "dir": {
+       "path": "/Users/dev/Library/LaunchAgents",
+       "path_truncated": false,
+       "stat": {
+        "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+        "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+        "st_blksize": 4096,
+        "st_blocks": 8,
+        "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+        "st_dev": 16777234,
+        "st_flags": 0,
+        "st_gen": 0,
+        "st_gid": 20,
+        "st_ino": 123456,
+        "st_mode": 33188,
+        "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+        "st_nlink": 1,
+        "st_rdev": 0,
+        "st_size": 1024,
+        "st_uid": 501
+       }
+      },
+      "filename": "com.example.agentd.plist"
+     }
+    },
+    "destination_type": 1
+   }
+  },
+  "event_type": 13,
+  "global_seq_num": 29,
+  "mach_time": 1029000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 304,
+    "pidversion": 2129,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000bbe1e08230",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/private/tmp/.x/agentd",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 304,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 303,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 303,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 29,
+  "thread": {
+   "thread_id": 7029
+  },
+  "time": "2026-11-03T20:00:29.000029000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "close": {
+    "modified": true,
+    "target": {
+     "path": "/Users/dev/.zshrc",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "was_mapped_writable": false
+   }
+  },
+  "event_type": 12,
+  "global_seq_num": 30,
+  "mach_time": 1030000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 400,
+    "pidversion": 2801,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000f736ae2490",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/usr/bin/vim",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 400,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.vim",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 30,
+  "thread": {
+   "thread_id": 7030
+  },
+  "time": "2026-11-03T20:00:30.000030000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "unlink": {
+    "parent_dir": {
+     "path": "/Users/dev/.claude/plugins/marketplaces/example.backup",
+     "path_truncated": false
+    },
+    "target": {
+     "path": "/Users/dev/.claude/plugins/marketplaces/example.backup/README.md",
+     "path_truncated": false
+    }
+   }
+  },
+  "event_type": 32,
+  "global_seq_num": 31,
+  "mach_time": 1031000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 31,
+  "thread": {
+   "thread_id": 7031
+  },
+  "time": "2026-11-03T20:00:31.000031000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "close": {
+    "modified": true,
+    "target": {
+     "path": "/Users/dev/Pictures/Photos Library.photoslibrary/database/Photos.sqlite-wal",
+     "path_truncated": false,
+     "stat": {
+      "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+      "st_blksize": 4096,
+      "st_blocks": 8,
+      "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_dev": 16777234,
+      "st_flags": 0,
+      "st_gen": 0,
+      "st_gid": 20,
+      "st_ino": 123456,
+      "st_mode": 33188,
+      "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+      "st_nlink": 1,
+      "st_rdev": 0,
+      "st_size": 1024,
+      "st_uid": 501
+     }
+    },
+    "was_mapped_writable": false
+   }
+  },
+  "event_type": 12,
+  "global_seq_num": 32,
+  "mach_time": 1032000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 500,
+    "pidversion": 3501,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000001350459adb4",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/System/Library/PrivateFrameworks/PhotoLibraryServices.framework/Versions/A/Support/photolibraryd",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 500,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 1,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 1,
+    "pidversion": 8,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 1,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 500,
+    "pidversion": 3501,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.photolibraryd",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 32,
+  "thread": {
+   "thread_id": 7032
+  },
+  "time": "2026-11-03T20:00:32.000032000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "tcc_modify": {
+    "identity": "com.example.agentd",
+    "identity_type": 0,
+    "instigator": {
+     "audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 304,
+      "pidversion": 2129,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "cdhash": "000000000000000000000000000000bbe1e08230",
+     "codesigning_flags": 536870912,
+     "cs_validation_category": 6,
+     "executable": {
+      "path": "/private/tmp/.x/agentd",
+      "path_truncated": false,
+      "stat": {
+       "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+       "st_blksize": 4096,
+       "st_blocks": 8,
+       "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_dev": 16777234,
+       "st_flags": 0,
+       "st_gen": 0,
+       "st_gid": 20,
+       "st_ino": 123456,
+       "st_mode": 33188,
+       "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+       "st_nlink": 1,
+       "st_rdev": 0,
+       "st_size": 1024,
+       "st_uid": 501
+      }
+     },
+     "group_id": 304,
+     "is_es_client": false,
+     "is_platform_binary": false,
+     "original_ppid": 303,
+     "parent_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 303,
+      "pidversion": 2122,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "ppid": 303,
+     "responsible_audit_token": {
+      "asid": 100005,
+      "auid": 501,
+      "egid": 20,
+      "euid": 501,
+      "pid": 304,
+      "pidversion": 2129,
+      "rgid": 20,
+      "ruid": 501
+     },
+     "session_id": 200,
+     "signing_id": "",
+     "start_time": "2026-11-03T19:58:00.000000000Z",
+     "team_id": null,
+     "tty": null
+    },
+    "instigator_token": {
+     "asid": 100005,
+     "auid": 501,
+     "egid": 20,
+     "euid": 501,
+     "pid": 304,
+     "pidversion": 2129,
+     "rgid": 20,
+     "ruid": 501
+    },
+    "responsible": null,
+    "responsible_token": null,
+    "right": 1,
+    "service": "kTCCServiceSystemPolicyAllFiles",
+    "update_type": 1
+   }
+  },
+  "event_type": 147,
+  "global_seq_num": 33,
+  "mach_time": 1033000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 0,
+    "egid": 20,
+    "euid": 0,
+    "pid": 600,
+    "pidversion": 4201,
+    "rgid": 20,
+    "ruid": 0
+   },
+   "cdhash": "00000000000000000000000000000172d20536d8",
+   "codesigning_flags": 570506001,
+   "cs_validation_category": 1,
+   "executable": {
+    "path": "/System/Library/PrivateFrameworks/TCC.framework/Support/tccd",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 600,
+   "is_es_client": false,
+   "is_platform_binary": true,
+   "original_ppid": 1,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 1,
+    "pidversion": 8,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 1,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 600,
+    "pidversion": 4201,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.apple.tccd",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": null,
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 33,
+  "thread": {
+   "thread_id": 7033
+  },
+  "time": "2026-11-03T20:00:33.000033000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "exit": {
+    "stat": 0
+   }
+  },
+  "event_type": 15,
+  "global_seq_num": 34,
+  "mach_time": 1034000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 303,
+    "pidversion": 2122,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000bb43a9087f",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/usr/local/bin/node",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 303,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 302,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 302,
+    "pidversion": 2115,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 302,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": null,
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "NODEJS1234",
+   "tty": null
+  },
+  "schema_version": 1,
+  "seq_num": 34,
+  "thread": {
+   "thread_id": 7034
+  },
+  "time": "2026-11-03T20:00:34.000034000Z",
+  "version": 10
+ },
+ {
+  "action": {
+   "result": {
+    "result": {
+     "auth": 0
+    },
+    "result_type": 0
+   }
+  },
+  "action_type": 1,
+  "event": {
+   "exit": {
+    "stat": 0
+   }
+  },
+  "event_type": 15,
+  "global_seq_num": 35,
+  "mach_time": 1035000,
+  "process": {
+   "audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 300,
+    "pidversion": 2101,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "cdhash": "000000000000000000000000000000b969029b6c",
+   "codesigning_flags": 536870912,
+   "cs_validation_category": 6,
+   "executable": {
+    "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   },
+   "group_id": 300,
+   "is_es_client": false,
+   "is_platform_binary": false,
+   "original_ppid": 200,
+   "parent_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 200,
+    "pidversion": 1401,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "ppid": 200,
+   "responsible_audit_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 100,
+    "pidversion": 701,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "session_id": 200,
+   "signing_id": "com.example.agent",
+   "start_time": "2026-11-03T19:58:00.000000000Z",
+   "team_id": "EXAMPLE123",
+   "tty": {
+    "path": "/dev/ttys003",
+    "path_truncated": false,
+    "stat": {
+     "st_atimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_birthtimespec": "2026-10-01T10:00:00.000000000Z",
+     "st_blksize": 4096,
+     "st_blocks": 8,
+     "st_ctimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_dev": 16777234,
+     "st_flags": 0,
+     "st_gen": 0,
+     "st_gid": 20,
+     "st_ino": 123456,
+     "st_mode": 33188,
+     "st_mtimespec": "2026-11-03T19:59:00.000000000Z",
+     "st_nlink": 1,
+     "st_rdev": 0,
+     "st_size": 1024,
+     "st_uid": 501
+    }
+   }
+  },
+  "schema_version": 1,
+  "seq_num": 35,
+  "thread": {
+   "thread_id": 7035
+  },
+  "time": "2026-11-03T20:00:35.000035000Z",
+  "version": 10
+ }
+]
