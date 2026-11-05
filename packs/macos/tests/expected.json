@@ -1,11 +1,13 @@
 [
  {
-  "_facts": {
-   "notes": []
-  },
+  "ts": "2026-11-03T20:00:02.000002000Z",
+  "source": "macos",
   "_norm": {
    "actor": "/usr/bin/git",
    "org": "dev"
+  },
+  "_facts": {
+   "notes": []
   },
   "event": "exec",
   "exec": {
@@ -28,20 +30,20 @@
    "signer": "com.apple.git",
    "tty": "/dev/ttys003",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:02.000002000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:05.000005000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
   "_facts": {
    "agent_env": true,
    "notes": [
     "the environment sets where an AI agent sends its API traffic, keeps its config or sends telemetry"
    ]
-  },
-  "_norm": {
-   "actor": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
-   "org": "dev"
   },
   "event": "exec",
   "exec": {
@@ -66,20 +68,20 @@
    "signer": "com.example.agent",
    "tty": "/dev/ttys003",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:05.000005000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:07.000007000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
   "_facts": {
    "agent_state": true,
    "notes": [
     "an AI agent's transcripts or session state: every prompt, reply and command it ran"
    ]
-  },
-  "_norm": {
-   "actor": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
-   "org": "dev"
   },
   "access": "write",
   "event": "open",
@@ -96,20 +98,20 @@
    "signer": "com.example.agent",
    "tty": "/dev/ttys003",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:07.000007000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:08.000008000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
   "_facts": {
    "agent_state": true,
    "notes": [
     "an AI agent's transcripts or session state: every prompt, reply and command it ran"
    ]
-  },
-  "_norm": {
-   "actor": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
-   "org": "dev"
   },
   "event": "close",
   "file": "/Users/dev/.claude/projects/-Users-dev-code-x/0f3a-session.jsonl",
@@ -126,20 +128,20 @@
    "signer": "com.example.agent",
    "tty": "/dev/ttys003",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:08.000008000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:11.000011000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
   "_facts": {
    "agent_mcp": true,
    "notes": [
     "an AI agent's MCP configuration: which servers it connects to and runs"
    ]
-  },
-  "_norm": {
-   "actor": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
-   "org": "dev"
   },
   "event": "create",
   "file": "/Users/dev/.claude.json.tmp.300.ab12",
@@ -155,11 +157,15 @@
    "signer": "com.example.agent",
    "tty": "/dev/ttys003",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:11.000011000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:12.000012000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
   "_facts": {
    "agent_mcp": true,
    "notes": [
@@ -167,10 +173,6 @@
     "an AI agent's MCP configuration: which servers it connects to and runs"
    ],
    "rename_over": true
-  },
-  "_norm": {
-   "actor": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
-   "org": "dev"
   },
   "event": "rename",
   "file": "/Users/dev/.claude.json",
@@ -187,17 +189,17 @@
    "signer": "com.example.agent",
    "tty": "/dev/ttys003",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:12.000012000Z"
+  }
  },
  {
-  "_facts": {
-   "notes": []
-  },
+  "ts": "2026-11-03T20:00:14.000014000Z",
+  "source": "macos",
   "_norm": {
    "actor": "/usr/bin/security",
    "org": "dev"
+  },
+  "_facts": {
+   "notes": []
   },
   "event": "exec",
   "exec": {
@@ -224,17 +226,17 @@
    "signer": "com.apple.security",
    "tty": "/dev/ttys003",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:14.000014000Z"
+  }
  },
  {
-  "_facts": {
-   "notes": []
-  },
+  "ts": "2026-11-03T20:00:18.000018000Z",
+  "source": "macos",
   "_norm": {
    "actor": "/bin/sh",
    "org": "dev"
+  },
+  "_facts": {
+   "notes": []
   },
   "event": "exec",
   "exec": {
@@ -259,17 +261,17 @@
    "signer": "com.apple.sh",
    "tty": "/dev/ttys003",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:18.000018000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:20.000020000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "NODEJS1234",
+   "org": "dev"
+  },
   "_facts": {
    "notes": []
-  },
-  "_norm": {
-   "actor": "/usr/local/bin/node",
-   "org": "dev"
   },
   "event": "exec",
   "exec": {
@@ -293,20 +295,20 @@
    "responsible": 100,
    "signer": "NODEJS1234",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:20.000020000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:21.000021000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "NODEJS1234",
+   "org": "dev"
+  },
   "_facts": {
    "credentials": true,
    "notes": [
     "a credential file: cloud, registry, SSH, signing or API keys"
    ]
-  },
-  "_norm": {
-   "actor": "/usr/local/bin/node",
-   "org": "dev"
   },
   "access": "read",
   "event": "open",
@@ -324,20 +326,20 @@
    "responsible": 100,
    "signer": "NODEJS1234",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:21.000021000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:22.000022000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "NODEJS1234",
+   "org": "dev"
+  },
   "_facts": {
    "agent_state": true,
    "notes": [
     "an AI agent's transcripts or session state: every prompt, reply and command it ran"
    ]
-  },
-  "_norm": {
-   "actor": "/usr/local/bin/node",
-   "org": "dev"
   },
   "access": "read",
   "event": "open",
@@ -355,20 +357,20 @@
    "responsible": 100,
    "signer": "NODEJS1234",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:22.000022000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:24.000024000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "NODEJS1234",
+   "org": "dev"
+  },
   "_facts": {
    "agent_settings": true,
    "notes": [
     "an AI agent's settings file, where its hooks are: a command there runs at the agent's steps"
    ]
-  },
-  "_norm": {
-   "actor": "/usr/local/bin/node",
-   "org": "dev"
   },
   "event": "create",
   "file": "/Users/dev/code/x/.claude/settings.local.json",
@@ -385,20 +387,20 @@
    "responsible": 100,
    "signer": "NODEJS1234",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:24.000024000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:25.000025000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "NODEJS1234",
+   "org": "dev"
+  },
   "_facts": {
    "agent_settings": true,
    "notes": [
     "an AI agent's settings file, where its hooks are: a command there runs at the agent's steps"
    ]
-  },
-  "_norm": {
-   "actor": "/usr/local/bin/node",
-   "org": "dev"
   },
   "event": "close",
   "file": "/Users/dev/code/x/.claude/settings.local.json",
@@ -416,20 +418,20 @@
    "responsible": 100,
    "signer": "NODEJS1234",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:25.000025000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:26.000026000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "NODEJS1234",
+   "org": "dev"
+  },
   "_facts": {
    "agent_instructions": true,
    "notes": [
     "an AI agent's instructions or memory: text the model reads as its own guidance"
    ]
-  },
-  "_norm": {
-   "actor": "/usr/local/bin/node",
-   "org": "dev"
   },
   "event": "close",
   "file": "/Users/dev/code/x/CLAUDE.md",
@@ -447,11 +449,14 @@
    "responsible": 100,
    "signer": "NODEJS1234",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:26.000026000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:28.000028000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "/private/tmp/.x/agentd"
+  },
   "_facts": {
    "notes": [
     "the program runs from a temporary, cache, download or node_modules directory",
@@ -459,9 +464,6 @@
    ],
    "scratch_program": true,
    "unsigned": true
-  },
-  "_norm": {
-   "actor": "/private/tmp/.x/agentd"
   },
   "event": "exec",
   "exec": {
@@ -484,20 +486,20 @@
    "ppid": 303,
    "responsible": 100,
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:28.000028000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:29.000029000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "/private/tmp/.x/agentd",
+   "org": "dev"
+  },
   "_facts": {
    "notes": [
     "runs at login, in every shell, on every git command, or in CI on every push"
    ],
    "persistence": true
-  },
-  "_norm": {
-   "actor": "/private/tmp/.x/agentd",
-   "org": "dev"
   },
   "event": "create",
   "file": "/Users/dev/Library/LaunchAgents/com.example.agentd.plist",
@@ -514,20 +516,20 @@
    "ppid": 303,
    "responsible": 100,
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:29.000029000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:30.000030000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "/usr/bin/vim",
+   "org": "dev"
+  },
   "_facts": {
    "notes": [
     "runs at login, in every shell, on every git command, or in CI on every push"
    ],
    "persistence": true
-  },
-  "_norm": {
-   "actor": "/usr/bin/vim",
-   "org": "dev"
   },
   "event": "close",
   "file": "/Users/dev/.zshrc",
@@ -544,20 +546,20 @@
    "signer": "com.apple.vim",
    "tty": "/dev/ttys003",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:30.000030000Z"
+  }
  },
  {
+  "ts": "2026-11-03T20:00:31.000031000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
   "_facts": {
    "agent_extensions": true,
    "notes": [
     "an AI agent's plugins, skills or editor extensions: code it loads"
    ]
-  },
-  "_norm": {
-   "actor": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
-   "org": "dev"
   },
   "event": "unlink",
   "file": "/Users/dev/.claude/plugins/marketplaces/example.backup/README.md",
@@ -573,16 +575,16 @@
    "signer": "com.example.agent",
    "tty": "/dev/ttys003",
    "uid": 501
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:31.000031000Z"
+  }
  },
  {
-  "_facts": {
-   "notes": []
-  },
+  "ts": "2026-11-03T20:00:33.000033000Z",
+  "source": "macos",
   "_norm": {
    "actor": "/System/Library/PrivateFrameworks/TCC.framework/Support/tccd"
+  },
+  "_facts": {
+   "notes": []
   },
   "detail": {
    "identity": "com.example.agentd",
@@ -660,8 +662,6 @@
    "ppid": 1,
    "signer": "com.apple.tccd",
    "uid": 0
-  },
-  "source": "macos",
-  "ts": "2026-11-03T20:00:33.000033000Z"
+  }
  }
 ]

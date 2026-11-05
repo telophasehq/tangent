@@ -84,6 +84,8 @@ struct Proc {
     /// its signing identity, or its team when it has no identity
     signer: Option<String>,
     platform: bool,
+    /// signed by a developer team (a vendor's app), not ad hoc or by Apple
+    team: bool,
     uid: Option<i64>,
     tty: Option<String>,
     /// the process macOS holds responsible (the app a terminal is), when another
@@ -102,6 +104,7 @@ fn proc_of(v: &Value) -> Option<Proc> {
         path: str_at(v, "/executable/path").unwrap_or("").to_string(),
         signer,
         platform: v["is_platform_binary"].as_bool().unwrap_or(false),
+        team: str_at(v, "/team_id").is_some_and(|t| !t.is_empty()),
         uid: int_at(v, "/audit_token/euid"),
         tty: str_at(v, "/tty/path").map(str::to_string),
         responsible: int_at(v, "/responsible_audit_token/pid").filter(|r| *r != pid),
@@ -109,6 +112,19 @@ fn proc_of(v: &Value) -> Option<Proc> {
 }
 
 impl Proc {
+    /// Who the program is, for the queue's windows and the baseline: a
+    /// vendor's signing identity, which an update keeps (Claude Code's path
+    /// names its version), else its path. Apple's command-line tools share
+    /// one signing identity (/usr/bin/git and python3 are both the Xcode
+    /// shim), and an ad hoc signature is the binary's hash, so those are
+    /// their path.
+    fn ident(&self) -> String {
+        match &self.signer {
+            Some(s) if self.team && !self.platform => s.clone(),
+            _ => self.path.clone(),
+        }
+    }
+
     fn json(&self) -> Value {
         let mut m = Map::new();
         m.insert("pid".into(), json!(self.pid));
@@ -235,7 +251,7 @@ fn finished(rec: &Map<String, Value>) -> Option<(Map<String, Value>, Norm)> {
     }
 
     let mut n = Norm {
-        actor: Some(actor.path.clone()),
+        actor: Some(actor.ident()),
         kind: Some(kind.clone()),
         principal: Some("none"), // a program, not a person the profile could know
         ..Norm::default()
