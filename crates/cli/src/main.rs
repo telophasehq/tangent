@@ -134,9 +134,11 @@ enum PluginCommands {
         /// Path to YAML config (must contain entry_point, module_type)
         #[arg(long, value_name = "FILE")]
         config: PathBuf,
-        /// Path to WIT directory (folder with the `processor` world)
-        #[arg(long, default_value = ".tangent/wit", value_name = "DIR")]
-        wit: PathBuf,
+        /// A WIT directory (with the `processor` world) to compile every plugin
+        /// against. Without it, each plugin compiles against this tangent's
+        /// own WIT, written into the plugin's `.tangent/wit` first
+        #[arg(long, value_name = "DIR")]
+        wit: Option<PathBuf>,
         /// Compile one plugin, not every plugin in the config
         #[arg(long)]
         plugin: Option<String>,
@@ -214,8 +216,12 @@ async fn main() -> Result<()> {
             } => {
                 // resolve to absolute paths to help downstream error messages
                 let cfg = config.canonicalize().unwrap_or(config);
-                let wit = wit.canonicalize().unwrap_or(wit);
-                compile_wasm::compile_from_config(&cfg, &wit, plugin.as_deref())?;
+                let wit = wit.map(|w| w.canonicalize().unwrap_or(w));
+                let wit = match &wit {
+                    Some(dir) => compile_wasm::Wit::Dir(dir),
+                    None => compile_wasm::Wit::Write(&scaffold::write_embedded_wit),
+                };
+                compile_wasm::compile_from_config(&cfg, wit, plugin.as_deref())?;
             }
             PluginCommands::Fetch { config, plugin } => {
                 let config = config.canonicalize().unwrap_or(config);
