@@ -254,6 +254,7 @@ fn run_go_download(cwd: &Path) -> Result<()> {
 
 const GITIGNORE: &str = r#"
 target/
+.tangent/wit/
 *.wasm
 .DS_Store
 __pycache__/

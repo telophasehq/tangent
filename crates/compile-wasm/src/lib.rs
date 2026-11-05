@@ -11,14 +11,23 @@ use which::which;
 
 const WORLD: &str = "processor";
 
+/// Where a plugin keeps the WIT it compiles against, beside its source.
+pub const PLUGIN_WIT: &str = ".tangent/wit";
+
+/// The WIT plugins compile against.
+pub enum Wit<'a> {
+    /// One directory, as it is, for every plugin.
+    Dir(&'a Path),
+    /// Written into each plugin's own `.tangent/wit` just before it compiles,
+    /// replacing what was there: the interface of the tangent that will run
+    /// it, so nothing keeps a copy that can fall behind.
+    Write(&'a dyn Fn(&Path) -> Result<()>),
+}
+
 /// Every plugin of the config at `cfg_path` (or `only`, when given) compiled
 /// from its source into `runtime.plugins_path`. A plugin with `prebuilt` and
 /// no `path` is left to `tangent plugin fetch`.
-pub fn compile_from_config(
-    cfg_path: &PathBuf,
-    wit_path: &PathBuf,
-    only: Option<&str>,
-) -> Result<()> {
+pub fn compile_from_config(cfg_path: &PathBuf, wit: Wit, only: Option<&str>) -> Result<()> {
     let cfg = Config::from_file(cfg_path)?;
 
     let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
@@ -50,6 +59,30 @@ pub fn compile_from_config(
             .canonicalize()
             .with_context(|| "configured plugin path")?;
         println!("⚙️ Compiling {}", entry_point_path.display());
+        let wit_path = match &wit {
+            Wit::Dir(dir) => dir.to_path_buf(),
+            Wit::Write(write) => {
+                let root = if entry_point_path.is_dir() {
+                    entry_point_path.clone()
+                } else {
+                    entry_point_path
+                        .parent()
+                        .unwrap_or_else(|| Path::new("."))
+                        .to_path_buf()
+                };
+                let dir = root.join(PLUGIN_WIT);
+                // A Rust crate reads its WIT where its Cargo.toml says; one
+                // that keeps it somewhere else is left alone.
+                if plugin.module_type != "rust" || reads_plugin_wit(&root.join("Cargo.toml"))? {
+                    if dir.exists() {
+                        fs::remove_dir_all(&dir)
+                            .with_context(|| format!("removing {}", dir.display()))?;
+                    }
+                    write(&dir).with_context(|| format!("writing the WIT to {}", dir.display()))?;
+                }
+                dir
+            }
+        };
 
         let full_out = &out.join(format!("{}.component.wasm", name));
 
@@ -103,6 +136,23 @@ fn ensure_cargo_component() -> Result<()> {
             "`cargo component` not found. Install via `cargo install cargo-component` and ensure wasm32-wasi target is installed with `rustup target add wasm32-wasi`."
         ),
     }
+}
+
+/// Whether the crate's `cargo component` target reads `.tangent/wit`.
+fn reads_plugin_wit(manifest_path: &Path) -> Result<bool> {
+    let contents = fs::read_to_string(manifest_path)
+        .with_context(|| format!("reading {}", manifest_path.display()))?;
+    let parsed: Value = contents
+        .parse::<Value>()
+        .with_context(|| format!("parsing {}", manifest_path.display()))?;
+    Ok(parsed
+        .get("package")
+        .and_then(|p| p.get("metadata"))
+        .and_then(|m| m.get("component"))
+        .and_then(|c| c.get("target"))
+        .and_then(|t| t.get("path"))
+        .and_then(|p| p.as_str())
+        == Some(PLUGIN_WIT))
 }
 
 fn package_name(manifest_path: &Path) -> Result<String> {
@@ -355,6 +405,25 @@ fn file_stem(p: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A crate gets the WIT written beside it only when its `cargo component`
+    /// target reads `.tangent/wit`.
+    #[test]
+    fn a_crate_reads_the_plugin_wit_only_when_its_target_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join("Cargo.toml");
+        let with = |target: &str| {
+            fs::write(&manifest, format!("[package]\nname = \"p\"\n{target}")).unwrap();
+            reads_plugin_wit(&manifest).unwrap()
+        };
+        assert!(with(
+            "\n[package.metadata.component.target]\npath = \".tangent/wit\"\n"
+        ));
+        assert!(!with(
+            "\n[package.metadata.component.target]\npath = \"../wit\"\n"
+        ));
+        assert!(!with(""));
+    }
 
     #[test]
     fn go_sdk_module_follows_the_plugins_go_mod() {

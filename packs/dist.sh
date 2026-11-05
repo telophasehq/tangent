@@ -75,6 +75,11 @@ toolchain() {
 build() {
   local name=$1 dir=$2 pkg
   echo "==> $name ($dir)"
+  # The WIT this checkout's tangent hosts, where `tangent plugin compile`
+  # writes it: plugins keep no copy of their own.
+  rm -rf "$dir/.tangent/wit"
+  mkdir -p "$dir/.tangent"
+  cp -R assets/wit "$dir/.tangent/wit"
   (cd "$dir" && cargo component build --release --target wasm32-wasip2)
   pkg=$(sed -n 's/^name *= *"\(.*\)"/\1/p' "$dir/Cargo.toml" | head -1)
   cp "$dir/target/wasm32-wasip2/release/$pkg.wasm" "$OUT/$name.component.wasm"
