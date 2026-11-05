@@ -8,6 +8,7 @@ use crate::wasm::host::exports::tangent::logs::mapper::Selector;
 use crate::wasm::host::{HostEngine, Processor};
 
 use crate::wasm::probe::{compile_selector, CompiledSelector};
+use crate::wasm::schema::Shape;
 
 pub struct MapperCtx {
     pub cfg_name: Arc<str>,
@@ -22,6 +23,21 @@ pub struct MapperCtx {
 
 pub struct Mappers {
     pub mappers: Vec<MapperCtx>,
+}
+
+/// What a plugin says its records hold, from an instance of its own.
+pub async fn output_schema(
+    engine: &WasmEngine,
+    name: &Arc<str>,
+    component: &Component,
+) -> anyhow::Result<Shape> {
+    let mut store = engine.make_store(name)?;
+    let proc = engine.make_processor(&mut store, component).await?;
+    let text = proc
+        .tangent_logs_mapper()
+        .call_output_schema(&mut store)
+        .await?;
+    Shape::parse(&text).map_err(|e| anyhow::anyhow!("plugin {name}: {e:#}"))
 }
 
 impl Mappers {

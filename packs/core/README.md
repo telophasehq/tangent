@@ -314,6 +314,9 @@ A pack's plugin links [packs/shared](/packs/shared) by path:
 - `factskit::kit(lookup)` reads the profile and the tables once per instance,
   and `kit.write(out, stamp, record, norm)` folds the org, names the person,
   enriches the addresses, adds the facts and writes the record as one line.
+- `factskit::output_schema()` is the finished record's JSON Schema, derived
+  from `Finished`; the plugin's `output_schema` returns it, so the sinks a pack
+  feeds are checked against it when a pipeline starts.
 
 The pack's `ingest.yaml` gives the plugin an edge to `baseline_builder`
 beside `logs`. Baseline reads a source it knows from its own table

@@ -146,7 +146,9 @@ fn trail_files(body: &str) -> Vec<(String, String)> {
     let Ok(v) = serde_json::from_str::<Value>(body) else {
         return Vec::new();
     };
-    if let (Some("SubscriptionConfirmation"), Some(url)) = (v["Type"].as_str(), v["SubscribeURL"].as_str()) {
+    if let (Some("SubscriptionConfirmation"), Some(url)) =
+        (v["Type"].as_str(), v["SubscribeURL"].as_str())
+    {
         tracing::warn!("confirm the queue's SNS subscription: {url}");
     }
     let v = match v.get("Message").and_then(Value::as_str) {
@@ -154,17 +156,31 @@ fn trail_files(body: &str) -> Vec<(String, String)> {
         None => v,
     };
     let mut out = Vec::new();
-    for r in v.get("Records").and_then(Value::as_array).into_iter().flatten() {
-        let created = r["eventName"].as_str().is_none_or(|e| e.starts_with("ObjectCreated"));
+    for r in v
+        .get("Records")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let created = r["eventName"]
+            .as_str()
+            .is_none_or(|e| e.starts_with("ObjectCreated"));
         let bucket = r.pointer("/s3/bucket/name").and_then(Value::as_str);
         let key = r.pointer("/s3/object/key").and_then(Value::as_str);
         if let (true, Some(b), Some(k)) = (created, bucket, key) {
-            let k = percent_decode_str(&k.replace('+', " ")).decode_utf8_lossy().into_owned();
+            let k = percent_decode_str(&k.replace('+', " "))
+                .decode_utf8_lossy()
+                .into_owned();
             out.push((b.to_string(), k));
         }
     }
     if let Some(b) = v.get("s3Bucket").and_then(Value::as_str) {
-        for k in v.get("s3ObjectKey").and_then(Value::as_array).into_iter().flatten() {
+        for k in v
+            .get("s3ObjectKey")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             if let Some(k) = k.as_str() {
                 out.push((b.to_string(), k.to_string()));
             }
@@ -183,12 +199,20 @@ async fn fetch(s3: &mut S3Client, bucket: &str, key: &str) -> Result<Bytes> {
         .filter(|r| s3.config().region().map(|x| x.as_ref()) != Some(*r))
         .map(str::to_string);
     if let Some(region) = moved {
-        let conf = s3.config().to_builder().region(aws_sdk_s3::config::Region::new(region));
+        let conf = s3
+            .config()
+            .to_builder()
+            .region(aws_sdk_s3::config::Region::new(region));
         *s3 = S3Client::from_conf(conf.build());
         res = s3.get_object().bucket(bucket).key(key).send().await;
     }
     let obj = res.map_err(|e| anyhow!("GetObject: {}", DisplayErrorContext(&e)))?;
-    Ok(obj.body.collect().await.context("reading the object")?.into_bytes())
+    Ok(obj
+        .body
+        .collect()
+        .await
+        .context("reading the object")?
+        .into_bytes())
 }
 
 fn records_of(raw: &[u8]) -> Result<Vec<(DateTime<Utc>, Value)>> {
@@ -215,7 +239,8 @@ mod tests {
     use serde_json::json;
     use std::io::Write;
 
-    const LOG: &str = "AWSLogs/1/CloudTrail/us-east-1/2026/10/28/1_CloudTrail_us-east-1_20261028T1705Z_x.json.gz";
+    const LOG: &str =
+        "AWSLogs/1/CloudTrail/us-east-1/2026/10/28/1_CloudTrail_us-east-1_20261028T1705Z_x.json.gz";
 
     #[test]
     fn notifications() {
@@ -236,13 +261,28 @@ mod tests {
             (sns(&own), vec![LOG]),
             (events.clone(), vec![spaced]),
             (sns(&events), vec![spaced]),
-            (sns(&json!({"messageType": "ConfigurationHistoryDeliveryCompleted", "s3Bucket": "trail", "s3ObjectKey": config})), vec![]),
-            (json!({"Service": "Amazon S3", "Event": "s3:TestEvent", "Bucket": "trail"}), vec![]),
-            (json!({"Type": "Notification", "Message": "plain text"}), vec![]),
+            (
+                sns(
+                    &json!({"messageType": "ConfigurationHistoryDeliveryCompleted", "s3Bucket": "trail", "s3ObjectKey": config}),
+                ),
+                vec![],
+            ),
+            (
+                json!({"Service": "Amazon S3", "Event": "s3:TestEvent", "Bucket": "trail"}),
+                vec![],
+            ),
+            (
+                json!({"Type": "Notification", "Message": "plain text"}),
+                vec![],
+            ),
         ] {
             let got = trail_files(&body.to_string());
             assert!(got.iter().all(|(b, _)| b == "trail"), "{body}");
-            assert_eq!(got.into_iter().map(|(_, k)| k).collect::<Vec<_>>(), want, "{body}");
+            assert_eq!(
+                got.into_iter().map(|(_, k)| k).collect::<Vec<_>>(),
+                want,
+                "{body}"
+            );
         }
         assert!(trail_files("not json").is_empty());
     }

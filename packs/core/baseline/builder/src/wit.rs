@@ -37,6 +37,11 @@ impl Guest for Component {
         }]
     }
 
+    /// It writes no records, only state.
+    fn output_schema() -> String {
+        "false".to_string()
+    }
+
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
         let lines: Vec<String> = input.iter().map(Logview::log).collect();
         crate::build(&mut Wit, people(), &lines)?;

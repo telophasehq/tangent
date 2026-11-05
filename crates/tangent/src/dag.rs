@@ -111,6 +111,19 @@ impl DagRuntime {
             }
         }
 
+        // Each sink against what the plugins feeding it say they write, before
+        // anything is read: a field it needs that no plugin writes fails here.
+        if let (Some(engine), Some(comps)) = (engines.first(), components.first()) {
+            let mut shapes = BTreeMap::new();
+            for (name, component) in comps {
+                shapes.insert(
+                    Arc::clone(name),
+                    crate::wasm::mapper::output_schema(engine, name, component).await?,
+                );
+            }
+            crate::wasm::schema::check_dag(&cfg.sinks, &cfg.dag, &shapes)?;
+        }
+
         let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
         for e in &cfg.dag {
             outs.entry(e.from.clone()).or_default().extend(e.to.clone());

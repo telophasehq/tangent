@@ -32,6 +32,12 @@ impl Guest for Component {
         }]
     }
 
+    /// Records go on as they came, with `_baseline`: what feeds it is
+    /// checked in its place.
+    fn output_schema() -> String {
+        "{}".to_string()
+    }
+
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
         let lines: Vec<String> = input.iter().map(Logview::log).collect();
         crate::render(&mut Wit, &lines)

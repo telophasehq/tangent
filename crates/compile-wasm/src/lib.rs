@@ -298,9 +298,12 @@ fn run_go_compile(
         bail!("tinygo build failed");
     }
 
-    let json_generated = entry_point_path.join("json_generated.go");
-    if std::fs::exists(&json_generated)? {
-        std::fs::remove_file(&json_generated)?;
+    // what tangentgen wrote for this build: T's JSON encoding and its schema
+    for generated in ["json_generated.go", "schema_generated.go"] {
+        let path = entry_point_path.join(generated);
+        if std::fs::exists(&path)? {
+            std::fs::remove_file(&path)?;
+        }
     }
 
     Ok(())
