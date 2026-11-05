@@ -117,13 +117,17 @@ fn proc_of(v: &Value) -> Option<Proc> {
 }
 
 impl Proc {
-    /// Who the program is, for the queue's windows and the baseline: a
-    /// vendor's signing identity, which an update keeps (Claude Code's path
-    /// names its version), else its path. Apple's command-line tools share
-    /// one signing identity (/usr/bin/git and python3 are both the Xcode
-    /// shim), and an ad hoc signature is the binary's hash, so those are
-    /// their path.
+    /// Who the program is, for the queue's windows and the baseline: for an
+    /// interpreter, the script it runs, so npm, a package's postinstall and
+    /// an MCP server are not one `node`; else a vendor's signing identity,
+    /// which an update keeps (Claude Code's path names its version); else
+    /// its path. Apple's command-line tools share one signing identity
+    /// (/usr/bin/git and python3 are both the Xcode shim), and an ad hoc
+    /// signature is the binary's hash, so those are their path.
     fn ident(&self) -> String {
+        if let Some(n) = &self.name {
+            return n.clone();
+        }
         match &self.signer {
             Some(s) if self.team.is_some() && !self.platform => s.clone(),
             _ => self.path.clone(),

@@ -272,7 +272,7 @@
   "ts": "2026-11-03T20:00:20.000020000Z",
   "source": "macos",
   "_norm": {
-   "actor": "/usr/local/bin/node",
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "org": "dev"
   },
   "_facts": {
@@ -307,7 +307,7 @@
   "ts": "2026-11-03T20:00:21.000021000Z",
   "source": "macos",
   "_norm": {
-   "actor": "/usr/local/bin/node",
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "org": "dev"
   },
   "_facts": {
@@ -339,7 +339,7 @@
   "ts": "2026-11-03T20:00:22.000022000Z",
   "source": "macos",
   "_norm": {
-   "actor": "/usr/local/bin/node",
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "org": "dev"
   },
   "_facts": {
@@ -371,7 +371,7 @@
   "ts": "2026-11-03T20:00:24.000024000Z",
   "source": "macos",
   "_norm": {
-   "actor": "/usr/local/bin/node",
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "org": "dev"
   },
   "_facts": {
@@ -402,7 +402,7 @@
   "ts": "2026-11-03T20:00:25.000025000Z",
   "source": "macos",
   "_norm": {
-   "actor": "/usr/local/bin/node",
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "org": "dev"
   },
   "_facts": {
@@ -434,7 +434,7 @@
   "ts": "2026-11-03T20:00:26.000026000Z",
   "source": "macos",
   "_norm": {
-   "actor": "/usr/local/bin/node",
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "org": "dev"
   },
   "_facts": {

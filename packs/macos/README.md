@@ -61,8 +61,9 @@ and `parents`, the programs above it nearest first, each by its name when it
 has one, from a process tree the plugin keeps in state from `fork`,
 `exec` and `exit` (core's one worker keeps the events in order; an entry
 lasts a day). `_norm.actor` is the program, for an exec the one that
-started: a vendor-signed program's signing identity, so Claude Code is one
-actor across updates, else its path (Apple's command-line tools share one
+started: an interpreter's `name`, the script it runs, so npm and a package's
+postinstall are not one `node`; else a vendor-signed program's signing
+identity, so Claude Code is one actor across updates; else its path (Apple's command-line tools share one
 identity, and an ad hoc signature is the binary's hash). `_norm.target` is
 the file; `_facts` adds `agent_env`,
 `scratch_program` (runs from /tmp, a cache, Downloads or node_modules),
