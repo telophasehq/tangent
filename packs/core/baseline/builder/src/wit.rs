@@ -39,7 +39,16 @@ impl Guest for Component {
 
     fn process_logs(input: Vec<Logview>) -> Result<Vec<u8>, String> {
         let lines: Vec<String> = input.iter().map(Logview::log).collect();
-        crate::build(&mut Wit, people(), &lines)?;
+        let evs = crate::events(&lines);
+        // Every fold reads a key and writes it back, so the folds are one
+        // transaction: another worker's batch cannot land between a read and
+        // its write. The parsing stays outside it.
+        state::begin()?;
+        if let Err(e) = crate::fold(&mut Wit, people(), &evs) {
+            state::rollback();
+            return Err(e);
+        }
+        state::commit()?;
         Ok(Vec::new())
     }
 }
