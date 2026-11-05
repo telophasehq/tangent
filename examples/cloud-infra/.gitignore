@@ -5,3 +5,4 @@ alerts.ndjson
 verdicts.ndjson
 test_out.ndjson
 .test.yaml
+replays/

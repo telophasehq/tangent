@@ -51,4 +51,22 @@ run: $(PLUGINS)
 	kill -0 $$i 2>/dev/null || { echo "ingest exited; not starting the judge" >&2; exit 1; }; \
 	$(TANGENT) run --config judge.yaml
 
-.PHONY: setup fetch compile test run
+# A past range of the sources through ingest and the judge (README.md#replay):
+# the sources whose past replay reads (CloudTrail, from its Event history),
+# nothing to Slack.
+# Each range is a directory of its own under replays/, with its own
+# logs.sqlite, state.sqlite and alerts.ndjson:
+#   make replay FROM=2026-10-01 TO=2026-10-02
+FROM ?=                         # a date (midnight UTC) or an RFC 3339 time
+TO ?=
+REPLAY = replays/$(FROM)_$(TO)
+
+replay: $(PLUGINS)
+	@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || \
+	  { echo "usage: make replay FROM=2026-10-01 TO=2026-10-02" >&2; exit 1; }
+	mkdir -p $(REPLAY)
+	printf 'include: [../../ingest.yaml]\nruntime: { plugins_path: ../../plugins/ }\n' > $(REPLAY)/ingest.yaml
+	printf 'include: [../../judge.yaml]\nruntime: { plugins_path: ../../plugins/ }\n' > $(REPLAY)/judge.yaml
+	cd $(REPLAY) && $(TANGENT) replay --ingest ingest.yaml --judge judge.yaml --from $(FROM) --to $(TO)
+
+.PHONY: setup fetch compile test run replay
