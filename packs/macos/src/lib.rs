@@ -89,6 +89,9 @@ struct Proc {
     team: Option<String>,
     /// for an interpreter or a shell running a file, the script it runs
     name: Option<String>,
+    /// the arguments it was given after its program, or after its script
+    /// when it has a name: what its children's `parents` say it was doing
+    command: Option<String>,
     uid: Option<i64>,
     tty: Option<String>,
     /// the process macOS holds responsible (the app a terminal is), when another
@@ -110,6 +113,7 @@ fn proc_of(v: &Value) -> Option<Proc> {
             .filter(|t| !t.is_empty())
             .map(str::to_string),
         name: None,
+        command: None,
         uid: int_at(v, "/audit_token/euid"),
         tty: str_at(v, "/tty/path").map(str::to_string),
         responsible: int_at(v, "/responsible_audit_token/pid").filter(|r| *r != pid),
@@ -150,26 +154,42 @@ impl Proc {
     }
 }
 
-// The process tree, in state: `p:<pid>` holds "<ppid>\t<program>\t<name>".
-// fork adds the child with its parent's program and name, exec replaces
-// them, exit removes the entry; a process seen before any of those is added
-// as the event shows it. The tree answers which programs are above this one,
-// and the name of a process whose exec it saw.
+// The process tree, in state: `p:<pid>` holds
+// "<ppid>\t<program>\t<name>\t<command>". fork adds the child with its
+// parent's program, name and command, exec replaces them, exit removes the
+// entry; a process seen before any of those is added as the event shows it.
+// The tree answers which programs are above this one and what each was
+// doing, and the name of a process whose exec it saw.
 
 struct Known {
     ppid: i64,
     path: String,
     name: Option<String>,
+    command: Option<String>,
+}
+
+impl Known {
+    /// Who it is: its name, else its path.
+    fn who(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.path)
+    }
 }
 
 fn known(pid: i64) -> Option<Known> {
     match state::get(&format!("p:{pid}")) {
         Ok(Some(Scalar::Str(s))) => {
-            let mut f = s.splitn(3, '\t');
+            let mut f = s.splitn(4, '\t');
             let ppid = f.next()?.parse().ok()?;
             let path = f.next()?.to_string();
-            let name = f.next().filter(|n| !n.is_empty()).map(str::to_string);
-            Some(Known { ppid, path, name })
+            let mut field = || f.next().filter(|n| !n.is_empty()).map(str::to_string);
+            let name = field();
+            let command = field();
+            Some(Known {
+                ppid,
+                path,
+                name,
+                command,
+            })
         }
         _ => None,
     }
@@ -183,10 +203,11 @@ fn remember(p: &Proc) {
     let _ = state::set(
         &format!("p:{}", p.pid),
         &Scalar::Str(format!(
-            "{}\t{}\t{}",
+            "{}\t{}\t{}\t{}",
             p.ppid,
             p.path,
-            p.name.as_deref().unwrap_or("")
+            p.name.as_deref().unwrap_or(""),
+            p.command.as_deref().unwrap_or("")
         )),
         Some(PROC_TTL_MS),
     );
@@ -196,16 +217,38 @@ fn forget(pid: i64) {
     let _ = state::del(&format!("p:{pid}"));
 }
 
-/// The programs above `ppid`, nearest first, as far as the tree knows them:
-/// each its name when it has one, else its path.
-fn parents(mut ppid: i64) -> Vec<String> {
+/// The processes above `ppid`, nearest first, as far as the tree knows them.
+fn parents(mut ppid: i64) -> Vec<Known> {
     let mut out = Vec::new();
     while ppid > 1 && out.len() < PARENTS {
         let Some(k) = known(ppid) else { break };
-        out.push(k.name.unwrap_or(k.path));
         ppid = k.ppid;
+        out.push(k);
     }
     out
+}
+
+/// A command's arguments past this many bytes are cut: enough to tell
+/// `npm test` from `npm install`, not a whole script.
+const COMMAND_BYTES: usize = 80;
+
+/// The arguments from `from` on, one line, cut at COMMAND_BYTES; None when
+/// there are none.
+fn command(args: &[&str], from: usize) -> Option<String> {
+    let mut s = args
+        .get(from..)
+        .unwrap_or_default()
+        .join(" ")
+        .replace(['\t', '\n', '\r'], " ");
+    if s.len() > COMMAND_BYTES {
+        let mut cut = COMMAND_BYTES;
+        while !s.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        s.truncate(cut);
+        s.push('…');
+    }
+    Some(s).filter(|s| !s.is_empty())
 }
 
 /// Interpreters and shells: the program they run is the file they are given.
@@ -254,17 +297,16 @@ fn short_flags(interp: &str) -> (&'static str, &'static str) {
 
 /// What an exec runs, when the program is an interpreter: `node <script>`,
 /// `python -m <module>`, the script joined to the working directory and
-/// written from `~`. None for inline code (`-c`, `-lc`, `-e`) and a bare
-/// shell.
-fn script_name(path: &str, args: &Value, cwd: Option<&str>) -> Option<String> {
+/// written from `~`; and where its own arguments start. None for inline
+/// code (`-c`, `-lc`, `-e`) and a bare shell.
+fn script_name(path: &str, args: &[&str], cwd: Option<&str>) -> Option<(String, usize)> {
     let interp = interpreter(path)?;
     let (inline, valued) = short_flags(interp);
-    let args: Vec<&str> = args.as_array()?.iter().filter_map(Value::as_str).collect();
     let mut i = 1;
     while let Some(a) = args.get(i) {
         match *a {
             "--eval" | "--print" => return None,
-            "-m" => return args.get(i + 1).map(|m| format!("{interp} -m {m}")),
+            "-m" => return args.get(i + 1).map(|m| (format!("{interp} -m {m}"), i + 2)),
             f if VALUE_FLAGS.contains(&f) => i += 1,
             f if f.starts_with("--") => {}
             f if f.starts_with('-') => {
@@ -292,7 +334,7 @@ fn script_name(path: &str, args: &Value, cwd: Option<&str>) -> Option<String> {
                     }
                 };
                 let shown = home(&full).map(|(_, t)| t).unwrap_or(full);
-                return Some(format!("{interp} {shown}"));
+                return Some((format!("{interp} {shown}"), i + 1));
             }
         }
         i += 1;
@@ -342,7 +384,10 @@ fn finished(rec: &Map<String, Value>) -> Option<(Map<String, Value>, Norm)> {
     match kind.as_str() {
         "fork" => {
             if let Some(mut child) = proc_of(&body["child"]) {
-                child.name = known(actor.pid).and_then(|k| k.name);
+                if let Some(k) = known(actor.pid) {
+                    child.name = k.name;
+                    child.command = k.command;
+                }
                 remember(&child);
             }
             return None;
@@ -359,13 +404,28 @@ fn finished(rec: &Map<String, Value>) -> Option<(Map<String, Value>, Norm)> {
     let actor = match kind.as_str() {
         "exec" => {
             let mut target = proc_of(&body["target"])?;
-            target.name = str_at(body, "/script/path")
-                .zip(interpreter(&target.path))
-                .map(|(s, i)| format!("{i} {}", home(s).map(|(_, t)| t).unwrap_or(s.to_string())))
-                .or_else(|| {
-                    body.get("args")
-                        .and_then(|a| script_name(&target.path, a, str_at(body, "/cwd/path")))
-                });
+            let args: Vec<&str> = body
+                .get("args")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            let named = match (str_at(body, "/script/path"), interpreter(&target.path)) {
+                // a `#!` file: its arguments follow it
+                (Some(s), Some(i)) => {
+                    let base = s.rsplit('/').next().unwrap_or(s);
+                    let at = args
+                        .iter()
+                        .skip(1)
+                        .position(|a| a.rsplit('/').next() == Some(base))
+                        .map_or(1, |p| p + 2);
+                    let shown = home(s).map(|(_, t)| t).unwrap_or(s.to_string());
+                    Some((format!("{i} {shown}"), at))
+                }
+                _ => script_name(&target.path, &args, str_at(body, "/cwd/path")),
+            };
+            let from = named.as_ref().map_or(1, |(_, at)| *at);
+            target.name = named.map(|(n, _)| n);
+            target.command = command(&args, from);
             remember(&target);
             target
         }
@@ -382,8 +442,19 @@ fn finished(rec: &Map<String, Value>) -> Option<(Map<String, Value>, Norm)> {
     out.insert("event".into(), json!(kind));
     out.insert("process".into(), actor.json());
     let above = parents(actor.ppid);
+    if let Some(p) = above.first().filter(|_| kind == "exec") {
+        // who started it, without what it was doing: the baseline's resource
+        out.insert("started_by".into(), json!(p.who()));
+    }
     if !above.is_empty() {
-        out.insert("parents".into(), json!(above));
+        let shown: Vec<String> = above
+            .iter()
+            .map(|k| match &k.command {
+                Some(c) => format!("{} {c}", k.who()),
+                None => k.who().to_string(),
+            })
+            .collect();
+        out.insert("parents".into(), json!(shown));
     }
 
     let mut n = Norm {
@@ -534,7 +605,7 @@ mod tests {
     use super::*;
 
     fn name(path: &str, args: &[&str], cwd: &str) -> Option<String> {
-        script_name(path, &json!(args), Some(cwd))
+        script_name(path, args, Some(cwd)).map(|(n, _)| n)
     }
 
     #[test]
@@ -605,6 +676,21 @@ mod tests {
                 "/Users/a"
             ),
             Some("bash ~/run.sh".into())
+        );
+    }
+
+    #[test]
+    fn a_command_is_what_follows_the_script() {
+        let args = ["node", "/opt/homebrew/bin/npm", "test"];
+        let at = script_name("/opt/homebrew/bin/node", &args, Some("/Users/a/x")).map(|(_, at)| at);
+        assert_eq!(at, Some(2));
+        assert_eq!(command(&args, 2), Some("test".into()));
+        assert_eq!(command(&["/bin/zsh", "-l"], 1), Some("-l".into()));
+        assert_eq!(command(&["/usr/bin/true"], 1), None);
+        let long = "x".repeat(200);
+        assert_eq!(
+            command(&["sh", "-c", &long], 1).map(|c| c.len()),
+            Some(COMMAND_BYTES + '…'.len_utf8())
         );
     }
 }

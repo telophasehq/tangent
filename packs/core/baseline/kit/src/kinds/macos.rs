@@ -2,7 +2,8 @@
 //! it. The verb is the event, with the group packs/macos marked the file
 //! with (`write agent_mcp`, `read credentials`), so a program's first write to
 //! an agent's MCP config is a new verb even when it has written files before;
-//! the resources are the file, and for an exec the program that started it.
+//! the resources are the file, and for an exec the program that started it
+//! (`started_by`, its name without the arguments `parents` shows it with).
 
 use serde_json::Value;
 
@@ -50,8 +51,8 @@ pub(super) fn read(r: &Value, e: &mut Ev) {
         e.res.push(format!("file:{}", clean(&home(&f), 100)));
     }
     if ev == "exec" {
-        if let Some(p) = r["parents"].get(0).and_then(Value::as_str) {
-            e.res.push(format!("started_by:{}", clean(&home(p), 100)));
+        if let Some(p) = str_of(&r["started_by"]) {
+            e.res.push(format!("started_by:{}", clean(&home(&p), 100)));
         }
     }
     e.typ = Some("program".into());
@@ -104,10 +105,14 @@ mod tests {
         .unwrap_or_default();
         assert_eq!((e.verb.as_str(), e.cat), ("read credentials", 'r'));
         let e = ev(&rec(json!({
-            "event": "exec", "parents": ["/opt/homebrew/bin/node", "/bin/zsh"],
+            "event": "exec", "started_by": "node /opt/homebrew/bin/npm",
+            "parents": ["node /opt/homebrew/bin/npm test", "/bin/zsh -l"],
         })))
         .unwrap_or_default();
         assert_eq!(e.verb, "exec");
-        assert_eq!(e.res, vec!["started_by:/opt/homebrew/bin/node".to_string()]);
+        assert_eq!(
+            e.res,
+            vec!["started_by:node /opt/homebrew/bin/npm".to_string()]
+        );
     }
 }

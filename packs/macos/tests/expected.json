@@ -30,7 +30,8 @@
    "signer": "com.apple.git",
    "tty": "/dev/ttys003",
    "uid": 501
-  }
+  },
+  "started_by": "/bin/zsh"
  },
  {
   "ts": "2026-11-03T20:00:05.000005000Z",
@@ -69,7 +70,8 @@
    "team": "EXAMPLE123",
    "tty": "/dev/ttys003",
    "uid": 501
-  }
+  },
+  "started_by": "/bin/zsh"
  },
  {
   "ts": "2026-11-03T20:00:07.000007000Z",
@@ -231,7 +233,8 @@
    "signer": "com.apple.security",
    "tty": "/dev/ttys003",
    "uid": 501
-  }
+  },
+  "started_by": "/Users/dev/.local/share/agent/versions/2.0.0/agent"
  },
  {
   "ts": "2026-11-03T20:00:18.000018000Z",
@@ -266,7 +269,8 @@
    "signer": "com.apple.sh",
    "tty": "/dev/ttys003",
    "uid": 501
-  }
+  },
+  "started_by": "/Users/dev/.local/share/agent/versions/2.0.0/agent"
  },
  {
   "ts": "2026-11-03T20:00:20.000020000Z",
@@ -288,7 +292,7 @@
    "env_count": 45
   },
   "parents": [
-   "/bin/sh",
+   "/bin/sh -c npm install",
    "/Users/dev/.local/share/agent/versions/2.0.0/agent",
    "/bin/zsh"
   ],
@@ -301,7 +305,8 @@
    "responsible": 100,
    "team": "NODEJS1234",
    "uid": 501
-  }
+  },
+  "started_by": "/bin/sh"
  },
  {
   "ts": "2026-11-03T20:00:21.000021000Z",
@@ -320,7 +325,7 @@
   "event": "open",
   "file": "/Users/dev/.aws/credentials",
   "parents": [
-   "/bin/sh",
+   "/bin/sh -c npm install",
    "/Users/dev/.local/share/agent/versions/2.0.0/agent",
    "/bin/zsh"
   ],
@@ -352,7 +357,7 @@
   "event": "open",
   "file": "/Users/dev/.claude/projects/-Users-dev-code-x/0f3a-session.jsonl",
   "parents": [
-   "/bin/sh",
+   "/bin/sh -c npm install",
    "/Users/dev/.local/share/agent/versions/2.0.0/agent",
    "/bin/zsh"
   ],
@@ -383,7 +388,7 @@
   "event": "create",
   "file": "/Users/dev/code/x/.claude/settings.local.json",
   "parents": [
-   "/bin/sh",
+   "/bin/sh -c npm install",
    "/Users/dev/.local/share/agent/versions/2.0.0/agent",
    "/bin/zsh"
   ],
@@ -415,7 +420,7 @@
   "file": "/Users/dev/code/x/.claude/settings.local.json",
   "modified": true,
   "parents": [
-   "/bin/sh",
+   "/bin/sh -c npm install",
    "/Users/dev/.local/share/agent/versions/2.0.0/agent",
    "/bin/zsh"
   ],
@@ -447,7 +452,7 @@
   "file": "/Users/dev/code/x/CLAUDE.md",
   "modified": true,
   "parents": [
-   "/bin/sh",
+   "/bin/sh -c npm install",
    "/Users/dev/.local/share/agent/versions/2.0.0/agent",
    "/bin/zsh"
   ],
@@ -486,7 +491,7 @@
   },
   "parents": [
    "node ~/code/x/node_modules/evil-pkg/postinstall.js",
-   "/bin/sh",
+   "/bin/sh -c npm install",
    "/Users/dev/.local/share/agent/versions/2.0.0/agent",
    "/bin/zsh"
   ],
@@ -497,7 +502,8 @@
    "ppid": 303,
    "responsible": 100,
    "uid": 501
-  }
+  },
+  "started_by": "node ~/code/x/node_modules/evil-pkg/postinstall.js"
  },
  {
   "ts": "2026-11-03T20:00:29.000029000Z",
@@ -516,7 +522,7 @@
   "file": "/Users/dev/Library/LaunchAgents/com.example.agentd.plist",
   "parents": [
    "node ~/code/x/node_modules/evil-pkg/postinstall.js",
-   "/bin/sh",
+   "/bin/sh -c npm install",
    "/Users/dev/.local/share/agent/versions/2.0.0/agent",
    "/bin/zsh"
   ],

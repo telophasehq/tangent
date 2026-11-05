@@ -61,7 +61,7 @@ category, resources, client, identity and sign-in or credential event, for
 `cloudtrail`, `github_audit`, `okta`, `google_workspace`, `app`, `gha_ci`,
 `runner_egress` and `macos`: for a Mac's records, the event with the group
 packs/macos marked its file with as the verb (`write agent_mcp`), and the file,
-and for an exec the program that started it, as resources. A record of any other source with an `event` is read as
+and for an exec the program that started it (`started_by`), as resources. A record of any other source with an `event` is read as
 `app`'s: the app pack's audit shape under a name in its `sources` or
 `extra_sources`. The packs could later write these as a normalized field
 instead, and this table would go.

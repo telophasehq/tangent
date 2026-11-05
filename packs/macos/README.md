@@ -57,10 +57,13 @@ The groups are the catalog's, plus credentials and what runs on its own
 Each record carries the program that acted (`process`: path, signing
 identity, Developer ID team, platform, uid, tty, the responsible app, and for
 node, Python, bun or a shell running a file the script it runs as `name`)
-and `parents`, the programs above it nearest first, each by its name when it
-has one, from a process tree the plugin keeps in state from `fork`,
-`exec` and `exit` (core's one worker keeps the events in order; an entry
-lasts a day). `_norm.actor` is the program, for an exec the one that
+and `parents`, the programs above it nearest first, each by its name (else
+its path) and the arguments it was given after it, cut at 80 bytes, so
+the npm above a package's script says `test` or `install`; from a process
+tree the plugin keeps in state from `fork`, `exec` and `exit` (core's one
+worker keeps the events in order; an entry lasts a day). An exec also
+carries `started_by`, the nearest parent's name alone, which the baseline
+counts as a resource; the judge reads `parents`. `_norm.actor` is the program, for an exec the one that
 started: an interpreter's `name`, the script it runs, so npm and a package's
 postinstall are not one `node`; else a vendor-signed program's signing
 identity, so Claude Code is one actor across updates; else its path (Apple's command-line tools share one
