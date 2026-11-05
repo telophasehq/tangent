@@ -234,33 +234,53 @@ fn base_static(b: &str) -> &'static str {
     }
 }
 
-/// Flags that take the next argument as their value, before the script.
-const VALUE_FLAGS: &[&str] = &[
-    "-r",
-    "--require",
-    "--import",
-    "--loader",
-    "-W",
-    "-X",
-    "-I",
-    "--inspect-port",
-];
+/// Long flags that take the next argument as their value, before the script.
+const VALUE_FLAGS: &[&str] = &["--require", "--import", "--loader", "--inspect-port"];
+
+/// An interpreter's short flags, which come in clusters (`zsh -lc`,
+/// `node -pe`, `python -Bc`): the letters that run inline code, and the
+/// letters that take a value (the rest of the cluster, or the next argument).
+fn short_flags(interp: &str) -> (&'static str, &'static str) {
+    match interp {
+        "sh" | "bash" | "zsh" | "dash" => ("c", "o"),
+        "python" => ("c", "WX"),
+        "node" | "bun" => ("ep", "r"),
+        "ruby" => ("e", "rI"),
+        "perl" => ("eE", "IM"),
+        "osascript" => ("e", "l"),
+        _ => ("", ""),
+    }
+}
 
 /// What an exec runs, when the program is an interpreter: `node <script>`,
 /// `python -m <module>`, the script joined to the working directory and
-/// written from `~`. None for inline code (`-c`, `-e`) and a bare shell.
+/// written from `~`. None for inline code (`-c`, `-lc`, `-e`) and a bare
+/// shell.
 fn script_name(path: &str, args: &Value, cwd: Option<&str>) -> Option<String> {
     let interp = interpreter(path)?;
+    let (inline, valued) = short_flags(interp);
     let args: Vec<&str> = args.as_array()?.iter().filter_map(Value::as_str).collect();
-    let mut it = args.iter().skip(1);
-    while let Some(a) = it.next() {
+    let mut i = 1;
+    while let Some(a) = args.get(i) {
         match *a {
-            "-c" | "-e" | "--eval" | "-p" | "--print" => return None,
-            "-m" => return it.next().map(|m| format!("{interp} -m {m}")),
-            f if VALUE_FLAGS.contains(&f) => {
-                it.next();
+            "--eval" | "--print" => return None,
+            "-m" => return args.get(i + 1).map(|m| format!("{interp} -m {m}")),
+            f if VALUE_FLAGS.contains(&f) => i += 1,
+            f if f.starts_with("--") => {}
+            f if f.starts_with('-') => {
+                let letters: Vec<char> = f.chars().skip(1).collect();
+                for (j, c) in letters.iter().enumerate() {
+                    if inline.contains(*c) {
+                        return None;
+                    }
+                    if valued.contains(*c) {
+                        if j + 1 == letters.len() {
+                            i += 1; // the value is the next argument
+                        }
+                        break;
+                    }
+                }
             }
-            f if f.starts_with('-') => {}
             script => {
                 let full = if script.starts_with('/') {
                     script.to_string()
@@ -275,6 +295,7 @@ fn script_name(path: &str, args: &Value, cwd: Option<&str>) -> Option<String> {
                 return Some(format!("{interp} {shown}"));
             }
         }
+        i += 1;
     }
     None
 }
@@ -554,5 +575,36 @@ mod tests {
         assert_eq!(name("/bin/sh", &["sh", "-c", "node x.js"], "/"), None);
         assert_eq!(name("/bin/zsh", &["-zsh"], "/Users/a"), None);
         assert_eq!(name("/usr/bin/git", &["git", "status"], "/Users/a"), None);
+        // inline code in a cluster of flags
+        assert_eq!(
+            name(
+                "/bin/zsh",
+                &["/bin/zsh", "-lc", "ls src tests"],
+                "/Users/a/x"
+            ),
+            None
+        );
+        assert_eq!(
+            name("/usr/bin/python3", &["python3", "-Bc", "print(1)"], "/"),
+            None
+        );
+        assert_eq!(name(node, &["node", "-pe", "1"], "/"), None);
+        // a value-taking letter ends the cluster
+        assert_eq!(
+            name(
+                "/usr/bin/python3",
+                &["python3", "-Werror::DeprecationWarning", "t.py"],
+                "/Users/a"
+            ),
+            Some("python ~/t.py".into())
+        );
+        assert_eq!(
+            name(
+                "/bin/bash",
+                &["bash", "-o", "pipefail", "-e", "run.sh"],
+                "/Users/a"
+            ),
+            Some("bash ~/run.sh".into())
+        );
     }
 }
