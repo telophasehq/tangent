@@ -24,7 +24,12 @@ use serde_json::Value;
 /// only the names a record holds besides its actor: whom a credential change
 /// was done to, and a federated user's issuer.
 pub fn build(kv: &mut impl Kv, people: &People, lines: &[String]) -> R<()> {
-    let evs: Vec<Ev> = lines
+    fold(kv, people, &events(lines))
+}
+
+/// The records' events: the parsing, with nothing read or written.
+pub fn events(lines: &[String]) -> Vec<Ev> {
+    lines
         .iter()
         .filter_map(|l| {
             let r: Value = serde_json::from_str(l).ok()?;
@@ -34,7 +39,11 @@ pub fn build(kv: &mut impl Kv, people: &People, lines: &[String]) -> R<()> {
             }
             Some(e)
         })
-        .collect();
+        .collect()
+}
+
+/// Folds `evs` into the state: every key read, changed and written back.
+pub fn fold(kv: &mut impl Kv, people: &People, evs: &[Ev]) -> R<()> {
     let evs: Vec<&Ev> = evs.iter().collect();
     firsts::write(kv, people, &evs)?;
     counts::write(kv, &evs)?;
