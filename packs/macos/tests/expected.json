@@ -66,6 +66,7 @@
    "ppid": 200,
    "responsible": 100,
    "signer": "com.example.agent",
+   "team": "EXAMPLE123",
    "tty": "/dev/ttys003",
    "uid": 501
   }
@@ -96,6 +97,7 @@
    "ppid": 200,
    "responsible": 100,
    "signer": "com.example.agent",
+   "team": "EXAMPLE123",
    "tty": "/dev/ttys003",
    "uid": 501
   }
@@ -126,6 +128,7 @@
    "ppid": 200,
    "responsible": 100,
    "signer": "com.example.agent",
+   "team": "EXAMPLE123",
    "tty": "/dev/ttys003",
    "uid": 501
   }
@@ -155,6 +158,7 @@
    "ppid": 200,
    "responsible": 100,
    "signer": "com.example.agent",
+   "team": "EXAMPLE123",
    "tty": "/dev/ttys003",
    "uid": 501
   }
@@ -187,6 +191,7 @@
    "ppid": 200,
    "responsible": 100,
    "signer": "com.example.agent",
+   "team": "EXAMPLE123",
    "tty": "/dev/ttys003",
    "uid": 501
   }
@@ -267,7 +272,7 @@
   "ts": "2026-11-03T20:00:20.000020000Z",
   "source": "macos",
   "_norm": {
-   "actor": "NODEJS1234",
+   "actor": "/usr/local/bin/node",
    "org": "dev"
   },
   "_facts": {
@@ -288,12 +293,13 @@
    "/bin/zsh"
   ],
   "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "path": "/usr/local/bin/node",
    "pid": 303,
    "platform": false,
    "ppid": 302,
    "responsible": 100,
-   "signer": "NODEJS1234",
+   "team": "NODEJS1234",
    "uid": 501
   }
  },
@@ -301,7 +307,7 @@
   "ts": "2026-11-03T20:00:21.000021000Z",
   "source": "macos",
   "_norm": {
-   "actor": "NODEJS1234",
+   "actor": "/usr/local/bin/node",
    "org": "dev"
   },
   "_facts": {
@@ -319,12 +325,13 @@
    "/bin/zsh"
   ],
   "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "path": "/usr/local/bin/node",
    "pid": 303,
    "platform": false,
    "ppid": 302,
    "responsible": 100,
-   "signer": "NODEJS1234",
+   "team": "NODEJS1234",
    "uid": 501
   }
  },
@@ -332,7 +339,7 @@
   "ts": "2026-11-03T20:00:22.000022000Z",
   "source": "macos",
   "_norm": {
-   "actor": "NODEJS1234",
+   "actor": "/usr/local/bin/node",
    "org": "dev"
   },
   "_facts": {
@@ -350,12 +357,13 @@
    "/bin/zsh"
   ],
   "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "path": "/usr/local/bin/node",
    "pid": 303,
    "platform": false,
    "ppid": 302,
    "responsible": 100,
-   "signer": "NODEJS1234",
+   "team": "NODEJS1234",
    "uid": 501
   }
  },
@@ -363,7 +371,7 @@
   "ts": "2026-11-03T20:00:24.000024000Z",
   "source": "macos",
   "_norm": {
-   "actor": "NODEJS1234",
+   "actor": "/usr/local/bin/node",
    "org": "dev"
   },
   "_facts": {
@@ -380,12 +388,13 @@
    "/bin/zsh"
   ],
   "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "path": "/usr/local/bin/node",
    "pid": 303,
    "platform": false,
    "ppid": 302,
    "responsible": 100,
-   "signer": "NODEJS1234",
+   "team": "NODEJS1234",
    "uid": 501
   }
  },
@@ -393,7 +402,7 @@
   "ts": "2026-11-03T20:00:25.000025000Z",
   "source": "macos",
   "_norm": {
-   "actor": "NODEJS1234",
+   "actor": "/usr/local/bin/node",
    "org": "dev"
   },
   "_facts": {
@@ -411,12 +420,13 @@
    "/bin/zsh"
   ],
   "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "path": "/usr/local/bin/node",
    "pid": 303,
    "platform": false,
    "ppid": 302,
    "responsible": 100,
-   "signer": "NODEJS1234",
+   "team": "NODEJS1234",
    "uid": 501
   }
  },
@@ -424,7 +434,7 @@
   "ts": "2026-11-03T20:00:26.000026000Z",
   "source": "macos",
   "_norm": {
-   "actor": "NODEJS1234",
+   "actor": "/usr/local/bin/node",
    "org": "dev"
   },
   "_facts": {
@@ -442,12 +452,13 @@
    "/bin/zsh"
   ],
   "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "path": "/usr/local/bin/node",
    "pid": 303,
    "platform": false,
    "ppid": 302,
    "responsible": 100,
-   "signer": "NODEJS1234",
+   "team": "NODEJS1234",
    "uid": 501
   }
  },
@@ -474,7 +485,7 @@
    "env_count": 45
   },
   "parents": [
-   "/usr/local/bin/node",
+   "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "/bin/sh",
    "/Users/dev/.local/share/agent/versions/2.0.0/agent",
    "/bin/zsh"
@@ -504,7 +515,7 @@
   "event": "create",
   "file": "/Users/dev/Library/LaunchAgents/com.example.agentd.plist",
   "parents": [
-   "/usr/local/bin/node",
+   "node ~/code/x/node_modules/evil-pkg/postinstall.js",
    "/bin/sh",
    "/Users/dev/.local/share/agent/versions/2.0.0/agent",
    "/bin/zsh"
@@ -573,6 +584,7 @@
    "ppid": 200,
    "responsible": 100,
    "signer": "com.example.agent",
+   "team": "EXAMPLE123",
    "tty": "/dev/ttys003",
    "uid": 501
   }

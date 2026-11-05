@@ -81,11 +81,14 @@ struct Proc {
     pid: i64,
     ppid: i64,
     path: String,
-    /// its signing identity, or its team when it has no identity
+    /// its signing identity
     signer: Option<String>,
     platform: bool,
-    /// signed by a developer team (a vendor's app), not ad hoc or by Apple
-    team: bool,
+    /// its Developer ID team: Apple issues it to the vendor, so an ad hoc
+    /// signature cannot claim one
+    team: Option<String>,
+    /// for an interpreter or a shell running a file, the script it runs
+    name: Option<String>,
     uid: Option<i64>,
     tty: Option<String>,
     /// the process macOS holds responsible (the app a terminal is), when another
@@ -96,7 +99,6 @@ fn proc_of(v: &Value) -> Option<Proc> {
     let pid = int_at(v, "/audit_token/pid")?;
     let signer = str_at(v, "/signing_id")
         .filter(|s| !s.is_empty())
-        .or_else(|| str_at(v, "/team_id").filter(|s| !s.is_empty()))
         .map(str::to_string);
     Some(Proc {
         pid,
@@ -104,7 +106,10 @@ fn proc_of(v: &Value) -> Option<Proc> {
         path: str_at(v, "/executable/path").unwrap_or("").to_string(),
         signer,
         platform: v["is_platform_binary"].as_bool().unwrap_or(false),
-        team: str_at(v, "/team_id").is_some_and(|t| !t.is_empty()),
+        team: str_at(v, "/team_id")
+            .filter(|t| !t.is_empty())
+            .map(str::to_string),
+        name: None,
         uid: int_at(v, "/audit_token/euid"),
         tty: str_at(v, "/tty/path").map(str::to_string),
         responsible: int_at(v, "/responsible_audit_token/pid").filter(|r| *r != pid),
@@ -120,7 +125,7 @@ impl Proc {
     /// their path.
     fn ident(&self) -> String {
         match &self.signer {
-            Some(s) if self.team && !self.platform => s.clone(),
+            Some(s) if self.team.is_some() && !self.platform => s.clone(),
             _ => self.path.clone(),
         }
     }
@@ -130,7 +135,9 @@ impl Proc {
         m.insert("pid".into(), json!(self.pid));
         m.insert("ppid".into(), json!(self.ppid));
         m.insert("path".into(), json!(self.path));
+        put(&mut m, "name", self.name.clone());
         put(&mut m, "signer", self.signer.clone());
+        put(&mut m, "team", self.team.clone());
         m.insert("platform".into(), json!(self.platform));
         put(&mut m, "uid", self.uid);
         put(&mut m, "tty", self.tty.clone());
@@ -139,17 +146,26 @@ impl Proc {
     }
 }
 
-// The process tree, in state: `p:<pid>` holds "<ppid>\t<program>". fork adds
-// the child with its parent's program, exec replaces the program, exit
-// removes the entry; a process seen before any of those is added as the
-// event shows it. The tree answers one question: which programs are above
-// this one.
+// The process tree, in state: `p:<pid>` holds "<ppid>\t<program>\t<name>".
+// fork adds the child with its parent's program and name, exec replaces
+// them, exit removes the entry; a process seen before any of those is added
+// as the event shows it. The tree answers which programs are above this one,
+// and the name of a process whose exec it saw.
 
-fn known(pid: i64) -> Option<(i64, String)> {
+struct Known {
+    ppid: i64,
+    path: String,
+    name: Option<String>,
+}
+
+fn known(pid: i64) -> Option<Known> {
     match state::get(&format!("p:{pid}")) {
         Ok(Some(Scalar::Str(s))) => {
-            let (ppid, path) = s.split_once('\t')?;
-            Some((ppid.parse().ok()?, path.to_string()))
+            let mut f = s.splitn(3, '\t');
+            let ppid = f.next()?.parse().ok()?;
+            let path = f.next()?.to_string();
+            let name = f.next().filter(|n| !n.is_empty()).map(str::to_string);
+            Some(Known { ppid, path, name })
         }
         _ => None,
     }
@@ -162,7 +178,12 @@ const PROC_TTL_MS: u64 = 86_400_000;
 fn remember(p: &Proc) {
     let _ = state::set(
         &format!("p:{}", p.pid),
-        &Scalar::Str(format!("{}\t{}", p.ppid, p.path)),
+        &Scalar::Str(format!(
+            "{}\t{}\t{}",
+            p.ppid,
+            p.path,
+            p.name.as_deref().unwrap_or("")
+        )),
         Some(PROC_TTL_MS),
     );
 }
@@ -171,15 +192,87 @@ fn forget(pid: i64) {
     let _ = state::del(&format!("p:{pid}"));
 }
 
-/// The programs above `ppid`, nearest first, as far as the tree knows them.
+/// The programs above `ppid`, nearest first, as far as the tree knows them:
+/// each its name when it has one, else its path.
 fn parents(mut ppid: i64) -> Vec<String> {
     let mut out = Vec::new();
     while ppid > 1 && out.len() < PARENTS {
-        let Some((up, path)) = known(ppid) else { break };
-        out.push(path);
-        ppid = up;
+        let Some(k) = known(ppid) else { break };
+        out.push(k.name.unwrap_or(k.path));
+        ppid = k.ppid;
     }
     out
+}
+
+/// Interpreters and shells: the program they run is the file they are given.
+fn interpreter(path: &str) -> Option<&'static str> {
+    let base = path.rsplit('/').next().unwrap_or(path);
+    Some(match base {
+        "node" => "node",
+        "bun" => "bun",
+        "deno" => "deno",
+        "ruby" => "ruby",
+        "perl" => "perl",
+        "osascript" => "osascript",
+        "sh" | "bash" | "zsh" | "dash" => base_static(base),
+        "Python" => "python",
+        b if b.starts_with("python") => "python",
+        _ => return None,
+    })
+}
+
+fn base_static(b: &str) -> &'static str {
+    match b {
+        "sh" => "sh",
+        "bash" => "bash",
+        "zsh" => "zsh",
+        _ => "dash",
+    }
+}
+
+/// Flags that take the next argument as their value, before the script.
+const VALUE_FLAGS: &[&str] = &[
+    "-r",
+    "--require",
+    "--import",
+    "--loader",
+    "-W",
+    "-X",
+    "-I",
+    "--inspect-port",
+];
+
+/// What an exec runs, when the program is an interpreter: `node <script>`,
+/// `python -m <module>`, the script joined to the working directory and
+/// written from `~`. None for inline code (`-c`, `-e`) and a bare shell.
+fn script_name(path: &str, args: &Value, cwd: Option<&str>) -> Option<String> {
+    let interp = interpreter(path)?;
+    let args: Vec<&str> = args.as_array()?.iter().filter_map(Value::as_str).collect();
+    let mut it = args.iter().skip(1);
+    while let Some(a) = it.next() {
+        match *a {
+            "-c" | "-e" | "--eval" | "-p" | "--print" => return None,
+            "-m" => return it.next().map(|m| format!("{interp} -m {m}")),
+            f if VALUE_FLAGS.contains(&f) => {
+                it.next();
+            }
+            f if f.starts_with('-') => {}
+            script => {
+                let full = if script.starts_with('/') {
+                    script.to_string()
+                } else {
+                    let rel = script.trim_start_matches("./");
+                    match cwd {
+                        Some(d) => format!("{}/{rel}", d.trim_end_matches('/')),
+                        None => rel.to_string(),
+                    }
+                };
+                let shown = home(&full).map(|(_, t)| t).unwrap_or(full);
+                return Some(format!("{interp} {shown}"));
+            }
+        }
+    }
+    None
 }
 
 /// The path a `create` or `rename` wrote to: an existing file, or a new name
@@ -223,7 +316,8 @@ fn finished(rec: &Map<String, Value>) -> Option<(Map<String, Value>, Norm)> {
     }
     match kind.as_str() {
         "fork" => {
-            if let Some(child) = proc_of(&body["child"]) {
+            if let Some(mut child) = proc_of(&body["child"]) {
+                child.name = known(actor.pid).and_then(|k| k.name);
                 remember(&child);
             }
             return None;
@@ -239,11 +333,24 @@ fn finished(rec: &Map<String, Value>) -> Option<(Map<String, Value>, Norm)> {
     // over; the one that launched it is the first of its parents.
     let actor = match kind.as_str() {
         "exec" => {
-            let target = proc_of(&body["target"])?;
+            let mut target = proc_of(&body["target"])?;
+            target.name = str_at(body, "/script/path")
+                .zip(interpreter(&target.path))
+                .map(|(s, i)| format!("{i} {}", home(s).map(|(_, t)| t).unwrap_or(s.to_string())))
+                .or_else(|| {
+                    body.get("args")
+                        .and_then(|a| script_name(&target.path, a, str_at(body, "/cwd/path")))
+                });
             remember(&target);
             target
         }
-        _ => actor,
+        _ => {
+            let mut a = actor;
+            a.name = known(a.pid)
+                .filter(|k| k.path == a.path)
+                .and_then(|k| k.name);
+            a
+        }
     };
 
     let mut out = Map::new();
@@ -289,7 +396,7 @@ fn finished(rec: &Map<String, Value>) -> Option<(Map<String, Value>, Norm)> {
                     "the program runs from a temporary, cache, download or node_modules directory",
                 );
             }
-            if actor.signer.is_none() && !actor.platform {
+            if actor.signer.is_none() && actor.team.is_none() && !actor.platform {
                 n.fact("unsigned", "the program has no code signature");
             }
             out.insert("exec".into(), Value::Object(x));
@@ -394,5 +501,54 @@ impl Guest for Component {
             }
         }
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn name(path: &str, args: &[&str], cwd: &str) -> Option<String> {
+        script_name(path, &json!(args), Some(cwd))
+    }
+
+    #[test]
+    fn interpreters_are_named_by_their_script() {
+        let node = "/opt/homebrew/Cellar/node/26.0.0/bin/node";
+        assert_eq!(
+            name(
+                node,
+                &["node", "scripts/postinstall.js"],
+                "/Users/a/code/x/node_modules/p"
+            ),
+            Some("node ~/code/x/node_modules/p/scripts/postinstall.js".into())
+        );
+        assert_eq!(
+            name(
+                node,
+                &["node", "/opt/homebrew/bin/npm", "install"],
+                "/Users/a/code/x"
+            ),
+            Some("node /opt/homebrew/bin/npm".into())
+        );
+        assert_eq!(
+            name(
+                node,
+                &["node", "--require", "./hook.js", "./server.js"],
+                "/Users/a/s"
+            ),
+            Some("node ~/s/server.js".into())
+        );
+        assert_eq!(
+            name(
+                "/usr/bin/python3",
+                &["python3", "-m", "pytest", "-q"],
+                "/Users/a/x"
+            ),
+            Some("python -m pytest".into())
+        );
+        assert_eq!(name("/bin/sh", &["sh", "-c", "node x.js"], "/"), None);
+        assert_eq!(name("/bin/zsh", &["-zsh"], "/Users/a"), None);
+        assert_eq!(name("/usr/bin/git", &["git", "status"], "/Users/a"), None);
     }
 }

@@ -54,9 +54,11 @@ The groups are the catalog's, plus credentials and what runs on its own
 | `credentials` | `~/.aws/`, `~/.ssh/`, `~/.gnupg/`, `~/.npmrc`, `~/.netrc`, `~/.docker/config.json`, `~/.kube/config`, `~/.config/gh/`, `~/.codex/auth.json`, the keychains, `.env` and `.env.*` |
 | `persistence` | `~/.zshrc` and the other rc files, `~/Library/LaunchAgents/`, `/Library/LaunchAgents/`, `/Library/LaunchDaemons/`, `.git/hooks/`, `.git/config`, `.github/workflows/` |
 
-Each record carries the program that acted (`process`: path, signer,
-platform, uid, tty, the responsible app) and `parents`, the programs above it
-nearest first, from a process tree the plugin keeps in state from `fork`,
+Each record carries the program that acted (`process`: path, signing
+identity, Developer ID team, platform, uid, tty, the responsible app, and for
+node, Python, bun or a shell running a file the script it runs as `name`)
+and `parents`, the programs above it nearest first, each by its name when it
+has one, from a process tree the plugin keeps in state from `fork`,
 `exec` and `exit` (core's one worker keeps the events in order; an entry
 lasts a day). `_norm.actor` is the program, for an exec the one that
 started: a vendor-signed program's signing identity, so Claude Code is one
