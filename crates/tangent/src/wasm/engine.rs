@@ -11,7 +11,7 @@ use wasmtime_wasi::{FsPerms, WasiCtxBuilder};
 
 use crate::enrichment::Tables;
 use crate::state::{StateStore, PLUGIN_NS};
-use crate::wasm::host::tangent::logs::{config, enrichment, lock, log, remote, state};
+use crate::wasm::host::tangent::logs::{config, enrichment, log, remote, state};
 use crate::wasm::host::{HostEngine, Processor};
 pub struct WasmEngine {
     engine: Engine,
@@ -45,7 +45,6 @@ impl WasmEngine {
         remote::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         state::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         config::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
-        lock::add_to_linker::<HostEngine, HostEngine>(&mut linker, |host: &mut HostEngine| host)?;
         enrichment::add_to_linker::<HostEngine, HostEngine>(
             &mut linker,
             |host: &mut HostEngine| host,
