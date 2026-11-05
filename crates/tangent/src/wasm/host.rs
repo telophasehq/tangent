@@ -1,11 +1,8 @@
 use std::sync::Arc;
 
 use ahash::HashMap;
-use ahash::HashMapExt;
 use anyhow::Result;
 use bytes::{Bytes, BytesMut};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use reqwest::Client;
 use serde_json::Value as JSONValue;
 use simd_json::base::ValueAsScalar;
@@ -21,8 +18,6 @@ use crate::state::{StateStore, StateValue};
 use crate::wasm::host::tangent::logs::log;
 use crate::wasm::host::tangent::logs::remote;
 use log::Scalar;
-
-static LOCKS: Lazy<Mutex<HashMap<String, bool>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 bindgen!({
     world: "processor",
@@ -233,26 +228,6 @@ impl tangent::logs::config::Host for HostEngine {
 impl tangent::logs::enrichment::Host for HostEngine {
     fn lookup(&mut self, table: String, key: String) -> Option<String> {
         self.tables.lookup(&table, &key)
-    }
-}
-
-impl tangent::logs::lock::Host for HostEngine {
-    fn acquire(&mut self, key: String) -> bool {
-        let mut map = LOCKS.lock();
-        let entry = map.entry(key).or_insert(false);
-        if !*entry {
-            *entry = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    fn release(&mut self, key: String) {
-        let mut map = LOCKS.lock();
-        if let Some(locked) = map.get_mut(&key) {
-            *locked = false;
-        }
     }
 }
 

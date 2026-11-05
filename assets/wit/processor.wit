@@ -49,11 +49,6 @@ interface config {
   get: func(key: string) -> option<string>;
 }
 
-interface lock {
-  acquire: func(key: string) -> bool;
-  release: func(key: string);
-}
-
 /// Reference data under `enrichment_tables` in the config, loaded once per
 /// process and shared by every plugin: a MaxMind DB, a list of networks, a
 /// document. No call reads a file.
@@ -146,7 +141,6 @@ world processor {
   import log;
   import state;
   import config;
-  import lock;
   import enrichment;
   export mapper;
 }
