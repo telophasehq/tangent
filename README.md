@@ -61,7 +61,7 @@ runtime:
     retain_ms: 432000000   # 5d: keep every record under its partition, keyed by its time
 ```
 
-Entries are keyed by `(namespace, partition, key)`. Plugins share one namespace, `plugins`, so what one plugin writes the next can read; within a partition all of it runs on one worker, so there is nothing to race against (below). Give a plugin a `state_namespace` of its own when it must not share, such as two instances of one plugin with different configs:
+Entries are keyed by `(namespace, partition, key)`. Plugins share one namespace, `plugins`, so what one plugin writes the next can read; a read, and a write that depends on it, go in a transaction when several workers run the plugin (below). Give a plugin a `state_namespace` of its own when it must not share, such as two instances of one plugin with different configs:
 
 ```yaml
 plugins:
@@ -74,6 +74,8 @@ A plugin may read files too: `data: <dir>` mounts a directory, relative to the f
 When a plugin's call fails (it traps or returns an error), the records it was given are logged and dropped. `drop_on_error: false` passes them on unchanged instead, as if the plugin were not there: right for a plugin that only adds to records, such as context for a model, wrong for a filter. `tangent plugin test` always drops, so a failed call fails the test.
 
 With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition. [examples/partition](/examples/partition) counts events per org with a single `count` key.
+
+Each state call stands alone: two workers running a plugin can interleave one's read with the other's write. A plugin that reads state and writes what depends on it makes them one transaction: `state.begin()`, its reads and writes, then `state.commit()`, or `state.rollback()`. They see each other's writes and land together, or not at all, however many workers run the plugin. No other state call runs while one is open, so begin late, after the parsing, and commit early. A second `begin`, or a remote call, inside one fails, and a call that returns with one open has it rolled back, with a warning: only what a plugin commits is kept.
 
 With `retain_ms` as well, the runtime keeps every partitioned record in the store, in the plugins' namespace, as `ev:<epoch ms, 13 digits>:<seq>` with that TTL, so a partition's history is a key range: `state.Scan("ev:<from>", "ev:<to>", limit)` returns the last hour in order, however it arrived, and nothing is ever read back to be rewritten. The store is the partition's log; the TTL is its retention. A record is stored once, where it enters its partition, whether the key was on it at the source or a plugin added it. What a record means in the light of that history is a plugin's decision, and the hour of context it attaches for a model is one `Scan`. Each backend answers a range its own way: SQLite walks the primary-key index, a DynamoDB backend would query the sort key.
 

@@ -50,6 +50,8 @@ impl Mappers {
 
         let meta = guest.call_metadata(&mut store).await?;
         let sels: Vec<Selector> = guest.call_probe(&mut store).await?;
+        // Nothing a guest left open describing itself is kept.
+        store.data_mut().end_call();
 
         let selectors: Vec<CompiledSelector> = sels
             .iter()

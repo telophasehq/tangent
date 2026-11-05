@@ -14,7 +14,7 @@ use wasmtime::component::{bindgen, HasData, Resource, ResourceTable};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
 use crate::enrichment::Tables;
-use crate::state::{StateStore, StateValue};
+use crate::state::{StateStore, StateValue, Txn};
 use crate::wasm::host::tangent::logs::log;
 use crate::wasm::host::tangent::logs::remote;
 use log::Scalar;
@@ -30,6 +30,8 @@ bindgen!({
         "tangent:logs/state.del": async,
         "tangent:logs/state.incr": async,
         "tangent:logs/state.scan": async,
+        "tangent:logs/state.begin": async,
+        "tangent:logs/state.commit": async,
     },
     with: {
         "tangent:logs/log.logview": JsonLogView,
@@ -47,6 +49,8 @@ pub struct HostEngine {
     /// Partition of the records the guest is processing right now; the
     /// worker sets it before each call. Scopes the guest's state.
     pub partition: Arc<str>,
+    /// The transaction the guest began and has not ended.
+    txn: Option<Box<dyn Txn>>,
     plugin_cfg: Arc<HashMap<String, JSONValue>>,
     /// The process's enrichment tables, shared with every other instance.
     tables: Arc<Tables>,
@@ -70,10 +74,18 @@ impl HostEngine {
             state,
             ns,
             partition: Arc::from(""),
+            txn: None,
             plugin_cfg: config,
             tables,
             disable_remote_calls,
         }
+    }
+
+    /// Rolls back a transaction the guest left open when its call ended: it
+    /// trapped, failed or never committed. True when there was one. Until
+    /// then no other state call runs, so the worker ends every call.
+    pub fn end_call(&mut self) -> bool {
+        self.txn.take().is_some()
     }
 
     async fn execute_single(client: Client, r: remote::Request) -> remote::Response {
@@ -182,6 +194,9 @@ impl remote::Host for HostEngine {
         &mut self,
         reqs: Vec<remote::Request>,
     ) -> Result<Vec<remote::Response>, String> {
+        if self.txn.is_some() {
+            return Err("commit or roll back the state transaction first: it would hold every worker's state for the round trip".into());
+        }
         if self.disable_remote_calls {
             // Short-circuit with successful empty responses.
             let out = reqs
@@ -232,35 +247,49 @@ impl tangent::logs::enrichment::Host for HostEngine {
 }
 
 /// The guest's state: the plugins' namespace of the state store, scoped to
-/// the partition of the records being processed.
+/// the partition of the records being processed. Each call stands alone,
+/// unless the guest began a transaction: then they go through it until it
+/// commits or rolls back.
 impl tangent::logs::state::Host for HostEngine {
     async fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
-        self.state
-            .get(&self.ns, &self.partition, &key)
-            .await
-            .map(|v| v.map(Scalar::from))
-            .map_err(|e| e.to_string())
+        let got = match self.txn.as_mut() {
+            Some(t) => t.get(&self.ns, &self.partition, &key).await,
+            None => self.state.get(&self.ns, &self.partition, &key).await,
+        };
+        got.map(|v| v.map(Scalar::from)).map_err(|e| e.to_string())
     }
 
     async fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
-        self.state
-            .set(&self.ns, &self.partition, &key, &value.into(), ttl_ms)
-            .await
-            .map_err(|e| e.to_string())
+        let value = value.into();
+        match self.txn.as_mut() {
+            Some(t) => t.set(&self.ns, &self.partition, &key, &value, ttl_ms).await,
+            None => {
+                self.state
+                    .set(&self.ns, &self.partition, &key, &value, ttl_ms)
+                    .await
+            }
+        }
+        .map_err(|e| e.to_string())
     }
 
     async fn del(&mut self, key: String) -> Result<bool, String> {
-        self.state
-            .del(&self.ns, &self.partition, &key)
-            .await
-            .map_err(|e| e.to_string())
+        match self.txn.as_mut() {
+            Some(t) => t.del(&self.ns, &self.partition, &key).await,
+            None => self.state.del(&self.ns, &self.partition, &key).await,
+        }
+        .map_err(|e| e.to_string())
     }
 
     async fn incr(&mut self, key: String, by: i64, ttl_ms: Option<u64>) -> Result<i64, String> {
-        self.state
-            .incr(&self.ns, &self.partition, &key, by, ttl_ms)
-            .await
-            .map_err(|e| e.to_string())
+        match self.txn.as_mut() {
+            Some(t) => t.incr(&self.ns, &self.partition, &key, by, ttl_ms).await,
+            None => {
+                self.state
+                    .incr(&self.ns, &self.partition, &key, by, ttl_ms)
+                    .await
+            }
+        }
+        .map_err(|e| e.to_string())
     }
 
     async fn scan(
@@ -269,16 +298,41 @@ impl tangent::logs::state::Host for HostEngine {
         to: String,
         limit: u32,
     ) -> Result<Vec<(String, Scalar)>, String> {
-        self.state
-            .range(&self.ns, &self.partition, &from, &to, limit as usize)
-            .await
-            .map(|entries| {
-                entries
-                    .into_iter()
-                    .map(|e| (e.key, Scalar::from(e.value)))
-                    .collect()
-            })
-            .map_err(|e| e.to_string())
+        let limit = limit as usize;
+        match self.txn.as_mut() {
+            Some(t) => t.range(&self.ns, &self.partition, &from, &to, limit).await,
+            None => {
+                self.state
+                    .range(&self.ns, &self.partition, &from, &to, limit)
+                    .await
+            }
+        }
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|e| (e.key, Scalar::from(e.value)))
+                .collect()
+        })
+        .map_err(|e| e.to_string())
+    }
+
+    async fn begin(&mut self) -> Result<(), String> {
+        if self.txn.is_some() {
+            return Err("a transaction is open already".into());
+        }
+        self.txn = Some(self.state.begin().await.map_err(|e| e.to_string())?);
+        Ok(())
+    }
+
+    async fn commit(&mut self) -> Result<(), String> {
+        match self.txn.take() {
+            Some(t) => t.commit().await.map_err(|e| e.to_string()),
+            None => Err("no transaction is open".into()),
+        }
+    }
+
+    fn rollback(&mut self) {
+        self.txn = None;
     }
 }
 
@@ -456,5 +510,119 @@ mod tests {
         let again: serde_json::Value = serde_json::from_str(&view.to_json()).unwrap();
         assert_eq!(again["why"], "he said \"hi\"");
         assert_eq!(again["flag"], true);
+    }
+    use tangent::logs::{remote::Host as _, state::Host as _};
+
+    fn guest(store: &Arc<dyn StateStore>) -> HostEngine {
+        HostEngine::new(
+            wasmtime_wasi::WasiCtxBuilder::new().build(),
+            Arc::clone(store),
+            Arc::from("baseline"),
+            Arc::new(HashMap::default()),
+            Arc::new(Tables::default()),
+            true,
+        )
+    }
+
+    fn sqlite(dir: &std::path::Path) -> Arc<dyn StateStore> {
+        Arc::new(crate::state::sqlite::SqliteStore::open(&Default::default(), dir).unwrap())
+    }
+
+    /// Whether a call on `store` from elsewhere gets through within 50 ms.
+    async fn free(store: &Arc<dyn StateStore>) -> bool {
+        let store = Arc::clone(store);
+        tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            tokio::spawn(async move { store.get("baseline", "", "x").await.unwrap() }),
+        )
+        .await
+        .is_ok()
+    }
+
+    /// Eight instances of a plugin, as on eight workers, each call reading a
+    /// count and writing it back one higher inside a transaction: none of
+    /// the 200 is lost.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_transaction_holds_a_read_and_its_write_across_workers() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = sqlite(dir.path());
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let store = Arc::clone(&store);
+                tokio::spawn(async move {
+                    let mut g = guest(&store);
+                    for _ in 0..25 {
+                        g.begin().await.unwrap();
+                        let n = match g.get("count".into()).await.unwrap() {
+                            Some(Scalar::Int(n)) => n,
+                            _ => 0,
+                        };
+                        tokio::task::yield_now().await;
+                        g.set("count".into(), Scalar::Int(n + 1), None)
+                            .await
+                            .unwrap();
+                        g.commit().await.unwrap();
+                        assert!(!g.end_call(), "nothing left open");
+                    }
+                })
+            })
+            .collect();
+        for w in workers {
+            w.await.unwrap();
+        }
+        assert_eq!(
+            store.get("baseline", "", "count").await.unwrap(),
+            Some(StateValue::Int(200))
+        );
+    }
+
+    /// Without `begin`, each state call lands at once and holds nothing.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn without_a_transaction_each_call_stands_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = sqlite(dir.path());
+        let mut g = guest(&store);
+        g.set("a".into(), Scalar::Int(1), None).await.unwrap();
+        assert!(free(&store).await);
+        assert_eq!(
+            store.get("baseline", "", "a").await.unwrap(),
+            Some(StateValue::Int(1))
+        );
+        assert!(!g.end_call());
+    }
+
+    /// Only a commit keeps a transaction's writes: a rollback, or a call
+    /// that returns with one open, undoes them and frees the store.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn only_a_commit_keeps_a_transactions_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = sqlite(dir.path());
+        let mut g = guest(&store);
+        g.begin().await.unwrap();
+        g.set("a".into(), Scalar::Int(1), None).await.unwrap();
+        g.rollback();
+        assert_eq!(store.get("baseline", "", "a").await.unwrap(), None);
+
+        g.begin().await.unwrap();
+        g.set("b".into(), Scalar::Int(2), None).await.unwrap();
+        assert!(!free(&store).await, "an open transaction holds the store");
+        assert!(g.end_call(), "left open");
+        assert!(free(&store).await);
+        assert_eq!(store.get("baseline", "", "b").await.unwrap(), None);
+    }
+
+    /// Inside a transaction a second `begin` and a remote call fail, and a
+    /// commit needs one to commit.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_transaction_refuses_a_second_begin_and_a_remote_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = sqlite(dir.path());
+        let mut g = guest(&store);
+        assert!(g.commit().await.is_err(), "nothing to commit");
+        g.begin().await.unwrap();
+        assert!(g.begin().await.is_err());
+        assert!(g.call_batch(Vec::new()).await.is_err());
+        g.commit().await.unwrap();
+        assert!(g.call_batch(Vec::new()).await.is_ok());
     }
 }

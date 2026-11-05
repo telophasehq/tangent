@@ -611,6 +611,15 @@ impl Worker {
                 .tangent_logs_mapper()
                 .call_process_logs(&mut m.store, &owned)
                 .await;
+            // Only what the guest committed stays: a transaction it left open
+            // (it trapped, failed or forgot) is rolled back here.
+            if m.store.data_mut().end_call() {
+                tracing::warn!(
+                    mapper = %m.name,
+                    partition = %part,
+                    "the call returned with a state transaction open; rolled back"
+                );
+            }
 
             GUEST_LATENCY
                 .with_label_values(&[&self.id.to_string()])
@@ -777,12 +786,13 @@ impl WorkerPool {
             let mut mappers = Mappers::load_all(&engine, &comps).await?;
             if let Some(first) = mappers.mappers.first_mut() {
                 let start = Instant::now();
-                match first
+                let warmed = first
                     .proc
                     .tangent_logs_mapper()
                     .call_metadata(&mut first.store)
-                    .await
-                {
+                    .await;
+                first.store.data_mut().end_call();
+                match warmed {
                     Ok(_) => tracing::info!(
                         target:"sidecar",
                         "worker {i} warmup in {} µs",
