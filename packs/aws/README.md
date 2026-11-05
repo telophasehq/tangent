@@ -130,6 +130,44 @@ file, each one an event in a later file. Leave the trail's bucket out of its
 data-event selectors. With a bucket role, these calls carry the session name
 `tangent`.
 
+### Replay
+
+`tangent replay` reads a `cloudtrail` source's past from CloudTrail's Event
+history through LookupEvents, so it needs no trail, queue or bucket. It uses
+the source's `region` and `profile` credentials and reads the account they
+belong to, in every commercial region. An opt-in region the account hasn't
+enabled is skipped, and so, with a warning, is an opt-in region whose endpoint
+can't be reached. An organization trail's other accounts are not included. The
+identity needs `cloudtrail:LookupEvents`. Event history keeps 90 days of
+management events only: a replay gets no data events, and a `from` more than
+90 days back is refused. LookupEvents allows two calls a second per region and
+returns 50 events a call, so an hour with 5,000 events in one region takes
+about 50 seconds.
+
+Each LookupEvents call is a management event too, so the range ends when the
+replay starts. Its own calls that land in the range anyway (as they do when
+the machine's clock is ahead of AWS's) are left out, and so are earlier
+replays' calls from the same machine. Each replay's calls carry
+`tangent-replay-` and a random 64-bit id of its own in their `userAgent`, but
+the tag alone is not trusted: anyone can set a user agent, and earlier
+replays' tags are in Event history for anyone who can read it. A record is
+left out only when it is a LookupEvents call with a replay's tag, signed with
+an access key that replay's calls were signed with, at a time it ran (a
+minute either side, for the clocks). Each replay records its id, its access
+keys and when it started and finished in a ledger of the machine's replays,
+`$XDG_STATE_HOME/tangent/replays.jsonl` (else
+`~/.local/state/tangent/replays.jsonl`). An access key ID can't sign a call
+without its secret, so only a caller holding that replay's credentials, or
+one who can write the ledger, could have a call left out: the ledger is
+trusted as your config is. A replay finishes when its range is read, or
+when it fails or is stopped with Ctrl-C. One killed before then (a closed terminal, SIGKILL, a crash) counts
+as running until its temporary credentials expired, but for 36 hours at most
+(the longest an STS session lasts), or for a day with an IAM user's keys.
+Another machine's replays are in that machine's ledger, so their calls stay
+in. If the ledger can't be read, earlier replays' calls stay in; if it can't
+be written, later replays will read this one's. Either is warned of once,
+and the replay goes on.
+
 ### Worth watching
 
 Kinds to list under the profile's `watch`: `StopLogging`, `DeleteTrail`,

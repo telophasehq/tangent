@@ -291,6 +291,65 @@ fn due(
     Ok(groups.into_iter().map(|g| g.1).collect())
 }
 
+/// A sqlite source's table as `tangent replay` reads it at the end of a
+/// range, on its own connection: whether the source has anything left to
+/// hand out.
+pub(crate) struct Watch {
+    conn: Mutex<Connection>,
+    cfg: SqliteConfig,
+}
+
+impl Watch {
+    pub(crate) fn open(cfg: &SqliteConfig) -> Result<Self> {
+        Ok(Self {
+            conn: Mutex::new(open(&cfg.path, &cfg.table, &BTreeMap::new())?),
+            cfg: cfg.clone(),
+        })
+    }
+
+    /// Groups due by the source's rules, those in flight among them: none
+    /// once the source has handed out all it would and the DAG has acked it.
+    pub(crate) fn waiting(&self) -> Result<usize> {
+        let Some(part) = partition(&self.conn.lock(), &self.cfg)? else {
+            return Ok(0);
+        };
+        let mut stored = Stored {
+            id: None,
+            since: Instant::now(),
+        };
+        Ok(due(&self.conn, &part, &self.cfg, &mut stored, &HashSet::new())?.len())
+    }
+
+    /// A row `timeout_secs` past the newest, emitted already, so that every
+    /// pending row falls due, as after an hour with nothing new. Its id, to
+    /// remove once they have gone; none in an empty table.
+    pub(crate) fn quiet(&self) -> Result<Option<i64>> {
+        let conn = self.conn.lock();
+        let t = &self.cfg.table;
+        let newest: Option<i64> =
+            conn.query_row(&format!("SELECT max(at) FROM \"{t}\""), [], |r| r.get(0))?;
+        let Some(newest) = newest else {
+            return Ok(None);
+        };
+        conn.execute(
+            &format!("INSERT INTO \"{t}\" (at, record, emitted) VALUES (?1, '{{}}', ?2)"),
+            [
+                newest + self.cfg.timeout_secs as i64 * 1000,
+                now_ms() as i64,
+            ],
+        )?;
+        Ok(Some(conn.last_insert_rowid()))
+    }
+
+    pub(crate) fn remove(&self, id: i64) -> Result<()> {
+        let t = &self.cfg.table;
+        self.conn
+            .lock()
+            .execute(&format!("DELETE FROM \"{t}\" WHERE id = ?1"), [id])?;
+        Ok(())
+    }
+}
+
 /// The rows' records, those of `context` with `"_context": true`.
 fn frame(conn: &Mutex<Connection>, table: &str, context: &[i64], ids: &[i64]) -> Result<BytesMut> {
     let conn = conn.lock();
@@ -396,6 +455,16 @@ mod tests {
         .unwrap()
     }
 
+    fn config(path: &Path, timeout_secs: u64) -> SqliteConfig {
+        SqliteConfig {
+            path: path.to_path_buf(),
+            table: "logs".into(),
+            partition: "actor".into(),
+            batch_size: 3,
+            timeout_secs,
+        }
+    }
+
     fn start(
         path: &Path,
         sink: &Arc<RecordingSink>,
@@ -414,13 +483,7 @@ mod tests {
         );
         let sinks = vec![(Arc::from("out"), Arc::clone(sink) as Arc<dyn Sink>)];
         let router = Arc::new(Router::new(outs, Arc::new(SinkManager::for_test(sinks, 1))));
-        let cfg = SqliteConfig {
-            path: path.to_path_buf(),
-            table: "logs".into(),
-            partition: "actor".into(),
-            batch_size: 3,
-            timeout_secs,
-        };
+        let cfg = config(path, timeout_secs);
         let shutdown = CancellationToken::new();
         let h = tokio::spawn(run_consumer(
             Arc::from("actors"),
@@ -463,6 +526,28 @@ mod tests {
         rows.iter()
             .map(|(at, a)| format!("{{\"at\":{at},\"actor\":\"{a}\",\"_context\":true}}\n"))
             .collect()
+    }
+
+    #[tokio::test]
+    async fn a_watch_waits_on_the_source_and_quiet_lets_the_rest_go() {
+        let path = path("watch");
+        insert(&path, &[(T0 + 1, "a"), (T0 + 2, "a"), (T0 + 3, "a")]);
+        insert(&path, &[(T0 + 4, "b")]);
+        let watch = Watch::open(&config(&path, 3600)).unwrap();
+        assert_eq!(watch.waiting().unwrap(), 1, "a's three; b's one waits");
+        let sink = Arc::new(RecordingSink::default());
+        let (stop, h) = start(&path, &sink, 3600);
+        until(|| watch.waiting().unwrap() == 0).await;
+        assert_eq!(emitted(&path), 3);
+
+        let marker = watch.quiet().unwrap().expect("a newest row");
+        assert_eq!(watch.waiting().unwrap(), 1, "an hour of nothing: b's goes");
+        until(|| watch.waiting().unwrap() == 0).await;
+        watch.remove(marker).unwrap();
+        assert_eq!(emitted(&path), 4, "b's, and the marker gone");
+        assert_eq!(writes(&sink, 2).await[1], group(&[(T0 + 4, "b")]));
+        stop.cancel();
+        h.await.unwrap().unwrap();
     }
 
     #[tokio::test]
