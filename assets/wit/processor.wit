@@ -75,6 +75,14 @@ interface state {
   /// Entries with `start <= key < end`, in key order, at most `limit`. Keys that
   /// start with their time make a scope's history a key range.
   scan: func(start: string, end: string, limit: u32) -> result<list<tuple<string, scalar>>, string>;
+  /// Begins a transaction: the state calls after it see each other's
+  /// writes, and land together on `commit` or not at all on `rollback`. No
+  /// other state call runs while it is open, so begin late and commit early.
+  /// A second `begin`, or a remote call, inside one fails; a call that
+  /// returns with one open has it rolled back.
+  begin:    func() -> result<_, string>;
+  commit:   func() -> result<_, string>;
+  rollback: func();
 }
 
 
