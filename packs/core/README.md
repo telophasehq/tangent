@@ -239,7 +239,8 @@ counts, so a window never explains itself.
 
 **What it learns** (ingest, `baseline_builder`), from every record with a
 `_norm.actor` whose `source` it knows: `cloudtrail`, `github_audit`, `okta`,
-`google_workspace`, `app`, `gha_ci` and `runner_egress`, and any other with an
+`google_workspace`, `app`, `gha_ci`, `runner_egress` and `macos` (what a
+program did to which file, and what started it), and any other with an
 `event`, as the app pack's audit shape under a name of yours. Others, `agent`
 among them, it passes over.
 

@@ -6,6 +6,7 @@
 mod app;
 mod cloudtrail;
 mod github;
+mod macos;
 mod okta;
 mod workspace;
 
@@ -89,6 +90,7 @@ pub fn ev(r: &Value) -> Option<Ev> {
         "github_audit" => github::read(r, &mut e),
         "google_workspace" => workspace::read(r, &mut e),
         "app" => app::read(r, &mut e),
+        "macos" => macos::read(r, &mut e),
         "gha_ci" => {
             e.verb = format!("step {}", quoted(s(&r["step"])));
             e.typ = Some("ci repo".into());
