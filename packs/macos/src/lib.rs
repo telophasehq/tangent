@@ -155,11 +155,15 @@ fn known(pid: i64) -> Option<(i64, String)> {
     }
 }
 
+/// A process the tree never saw exit is forgotten after a day. Core's state
+/// keeps keys until told otherwise, and pids come back.
+const PROC_TTL_MS: u64 = 86_400_000;
+
 fn remember(p: &Proc) {
     let _ = state::set(
         &format!("p:{}", p.pid),
         &Scalar::Str(format!("{}\t{}", p.ppid, p.path)),
-        None,
+        Some(PROC_TTL_MS),
     );
 }
 
