@@ -1,0 +1,16 @@
+# macos, judge: packs/core's judge over logs.sqlite, with each program's
+# history from ingest's state.sqlite (start ingest first), the records written
+# as logfmt as packs/macos/judge.yaml says, and packs/macos's brief in place of
+# core's, which is written for a company's cloud.
+#
+#   tangent plugin compile --config judge.yaml
+#   tangent run --config judge.yaml           # a local model: JUDGE_URL, JUDGE_MODEL (packs/core/README.md)
+#   tangent run --config judge-haiku.yaml     # or Claude Haiku on Amazon Bedrock
+#   tail -f alerts.ndjson
+include:
+  - ../../packs/core/judge.yaml
+  - ../../packs/macos/judge.yaml
+
+inference:
+  judge:
+    prompt_file: ../../packs/macos/judge.md

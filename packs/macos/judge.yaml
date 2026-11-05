@@ -1,51 +1,16 @@
-# macos, judge: a model on this machine reads each record ingest.yaml's plugin
-# lets through, as it arrives, and a plugin keeps what it flagged. No
-# logs.sqlite, no baseline: what the model should know of this Mac's normal is
-# in judge.md. This file is the whole pipeline; run it alone.
-#
-#   tangent plugin compile --config judge.yaml       (or: tangent plugin fetch --config judge.yaml)
-#   tangent run --config judge.yaml
-#   sudo eslogger exec fork exit open close create rename unlink btm_launch_item_add tcc_modify | nc -U es.sock
-#   tail -f flagged.ndjson
-#
-# Any OpenAI-compatible server works, local or not (README.md):
-#   mlx_lm.server --model mlx-community/GLM-4.7-Flash-4bit --port 8080
-include:
-  - ingest.yaml
-
+# macos, judge: how the judge writes a Mac's records as logfmt, the encoding
+# packs/core/judge.yaml sets: one program's records together, what they share
+# written once, and on every line the event, the file, the command line and
+# the groups the file is in. Include it in a judge config with
+# packs/core/judge.yaml, and make that config's `inference.judge.prompt_file`
+# this directory's judge.md: core's brief is written for a company's cloud,
+# and what is ordinary on a developer's Mac is in this one
+# (examples/macos/judge.yaml).
 inference:
   judge:
-    backend: openai                 # the protocol, not the vendor
-    url: ${JUDGE_URL:-http://localhost:8080/v1}
-    model: ${JUDGE_MODEL:-mlx-community/GLM-4.7-Flash-4bit}
-    api_key: ${JUDGE_API_KEY:-none}
-    prompt_file: judge.md           # the verdict lands on the record as `judge`
-    schema_file: ../core/judge.schema.json   # {flag}, or {flag, why}
-    batch_bytes: 12000              # ~16 records to a request: a process's burst of writes arrives together
-    concurrency: 2                  # requests in flight to a local server
-    max_tokens: 200                 # per record
-    timeout_ms: 120000
-    extra:
-      chat_template_kwargs:
-        enable_thinking: false      # answer in seconds, not minutes
-
-plugins:
-  flagged:                          # keeps judge.flag == true, and records the judge could not read
-    module_type: rust
-    path: ../../examples/inference-local/flagged
-    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
-
-sinks:
-  flagged:
-    type: file
-    path: flagged.ndjson
-    compression:
-      type: none
-
-dag:
-  - from: { kind: plugin, name: macos }
-    to: [{ kind: inference, name: judge }]
-  - from: { kind: inference, name: judge }
-    to: [{ kind: plugin, name: flagged }]
-  - from: { kind: plugin, name: flagged }
-    to: [{ kind: sink, name: flagged }]
+    encoding:
+      sources:
+        macos:
+          principal: [_norm.actor]
+          time: [ts]
+          keep: [event, file, access, from, modified, detail, exec.args, exec.cwd, exec.script, exec.env, parents, process.pid, process.ppid, process.tty, _facts.credentials, _facts.agent_settings, _facts.agent_instructions, _facts.agent_mcp, _facts.agent_state, _facts.agent_extensions, _facts.persistence, _facts.agent_env, _facts.scratch_program, _facts.unsigned, _facts.rename_over]

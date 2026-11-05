@@ -1,0 +1,25 @@
+# macos, ingest: this Mac's eslogger events through packs/macos into
+# logs.sqlite, the judge's queue, the lake, and each program's history in
+# state.sqlite. judge.yaml reads them back; nothing here waits on a model.
+#
+#   tangent plugin compile --config ingest.yaml
+#   tangent run --config ingest.yaml &
+#   sudo eslogger exec fork exit open close create rename unlink btm_launch_item_add tcc_modify \
+#     | nc -U es.sock
+#
+# eslogger needs root, and the terminal it runs in Full Disk Access (System
+# Settings, Privacy & Security), restarted after the grant. It writes to
+# stdout only, so nc joins it to the socket: root writes it, you own it, and
+# nothing listens on a port.
+include:
+  - ../../packs/core/ingest.yaml              # the tables, logs.sqlite, the lake, baseline, the runtime
+  - ../../packs/macos/ingest.yaml             # plugin macos
+
+sources:
+  es:
+    type: socket
+    socket_path: es.sock
+
+dag:
+  - from: { kind: source, name: es }
+    to: [{ kind: plugin, name: macos }]

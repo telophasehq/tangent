@@ -10,6 +10,3 @@ __pycache__/
 state.sqlite*
 out.ndjson
 src/bindings.rs
-*.sock
-flagged.ndjson
-runs/

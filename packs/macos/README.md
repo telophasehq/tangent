@@ -6,27 +6,24 @@ describes, where a package script plants a hook in the agent's settings,
 poisons its instructions, adds an MCP server, reads its transcripts, or starts
 it with its API traffic pointed elsewhere. The telemetry is `eslogger`,
 Apple's Endpoint Security command-line tool, already on every Mac. The pack
-is one plugin and a judge: nothing is stored, a model reads each event the
-plugin lets through, and a file holds what it flagged.
+is one plugin, `macos`, and it goes where every pack's plugin goes: into
+[core](../core)'s queue, `logs.sqlite`, its lake, and each program's
+baseline, and core's judge reads a program's records back together with
+what it did before. [examples/macos](/examples/macos) runs it:
 
 ```bash
-cd packs/macos
-tangent plugin compile --config judge.yaml      # or fetch: the release's components, attested
-tangent run --config judge.yaml &               # ingest.yaml included: socket, plugin, judge, flagged.ndjson
+cd examples/macos
+tangent plugin compile --config ingest.yaml && tangent plugin compile --config judge.yaml
+tangent run --config ingest.yaml &
 sudo eslogger exec fork exit open close create rename unlink btm_launch_item_add tcc_modify | nc -U es.sock
-tail -f flagged.ndjson
+tangent run --config judge-haiku.yaml           # or judge.yaml: a local model
+tail -f alerts.ndjson
 ```
 
 `eslogger` needs root, and the terminal it runs in needs Full Disk Access
 (System Settings → Privacy & Security), restarted after the grant. It writes
 to stdout only, and tangent reads sockets, so `nc -U` joins them: root writes
-the socket, tangent owns it, and nothing listens on a port. The judge is any
-OpenAI-compatible server, `JUDGE_URL` and `JUDGE_MODEL` naming it; the default
-is a local one (`mlx_lm.server --model mlx-community/GLM-4.7-Flash-4bit --port
-8080`), so the records, which carry process arguments, stay on the machine.
-`judge-haiku.yaml` is the same pipeline with Claude Haiku on Amazon Bedrock
-reading the records, through the AWS credential chain (`AWS_PROFILE`, or the
-profile in the file, after `aws sso login`).
+the socket, tangent owns it, and nothing listens on a port.
 
 ## What the plugin keeps
 
@@ -60,23 +57,31 @@ The groups are the catalog's, plus credentials and what runs on its own
 Each record carries the program that acted (`process`: path, signer,
 platform, uid, tty, the responsible app) and `parents`, the programs above it
 nearest first, from a process tree the plugin keeps in state from `fork`,
-`exec` and `exit` (`runtime.workers: 1`, so events arrive in order; the state
-is in memory, there is nothing to keep). `_norm.actor` is the program, for
-an exec the one that started; `_norm.target` the file; `_facts` adds `agent_env`,
+`exec` and `exit` (core's one worker keeps the events in order; an entry
+lasts a day). `_norm.actor` is the program, for an exec the one that
+started: a vendor-signed program's signing identity, so Claude Code is one
+actor across updates, else its path (Apple's command-line tools share one
+identity, and an ad hoc signature is the binary's hash). `_norm.target` is
+the file; `_facts` adds `agent_env`,
 `scratch_program` (runs from /tmp, a cache, Downloads or node_modules),
 `unsigned` and `rename_over`. About 700 bytes a record.
 
 ## The judge
 
-`judge.yaml` reads each record with the model as it arrives, about sixteen to
-a request, and `flagged` keeps what it flagged, and what it could not read.
-`judge.md` tells the model what the catalog's techniques look like in these
+Core's: a program's latest forty records from `logs.sqlite`, the ones already
+judged marked `_context`, with its `_baseline` from ingest's `state.sqlite`.
+The baseline reads these records as `macos` ([../core/baseline](../core/baseline)):
+the verb is the event and the group of its file (`write agent_mcp`), the
+resources the file and, for an exec, the program that started it, so it can
+say a program wrote an agent's MCP config, or was started by `node`, for the
+first time. `judge.yaml` here is how the records are written as logfmt; the
+brief is `judge.md`, which a judge config names in place of core's
+(examples/macos/judge.yaml does), since core's is written for a company's
+cloud. It tells the model what the catalog's techniques look like in these
 records and what an agent does to its own files in the ordinary course: its
 settings and transcripts, `~/.claude.json` written as a tmp file and renamed
 over, a marketplace refresh that writes hundreds of plugin files in a minute,
-`git` and the keychain as its children. There is no baseline: what the model
-should know of normal is in that brief, so when this Mac's normal differs,
-edit the brief.
+`git` and the keychain as its children, npm's `node` reading `~/.npmrc`.
 
 ## The cases
 

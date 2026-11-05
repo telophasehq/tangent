@@ -1,0 +1,7 @@
+plugins/
+state.sqlite*
+logs.sqlite*
+alerts.ndjson
+verdicts.ndjson
+lake/
+*.sock
