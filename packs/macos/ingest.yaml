@@ -4,8 +4,13 @@
 # instructions, MCP config, transcripts and plugins, on credentials and on
 # what runs at login; the rest dropped. Include it in an ingest config with
 # packs/core/ingest.yaml and route a socket source to plugin macos:
-# examples/macos has the lines. The plugin builds the process tree in order
-# from fork, exec and exit, which core's one worker keeps.
+# examples/macos has the lines.
+runtime:
+  # The plugin builds the process tree from fork, exec and exit, in order.
+  # Without a `partition` (core allows none) the workers take records in
+  # turn, so one process's fork and exec would race: one worker keeps them
+  # in order, for the whole ingest this is included in.
+  workers: 1
 plugins:
   macos:
     module_type: rust

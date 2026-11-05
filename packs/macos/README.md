@@ -60,8 +60,9 @@ node, Python, bun or a shell running a file the script it runs as `name`)
 and `parents`, the programs above it nearest first, each by its name (else
 its path) and the arguments it was given after it, cut at 80 bytes, so
 the npm above a package's script says `test` or `install`; from a process
-tree the plugin keeps in state from `fork`, `exec` and `exit` (core's one
-worker keeps the events in order; an entry lasts a day). An exec also
+tree the plugin keeps in state from `fork`, `exec` and `exit` (the pack
+runs ingest on one worker, which keeps the events in order; an entry lasts
+a day). An exec also
 carries `started_by`, the nearest parent's name alone, which the baseline
 counts as a resource; the judge reads `parents`. `_norm.actor` is the program, for an exec the one that
 started: an interpreter's `name`, the script it runs, so npm and a package's
