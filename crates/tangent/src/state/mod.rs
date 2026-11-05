@@ -10,6 +10,13 @@
 //! distributed backend (DynamoDB: `ns#partition` as the hash key, `key` as
 //! the range key, `incr` as an atomic ADD, TTL as the item TTL) fits the same
 //! interface.
+//!
+//! A backend's one primitive for keys is a transaction (`begin`): its calls
+//! see each other's writes, land together on `commit` or not at all, and no
+//! other call on the store runs until it ends. A plain `get`, `set`, `del`,
+//! `incr` or `range` is a transaction of that one call, so each is atomic; a
+//! read, then a write that depends on it, is not, unless one transaction
+//! holds both.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -57,7 +64,17 @@ pub struct Count {
 
 #[async_trait]
 pub trait StateStore: Send + Sync {
-    async fn get(&self, ns: &str, partition: &str, key: &str) -> Result<Option<StateValue>>;
+    /// A transaction, once every call and transaction before it has ended.
+    async fn begin(&self) -> Result<Box<dyn Txn>>;
+
+    // A call on one key or key range is a transaction of that one call.
+
+    async fn get(&self, ns: &str, partition: &str, key: &str) -> Result<Option<StateValue>> {
+        let mut t = self.begin().await?;
+        let v = t.get(ns, partition, key).await?;
+        t.commit().await?;
+        Ok(v)
+    }
 
     /// `ttl_ms`: None takes the configured default; Some(0) never expires.
     async fn set(
@@ -67,9 +84,18 @@ pub trait StateStore: Send + Sync {
         key: &str,
         value: &StateValue,
         ttl_ms: Option<u64>,
-    ) -> Result<()>;
+    ) -> Result<()> {
+        let mut t = self.begin().await?;
+        t.set(ns, partition, key, value, ttl_ms).await?;
+        t.commit().await
+    }
 
-    async fn del(&self, ns: &str, partition: &str, key: &str) -> Result<bool>;
+    async fn del(&self, ns: &str, partition: &str, key: &str) -> Result<bool> {
+        let mut t = self.begin().await?;
+        let gone = t.del(ns, partition, key).await?;
+        t.commit().await?;
+        Ok(gone)
+    }
 
     /// Add `by` to an integer entry (missing counts as 0); returns the new value.
     async fn incr(
@@ -79,16 +105,12 @@ pub trait StateStore: Send + Sync {
         key: &str,
         by: i64,
         ttl_ms: Option<u64>,
-    ) -> Result<i64>;
-
-    /// Live entries, filtered by namespace, partition and key prefix when given.
-    async fn scan(
-        &self,
-        ns: Option<&str>,
-        partition: Option<&str>,
-        key_prefix: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>>;
+    ) -> Result<i64> {
+        let mut t = self.begin().await?;
+        let n = t.incr(ns, partition, key, by, ttl_ms).await?;
+        t.commit().await?;
+        Ok(n)
+    }
 
     /// Live entries of one (namespace, partition) with `from <= key < to`, in
     /// key order, at most `limit`: the slice a plugin reads a scope's history
@@ -100,6 +122,20 @@ pub trait StateStore: Send + Sync {
         from: &str,
         to: &str,
         limit: usize,
+    ) -> Result<Vec<Entry>> {
+        let mut t = self.begin().await?;
+        let rows = t.range(ns, partition, from, to, limit).await?;
+        t.commit().await?;
+        Ok(rows)
+    }
+
+    /// Live entries, filtered by namespace, partition and key prefix when given.
+    async fn scan(
+        &self,
+        ns: Option<&str>,
+        partition: Option<&str>,
+        key_prefix: &str,
+        limit: usize,
     ) -> Result<Vec<Entry>>;
 
     /// Key counts per (namespace, partition), filtered by namespace when given.
@@ -110,6 +146,45 @@ pub trait StateStore: Send + Sync {
 
     /// Drop everything.
     async fn reset(&self) -> Result<()>;
+}
+
+/// Calls that see each other's writes and land together: `commit` keeps
+/// them, dropping the transaction undoes them. No other call on its store
+/// runs while it is open.
+#[async_trait]
+pub trait Txn: Send {
+    async fn get(&mut self, ns: &str, partition: &str, key: &str) -> Result<Option<StateValue>>;
+
+    async fn set(
+        &mut self,
+        ns: &str,
+        partition: &str,
+        key: &str,
+        value: &StateValue,
+        ttl_ms: Option<u64>,
+    ) -> Result<()>;
+
+    async fn del(&mut self, ns: &str, partition: &str, key: &str) -> Result<bool>;
+
+    async fn incr(
+        &mut self,
+        ns: &str,
+        partition: &str,
+        key: &str,
+        by: i64,
+        ttl_ms: Option<u64>,
+    ) -> Result<i64>;
+
+    async fn range(
+        &mut self,
+        ns: &str,
+        partition: &str,
+        from: &str,
+        to: &str,
+        limit: usize,
+    ) -> Result<Vec<Entry>>;
+
+    async fn commit(self: Box<Self>) -> Result<()>;
 }
 
 /// Resolve a write's TTL against the config: None -> default, 0 -> never,
@@ -351,5 +426,87 @@ pub(crate) mod conformance {
         assert!(!store.del("ns", "p1", "n").await.unwrap());
         store.reset().await.unwrap();
         assert!(store.scan(None, None, "", 10).await.unwrap().is_empty());
+    }
+
+    /// A transaction's writes are its own until `commit`, gone if it is
+    /// dropped, and many at once lose no read-then-write.
+    pub async fn transactions(store: Arc<dyn StateStore>) {
+        store
+            .set("ns", "", "kept", &StateValue::Int(1), None)
+            .await
+            .unwrap();
+        let mut tx = store.begin().await.unwrap();
+        tx.set("ns", "", "a", &StateValue::Int(1), None)
+            .await
+            .unwrap();
+        assert_eq!(tx.incr("ns", "", "n", 2, None).await.unwrap(), 2);
+        assert!(tx.del("ns", "", "kept").await.unwrap());
+        assert_eq!(
+            tx.get("ns", "", "a").await.unwrap(),
+            Some(StateValue::Int(1)),
+            "its own writes"
+        );
+        assert_eq!(tx.get("ns", "", "kept").await.unwrap(), None);
+        drop(tx);
+        assert_eq!(store.get("ns", "", "a").await.unwrap(), None, "undone");
+        assert_eq!(store.get("ns", "", "n").await.unwrap(), None);
+        assert_eq!(
+            store.get("ns", "", "kept").await.unwrap(),
+            Some(StateValue::Int(1)),
+            "a delete undone"
+        );
+
+        let mut tx = store.begin().await.unwrap();
+        tx.set("ns", "p", "ev:2", &StateValue::Int(2), None)
+            .await
+            .unwrap();
+        tx.set("ns", "p", "ev:1", &StateValue::Int(1), None)
+            .await
+            .unwrap();
+        let keys: Vec<String> = tx
+            .range("ns", "p", "ev:", "ev:~", 10)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.key)
+            .collect();
+        assert_eq!(keys, ["ev:1", "ev:2"]);
+        // Another call waits for the transaction to end.
+        let other = {
+            let store = Arc::clone(&store);
+            tokio::spawn(async move { store.get("ns", "p", "ev:1").await.unwrap() })
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(!other.is_finished(), "a call waits on an open transaction");
+        tx.commit().await.unwrap();
+        assert_eq!(other.await.unwrap(), Some(StateValue::Int(1)), "kept");
+
+        // Read, then write what was read plus one: eight at a time, none lost.
+        let tasks: Vec<_> = (0..8)
+            .map(|_| {
+                let store = Arc::clone(&store);
+                tokio::spawn(async move {
+                    for _ in 0..25 {
+                        let mut tx = store.begin().await.unwrap();
+                        let n = match tx.get("ns", "", "count").await.unwrap() {
+                            Some(StateValue::Int(n)) => n,
+                            _ => 0,
+                        };
+                        tokio::task::yield_now().await;
+                        tx.set("ns", "", "count", &StateValue::Int(n + 1), None)
+                            .await
+                            .unwrap();
+                        tx.commit().await.unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in tasks {
+            t.await.unwrap();
+        }
+        assert_eq!(
+            store.get("ns", "", "count").await.unwrap(),
+            Some(StateValue::Int(200))
+        );
     }
 }
