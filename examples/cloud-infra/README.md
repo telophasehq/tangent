@@ -100,6 +100,56 @@ naming its shape and a `ts`: `gha_ci` and `runner_egress` for the
 of the four above. Every pack sees the stream and takes its own; a record no
 pack takes goes no further, with a warning.
 
+## Replay
+
+What the judge would have flagged in a past range of CloudTrail:
+
+```bash
+make replay FROM=2026-10-01 TO=2026-10-02
+```
+
+`tangent replay` runs `ingest.yaml` and `judge.yaml` in one process: the
+range goes into ingest an hour at a time, and the judge reads it as it goes.
+It's a sweep of the range for bad behavior, not a re-run of what `make run`
+flagged then: an actor's batch can hold more of its records than live would
+have sent together, and `_baseline` still holds only what came before each
+batch. Each range gets a directory of its own, `replays/<from>_<to>/`, with
+its own `logs.sqlite`, `state.sqlite`, `verdicts.ndjson` and
+`alerts.ndjson`; a range is refused while its directory has a
+`state.sqlite`.
+
+Only CloudTrail replays so far. It reads the account's Event history with
+the live source's `AWS_PROFILE`, so it needs no trail, queue or bucket, only
+`cloudtrail:LookupEvents` ([aws](/packs/aws#replay)). Event history keeps
+90 days of management events in each region the account has enabled, and no
+data events; the range ends when the replay starts. The other sources have no
+past replay reads yet and are left out, as is Slack, each with a warning.
+
+Before the first model call it prints what each source's range holds and
+about how many records the judge will read, here for a range that runs
+past when the replay started:
+
+```
+replay 2026-11-04T20:30Z to 2026-11-05T00:00Z
+  cloudtrail: Event history to 2026-11-04T21:16:33Z in 17 of 34 regions (16 not enabled, 1 unreachable), management events only; about 7,454 records for the judge
+```
+
+At the end it prints how many records each source replayed and how many each
+file got; `alerts.ndjson` has what flagged, and what the judge could not answer.
+
+- **Cost**: a CloudTrail record is about 2 KB, so by the
+  [rule](/README.md#volume-and-cost) about $0.04 per 1,000 on Claude Haiku
+  5.5, $4 for 100,000; two days of a real trail came to $0.039 per 1,000.
+  A local model, the default, costs only the time.
+- **Time**: LookupEvents allows two calls a second per region and returns
+  50 events a call, so an hour with 5,000 events in one region takes about
+  50 seconds to read. Judging takes longer:
+  an actor's requests go one after another, so the busiest actor sets the
+  pace, and a day of a busy machine account (about 200,000 records) took 4 to
+  6 hours on Haiku 5.5. Start with a day.
+
+Ctrl-C stops it, and the summary still prints.
+
 ## The profile
 
 [profile/profile.yaml](profile/profile.yaml) is every fact about your company
@@ -122,4 +172,5 @@ The packs' fixtures were cut from eight of the cases; `make test` runs them, nee
 ingest.yaml           core and the five packs, the sources and their edges, the profile
 judge.yaml            core's judge and the packs' logfmt rows
 profile/profile.yaml  your company (edit this)
+replays/              a directory per `make replay` range (git ignores it)
 ```
