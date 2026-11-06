@@ -90,10 +90,7 @@ async fn poll_package(
 ) -> Result<()> {
     let url = format!("https://registry.npmjs.org/{}", package);
 
-    let mut req = client.get(&url);
-    if let Some(token) = &cfg.token {
-        req = req.bearer_auth(token.expose_secret());
-    }
+    let req = authorize(client.get(&url), cfg);
 
     let resp = req.send().await.context("request to npm registry failed")?;
     if !resp.status().is_success() {
@@ -204,10 +201,7 @@ async fn list_org_packages(
 ) -> Result<Vec<String>> {
     let url = format!("https://registry.npmjs.org/-/user/{}/package", org);
 
-    let mut req = client.get(&url);
-    if let Some(token) = &cfg.token {
-        req = req.bearer_auth(token.expose_secret());
-    }
+    let req = authorize(client.get(&url), cfg);
 
     let resp = req.send().await.context("request to npm registry failed")?;
     if !resp.status().is_success() {
@@ -227,6 +221,16 @@ async fn list_org_packages(
         serde_json::from_slice(&bytes).context("failed to parse npm package doc")?;
 
     Ok(packages.keys().map(|x| x.to_owned()).collect())
+}
+
+/// `req` with the token as a bearer, or as it is without a token. An empty
+/// token is no token: `token: "${NPM_TOKEN}"` with NPM_TOKEN unset is "",
+/// and the registry answers `Bearer ` with 401 on an org listing.
+fn authorize(req: reqwest::RequestBuilder, cfg: &NpmRegistryConfig) -> reqwest::RequestBuilder {
+    match cfg.token.as_ref().map(|t| t.expose_secret()) {
+        Some(token) if !token.is_empty() => req.bearer_auth(token),
+        _ => req,
+    }
 }
 
 const RECENT_WINDOW_MINUTES: i64 = 500;
@@ -287,5 +291,28 @@ mod tests {
         let (frames, fresh) = unsent_versions(&second, "left-pad", cutoff, &sent);
         assert_eq!(versions_of(&frames), ["1.2.0"]);
         assert_eq!(fresh, [("left-pad@1.2.0".to_string(), now)]);
+    }
+
+    #[test]
+    fn empty_token_sends_no_authorization_header() {
+        let authorization = |token: Option<&str>| {
+            let cfg = NpmRegistryConfig {
+                packages: Some(vec!["left-pad".to_string()]),
+                orgs: None,
+                interval_secs: 5,
+                token: token.map(secrecy::SecretString::from),
+            };
+            let req = reqwest::Client::new().get("https://registry.npmjs.org/left-pad");
+            authorize(req, &cfg)
+                .build()
+                .unwrap()
+                .headers()
+                .get(reqwest::header::AUTHORIZATION)
+                .cloned()
+        };
+
+        assert_eq!(authorization(None), None);
+        assert_eq!(authorization(Some("")), None);
+        assert_eq!(authorization(Some("npm_abc")).unwrap(), "Bearer npm_abc");
     }
 }
