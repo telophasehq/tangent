@@ -28,6 +28,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::dag::DagRuntime;
 use crate::router::Router;
+use crate::sources::cloudtrail_history;
 use crate::sources::decoding::chunk_ndjson;
 use crate::sources::poll::frame;
 use crate::wait_for_shutdown_signal;
@@ -60,7 +61,6 @@ pub trait Past: Send {
 }
 
 /// The past of the source `name`, when replay can read its kind's.
-#[allow(clippy::match_single_binding, unused_variables)] // a kind with a past gets an arm
 async fn past(
     name: &str,
     src: &SourceConfig,
@@ -68,6 +68,9 @@ async fn past(
     to: DateTime<Utc>,
 ) -> Result<Option<Box<dyn Past>>> {
     match src {
+        SourceConfig::Cloudtrail(c) => Ok(Some(Box::new(
+            cloudtrail_history::past(name, c, from, to).await?,
+        ))),
         _ => Ok(None),
     }
 }
@@ -107,13 +110,13 @@ pub async fn replay(opts: ReplayOptions) -> Result<()> {
                 cfg.sources.insert(name, src);
             }
             None => {
-                tracing::warn!(source = %name, "replay cannot read this source's past; it is left out")
+                tracing::warn!(source = %name, "replay reads only cloudtrail sources' past; this source is left out")
             }
         }
     }
     ensure!(
         !sources.is_empty(),
-        "no source in {} has a past replay can read",
+        "replay reads a cloudtrail source's Event history, and {} has no cloudtrail source",
         opts.config.display()
     );
     sweep(cfg, &opts.config, &opts.state_dir, sources, from, to).await
@@ -526,6 +529,22 @@ dag:
             "a live pipeline's"
         );
         assert!(state.path().join("state.sqlite").is_file());
+    }
+
+    /// A config with no source replay can read is refused, naming the kind
+    /// it can.
+    #[tokio::test]
+    async fn a_config_without_a_cloudtrail_source_is_told_what_replay_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let e = replay(ReplayOptions {
+            config: pipeline(dir.path()),
+            from: "1d".into(),
+            to: None,
+            state_dir: dir.path().join("replay"),
+        })
+        .await
+        .unwrap_err();
+        assert!(e.to_string().contains("has no cloudtrail source"), "{e}");
     }
 
     /// A rolling_file sink is left out: the live pipeline's open WAL file
