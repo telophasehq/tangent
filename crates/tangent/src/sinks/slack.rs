@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
@@ -18,7 +18,9 @@ pub struct SlackSink {
 
 impl SlackSink {
     pub fn new(cfg: &SlackConfig) -> Result<Arc<Self>> {
-        if !cfg.webhook_url.expose_secret().starts_with("https://") {
+        let url = reqwest::Url::parse(cfg.webhook_url.expose_secret())
+            .map_err(|e| anyhow!("slack webhook_url is not a url: {e}"))?;
+        if url.scheme() != "https" {
             bail!("slack webhook_url must be https");
         }
         let client = reqwest::Client::builder()
@@ -225,5 +227,16 @@ mod tests {
             text: "t".into(),
         };
         assert!(SlackSink::new(&cfg).is_err());
+    }
+
+    #[test]
+    fn a_webhook_url_that_does_not_parse_is_refused() {
+        let cfg = SlackConfig {
+            webhook_url: "https://hooks.slack.com:99999/x".into(),
+            text: "t".into(),
+        };
+        let err = SlackSink::new(&cfg).err().expect("refused").to_string();
+        // the url is a secret: the error does not show it
+        assert!(!err.contains("hooks.slack.com"), "{err}");
     }
 }
