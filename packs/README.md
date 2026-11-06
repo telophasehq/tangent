@@ -20,6 +20,42 @@ says about it in `_facts`. How to use them is in the main
 A `source` value belongs to one pack: two packs taking it would store each
 record twice.
 
+## The lake
+
+No pack defines a sink: where a pipeline keeps its records is its config's
+to say. The examples keep every record in `lake`, and route each pack's
+plugin to it:
+
+```yaml
+sinks:
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }
+```
+
+Every record, kept, as Parquet files in
+`lake/logs/<year>/<month>/<day>/<hour>/`, the hour of the record's own `ts`
+in UTC, whenever it arrives, a replay's too, each record whole in `record` and
+`ts`, `source` and `_norm`'s org, actor, kind and ip as columns, for
+DataFusion or DuckDB to read. Kind and ip are empty when the log already
+holds them ([the record](enrich#the-record)), which is nearly always, so a
+query reads them from `record` (CloudTrail's `eventName`, Okta's
+`client.ipAddress`). A file is sealed an hour after it opened, and
+only sealed files are there; a record that arrives after its hour's file
+was sealed adds another file to that hour. Delete old hours to trim it.
+
+## Tests
+
 Each pack's `tests/` holds its fixtures and the tables they were written
 against: `profile.yaml`, the company; `addresses.yaml`, GeoLite2's answers for
 their addresses; `networks.csv`, those addresses' hosting, Tor and VPN labels.
