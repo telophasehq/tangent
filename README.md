@@ -2,7 +2,7 @@
   <img src="https://github.com/user-attachments/assets/7da02584-0a4e-4e41-af6d-61cb081029c4" alt="Tangent logo" height=170>
 </p>
 <h1 align="center">Tangent</h1>
-<p align="center"><em>A model reads every audit log line beside what its actor did before, and flags what a person should look at. For a 50-person company's AWS, Okta, GitHub and Google Workspace logs: about $90–820 a month on Claude Haiku 5.5, or free on your own machine.</em></p>
+<p align="center"><em>A model reads every audit log line beside what its actor did before, and flags what a person should look at. For a 50-person company's AWS, Okta, GitHub and Google Workspace logs: about $3–27 a day on Claude Haiku 5.5, or free on your own machine.</em></p>
 
 <p align="center">
   <a href="https://github.com/EthanBlackburn/tangent/actions">
@@ -165,9 +165,8 @@ each active about eight hours a day:
 | [okta](packs/okta) | 1k–5k events, ~2 KB | 5k–9k logs | $0.20–0.35 |
 | [github](packs/github) | 1k–10k events, ~0.3 KB | 5k–14k logs | $0.09–0.26 |
 
-AWS, Okta, GitHub and Google Workspace together come to $3.10–27 a day,
-about $90–820 a month. A person costs about a cent a day or less in each
-source that sees them. The app row is optional, and priced by traffic: send
+AWS, Okta, GitHub and Google Workspace together come to $3.10–27 a day. A
+person costs about a cent a day or less in each source that sees them. The app row is optional, and priced by traffic: send
 your product's audit log, not its request log, since that row is the one
 that grows past a hundred dollars. It gets expensive where
 the volume is machines: a trail that also logs data events (S3 objects,
