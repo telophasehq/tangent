@@ -3,7 +3,9 @@
 # tests/input.json, against the tables its ingest.yaml names for the test.
 # Run after the plugin or its fixtures change, read the diff, commit it if it
 # is what you meant. Keep two records or more in tests/input.json: a test of
-# one record compares as an object, not a list.
+# one record compares as an object, not a list. Keys are written sorted, as
+# the committed fixtures are and as the test ignores their order, so the diff
+# is what changed and not the order the plugin writes them in.
 #
 # expected.json is written only when the test ran through: it may fail for
 # its output differing from expected.json (that is why this runs), but any
@@ -36,7 +38,7 @@ n = len(given) if isinstance(given, list) else 1
 rows = [json.loads(l) for l in open("test_out.ndjson") if l.strip()] if os.path.exists("test_out.ndjson") else []
 if len(rows) != n:
     sys.exit(f"{len(rows)} records out of the {n} in tests/input.json; tests/expected.json is as it was")
-json.dump(rows, open("tests/expected.json", "w"), indent=1)
+json.dump(rows, open("tests/expected.json", "w"), indent=1, sort_keys=True)
 print(f"tests/expected.json: {len(rows)} records")
 PY
 echo "now: git diff tests/expected.json"

@@ -1,9 +1,10 @@
-
 target/
+.tangent/
 *.wasm
 .DS_Store
-__pycache__/
-*.pyc
-**/test_out.json
+**/test_out.ndjson
 **/.test.yaml
 **/plugins/
+state.sqlite*
+# written by `tangent plugin compile` from main.go's output type, and removed after the build
+json_generated.go

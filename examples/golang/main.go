@@ -35,7 +35,9 @@ func ExampleMapper(lv tangent_sdk.Log) (ExampleOutput, error) {
 		out.Msg = *msg
 	}
 
-	// get dot path
+	// A path is first read as one key: the input's "msg.level" is a key
+	// with a dot in it. Without such a key it walks into objects
+	// (source.name below).
 	lvl := lv.GetString("msg.level")
 	if lvl != nil {
 		out.Level = *lvl

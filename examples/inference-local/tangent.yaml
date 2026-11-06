@@ -2,13 +2,13 @@
 #
 #   tangent plugin compile --config tangent.yaml
 #   tangent run --config tangent.yaml
-#   nc localhost 9000 < events.ndjson
+#   nc -w 1 localhost 9000 < events.ndjson
 #   cat flagged.ndjson
 #
 # Any OpenAI-compatible local server works. One of:
 #   mlx_lm.server --model mlx-community/GLM-4.7-Flash-4bit --port 8080     # Apple silicon
 #   llama-server -hf unsloth/GLM-4.7-Flash-GGUF:Q4_K_M --port 8080         # llama.cpp, any OS
-#   ollama serve   (then: model: gpt-oss:20b, url: http://localhost:11434/v1)
+#   ollama serve, then in another shell ollama pull gpt-oss:20b  (and set model: gpt-oss:20b, url: http://localhost:11434/v1)
 runtime:
   workers: 1
   plugins_path: plugins/
@@ -28,6 +28,7 @@ inference:
     concurrency: 8                  # mlx_lm.server batches the decodes of requests in flight
     max_tokens: 300                 # per record; a verdict is ~50 tokens, this bounds a runaway reply
     timeout_ms: 120000              # time for a small local model to write ~20 verdicts
+    temperature: 0                  # the same verdict for the same record, run after run
     extra:
       chat_template_kwargs:
         enable_thinking: false      # mlx_lm and llama-server: answer in seconds, not minutes

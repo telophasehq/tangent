@@ -1,5 +1,6 @@
 
 target/
+.tangent/wit/
 *.wasm
 .DS_Store
 __pycache__/
@@ -7,5 +8,6 @@ __pycache__/
 **/test_out.ndjson
 **/.test.yaml
 **/plugins/
-cache.sqlite*
+json_generated.go
+out.ndjson
 state.sqlite*

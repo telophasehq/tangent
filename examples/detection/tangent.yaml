@@ -12,11 +12,14 @@ sources:
     type: tcp
     bind_address: 0.0.0.0:9000
 sinks:
-  blackhole:
-    type: blackhole
+  out:
+    type: file
+    path: out.ndjson
+    compression:
+      type: none
 dag:
   - from: network_input
     to: [detection]
 
   - from: detection
-    to: [blackhole]
+    to: [out]

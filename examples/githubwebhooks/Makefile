@@ -8,4 +8,4 @@ test: build
 run: build
 	tangent run --config tangent.yaml
 
-.PHONY: build test
+.PHONY: build test run

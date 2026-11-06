@@ -1,26 +1,68 @@
 [
   {
-    "msg": "my log",
-    "msg.level": "info",
-    "seen": 5,
-    "duration": 6.3,
-    "tags": [
-      "tag1"
-    ],
-    "source": {
-      "name": "myservice"
+    "kind": "npm_package_version",
+    "npm": {
+      "name": "@anthropic-ai/claude-code",
+      "version": "2.1.319",
+      "dist": {
+        "shasum": "f7a75c88de713be16d7fa7b367761db779a71e85",
+        "tarball": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.319.tgz"
+      },
+      "scripts": {
+        "postinstall": "node install.cjs"
+      },
+      "_npmUser": {
+        "name": "GitHub Actions",
+        "email": "npm-oidc-no-reply@github.com",
+        "trustedPublisher": {
+          "id": "github",
+          "oidcConfigId": "df15d230-bb3e-43de-b950-7df4011b9a31"
+        }
+      }
     }
   },
   {
-    "msg": "my log",
-    "msg.level": "info",
-    "seen": 5,
-    "duration": 6.3,
-    "tags": [
-      "tag1"
-    ],
-    "source": {
-      "name": "myservice"
+    "kind": "npm_package_version",
+    "npm": {
+      "name": "acme-color",
+      "version": "4.1.2",
+      "dist": {
+        "shasum": "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c",
+        "tarball": "https://registry.npmjs.org/acme-color/-/acme-color-4.1.2.tgz"
+      },
+      "scripts": {
+        "test": "node test.js",
+        "postinstall": "node bundle.js"
+      },
+      "_npmUser": {
+        "name": "acme-maintainer",
+        "email": "maintainer@acme.example"
+      }
     }
+  },
+  {
+    "kind": "npm_package_version",
+    "npm": {
+      "name": "@cloudflare/workers-types",
+      "version": "5.20261106.1",
+      "dist": {
+        "shasum": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432",
+        "tarball": "https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261106.1.tgz",
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/@cloudflare%2fworkers-types@5.20261106.1",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        }
+      },
+      "_npmUser": {
+        "name": "GitHub Actions",
+        "email": "npm-oidc-no-reply@github.com"
+      }
+    }
+  },
+  {
+    "kind": "github_webhook",
+    "message": "npm notice name: acme-color"
   }
 ]

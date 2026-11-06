@@ -1,3 +1,9 @@
+# Add each record's country from ipinfo.io, looked up over HTTP by a Go plugin.
+#
+#   tangent plugin compile --config tangent.yaml
+#   tangent plugin test --config tangent.yaml --enable-http   # the test calls ipinfo.io
+#   tangent run --config tangent.yaml                         # listens on :9000, writes out.ndjson
+#   jq -c '.[]' tests/input.json | nc -w 1 127.0.0.1 9000     # NDJSON: one record per line
 runtime:
   plugins_path: "plugins/"
 plugins:
@@ -12,11 +18,14 @@ sources:
     type: tcp
     bind_address: 0.0.0.0:9000
 sinks:
-  blackhole:
-    type: blackhole
+  out:
+    type: file
+    path: out.ndjson
+    compression:
+      type: none
 dag:
   - from: network_input
     to: [enrichment]
 
   - from: enrichment
-    to: [blackhole]
+    to: [out]

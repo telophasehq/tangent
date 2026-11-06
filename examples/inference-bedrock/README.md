@@ -38,14 +38,30 @@ ECS or EC2, the task or instance role. Two things that bite:
   even while the CLI still works on its cached access token. `aws sso login`
   again fixes both.
 
+A request that fails is retried twice, then each of its records goes on with
+`{"error": ...}` as `judge` and tangent logs `inference failed`; the plugin
+keeps those, so a credential problem shows up in `flagged.ndjson` as every
+record. When the request cannot be signed or sent (no credentials, no route
+to Bedrock) the error is the same generic `HttpError: Http client error: An
+unexpected error occurred. Verify Internet connection or AWS keys`, whichever
+it was.
+
 ## Run
 
+In this directory:
+
 ```bash
-tangent plugin compile --config tangent.yaml
+tangent plugin compile --config tangent.yaml    # builds ../inference-local/flagged into plugins/
 tangent run --config tangent.yaml
 ```
 
+In another shell:
+
 ```bash
-nc localhost 9000 < events.ndjson
+nc -w 1 localhost 9000 < events.ndjson
 cat flagged.ndjson
 ```
+
+The events and the prompt are inference-local's; what to expect is in
+[its README](../inference-local/README.md#run). The file sink appends:
+`rm flagged.ndjson` before running again.

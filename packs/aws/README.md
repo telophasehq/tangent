@@ -25,7 +25,7 @@ of an organization trail), or the same records sent as NDJSON.
 | `root` | `userIdentity.type` is `Root` | AWS root credentials used |
 | `world_open` | the call's parameters hold a CIDR with a `/0` prefix, every address (`0.0.0.0/0`, `::/0`, or any address before the `/0`) | opened to every address (`<cidr>`) |
 
-Each record goes to `logs` and to core's [baseline](../core#baseline) too,
+Your config routes each record to core's `lake` and [baseline](../core#baseline),
 which folds it into its actor's baseline: the APIs and resources it touched,
 its clients and addresses, sign-ins, credential changes, and who assumed each
 role session. That is what the judge's `_baseline` says of the actor.
@@ -156,9 +156,14 @@ make -C packs fixtures-aws      # expected.json again, after a change; read the 
 ```
 
 Cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) with CloudTrail
-records: `cloud/*` (root console login, CloudTrail stopped, a bucket made
+records, 20: `cloud/*` (root console login, CloudTrail stopped, a bucket made
 public, a security group opened to the world, a role assumed by a new
-principal, a key created with `*`), `data-exfil/snapshot-shared-external`,
+principal, a key created with `*`, a password change and a new key whose
+first calls come from a new host), `data-exfil/snapshot-shared-external`,
 `agents/agent-escapes-task-uses-found-credentials`, three of
-`supply-chain/`, `vendor/platform-breach-env-secrets-reused` and
-`benign/secret-rotation-after-vendor-notice`.
+`supply-chain/`, two of `identity/` (`mfa-reset-then-new-factor-new-asn`,
+`okta-new-country-then-aws`), four of `benign/`
+(`mfa-reset-then-new-factor-office`, `okta-usual-country-then-aws`,
+`password-change-new-key-usual-ip`, `secret-rotation-after-vendor-notice`),
+`prompt-injection/cli-user-agent-answers` and
+`vendor/platform-breach-env-secrets-reused`.

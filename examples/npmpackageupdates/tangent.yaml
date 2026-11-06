@@ -10,14 +10,23 @@ plugins:
 sources:
   npm_registry:
     type: npm_registry
-    orgs: ["my-npm-org"]
-    token: "${NPM_TOKEN}"
+    # Public packages need no npm account or token. These three publish most
+    # days, so a first run usually has something to show.
+    packages:
+      - "@anthropic-ai/claude-code"
+      - "@cloudflare/workers-types"
+      - "@google/gemini-cli"
+    # Each poll downloads every package's full registry document (a few MB).
+    interval_secs: 300
 sinks:
-  blackhole:
-    type: blackhole
+  alerts:
+    type: file
+    path: alerts.ndjson
+    compression:
+      type: none
 dag:
   - from: npm_registry
     to: [npmpackageupdates]
 
   - from: npmpackageupdates
-    to: [blackhole]
+    to: [alerts]

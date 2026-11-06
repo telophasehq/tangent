@@ -30,16 +30,30 @@ var selectors = []tangent_sdk.Selector{
 
 // Flags a record whose source.name has been seen before, and posts the alert
 // to Slack when SLACK_ACCESS_TOKEN is set.
+//
+// A name already in state is a repeat: one read. A name not in state may still
+// be a repeat, of a record another worker is handling at the same moment, so
+// the first sighting is decided by Incr, which is atomic: of the workers that
+// get here for one name, exactly one gets 1. A Set in its place would let both
+// count themselves first.
 func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 	var out Alert
 
 	serviceName := lv.GetString("source.name")
-	seen, ok, err := state.Get(*serviceName)
+	key := "seen:" + *serviceName
+	_, seen, err := state.Get(key)
 	if err != nil {
 		return Alert{}, err
 	}
+	if !seen {
+		n, err := state.Incr(key, 1, nil)
+		if err != nil {
+			return Alert{}, err
+		}
+		seen = n > 1
+	}
 
-	if ok && seen.(bool) {
+	if seen {
 		accessToken := os.Getenv("SLACK_ACCESS_TOKEN")
 		if accessToken == "" {
 			// Without a token, as in tests, the alert is flagged but not posted.
@@ -79,6 +93,9 @@ func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 		if err != nil {
 			return Alert{}, err
 		}
+		if resp.Error != nil {
+			return Alert{}, fmt.Errorf("failed to post to slack: %s", *resp.Error)
+		}
 
 		var result struct {
 			OK      bool   `json:"ok"`
@@ -89,15 +106,11 @@ func ExampleAlert(lv tangent_sdk.Log) (Alert, error) {
 		json.Unmarshal(resp.Body, &result)
 
 		if !result.OK {
-			return Alert{}, fmt.Errorf("failed to post to slack: %s", result.Error)
+			// With remote calls disabled, as in `tangent plugin test`, a call gets 204 and no body.
+			return Alert{}, fmt.Errorf("failed to post to slack: HTTP %d: %q", resp.Status, result.Error)
 		}
 
 		out.Triggered = true
-	} else {
-		err = state.Set(*serviceName, true, nil)
-		if err != nil {
-			return Alert{}, err
-		}
 	}
 
 	return out, nil

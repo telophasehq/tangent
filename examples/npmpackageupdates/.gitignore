@@ -9,3 +9,6 @@ __pycache__/
 **/plugins/
 cache.sqlite*
 state.sqlite*
+alerts.ndjson
+json_generated.go
+.tangent/

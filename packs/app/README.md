@@ -38,7 +38,7 @@ plugins:
 `_facts` is what the profile and the tables say; an agent's run has no
 principal.
 
-Each record goes to `logs` and to core's [baseline](../core#baseline) too,
+Your config routes each record to core's `lake` and [baseline](../core#baseline),
 which folds the audit shape, under `app` or a name of yours, into its actor's
 baseline: events, paths, keys, addresses, logins, key creations and role
 changes. The agent shape has no actor and passes through it unlearned. That
@@ -116,8 +116,12 @@ make -C packs test-app
 make -C packs fixtures-app        # after a change; read the diff
 ```
 
-Cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases): the 17 that were examples/app-log's,
-and `agents/agent-escapes-task-uses-found-credentials`,
-`benign/oncall-3am-login`, `benign/secret-rotation-after-vendor-notice`,
+Cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) with app or agent
+records, 25: the 17 that were examples/app-log's, and
+`agents/agent-escapes-task-uses-found-credentials`,
+`benign/okta-typo-then-success`, `benign/oncall-3am-login`,
+`benign/secret-rotation-after-vendor-notice`,
+`identity/okta-failed-burst-then-success`,
+`prompt-injection/api-key-name-answers`,
 `vendor/ai-app-oauth-token-stolen-sso-pivot` and
 `vendor/platform-breach-env-secrets-reused`.

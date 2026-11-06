@@ -10,13 +10,11 @@
     "service": "myservice"
   },
   {
-    "message": "my log",
-    "level": "info",
-    "seen": 5,
-    "duration": 6.3,
-    "tags": [
-      "tag1"
-    ],
+    "message": "no level, count, duration or tags",
+    "level": "",
+    "seen": 0,
+    "duration": 0,
+    "tags": null,
     "service": "myservice"
   }
 ]

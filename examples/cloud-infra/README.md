@@ -9,18 +9,18 @@ It is built only from [packs](/packs): `tangent.yaml` includes
 pack's edges to the lake, the baseline and the judge, and the profile. One config, one process.
 
 ```
-CloudTrail ──▶ aws ──────────────┐
-GitHub audit log ──▶ github ─────┤
-Okta ──▶ okta ───────────────────┼──▶ lake/, every record as Parquet
-Google Workspace ──▶ google_workspace
-NDJSON on :9400 ──▶ each pack ───┼──▶ baseline_builder ──▶ state.sqlite
-                                 │                              │
-                                 └──▶ baseline_renderer ◀───────┘
-                                      an actor's records, a group at a time
-                                           │
-                                           ▼
-                                         judge ──▶ fresh ──┬──▶ flagged ──▶ alerts.ndjson
-                                                           └──▶ verdicts.ndjson
+CloudTrail ──▶ aws ────────────────────┐
+GitHub audit log ──▶ github ───────────┤
+Okta ──▶ okta ─────────────────────────┼──▶ lake/, every record as Parquet
+Google Workspace ──▶ google_workspace ─┤
+NDJSON on :9400 ──▶ each pack ─────────┼──▶ baseline_builder ──▶ state.sqlite
+                                       │                              │
+                                       └──▶ baseline_renderer ◀───────┘
+                                            an actor's records, a group at a time
+                                                 │
+                                                 ▼
+                                               judge ──▶ fresh ──┬──▶ flagged ──▶ alerts.ndjson
+                                                                 └──▶ verdicts.ndjson
 ```
 
 - **The packs** ([aws](/packs/aws), [github](/packs/github), [okta](/packs/okta),
@@ -44,7 +44,9 @@ NDJSON on :9400 ──▶ each pack ───┼──▶ baseline_builder ─�
   or fewer an hour after the first of them, with its latest ten again
   ahead of them, marked `_context`. Groups wait in memory and run on workers
   of their own, so nothing waits on the model; one group per actor is judged
-  at a time, and stopping the process closes every open group first. It puts
+  at a time. Stopping the process ends the model's calls: records still in a
+  group or waiting on the model are not judged, though they are in the lake
+  and in `state.sqlite`. It puts
   the same `_baseline` on each of an actor's records: what was known of the
   actor before its first record, facts, not verdicts
   ([packs/core](/packs/core#baseline) has what is in it).
@@ -55,6 +57,10 @@ NDJSON on :9400 ──▶ each pack ───┼──▶ baseline_builder ─�
   [packs/core](/packs/core#judgeyaml) has the model's settings and Slack.
 
 ## Install and run
+
+Until the release after 0.1.9, two steps come first (the paragraphs after the
+commands say why): build tangent from this checkout,
+`cargo install --path ../../crates/cli --locked`, and `export PLUGINS=compile`.
 
 ```bash
 make setup          # GeoLite2, cloud ranges, Tor exits into examples/enrich/data
@@ -68,15 +74,44 @@ prebuilt. `tangent plugin fetch` downloads each from the tangent release of
 this tangent's version and has `gh attestation verify` check, before it is
 kept, that this repository's release workflow built it from that tag
 ([Prebuilt plugins](/README.md#prebuilt-plugins)); it needs `gh`, not a
-login. To build them here instead, for a pack you are changing or a tangent
-built from a checkout: `make run PLUGINS=compile`, and `make setup` installs
-the Rust WASM toolchain first.
+login.
+
+Until the release after 0.1.9 there are none to fetch (`make test` stops at
+"v0.1.9 has no app.component.wasm"), and the packs need a tangent built from
+the checkout anyway ([Using packs](/README.md#using-packs)). Build the plugins
+here instead, as for a pack you are changing: `make test PLUGINS=compile`, then
+`make run PLUGINS=compile`, or `export PLUGINS=compile` once. It installs the
+Rust WASM toolchain first (`./setup.sh toolchain`).
 
 The judge defaults to a local model on `:8080`
 ([packs/core](/packs/core#judgeyaml) says how to serve it). For a hosted one:
 
 ```bash
 JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY make run
+```
+
+## Try it
+
+With `make run` going, send it a few of the packs' fixtures, a JSON line a
+record, from another terminal in this directory:
+
+```bash
+python3 -c 'import json, sys; [print(json.dumps(r)) for f in sys.argv[1:] for r in json.load(open(f))]' \
+  ../../packs/okta/tests/input.json ../../packs/google_workspace/tests/input.json | nc -w 1 localhost 9400
+```
+
+Each record goes to the lake (`lake/`, a Parquet file each hour and when
+the process stops) and into `state.sqlite` at once. Its verdict takes longer:
+an actor's records go to the model at thirty, or an hour after the first of
+them, so `verdicts.ndjson` fills within the hour, and `alerts.ndjson` with
+what was flagged; stopped sooner, they go unjudged. To see verdicts seconds after the records while you try it,
+close an actor's group after ten seconds' quiet rather than an hour's, in
+`tangent.yaml`, and take it out again before you point real logs at it:
+
+```yaml
+plugins:
+  baseline_renderer:
+    expire_after_ms: 10000
 ```
 
 ## Getting logs in
@@ -90,14 +125,15 @@ credential needs.
 |---|---|---|
 | `cloudtrail` | [aws](/packs/aws#credentials) | a trail's files: every event, data events included, every account and region of an organization trail, a few minutes behind |
 | `github_audit` | [github](/packs/github#use-it) | the organization's audit log, web and git events |
-| `okta` | [okta](/packs/okta#use-it) | the System Log |
-| `google_workspace` | [google_workspace](/packs/google_workspace#use-it) | login, token, drive and admin activity |
+| `okta_audit` | [okta](/packs/okta#use-it) | the System Log |
+| `workspace_audit` | [google_workspace](/packs/google_workspace#use-it) | login, token, drive and admin activity |
 
 Anything else is one JSON line per record on `:9400`, with a `source` field
 naming its shape and a `ts`: `gha_ci` and `runner_egress` for the
-[github](/packs/github) pack, `app` and `agent` for [app](/packs/app), or one
-of the four above. Every pack sees the stream and takes its own; a record no
-pack takes goes no further, with a warning.
+[github](/packs/github) pack, `app` and `agent` for [app](/packs/app), or the
+`source` the four above give their records: `cloudtrail`, `github_audit`,
+`okta`, `google_workspace`. Every pack sees the stream and takes its own; a
+record no pack takes goes no further, with a warning.
 
 ## The profile
 
@@ -109,7 +145,7 @@ describe.
 
 ## What it catches
 
-34 of the sequences in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) are this example's, as the real sources write them, 28 that should flag and 6 that must not. Half follow disclosed compromises of 2025 and 2026 ([evals/cases/README.md](/evals/cases/README.md) has the table and sources): TeamPCP's Trivy and LiteLLM, the axios hijack, nx/s1ngularity, Shai-Hulud's second wave, tj-actions/changed-files, Railway's environment-variable breach, Vercel via Context.ai. The rest are the classics: root login, CloudTrail stopped, a bucket made public, MFA off, impossible travel, a Gmail forwarding rule, a branch protection removed.
+34 of the sequences in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) are this example's, as the real sources write them, 28 that should flag and 6 that must not. Half follow disclosed compromises of 2025 and 2026 ([tangent-eval's cases README](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases#cases-from-disclosed-incidents-20252026) has the table and sources): TeamPCP's Trivy and LiteLLM, the axios hijack, nx/s1ngularity, Shai-Hulud's second wave, tj-actions/changed-files, Railway's environment-variable breach, Vercel via Context.ai. The rest are the classics: root login, CloudTrail stopped, a bucket made public, MFA off, impossible travel, a Gmail forwarding rule, a branch protection removed.
 
 This shape, an actor's records thirty at a time with ten before them, is not measured yet. The two before it, over the cases of both examples and 38 days of synthetic ordinary traffic: a judge reading every record in batches with each org's history as context (Claude Haiku 4.5) flagged 38 to 39 of the 40 positives, 1 of 11 negatives and 13 of 16,199 ordinary records; a rulebook gate in front of a local 30B judge, 38 of 40 and 2 of 11.
 

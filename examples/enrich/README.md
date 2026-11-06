@@ -8,8 +8,8 @@ files on disk. Nothing leaves the machine.
   ──▶ enrich ──▶
 {"event": "login", "sourceIPAddress": "65.108.22.91",
  "_ip": {"sourceIPAddress": {"ip": "65.108.22.91", "country": "FI", "asn": 24940,
-                             "org": "Hetzner Online GmbH", "tor": false, "ours": false,
-                             "private": false}}}
+                             "org": "Hetzner Online GmbH", "hosting": "datacenter",
+                             "tor": false, "vpn": false, "ours": false, "private": false}}}
 ```
 
 Per address: country, ASN and organization (MaxMind GeoLite2), whether it is in
@@ -23,7 +23,9 @@ exit", "one of ours" instead of a bare number.
 
 `./setup.sh` puts the files under `data/`, which `tangent.yaml` hands to the
 plugin read-only as `/data` (`plugins.enrich.data`). `./setup.sh data` refreshes
-them; MaxMind publishes on Tuesdays and Fridays.
+them; MaxMind publishes on Tuesdays and Fridays. The packs read the same
+files from here: [core's ingest.yaml](/packs/core/ingest.yaml) names them as
+its enrichment tables, so run `./setup.sh data` once before a pack's pipeline.
 
 | file | source | terms |
 |---|---|---|
@@ -69,14 +71,35 @@ with `tor: true`:
 ```
 {"event": "login", "sourceIPAddress": "185.220.101.4"}
   ──▶ {"_ip": {"sourceIPAddress": {"ip": "185.220.101.4", "country": "DE", "asn": 60729,
-               "org": "Stiftung Erneuerbare Freiheit", "tor": true, "ours": false, "private": false}}, ...}
+               "org": "Stiftung Erneuerbare Freiheit", "hosting": "datacenter",
+               "tor": true, "vpn": true, "ours": false, "private": false}}, ...}
 ```
 
 ## Run
 
 ```bash
-./setup.sh
+./setup.sh                                     # the Rust WASM toolchain, and data/
 tangent plugin compile --config tangent.yaml
 tangent plugin test --config tangent.yaml      # tests/input.json → tests/expected.json
-tangent run --config tangent.yaml
+tangent run --config tangent.yaml              # listens on :9000, writes out.ndjson
 ```
+
+In a second terminal, send records, one JSON object per line (the `tcp`
+source reads NDJSON, so the fixture's array goes through `jq -c`; `-w 1`
+lets `nc` hang up once its input ends, which Linux's netcat does not do on
+its own):
+
+```bash
+jq -c '.[]' tests/input.json | nc -w 1 127.0.0.1 9000
+echo '{"event": "login", "sourceIPAddress": "185.220.101.4"}' | nc -w 1 127.0.0.1 9000
+cat out.ndjson
+```
+
+Records come out in no fixed order: the workers run in parallel. `make test`
+and `make run` do the same steps, each after `./setup.sh`, which downloads
+only what has changed.
+
+`tests/expected.json` holds the answers in the data when it was written.
+MaxMind and the providers move an address now and then; after a refresh, such
+a move shows up as a difference in `tangent plugin test`, and the expected
+line is updated to the new answer.

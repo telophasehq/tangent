@@ -4,19 +4,17 @@
     "level": "info",
     "seen": 5,
     "duration": 6.3,
+    "service": "myservice",
     "tags": [
       "tag1"
-    ],
-    "service": "myservice"
+    ]
   },
   {
-    "message": "my log",
-    "level": "info",
-    "seen": 5,
-    "duration": 6.3,
-    "tags": [
-      "tag1"
-    ],
-    "service": "myservice"
+    "message": "no level, count, duration or tags",
+    "level": "",
+    "seen": 0,
+    "duration": 0.0,
+    "service": "myservice",
+    "tags": null
   }
 ]
