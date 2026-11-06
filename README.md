@@ -31,105 +31,234 @@ through eslogger, is in review
   $17–170 a day at 0.6M–6M lines. These are estimates, and may be low
   ([What it costs](#what-it-costs)). A local model, the default, costs only
   the machine it runs on.
-- **Measured.** On [tangent-eval](https://github.com/EthanBlackburn/tangent-eval)'s
-  corpus, Haiku 5.5 caught 45 of 45 attacks in each of four runs, about $1 a
-  run, and flagged 0.8–2.0% of ordinary records and 10–11 of 16 look-alikes.
-  Those runs went through an earlier harness and plugin set, on cases the
-  brief was revised on ([How well it works](#how-well-it-works-and-where-it-loses)).
+- **Measured.** In four runs of
+  [tangent-eval](https://github.com/EthanBlackburn/tangent-eval), about $1
+  each, Haiku 5.5 caught all 45 attacks they scored, 15 that follow public
+  incidents and disclosures of 2025–26 and 30 well-known techniques, and
+  flagged 0.8–2.0% of ordinary records and 10–11 of 16 look-alikes. Those
+  runs went through an earlier harness and plugin set, on cases the brief
+  was revised on ([per attack](#tested-against-well-known-attacks)).
 - **Your data.** The model is local by default. Credentials are dropped
   before anything is kept or judged. The history is computed by the
   pipeline, not written by the model, and the model can do nothing but
   answer ([Where your data goes](#where-your-data-goes)).
 
-## It caught this
+## Tested against well-known attacks
 
-Two lines from a product's audit log, six minutes apart at 2 a.m. Neither
-looks wrong on its own. They are tangent-eval's
-[`identity/role-change-then-privileged-action`](https://github.com/EthanBlackburn/tangent-eval/blob/main/cases/identity/role-change-then-privileged-action/case.yaml)
-case:
+Attackers' logs are rarely published, so
+[tangent-eval](https://github.com/EthanBlackburn/tangent-eval) takes attacks
+that are public, a disclosed incident or a well-known technique, and writes
+each one out as the log lines it would leave at a small company, in each
+source's own format: CloudTrail records, Okta's System Log, GitHub's audit
+log, Actions job logs, a product's audit log, an AI agent's run log. Take
+[tj-actions/changed-files](https://github.com/advisories/GHSA-mrrh-fwg8-r2c3)
+(March 2025): the Action's tags were moved to a commit that printed the
+runner's memory, secrets included, into public job logs. Its case is that
+step's lines in a build of acme's public docs repo, then what the leak makes
+possible: an AWS key from those secrets calling AWS from a host in Finland
+19 minutes later. Hosts, names and addresses are made up.
 
-```json
-{"ts":"2025-04-19T02:13:00Z","source":"app","event":"member.role.changed","actor":"dave@acme.io","ip":"73.162.14.9","org":"acme","target":"carol@acme.io","from_role":"viewer","to_role":"admin"}
-{"ts":"2025-04-19T02:19:00Z","source":"app","event":"org.export.started","actor":"carol@acme.io","ip":"91.108.4.12","org":"acme","scope":"all_data"}
-```
+Every row below links its case's own lines and, for all but four, the
+incident or technique it follows, so you can check that each attack happens
+and was not invented to be easy. The judge, though, was tuned on these same
+cases (limits below the results).
 
-Before a model sees carol's line, tangent writes her history on it as
-`_baseline`. The pipeline computed it from the 10,132 records of the
-product's log in the seven months before; no model wrote it. Four of its
-seven keys ([examples/demo](examples/demo) shows all seven):
+- **15 cases from public incidents and disclosures of 2025–26**: hijacked
+  packages and Actions (tj-actions, nx "s1ngularity", Shai-Hulud's two waves
+  and "mini Shai-Hulud", axios, TeamPCP's Trivy Action and LiteLLM release),
+  stolen OAuth tokens (Salesloft Drift, Vercel via Context.ai), vendors'
+  leaked secrets (Railway, OpenCode) and AI agents (postmark-mcp, OpenAI's
+  sandbox escape, and Claude Code's CVE-2026-21852, a disclosed
+  vulnerability rather than a compromise). Some carry an incident on to
+  what it leads to at acme, as tj-actions' case does with the key.
+- **30 well-known techniques**, from a stopped trail and root signing in to
+  a pwn request and a prompt injection through a tool result. 25 have the
+  nearest [MITRE ATT&CK](https://attack.mitre.org/) or
+  [OWASP Top 10 for LLM applications](https://genai.owasp.org/llm-top-10/)
+  id beside them; the ids are this README's labels, not part of the case
+  files.
+- **16 look-alikes that must not be flagged**: what looks alarming and is
+  fine, such as Dependabot's weekly batch, the on-call's 3 a.m. login, a
+  deploy's restart burst, scanner probes, or a rotation the morning after a
+  vendor's breach notice. Five are twins of attacks: the same person, hour
+  and actions, from where they always are, so only the person's history
+  tells them apart.
+- **Months of ordinary activity around them.** Each case gets a day of its
+  own inside 13 months of synthetic work at acme, a fictional 9-person
+  company: Okta sign-ins, its product's API and audit traffic, pushes and
+  pull requests, CI builds and runner egress, each member's own AWS work,
+  Google Workspace, an AI agent's plans. The judge reads a case against the
+  history of the people and systems in it, and judges the ordinary records
+  around it too, which is where false alarms show. None of it is real: no
+  person, repo or account in it exists.
 
-```
-seen   seen 207.4 days (since 2024-09-23), 529 events on 150 days, from app
-new    api: org.export.started (1 of 1 in window)
-       network: ASN 62041 Telegram Messenger Inc (new to org), country NL (new to org), net 91.108.4.0/24 (new to org)
-time   window 02 UTC active on 0 of its 20 active days in 28d; usual 15-20 UTC; last active 5h before
-auth   last 72h, person carol@acme.io: 3 logins (app 3), 0 failed; grant role viewer -> admin by dave@acme.io 6m before from 73.162.14.9; last login app sso 9h before from 73.162.14.9 ASN 7922 US, mfa yes
-```
+**How it was tested.** Claude Haiku 5.5 on Bedrock (thinking off, at most
+400 tokens a record) judged the corpus in four complete runs on 2026-10-31
+and 11-01: two without a history header and two with one, `_hist`, which
+`_baseline` has since replaced, so the header runs are the nearer to what
+ships. The stream held 200,177 records. The model judged every record
+within an hour of a case event, 8,790 a run, 6,587 of them ordinary; the
+rest went in as history only. Each run took 921 requests, about $1 and 11
+minutes. An attack counts as caught, and a look-alike as flagged, when the
+judge flags one of the case's own records. Counting instead any record of
+its actor in the two hours before its last event changes no number here.
 
-The model may answer `{"flag": false}` or
-`{"flag": true, "why": "<at most 400 characters>"}`
-([judge.schema.json](packs/core/judge.schema.json)), a shape the model
-server holds it to (llama-server compiles it to a grammar). Its brief is
-[seven short paragraphs](packs/core/judge.md), beside the format
-instructions tangent adds. Its answer for carol's line, from
-`alerts.ndjson`:
+**Per attack.** Every attack was caught in all four runs. † marks an
+attack with a twin among the look-alikes.
 
-```json
-{"flag": true, "why": "The actor is using a Telegram Messenger IP address (91.108.4.12) for an org export, which is unusual for this human user and organization."}
-```
+The logs are the ones each case writes, so they are what you need to catch
+it. Tangent reads CloudTrail, Okta and Google Workspace itself. GitHub's
+audit log needs Enterprise Cloud. Actions job logs, runner egress, your
+product's audit log and an agent's run log are lines you send it
+([packs/github](packs/github), [packs/app](packs/app)). No case has been run
+with fewer of its logs.
 
-It passed dave's promotion of her.
+From disclosed incidents, by month:
 
-A rule catches this once someone writes it: an export from a network the
-org has never used. That rule needs every network the org has used, kept
-somewhere, and it covers one attack. Tangent keeps every actor's history in
-every source and writes it on the record, and the judge has one brief for
-all 45 of tangent-eval's attacks, from a stopped trail to a GitHub Action's
-tags moved to a stealer. No rule is written for any of them: the packs add
-facts and flag nothing.
-
-| | model | cost |
+| attack | based on | logs |
 |---|---|---|
-| this alert | GLM-4.7-Flash, the free default, on `llama-server`, at temperature 0 (the demo sets it; core ships 0.7): the same two verdicts in each of five runs ([examples/demo](examples/demo)) | 2 requests, **$0** |
-| the eval corpus | Claude Haiku 5.5 on Bedrock, through an earlier harness: **45 of 45 attacks caught in each of four runs**; 0.8–2.0% of 6,587 ordinary records flagged; **10–11 of 16 look-alikes flagged anyway** | 921 requests a run, **about $1** ([RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)); about 7M tokens in ([tangent-eval's README](https://github.com/EthanBlackburn/tangent-eval#run-it)) |
-| your logs | Claude Haiku 5.5 | **$15 per million lines + $12 per GB**, an estimate ([What it costs](#what-it-costs)) |
+| [A popular Action prints the runner's secrets into the job log](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/supply-chain/action-prints-runner-memory) | [tj-actions/changed-files](https://github.com/advisories/GHSA-mrrh-fwg8-r2c3), March 2025 | Actions log, CloudTrail |
+| [A stolen integration token reads everything](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/saas/integration-token-stolen-bulk-read) | [Salesloft Drift's OAuth tokens](https://cloud.google.com/blog/topics/threat-intelligence/data-theft-salesforce-instances-via-salesloft-drift), August 2025 | product audit log |
+| [AI CLIs inventory secrets, then repos go public](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/supply-chain/postinstall-ai-cli-inventory-then-repos-public) | [nx "s1ngularity"](https://github.com/nrwl/nx/security/advisories/GHSA-cxm3-wv7p-598c), August 2025 | GitHub audit |
+| [A Shai-Hulud repo appears and a private repo goes public](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/github/shai-hulud-repo-migration) | [Shai-Hulud, first wave](https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem), September 2025 | GitHub audit |
+| [A workflow pushed to main, a runner registered, egress to webhook.site](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/github/shai-hulud-workflow-runner) | [Shai-Hulud, first wave](https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem) (the workflow, webhook.site), September 2025, and [second wave](https://www.wiz.io/blog/shai-hulud-2-0-ongoing-supply-chain-attack) (the SHA1HULUD runner), November 2025 | GitHub audit, runner egress |
+| [A malicious MCP server release copies everything it handles to its author](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/agents/mcp-server-copies-every-message-out) | [postmark-mcp 1.0.16](https://snyk.io/blog/malicious-mcp-server-on-npm-postmark-mcp-harvests-emails/), September 2025 | agent run log |
+| [A worm publishes a developer's credentials as repos](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/supply-chain/preinstall-worm-publishes-credentials-as-repos) | [Shai-Hulud, second wave](https://www.wiz.io/blog/shai-hulud-2-0-ongoing-supply-chain-attack), November 2025, and ["mini Shai-Hulud"](https://socket.dev/blog/openapi-react-query-codegen-npm-compromise), August 2026 | Actions log, runner egress, GitHub audit |
+| [A cloned repo's settings redirect the agent's model calls and key](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/agents/repo-settings-redirect-model-credentials) | [Claude Code CVE-2026-21852](https://github.com/anthropics/claude-code/security/advisories/GHSA-jh7p-qr78-84p7), a disclosed vulnerability, January 2026 | agent run log |
+| [A scanner Action's tags are force-pushed to a stealer](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/supply-chain/ci-action-tags-retargeted) | [TeamPCP: the Trivy and KICS Actions](https://unit42.paloaltonetworks.com/teampcp-supply-chain-attacks/), March 2026 | Actions log, runner egress, CloudTrail |
+| [A backdoored PyPI release ships the runner's credentials](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/supply-chain/pypi-package-pth-stealer) | [TeamPCP: LiteLLM 1.82.7 and 1.82.8](https://arcticwolf.com/resources/blog/teampcp-supply-chain-attack-campaign-targets-trivy-checkmarx-kics-and-litellm-potential-downstream-impact-to-additional-projects/), March 2026 | Actions log, runner egress, CloudTrail |
+| [A hijacked axios release drops a RAT](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/supply-chain/trojan-dependency-rat) | [axios 1.14.1 and 0.30.4, a maintainer hijack](https://www.elastic.co/security-labs/how-we-caught-the-axios-supply-chain-attack), March 2026 | Actions log, runner egress, GitHub audit |
+| [A breached AI app's OAuth token reads Drive, then SSO opens internal tools](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/vendor/ai-app-oauth-token-stolen-sso-pivot) | [Vercel via Context.ai](https://techcrunch.com/2026/04/20/app-host-vercel-confirms-security-incident-says-customer-data-was-stolen-via-breach-at-context-ai/), April 2026 | Workspace, Okta, product audit log |
+| [An agent given one credential finds more and uses them across services](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/agents/agent-escapes-task-uses-found-credentials) | [OpenAI's evaluation-sandbox escape](https://openai.com/index/hugging-face-model-evaluation-security-incident/), July 2026 | agent run log, CloudTrail |
+| [Keys taken from a vendor's console run up usage everywhere](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/saas/provider-keys-stolen-from-vendor-console) | [The OpenCode Console breach](https://bleepingcomputer.com/news/security/opencode-hack-exposes-api-keys-amid-ai-distillation-attacks), October 2026 | product audit log |
+| [A hosting vendor's leaked secrets reused within a day](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/vendor/platform-breach-env-secrets-reused) | [Railway's environment-variable breach](https://techcrunch.com/2026/10/22/developer-platform-railway-urges-all-users-to-revoke-secret-keys-after-cyberattack/), October 2026 | CloudTrail, GitHub audit, product audit log |
 
-**What the model can't do.** It answers, and takes no action. Nothing it
-writes reaches state or `_baseline`, which the pipeline computes from what
-came before. A request holds one actor's records (an AI agent's run log is
-grouped by organization, beside that organization's other runs). Text in a
-record that speaks to the reviewer is, by its brief, a reason to flag;
-whether a model obeys such text anyway has not been measured
-([What a log line can't make it do](#what-a-log-line-cant-make-it-do)).
+From well-known techniques, with the nearest ATT&CK or OWASP id:
 
-**Before you believe it**
+| attack | based on | logs |
+|---|---|---|
+| **AWS** | | |
+| [CloudTrail logging stopped](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/cloud/cloudtrail-stop-logging) | turning off audit logs, [T1685.002](https://attack.mitre.org/techniques/T1685/002/) (was T1562.008) | CloudTrail |
+| [Root console login without MFA](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/cloud/root-console-login) | the root account used to sign in, [T1078.004](https://attack.mitre.org/techniques/T1078/004/) | CloudTrail |
+| [A bucket of customer exports made public](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/cloud/s3-bucket-public) | data exposed from cloud storage, [T1530](https://attack.mitre.org/techniques/T1530/) | CloudTrail |
+| [A security group opens Postgres to the internet](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/cloud/sg-open-world) | a cloud firewall opened to the world, [T1686.001](https://attack.mitre.org/techniques/T1686/001/) (was T1562.007) | CloudTrail |
+| [A new admin IAM user's key reads buckets from a new IP](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/cloud/iam-key-create-attach-star-then-use) | a backdoor admin account, [T1136.003](https://attack.mitre.org/techniques/T1136/003/) | CloudTrail |
+| [A new access key's first calls come from a new host](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/cloud/password-change-new-key-new-ip) † | an extra cloud credential used by someone else, [T1098.001](https://attack.mitre.org/techniques/T1098/001/) | CloudTrail |
+| [An outside account assumes a role and reads customer exports](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/cloud/assume-role-new-principal-then-reads) | a role used by a stranger's account, then data read, [T1078.004](https://attack.mitre.org/techniques/T1078/004/), [T1530](https://attack.mitre.org/techniques/T1530/) | CloudTrail |
+| **Identity** | | |
+| [Admin sign-in from a hosting provider in a new country](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/identity/admin-login-new-asn) | stolen credentials used from a VPS, [T1078.004](https://attack.mitre.org/techniques/T1078/004/) | Okta |
+| [Impossible travel](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/identity/impossible-travel) | two sign-ins too far apart to travel between, a standard identity detection | Okta |
+| [MFA turned off, then a sign-in without it](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/identity/mfa-disabled) | weakening MFA, [T1556.006](https://attack.mitre.org/techniques/T1556/006/) | Okta |
+| [Helpdesk MFA reset, then a new factor from a new network](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/identity/mfa-reset-then-new-factor-new-asn) † | an attacker's device enrolled after an MFA reset, [T1098.005](https://attack.mitre.org/techniques/T1098/005/) | Okta, CloudTrail |
+| [Twelve failed sign-ins, then one that works](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/identity/okta-failed-burst-then-success) † | password guessing, [T1110.001](https://attack.mitre.org/techniques/T1110/001/) | Okta, product audit log |
+| [A sign-in from a new country, then AWS from another host](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/identity/okta-new-country-then-aws) † | a stolen identity used across SSO and cloud, [T1078.004](https://attack.mitre.org/techniques/T1078/004/) | Okta, CloudTrail |
+| [A sign-in from a new country, then GitHub from another host](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/identity/okta-new-country-then-github) † | a stolen identity used across SSO and code hosting, [T1078.004](https://attack.mitre.org/techniques/T1078/004/) | Okta, GitHub audit |
+| [An admin API key made at the office is first used from a VPS](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/identity/api-key-admin-then-new-ip) | a credential minted, then used by someone else, [T1098.001](https://attack.mitre.org/techniques/T1098/001/) | product audit log |
+| [Promoted to admin at night, exports the org minutes later](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/identity/role-change-then-privileged-action) ([case study](#case-study)) | privilege granted, then used at once, [T1098](https://attack.mitre.org/techniques/T1098/) | product audit log |
+| [Password login where SSO is enforced](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/identity/sso-bypass-password-login) | SSO bypassed through a local password | product audit log |
+| **GitHub** | | |
+| [Branch protection off, main force-pushed, protection back on](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/github/branch-protection-off-force-push) | protection lifted to slip a change past review, then restored to hide it | GitHub audit |
+| [A contractor becomes org owner and adds a deploy key](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/github/new-owner-and-deploy-key) | persistence through new rights and a key, [T1098](https://attack.mitre.org/techniques/T1098/) | GitHub audit |
+| [One token pushes to a dozen repos in three minutes](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/github/pat-mass-push) | a stolen personal access token used across the org | GitHub audit |
+| [A fork's pull request edits a workflow that runs with secrets](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/github/pwn-request-workflow-from-fork) | the Actions ["pwn request"](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/): `pull_request_target` running a fork's code with secrets | GitHub audit |
+| **Supply chain** | | |
+| [A postinstall talks to webhook.site from the build runner](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/supply-chain/ci-postinstall-egress) | a malicious install script sending data out of CI, [T1195.001](https://attack.mitre.org/techniques/T1195/001/) | Actions log, runner egress |
+| [A pull request adds a typosquatted package](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/supply-chain/new-dependency-typosquat) | typosquatting, [T1195.001](https://attack.mitre.org/techniques/T1195/001/) | GitHub audit, Actions log |
+| **Data leaving** | | |
+| [One API key pages through every record](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/data-exfil/bulk-pagination-export) | bulk scraping through an API, [T1213](https://attack.mitre.org/techniques/T1213/) | product audit log |
+| [A service posts to a file-sharing site](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/data-exfil/egress-new-destination) | exfiltration to a file-sharing service, [T1567.002](https://attack.mitre.org/techniques/T1567/002/) | agent run log |
+| [A finance mailbox starts forwarding outside](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/data-exfil/gmail-forwarding-rule) | a mail forwarding rule, [T1114.003](https://attack.mitre.org/techniques/T1114/003/) | Workspace |
+| [A database snapshot shared with another account](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/data-exfil/snapshot-shared-external) | data moved to another cloud account, [T1537](https://attack.mitre.org/techniques/T1537/) | CloudTrail |
+| **AI agents** | | |
+| [A plan reads a secret, then posts to a host no step planned](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/agents/plan-secret-then-unplanned-post) | a secret sent to a paste site, [T1567.003](https://attack.mitre.org/techniques/T1567/003/) | agent run log |
+| [A plan step retries with a different role each time](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/agents/plan-retry-shifting-params) | an agent probing for access by trial and error, [LLM06 Excessive Agency](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/) | agent run log |
+| [A tool result carries instructions and the agent follows them](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/agents/tool-output-injection-then-scope-change) | indirect prompt injection, [LLM01 Prompt Injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/) | agent run log |
 
-- **Nothing here was measured on what ships.** Every measured number came
-  through an earlier harness and plugin set (one cloud-infra pack with a
-  `_hist` header) on a differently placed stream
+**Look-alikes and ordinary records.** This is where it loses.
+
+| | without the header | with it |
+|---|---|---|
+| look-alikes flagged, of 16 | 10, 10 | 10, 11 |
+| ordinary records flagged, of 6,587 | 124 and 133 (1.9%, 2.0%) | 51 and 59 (0.8%, 0.9%) |
+| run-to-run agreement, per record | 98.2% | 99.3% |
+| cost per run | about $0.98 | about $1.02 |
+
+- **Half the look-alikes are flagged every time.** 8 of the 16 were flagged
+  in every run, 4 in none, and 4 depended on the run or the header. The
+  header moved flags rather than cutting them: Dependabot's two cases were
+  flagged only with it, the scanner probes only without.
+- **The twins barely separated.** Three of the five were flagged in every
+  run, as their attacks were, and a fourth in three runs of four. Only
+  `okta-usual-country-then-aws` was quiet in all four.
+- **The ordinary rate is not alerts a day.** It is per judged record, in
+  windows that sit around business hours, at a company of nine. At 0.8–2.0%,
+  a 50-person company's 50k–500k CloudTrail events a day would be 400 to
+  10,000 flags a day, and a 10-person startup's 10k–100k
+  ([What it costs](#what-it-costs)) 80 to 2,000. A model this cheap is the triage: it reads everything, so that a person, or
+  a larger model, reads only what it flags. Grouping flags into incidents
+  is not built yet, and alerts a day at a real company have not been
+  measured.
+
+<details>
+<summary>Each look-alike, and how often it was flagged</summary>
+
+| look-alike | what happens | flagged |
+|---|---|---|
+| [`admin-usual-ip-then-export`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/admin-usual-ip-then-export) | An admin, from the office, exports the monthly compliance report as she does every month. | 4 of 4 |
+| [`mfa-reset-then-new-factor-office`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/mfa-reset-then-new-factor-office) † | The helpdesk resets a member's MFA for her new phone; she enrolls it at the office on her laptop and signs in to Okta and AWS. | 4 of 4 |
+| [`okta-typo-then-success`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/okta-typo-then-success) † | A member mistypes his password once at the office, gets it right a minute later, then uses the product as usual. | 4 of 4 |
+| [`oncall-3am-login`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/oncall-3am-login) | The on-call engineer signs in at 03:12 from the same home IP as every time they are paged, then opens the usual dashboards. | 4 of 4 |
+| [`password-change-new-key-usual-ip`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/password-change-new-key-usual-ip) † | A member's 90-day rotation: a new AWS password and access key at the office, the key's first calls there forty minutes later. | 4 of 4 |
+| [`repo-made-public-as-planned`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/repo-made-public-as-planned) | An admin pushes "going public" to the docs repo and ten minutes later makes that one repo public, from the office. | 4 of 4 |
+| [`secret-rotation-after-vendor-notice`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/secret-rotation-after-vendor-notice) | Admins rotate three access keys and two API keys from the office in twenty minutes, the morning after a vendor's breach notice, and delete the old ones. | 4 of 4 |
+| [`vendor-429-burst`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/vendor-429-burst) | Okta rate-limits the poller with 429s during a sync; it backs off and succeeds. | 4 of 4 |
+| [`okta-usual-country-then-github`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/okta-usual-country-then-github) † | A member signs in at the office, opens GitHub, clones docs and web, pushes to docs and opens a pull request, as she does. | 3 of 4: both runs without the header, one with it |
+| [`dependabot-bumps-axios`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/dependabot-bumps-axios) | A Dependabot pull request bumps axios to a clean release; CI runs it with egress to the registry only. | 2 of 4: both runs with the header |
+| [`dependabot-prs`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/dependabot-prs) | Dependabot opens its weekly batch of five pull requests and CI runs them. | 2 of 4: both runs with the header |
+| [`scanner-probes`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/scanner-probes) | Internet scanners probe the public API for `/phpinfo`, `/.env` and `/wp-login.php`; all 404. | 2 of 4: both runs without the header |
+| [`deploy-restart-burst`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/deploy-restart-burst) | A deploy: a new version, forty health checks and a few restarts. | 0 of 4 |
+| [`okta-usual-country-then-aws`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/okta-usual-country-then-aws) † | A member signs in to Okta at the office on his laptop and twenty minutes later opens the AWS console there, as he does. | 0 of 4 |
+| [`scanner-action-usual-run`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/scanner-action-usual-run) | The image-scan step downloads its database from ghcr.io and scans the image, as on every build. | 0 of 4 |
+| [`top-of-hour-sync-fanout`](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases/benign/top-of-hour-sync-fanout) | The hourly GitHub sync: sixty repo reads in a minute. | 0 of 4 |
+
+† the twin of an attack above: the same person, hour and actions, from
+where they always are.
+
+</details>
+
+**What 45 of 45 does not say:**
+
+- **It is in-sample.** The judge's brief and acme's profile were revised
+  while these cases ran, and the twins were written to measure the history
+  header. 45 of 45 says the pipeline does what it was built to do on cases
+  written for it, not how it does on attacks it has not seen.
+- **It is an earlier layout.** The runs went through an earlier harness and
+  plugin set (one cloud-infra pack and its `_hist` header) on an earlier
+  placement of the stream
   ([RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)),
-  not through the per-provider packs, `_baseline` or the one-config judge.
-  The cases are in-sample: the brief and acme's profile were revised on
-  them. The free local model that wrote this alert has not been measured.
-- **Flags are per record, and ungrouped.** At the corpus's 0.8–2.0%, 50k–500k
-  CloudTrail events a day would be 400 to 10,000 flags a day. A model this
-  cheap is the triage: it reads everything, so that a person, or a larger
-  model, reads only what it flags. Grouping flags into incidents is not
-  built yet, and alerts a day on a real company have not been measured.
-- **No spend cap.** Spend is bounded in rate (4 requests in flight, 200
-  tokens a record), not in total, and the metrics count no requests or
-  tokens ([Not done yet](#not-done-yet)).
-- **This alert's why is incomplete.** It names the address, not the
-  promotion six minutes before, which `_baseline.auth` put on carol's line
-  and the case wants checked first; and acme's `watch` list names both
-  kinds, a note the model reads, yet it passed the promotion.
-
-**Check it yourself:** [examples/demo](examples/demo) replays this case on
-your machine for free ([Try it](#try-it)).
-[tangent-eval](https://github.com/EthanBlackburn/tangent-eval)'s `make`
-runs the whole corpus on Haiku 5.5 (about $1) or on a local model (free,
-well over an hour), but through the tangent its `tangent.ref` pins
-(ad0407c, before the one-config pipeline); it does not run this layout yet.
+  with tangent built from cd28723 plus the `_hist` work, uncommitted then,
+  that became [#60](https://github.com/EthanBlackburn/tangent/pull/60).
+  None of that is the per-provider packs, `_baseline` or the one-config
+  judge in this tree, which has not been run on the corpus yet.
+- **A model may know the incidents.** 13 of the 15 incident cases carry a
+  name from their incident: a repo called Shai-Hulud, litellm 1.82.8,
+  tj-actions/changed-files, an integration key called `ak_drift`. A model
+  that has read the write-ups may be matching the name rather than the
+  behavior. Against that, `scanner-action-usual-run` runs the same
+  trivy-action and was never flagged, and `dependabot-bumps-axios` was
+  flagged only in the runs that also flagged Dependabot's ordinary batch.
+- **Stratus Red Team is not counted.** 140 cases made from the 35 AWS
+  techniques Datadog's
+  [Stratus Red Team](https://github.com/DataDog/stratus-red-team) recorded,
+  each spliced into acme twice with a harmless control, ran beside these.
+  An audit found six ways their records differed from acme's own whatever
+  the attack (all 140 began at 13:00Z, for one), and their controls were
+  flagged about as often as their attacks. The six are fixed; no run has
+  been scored since
+  ([stratus/README.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/stratus/README.md#not-citable-yet)).
+- **Some of it is not measured at all:** the free local model, the default,
+  and the 4 prompt-injection attacks and 1 look-alike that tangent-eval
+  added after the runs.
 
 ## What it costs
 
@@ -296,6 +425,75 @@ your sources ──▶ a pack's plugin ──┬──▶ lake/, every record as
    goes to `verdicts.ndjson`.
 
 The model flags; a person, or a larger model, reads what it flagged.
+
+## Case study
+
+Two lines from a product's audit log, six minutes apart at 2 a.m. Neither
+looks wrong on its own. They are tangent-eval's
+[`identity/role-change-then-privileged-action`](https://github.com/EthanBlackburn/tangent-eval/blob/main/cases/identity/role-change-then-privileged-action/case.yaml)
+case, one of the [45 attacks above](#tested-against-well-known-attacks):
+
+```json
+{"ts":"2025-04-19T02:13:00Z","source":"app","event":"member.role.changed","actor":"dave@acme.io","ip":"73.162.14.9","org":"acme","target":"carol@acme.io","from_role":"viewer","to_role":"admin"}
+{"ts":"2025-04-19T02:19:00Z","source":"app","event":"org.export.started","actor":"carol@acme.io","ip":"91.108.4.12","org":"acme","scope":"all_data"}
+```
+
+Before a model sees carol's line, tangent writes her history on it as
+`_baseline`. The pipeline computed it from the 10,132 records of the
+product's log in the seven months before; no model wrote it. Four of its
+seven keys ([examples/demo](examples/demo) shows all seven):
+
+```
+seen   seen 207.4 days (since 2024-09-23), 529 events on 150 days, from app
+new    api: org.export.started (1 of 1 in window)
+       network: ASN 62041 Telegram Messenger Inc (new to org), country NL (new to org), net 91.108.4.0/24 (new to org)
+time   window 02 UTC active on 0 of its 20 active days in 28d; usual 15-20 UTC; last active 5h before
+auth   last 72h, person carol@acme.io: 3 logins (app 3), 0 failed; grant role viewer -> admin by dave@acme.io 6m before from 73.162.14.9; last login app sso 9h before from 73.162.14.9 ASN 7922 US, mfa yes
+```
+
+The model may answer `{"flag": false}` or
+`{"flag": true, "why": "<at most 400 characters>"}`
+([judge.schema.json](packs/core/judge.schema.json)), a shape the model
+server holds it to (llama-server compiles it to a grammar). Its brief is
+[seven short paragraphs](packs/core/judge.md), beside the format
+instructions tangent adds. The demo's judge is the free local model,
+GLM-4.7-Flash, at temperature 0 (core ships 0.7): two requests, $0. Its
+answer for carol's line in `alerts.ndjson`, the same in each of five runs
+([examples/demo](examples/demo)):
+
+```json
+{"flag": true, "why": "The actor is using a Telegram Messenger IP address (91.108.4.12) for an org export, which is unusual for this human user and organization."}
+```
+
+It passed dave's promotion of her. In the corpus runs, on another day of
+acme's history, Haiku 5.5 flagged both lines in all four. On the
+promotion, in a run with the `_hist` header:
+
+> Dave, a normal member, elevated carol@acme.io from viewer to admin at
+> 02:13 UTC, outside his usual 15-21 UTC window and first-ever use of
+> member.role.changed; the event is watched by policy.
+
+A rule catches this once someone writes it: an export from a network the
+org has never used. That rule needs every network the org has used, kept
+somewhere, and it covers one attack. Tangent keeps every actor's history in
+every source and writes it on the record, and the judge has one brief for
+all 45 attacks, from a stopped trail to a GitHub Action's tags moved to a
+stealer. No rule is written for any of them: the packs add
+facts and flag nothing.
+
+**Before you believe it**
+
+- **The model that wrote this alert is unmeasured.** The free local model
+  has not been run on the corpus, and the corpus's numbers came through an
+  earlier harness and plugin set, on cases the brief was revised on
+  ([what 45 of 45 does not say](#tested-against-well-known-attacks)).
+- **This alert's why is incomplete.** It names the address, not the
+  promotion six minutes before, which `_baseline.auth` put on carol's line
+  and the case wants checked first; and acme's `watch` list names both
+  kinds, a note the model reads, yet it passed the promotion.
+
+**Check it yourself:** [examples/demo](examples/demo) replays this case for
+free ([Try it](#try-it)).
 
 ## What a log line can't make it do
 
