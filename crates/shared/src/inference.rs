@@ -65,8 +65,7 @@ pub struct InferenceConfig {
     #[serde(default)]
     pub group_by: Vec<String>, // a request holds one value of these
 
-    /// Requests in flight at once, per worker: the model sees at most
-    /// `runtime.workers` times this from one node.
+    /// Requests in flight at once to this node, from every worker together.
     #[serde(default = "default_concurrency")]
     pub concurrency: usize,
 

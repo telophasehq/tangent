@@ -538,6 +538,7 @@ impl WorkerPool {
         engines: Vec<wasm::engine::WasmEngine>,
         components: Vec<Vec<(Arc<str>, Component)>>,
         inference: &BTreeMap<Arc<str>, InferenceConfig>,
+        permits: &BTreeMap<Arc<str>, Arc<tokio::sync::Semaphore>>,
         config_dir: &Path,
         batch_max_size: usize,
         batch_max_age: Duration,
@@ -580,7 +581,8 @@ impl WorkerPool {
             for (name, cfg) in inference {
                 nodes.insert(
                     Arc::clone(name),
-                    InferenceNode::new(Arc::clone(name), cfg.clone(), config_dir)?,
+                    InferenceNode::new(Arc::clone(name), cfg.clone(), config_dir)?
+                        .sharing(Arc::clone(&permits[name])),
                 );
             }
 

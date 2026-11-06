@@ -130,6 +130,7 @@ impl DagRuntime {
                 engines,
                 components,
                 &cfg.inference,
+                &crate::inference::permits(&cfg.inference),
                 config_dir,
                 batch_size,
                 batch_age,
