@@ -265,9 +265,9 @@ fn run_go_download(cwd: &Path) -> Result<()> {
         .with_context(|| format!("failed to spawn go get in {}", cwd.display()))?;
 
     if !tool_out.status.success() {
-        let mut msg = String::from_utf8_lossy(&out.stderr).to_string();
+        let mut msg = String::from_utf8_lossy(&tool_out.stderr).to_string();
         if msg.trim().is_empty() {
-            msg = String::from_utf8_lossy(&out.stdout).to_string();
+            msg = String::from_utf8_lossy(&tool_out.stdout).to_string();
         }
         bail!("go get failed:\n{}", msg);
     }
@@ -286,145 +286,79 @@ __pycache__/
 **/plugins/
 state.sqlite*
 json_generated.go
+# written by `tangent plugin compile`: cargo component's bindings, which
+# src/lib.rs does not use (wit_bindgen::generate! makes its own), and the
+# venv a Python plugin is built in
+src/bindings.rs
+.venv/
 "#;
 
 const PYTHON_REQUIREMENTS: &str = r#""#;
 
 fn readme_for(lang: &str, name: &str) -> String {
-    match lang {
-        "go" | "golang" => format!(
-            r#"# {name}
+    // the languages differ in what setup.sh installs, and whether that edits
+    // the shell profile, and in Python's venv
+    let (language, setup, compile) = match lang {
+        "go" | "golang" => (
+            "Go",
+            "It installs TinyGo and wasm-tools where they are missing. Installing TinyGo adds PATH and TINYGOROOT lines to your shell profiles (`~/.zshrc`, `~/.bashrc` and the like).",
+            "",
+        ),
+        "py" | "python" => (
+            "Python",
+            "It installs wasm-tools, and [componentize-py](https://github.com/bytecodealliance/componentize-py) with pipx, where they are missing. Installing pipx runs `pipx ensurepath`, which may add a PATH line to your shell profile.",
+            "\n\ncomponentize-py does the compiling. `tangent plugin compile` installs `requirements.txt` into a venv, `.venv`, making it if it is missing, and runs componentize-py with `.venv` active, so those packages go into the plugin without your activating it.",
+        ),
+        "rust" => (
+            "Rust",
+            "It adds the Rust WASM target, and installs cargo-component and wasm-tools with cargo, where they are missing. It does not edit your shell profile.",
+            "",
+        ),
+        _ => return format!("# {name}\n"),
+    };
+    format!(
+        r#"# {name}
 
-Go component for Tangent.
+A Tangent plugin written in {language}. [Agents.md](Agents.md) is the guide to writing it, for you or a coding agent.
 
 ## Setup
 ```bash
-./setup.sh
+./setup.sh   # or: make setup
 ```
+{setup} `make build`, `make test` and `make run` do not run setup.sh.
 
 ## Compile
 ```bash
 tangent plugin compile --config tangent.yaml
 ```
+It writes the plugin to `plugins/{name}.cwasm`.{compile}
 
 ## Test
 ```bash
 tangent plugin test --config tangent.yaml
 ```
+It runs `tests/input.json` through the plugin and compares the output with `tests/expected.json`.
 
-## Run server
+## Run
 ```bash
 tangent run --config tangent.yaml
 ```
+The pipeline reads JSON lines on tcp `0.0.0.0:9000`, passes them through the plugin, and sends what it writes to a `blackhole` sink, which discards it. It runs until you stop it with Ctrl-C.
 
-## Benchmark performance
+## Benchmark
+With `tangent run` going in one terminal, run this in a second; it reads the pipeline's metrics on `127.0.0.1:9184`:
 ```bash
-tangent run --config tangent.yaml
 tangent bench --config tangent.yaml --seconds 30 --payload tests/input.json
 ```
 
-
-## Using Makefile
+## Makefile
 ```bash
-# build and test
-make test
-
-# build and run
-make run
+make test    # compile, then test
+make run     # compile, then run
+make setup   # ./setup.sh
 ```
-
 "#
-        ),
-        "py" | "python" => format!(
-            r#"# {name}
-
-Python component for Tangent.
-
-## Setup
-```bash
-./setup.sh
-```
-
-## Compile
-```bash
-tangent plugin compile --config tangent.yaml
-```
-
-## Test
-```bash
-tangent plugin test --config tangent.yaml
-```
-
-## Run server
-```bash
-tangent run --config tangent.yaml
-```
-
-## Benchmark performance
-```bash
-tangent run --config tangent.yaml
-tangent bench --config tangent.yaml --seconds 30 --payload tests/input.json
-```
-
-
-## Using Makefile
-```bash
-# build and test
-make test
-
-# build and run
-make run
-```
-
-
-"#
-        ),
-        "rust" => format!(
-            r#"# {name}
-
-Rust component for Tangent.
-
-## Setup
-```bash
-./setup.sh
-```
-
-## Compile
-```bash
-tangent plugin compile --config tangent.yaml
-```
-
-## Test
-```bash
-tangent plugin test --config tangent.yaml
-```
-
-## Run server
-```bash
-tangent run --config tangent.yaml
-```
-
-## Benchmark performance
-```bash
-tangent run --config tangent.yaml
-tangent bench --config tangent.yaml --seconds 30 --payload tests/input.json
-```
-
-
-## Using Makefile
-```bash
-# build and test
-make test
-
-# build and run
-make run
-```
-
-
-"#
-        ),
-        _ => format!("# {name}\n"),
-    }
+    )
 }
 
 /// golang.org/x/tools is pinned past the SDK's v0.38.0: `tangent plugin
@@ -838,8 +772,9 @@ const TEST_BENCH: &str = r#"{
   }
 }"#;
 
+// setup.sh is its own target: it can add lines to the shell profile, which
+// the scaffold leaves to --setup, so a build does not run it
 const MAKEFILE: &str = "build:\n\t\
-./setup.sh\n\t\
 tangent plugin compile --config tangent.yaml\n\
 \n\
 test: build\n\t\
@@ -848,7 +783,10 @@ tangent plugin test --config tangent.yaml\n\
 run: build\n\t\
 tangent run --config tangent.yaml\n\
 \n\
-.PHONY: build test\n";
+setup:\n\t\
+./setup.sh\n\
+\n\
+.PHONY: build test run setup\n";
 
 fn py_project_for(module: &str) -> String {
     let tpl = r#"
