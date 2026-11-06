@@ -102,8 +102,13 @@ install_tinygo() {
     exit 1
   fi
 
+  # TINYGOROOT names this link, not a version, so an upgrade only repoints it: the
+  # profile line, and every shell that already exported it, stay right.
+  local current="${HOME}/.local/opt/tinygo/current"
+  ln -sfn "$INSTALL_ROOT" "$current"
+
   mkdir -p "${HOME}/.local/bin"
-  ln -sf "${INSTALL_ROOT}/bin/tinygo" "${HOME}/.local/bin/tinygo"
+  ln -sf "${current}/bin/tinygo" "${HOME}/.local/bin/tinygo"
 
   if ! echo ":$PATH:" | grep -q ":${HOME}/.local/bin:"; then
     export PATH="${HOME}/.local/bin:${PATH}"
@@ -112,7 +117,7 @@ install_tinygo() {
   local profile_snippet='
 # TinyGo (installed by Tangent setup)
 export PATH="$HOME/.local/bin:$PATH"
-export TINYGOROOT="$HOME/.local/opt/tinygo/'"$version"'"
+export TINYGOROOT="$HOME/.local/opt/tinygo/current"
 '
   for f in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
     [[ -f "$f" ]] || continue
@@ -124,7 +129,7 @@ export TINYGOROOT="$HOME/.local/opt/tinygo/'"$version"'"
   export TINYGOROOT="$INSTALL_ROOT"
 
   persist_path_userbin
-  persist_tinygoroot "$version"
+  persist_tinygoroot
 
   if [[ -n "${ZSH_VERSION:-}" && -f "$HOME/.zshrc" ]]; then
   echo "Sourcing ~/.zshrc so PATH and TINYGOROOT take effect..."
@@ -167,8 +172,7 @@ persist_path_userbin() {
 }
 
 persist_tinygoroot() {
-  local ver="$1"
-  persist_export_line "export TINYGOROOT=\"\$HOME/.local/opt/tinygo/${ver}\""
+  persist_export_line 'export TINYGOROOT="$HOME/.local/opt/tinygo/current"'
 }
 
 print_versions() {
