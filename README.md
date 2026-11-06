@@ -370,6 +370,21 @@ to put packs in one config, and how to write one;
 [packs/core](packs/core/README.md) has the record, the profile's keys and the
 judge's settings.
 
+## Install
+
+Until the next release, build tangent from this checkout:
+
+```bash
+cargo install --path crates/cli --locked
+cargo install --git https://github.com/EthanBlackburn/tangent tangent-cli --locked   # or without a checkout, from main
+```
+
+The release installers (the shell script on the
+[releases page](https://github.com/EthanBlackburn/tangent/releases), the
+Homebrew tap `telophasehq/telophase`, the Docker image
+`ghcr.io/telophasehq/tangent-toolchain`) still serve 0.1.9, which predates
+`include:`, `group_by`, the packs and the edges these docs use.
+
 ## The runtime underneath
 
 The packs are configs over a general stream processor whose nodes are
@@ -406,21 +421,6 @@ before it starts. One process runs it all.
 _Measured in November 2025 on a dedicated 16-core AMD machine, one simple
 transformation plugin each, with `tangent run` and `tangent bench` pinned to
 separate cores ([docs/benchmarks.md](docs/benchmarks.md))._
-
-## Install
-
-Until the next release, build tangent from this checkout:
-
-```bash
-cargo install --path crates/cli --locked
-cargo install --git https://github.com/EthanBlackburn/tangent tangent-cli --locked   # or without a checkout, from main
-```
-
-The release installers (the shell script on the
-[releases page](https://github.com/EthanBlackburn/tangent/releases), the
-Homebrew tap `telophasehq/telophase`, the Docker image
-`ghcr.io/telophasehq/tangent-toolchain`) still serve 0.1.9, which predates
-`include:`, `group_by`, the packs and the edges these docs use.
 
 ## License
 
