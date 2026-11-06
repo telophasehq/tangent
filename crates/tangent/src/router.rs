@@ -185,7 +185,7 @@ impl Router {
         if first {
             tracing::warn!(
                 node = %node_label(from),
-                targets = ?self.outs(from),
+                targets = %names(self.outs(from)),
                 "a record from this source matched none of its targets and was dropped; \
                  tangent_unrouted_records_total counts them"
             );
@@ -282,6 +282,22 @@ fn node_label(n: &NodeRef) -> String {
     }
 }
 
+/// A node's name, as an edge writes it.
+fn node_name(n: &NodeRef) -> &str {
+    match n {
+        NodeRef::Source { name }
+        | NodeRef::Plugin { name }
+        | NodeRef::Inference { name }
+        | NodeRef::Sink { name } => name,
+    }
+}
+
+/// Nodes by name, as an edge's `to` writes them: `[aws, lake]`.
+fn names(nodes: &[NodeRef]) -> String {
+    let names: Vec<&str> = nodes.iter().map(node_name).collect();
+    format!("[{}]", names.join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,6 +336,22 @@ mod tests {
         let named = router.unrouted.lock().unwrap();
         assert_eq!(named.len(), 1, "the source, once");
         assert!(named.contains(&source));
+    }
+
+    /// The warning names a source's targets as its edge does, not as Rust
+    /// debug-prints them.
+    #[test]
+    fn targets_are_named_as_an_edge_writes_them() {
+        let to = [
+            NodeRef::Plugin {
+                name: Arc::from("aws"),
+            },
+            NodeRef::Sink {
+                name: Arc::from("lake"),
+            },
+        ];
+        assert_eq!(names(&to), "[aws, lake]");
+        assert_eq!(names(&[]), "[]");
     }
 
     #[test]
