@@ -126,8 +126,12 @@ impl Config {
     }
 
     /// A name is one node, so that an edge can name a node without its
-    /// kind: no source, plugin, inference node and sink share one.
+    /// kind: no source, plugin, inference node and sink share one. And it is
+    /// letters, digits, `_` and `-`: a plugin's names its `.cwasm` file in
+    /// plugins_path, and an inference node's is the field its reply goes in,
+    /// which a `.` would split: `judge.v2.flag` is judge/v2/flag.
     pub fn check_names(&self) -> Result<()> {
+        let mut bad: Vec<String> = Vec::new();
         let mut kinds: std::collections::BTreeMap<&str, Vec<&str>> = Default::default();
         let maps: [(&str, Vec<&Arc<str>>); 4] = [
             ("source", self.sources.keys().collect()),
@@ -135,10 +139,20 @@ impl Config {
             ("inference node", self.inference.keys().collect()),
             ("sink", self.sinks.keys().collect()),
         ];
+        let ok = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
         for (kind, names) in maps {
             for n in names {
+                if n.is_empty() || !n.chars().all(ok) {
+                    bad.push(format!("{kind} `{n}`"));
+                }
                 kinds.entry(n).or_default().push(kind);
             }
+        }
+        if !bad.is_empty() {
+            anyhow::bail!(
+                "a name is letters, digits, `_` and `-` only; rename:\n  - {}",
+                bad.join("\n  - ")
+            );
         }
         let shared: Vec<String> = kinds
             .iter()
@@ -340,6 +354,25 @@ mod tests {
         );
         let e = format!("{:#}", cfg.validate().unwrap_err());
         assert!(e.contains("`out` is a source and a sink"), "{e}");
+    }
+
+    /// A plugin's name is its `.cwasm` file's, and an inference node's the
+    /// field its reply goes in: `../x` would name a file outside
+    /// plugins_path, and `judge.v2.flag` is judge/v2/flag. An error naming
+    /// each name that is not letters, digits, `_` and `-`.
+    #[test]
+    fn a_name_is_letters_digits_underscores_and_dashes() {
+        let cfg = config(&format!(
+            "{LINES}plugins:\n  ../x: {{ module_type: rust }}\n  \
+             ok_name-2: {{ module_type: rust }}\n\
+             inference:\n  judge.v2: {{ model: m, prompt_file: p.txt }}\n\
+             sinks:\n  out: {{ type: blackhole }}\n\
+             dag:\n  - from: lines\n    to: [../x, ok_name-2, judge.v2, out]\n"
+        ));
+        let e = format!("{:#}", cfg.validate().unwrap_err());
+        assert!(e.contains("plugin `../x`"), "{e}");
+        assert!(e.contains("inference node `judge.v2`"), "{e}");
+        assert!(!e.contains("ok_name-2"), "{e}");
     }
 
     /// An edge runs from a node that sends to one that takes: not out of a
