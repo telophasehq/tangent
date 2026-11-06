@@ -75,18 +75,21 @@ func ExampleMapper(lvs []tangent_sdk.Log) ([]EnrichedOutput, error) {
 
 	ipToCountry := make(map[string]string, len(resps))
 
+	// A lookup that fails (no network, ipinfo's rate limit, a body that is
+	// not JSON) leaves that address's country empty. Its records still go
+	// on: failing the batch would make the runtime drop all of them.
 	for _, resp := range resps {
 		if resp.Error != nil && *resp.Error != "" {
-			return nil, fmt.Errorf("remote error for ip %s: %s", resp.ID, *resp.Error)
+			continue
 		}
 
 		if resp.Status != 200 {
-			return nil, fmt.Errorf("remote returned status %d for ip %s", resp.Status, resp.ID)
+			continue
 		}
 
 		var payload ipinfoPayload
 		if err := json.Unmarshal(resp.Body, &payload); err != nil {
-			return nil, fmt.Errorf("failed to decode ipinfo response for %s: %w", resp.ID, err)
+			continue
 		}
 
 		ipToCountry[resp.ID] = payload.Country
