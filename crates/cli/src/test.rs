@@ -344,10 +344,31 @@ fn normalize_embedded_json(v: &mut Value) {
             if trimmed.starts_with('{') || trimmed.starts_with('[') {
                 if let Ok(mut parsed) = serde_json::from_str::<Value>(trimmed) {
                     normalize_embedded_json(&mut parsed);
-                    *v = parsed;
+                    // Sorted like the rest of the record: serde_json keeps
+                    // insertion order here (preserve_order, through rig-core).
+                    *v = stabilize(parsed);
                 }
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn embedded_json_compares_regardless_of_key_order() {
+        // A plugin that writes an object as a JSON string (a Go plugin's
+        // json.Marshal'd OCSF `unmapped`) keeps its field order.
+        let produced = stabilize(json!({"unmapped": r#"{"seen":5,"level":"info"}"#}));
+
+        let as_string = stabilize(json!({"unmapped": r#"{"level":"info","seen":5}"#}));
+        assert_eq!(diff_lines(&as_string, &produced), "");
+
+        let as_object = stabilize(json!({"unmapped": {"level": "info", "seen": 5}}));
+        assert_eq!(diff_lines(&as_object, &produced), "");
     }
 }
