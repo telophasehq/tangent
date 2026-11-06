@@ -320,6 +320,12 @@ impl DurableFileSink {
         };
 
         let mut js = self.uploads.lock().await;
+        // a finished send is let go here, not kept until the next flush
+        while let Some(done) = js.try_join_next() {
+            if let Err(e) = done {
+                tracing::warn!("upload task join error: {e}");
+            }
+        }
 
         js.spawn(async move {
             match fut.await {
@@ -899,6 +905,47 @@ mod tests {
         .await
         .expect("each route sealed, sent and gone by age");
         assert_eq!(wal.routes.lock().await.len(), 0, "no route kept open");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A finished send is let go when the next one starts, not kept until
+    /// a flush.
+    #[tokio::test]
+    async fn a_finished_send_is_not_kept() {
+        let dir = wal_dir("reap");
+        let rec = Arc::new(Recorder::default());
+        // a file holds one write: each write seals the one before
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            8,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        for n in 0..40 {
+            wal.write(write(&format!("{{\"n\":{n}}}\n"))).await.unwrap();
+        }
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while rec.got.lock().await.len() < 39 || wal.inflight.load(Ordering::Acquire) > 0 {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("39 sealed and sent");
+        sleep(Duration::from_millis(50)).await;
+        wal.write(write("{\"n\":40}\n")).await.unwrap();
+        assert_eq!(
+            wal.uploads.lock().await.len(),
+            1,
+            "only the send just started"
+        );
+        wal.flush().await.unwrap();
+        assert_eq!(rec.got.lock().await.len(), 41);
+        assert_eq!(names_in(&dir), Vec::<String>::new());
         let _ = std::fs::remove_dir_all(dir);
     }
 
