@@ -210,11 +210,18 @@ fn prepare_python_env(py_dir: &Path) -> Result<PathBuf> {
 
     let reqs = py_dir.join("requirements.txt");
     if reqs.exists() {
-        Command::new(&py_bin)
+        let status = Command::new(&py_bin)
             .args(["-m", "pip", "install", "-r"])
             .arg(&reqs)
             .status()
             .context("installing Python requirements")?;
+        if !status.success() {
+            bail!(
+                "`pip install -r {}` failed (exit: {:?})",
+                reqs.display(),
+                status.code()
+            );
+        }
     }
     Ok(venv_dir)
 }
