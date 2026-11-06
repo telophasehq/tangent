@@ -39,12 +39,22 @@ install_wasm_tools() {
 }
 
 # fetch URL DEST: download, or refresh DEST only if the server has a newer file.
+# The download lands beside DEST and is renamed over it only when complete: a
+# cut-off transfer written to DEST itself would be newer than the server's
+# copy, so -z would never replace it, and a pipeline starting meanwhile
+# would read half a file. On 304 Not Modified curl writes nothing.
 fetch() {
-  local url=$1 dest=$2
+  local url=$1 dest=$2 part="$2.$$.part"
   if [ -f "$dest" ]; then
-    curl -fsSL -z "$dest" -o "$dest" "$url" || echo "warning: could not refresh $dest" >&2
+    if curl -fsSL -z "$dest" -o "$part" "$url"; then
+      [ ! -f "$part" ] || mv -f "$part" "$dest"
+    else
+      rm -f "$part"
+      echo "warning: could not refresh $dest" >&2
+    fi
   else
-    curl -fsSL -o "$dest" "$url"
+    curl -fsSL -o "$part" "$url" || { rm -f "$part"; return 1; }
+    mv -f "$part" "$dest"
   fi
 }
 
@@ -121,8 +131,11 @@ labels = [
     ("tor", lines("tor-exits.txt")),
 ]
 path = os.path.join(data, "networks.csv")
+# A temporary file of this process's own, so two setup.sh runs at once do not
+# write into one file.
+tmp = f"{path}.{os.getpid()}.tmp"
 counts = []
-with open(path + ".tmp", "w", encoding="utf-8") as out:
+with open(tmp, "w", encoding="utf-8") as out:
     out.write("# Built by setup.sh from the ranges beside it; labels answer in this order.\n")
     out.write("prefix,label\n")
     for label, prefixes in labels:
@@ -136,7 +149,7 @@ with open(path + ".tmp", "w", encoding="utf-8") as out:
                 seen.add(net)
                 out.write(f"{net},{label}\n")
         counts.append(f"{label} {len(seen)}")
-os.replace(path + ".tmp", path)
+os.replace(tmp, path)
 print("    " + ", ".join(counts))
 PY
 }
@@ -154,7 +167,7 @@ fetch_data() {
   fetch https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv4.txt data/datacenter-ips.txt
   fetch https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt data/vpn-ips.txt
   build_networks
-  ls -la data | awk 'NR>1 && $9 != "" {printf "    %8d  %s\n", $5, $9}'
+  ls -l data | awk 'NR>1 {printf "    %8d  %s\n", $5, $9}'
 }
 
 if [ "${1:-}" = "data" ]; then
