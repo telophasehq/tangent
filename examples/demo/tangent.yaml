@@ -1,0 +1,27 @@
+# demo, step 2: the case's two records, read by core's judge against what
+# step 1 (learn.yaml) put in state.sqlite. The judge is core's, as it ships,
+# at JUDGE_URL (a local model on :8080 by default), except for temperature 0,
+# so a run gives the same answer as the last.
+include:
+  - ../../packs/core/ingest.yaml
+  - ../../packs/core/judge.yaml
+  - ../../packs/app/ingest.yaml
+
+enrichment_tables:
+  profile: { type: document, path: profile/profile.yaml, required: true }   # acme, tangent-eval's company
+
+runtime:
+  disable_remote_calls: true
+
+inference:
+  judge:
+    temperature: 0
+
+sources:
+  window: { type: file, path: window.ndjson, decoding: { format: { type: ndjson } } }
+
+dag:
+  - from: window
+    to: [app]
+  - from: app
+    to: [baseline_builder, baseline_renderer]

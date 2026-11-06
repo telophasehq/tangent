@@ -1,0 +1,7 @@
+plugins/
+state.sqlite*
+alerts.ndjson
+verdicts.ndjson
+lake/
+learn.log
+judge.log
