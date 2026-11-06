@@ -1,0 +1,12 @@
+# tangent.yaml without what only a local server takes: its url and key, the
+# sampling, the chat template. haiku.yaml includes it; a file can remove
+# `extra` but not one key inside it, so this is a file of its own.
+include:
+  - tangent.yaml
+
+inference:
+  judge:
+    url: null
+    api_key: null
+    temperature: null
+    extra: null

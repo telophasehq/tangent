@@ -80,6 +80,10 @@ inference:
           time: [id.time, ts]
           keep: [events]
         app: { principal: [_norm.actor, actor], time: [ts] }   # app
+        macos:                     # macos
+          principal: [_norm.actor]
+          time: [ts]
+          keep: [event, file, access, from, modified, detail, exec.args, exec.cwd, exec.script, exec.env, parents, process.pid, process.ppid, process.tty, _facts.credentials, _facts.agent_settings, _facts.agent_instructions, _facts.agent_mcp, _facts.agent_state, _facts.agent_extensions, _facts.persistence, _facts.agent_env, _facts.scratch_program, _facts.unsigned, _facts.rename_over]
 
 sinks:
   alerts:

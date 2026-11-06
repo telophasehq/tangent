@@ -1,0 +1,685 @@
+[
+ {
+  "ts": "2026-11-03T20:00:02.000002000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "/usr/bin/git",
+   "org": "dev"
+  },
+  "_facts": {
+   "notes": []
+  },
+  "event": "exec",
+  "exec": {
+   "args": [
+    "git",
+    "status"
+   ],
+   "cwd": "/Users/dev/code/x",
+   "env_count": 12
+  },
+  "parents": [
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/usr/bin/git",
+   "pid": 201,
+   "platform": true,
+   "ppid": 200,
+   "responsible": 100,
+   "signer": "com.apple.git",
+   "tty": "/dev/ttys003",
+   "uid": 501
+  },
+  "started_by": "/bin/zsh"
+ },
+ {
+  "ts": "2026-11-03T20:00:05.000005000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
+  "_facts": {
+   "agent_env": true,
+   "notes": [
+    "the environment sets where an AI agent sends its API traffic, keeps its config or sends telemetry"
+   ]
+  },
+  "event": "exec",
+  "exec": {
+   "args": [
+    "agent"
+   ],
+   "cwd": "/Users/dev/code/x",
+   "env": {
+    "ANTHROPIC_BASE_URL": "https://proxy.example.com/v1"
+   },
+   "env_count": 40
+  },
+  "parents": [
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "pid": 300,
+   "platform": false,
+   "ppid": 200,
+   "responsible": 100,
+   "signer": "com.example.agent",
+   "team": "EXAMPLE123",
+   "tty": "/dev/ttys003",
+   "uid": 501
+  },
+  "started_by": "/bin/zsh"
+ },
+ {
+  "ts": "2026-11-03T20:00:07.000007000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
+  "_facts": {
+   "agent_state": true,
+   "notes": [
+    "an AI agent's transcripts or session state: every prompt, reply and command it ran"
+   ]
+  },
+  "access": "write",
+  "event": "open",
+  "file": "/Users/dev/.claude/projects/-Users-dev-code-x/0f3a-session.jsonl",
+  "parents": [
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "pid": 300,
+   "platform": false,
+   "ppid": 200,
+   "responsible": 100,
+   "signer": "com.example.agent",
+   "team": "EXAMPLE123",
+   "tty": "/dev/ttys003",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:08.000008000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
+  "_facts": {
+   "agent_state": true,
+   "notes": [
+    "an AI agent's transcripts or session state: every prompt, reply and command it ran"
+   ]
+  },
+  "event": "close",
+  "file": "/Users/dev/.claude/projects/-Users-dev-code-x/0f3a-session.jsonl",
+  "modified": true,
+  "parents": [
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "pid": 300,
+   "platform": false,
+   "ppid": 200,
+   "responsible": 100,
+   "signer": "com.example.agent",
+   "team": "EXAMPLE123",
+   "tty": "/dev/ttys003",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:11.000011000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
+  "_facts": {
+   "agent_mcp": true,
+   "notes": [
+    "an AI agent's MCP configuration: which servers it connects to and runs"
+   ]
+  },
+  "event": "create",
+  "file": "/Users/dev/.claude.json.tmp.300.ab12",
+  "parents": [
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "pid": 300,
+   "platform": false,
+   "ppid": 200,
+   "responsible": 100,
+   "signer": "com.example.agent",
+   "team": "EXAMPLE123",
+   "tty": "/dev/ttys003",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:12.000012000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
+  "_facts": {
+   "agent_mcp": true,
+   "notes": [
+    "the file was replaced by renaming another over it",
+    "an AI agent's MCP configuration: which servers it connects to and runs"
+   ],
+   "rename_over": true
+  },
+  "event": "rename",
+  "file": "/Users/dev/.claude.json",
+  "from": "/Users/dev/.claude.json.tmp.300.ab12",
+  "parents": [
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "pid": 300,
+   "platform": false,
+   "ppid": 200,
+   "responsible": 100,
+   "signer": "com.example.agent",
+   "team": "EXAMPLE123",
+   "tty": "/dev/ttys003",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:14.000014000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "/usr/bin/security",
+   "org": "dev"
+  },
+  "_facts": {
+   "notes": []
+  },
+  "event": "exec",
+  "exec": {
+   "args": [
+    "security",
+    "find-generic-password",
+    "-s",
+    "agent-credentials",
+    "-w"
+   ],
+   "cwd": "/Users/dev/code/x",
+   "env_count": 40
+  },
+  "parents": [
+   "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/usr/bin/security",
+   "pid": 301,
+   "platform": true,
+   "ppid": 300,
+   "responsible": 100,
+   "signer": "com.apple.security",
+   "tty": "/dev/ttys003",
+   "uid": 501
+  },
+  "started_by": "/Users/dev/.local/share/agent/versions/2.0.0/agent"
+ },
+ {
+  "ts": "2026-11-03T20:00:18.000018000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "/bin/sh",
+   "org": "dev"
+  },
+  "_facts": {
+   "notes": []
+  },
+  "event": "exec",
+  "exec": {
+   "args": [
+    "sh",
+    "-c",
+    "npm install"
+   ],
+   "cwd": "/Users/dev/code/x",
+   "env_count": 41
+  },
+  "parents": [
+   "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/bin/sh",
+   "pid": 302,
+   "platform": true,
+   "ppid": 300,
+   "responsible": 100,
+   "signer": "com.apple.sh",
+   "tty": "/dev/ttys003",
+   "uid": 501
+  },
+  "started_by": "/Users/dev/.local/share/agent/versions/2.0.0/agent"
+ },
+ {
+  "ts": "2026-11-03T20:00:20.000020000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "org": "dev"
+  },
+  "_facts": {
+   "notes": []
+  },
+  "event": "exec",
+  "exec": {
+   "args": [
+    "node",
+    "/Users/dev/code/x/node_modules/evil-pkg/postinstall.js"
+   ],
+   "cwd": "/Users/dev/code/x",
+   "env_count": 45
+  },
+  "parents": [
+   "/bin/sh -c npm install",
+   "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "/bin/zsh"
+  ],
+  "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "path": "/usr/local/bin/node",
+   "pid": 303,
+   "platform": false,
+   "ppid": 302,
+   "responsible": 100,
+   "team": "NODEJS1234",
+   "uid": 501
+  },
+  "started_by": "/bin/sh"
+ },
+ {
+  "ts": "2026-11-03T20:00:21.000021000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "org": "dev"
+  },
+  "_facts": {
+   "credentials": true,
+   "notes": [
+    "a credential file: cloud, registry, SSH, signing or API keys"
+   ]
+  },
+  "access": "read",
+  "event": "open",
+  "file": "/Users/dev/.aws/credentials",
+  "parents": [
+   "/bin/sh -c npm install",
+   "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "/bin/zsh"
+  ],
+  "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "path": "/usr/local/bin/node",
+   "pid": 303,
+   "platform": false,
+   "ppid": 302,
+   "responsible": 100,
+   "team": "NODEJS1234",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:22.000022000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "org": "dev"
+  },
+  "_facts": {
+   "agent_state": true,
+   "notes": [
+    "an AI agent's transcripts or session state: every prompt, reply and command it ran"
+   ]
+  },
+  "access": "read",
+  "event": "open",
+  "file": "/Users/dev/.claude/projects/-Users-dev-code-x/0f3a-session.jsonl",
+  "parents": [
+   "/bin/sh -c npm install",
+   "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "/bin/zsh"
+  ],
+  "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "path": "/usr/local/bin/node",
+   "pid": 303,
+   "platform": false,
+   "ppid": 302,
+   "responsible": 100,
+   "team": "NODEJS1234",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:24.000024000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "org": "dev"
+  },
+  "_facts": {
+   "agent_settings": true,
+   "notes": [
+    "an AI agent's settings file, where its hooks are: a command there runs at the agent's steps"
+   ]
+  },
+  "event": "create",
+  "file": "/Users/dev/code/x/.claude/settings.local.json",
+  "parents": [
+   "/bin/sh -c npm install",
+   "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "/bin/zsh"
+  ],
+  "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "path": "/usr/local/bin/node",
+   "pid": 303,
+   "platform": false,
+   "ppid": 302,
+   "responsible": 100,
+   "team": "NODEJS1234",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:25.000025000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "org": "dev"
+  },
+  "_facts": {
+   "agent_settings": true,
+   "notes": [
+    "an AI agent's settings file, where its hooks are: a command there runs at the agent's steps"
+   ]
+  },
+  "event": "close",
+  "file": "/Users/dev/code/x/.claude/settings.local.json",
+  "modified": true,
+  "parents": [
+   "/bin/sh -c npm install",
+   "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "/bin/zsh"
+  ],
+  "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "path": "/usr/local/bin/node",
+   "pid": 303,
+   "platform": false,
+   "ppid": 302,
+   "responsible": 100,
+   "team": "NODEJS1234",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:26.000026000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "org": "dev"
+  },
+  "_facts": {
+   "agent_instructions": true,
+   "notes": [
+    "an AI agent's instructions or memory: text the model reads as its own guidance"
+   ]
+  },
+  "event": "close",
+  "file": "/Users/dev/code/x/CLAUDE.md",
+  "modified": true,
+  "parents": [
+   "/bin/sh -c npm install",
+   "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "/bin/zsh"
+  ],
+  "process": {
+   "name": "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "path": "/usr/local/bin/node",
+   "pid": 303,
+   "platform": false,
+   "ppid": 302,
+   "responsible": 100,
+   "team": "NODEJS1234",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:28.000028000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "/private/tmp/.x/agentd"
+  },
+  "_facts": {
+   "notes": [
+    "the program runs from a temporary, cache, download or node_modules directory",
+    "the program has no code signature"
+   ],
+   "scratch_program": true,
+   "unsigned": true
+  },
+  "event": "exec",
+  "exec": {
+   "args": [
+    "./agentd"
+   ],
+   "cwd": "/private/tmp/.x",
+   "env_count": 45
+  },
+  "parents": [
+   "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "/bin/sh -c npm install",
+   "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/private/tmp/.x/agentd",
+   "pid": 304,
+   "platform": false,
+   "ppid": 303,
+   "responsible": 100,
+   "uid": 501
+  },
+  "started_by": "node ~/code/x/node_modules/evil-pkg/postinstall.js"
+ },
+ {
+  "ts": "2026-11-03T20:00:29.000029000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "/private/tmp/.x/agentd",
+   "org": "dev"
+  },
+  "_facts": {
+   "notes": [
+    "runs at login, in every shell, on every git command, or in CI on every push"
+   ],
+   "persistence": true
+  },
+  "event": "create",
+  "file": "/Users/dev/Library/LaunchAgents/com.example.agentd.plist",
+  "parents": [
+   "node ~/code/x/node_modules/evil-pkg/postinstall.js",
+   "/bin/sh -c npm install",
+   "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/private/tmp/.x/agentd",
+   "pid": 304,
+   "platform": false,
+   "ppid": 303,
+   "responsible": 100,
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:30.000030000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "/usr/bin/vim",
+   "org": "dev"
+  },
+  "_facts": {
+   "notes": [
+    "runs at login, in every shell, on every git command, or in CI on every push"
+   ],
+   "persistence": true
+  },
+  "event": "close",
+  "file": "/Users/dev/.zshrc",
+  "modified": true,
+  "parents": [
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/usr/bin/vim",
+   "pid": 400,
+   "platform": true,
+   "ppid": 200,
+   "responsible": 100,
+   "signer": "com.apple.vim",
+   "tty": "/dev/ttys003",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:31.000031000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "com.example.agent",
+   "org": "dev"
+  },
+  "_facts": {
+   "agent_extensions": true,
+   "notes": [
+    "an AI agent's plugins, skills or editor extensions: code it loads"
+   ]
+  },
+  "event": "unlink",
+  "file": "/Users/dev/.claude/plugins/marketplaces/example.backup/README.md",
+  "parents": [
+   "/bin/zsh"
+  ],
+  "process": {
+   "path": "/Users/dev/.local/share/agent/versions/2.0.0/agent",
+   "pid": 300,
+   "platform": false,
+   "ppid": 200,
+   "responsible": 100,
+   "signer": "com.example.agent",
+   "team": "EXAMPLE123",
+   "tty": "/dev/ttys003",
+   "uid": 501
+  }
+ },
+ {
+  "ts": "2026-11-03T20:00:33.000033000Z",
+  "source": "macos",
+  "_norm": {
+   "actor": "/System/Library/PrivateFrameworks/TCC.framework/Support/tccd"
+  },
+  "_facts": {
+   "notes": []
+  },
+  "detail": {
+   "identity": "com.example.agentd",
+   "identity_type": 0,
+   "instigator": {
+    "audit_token": {
+     "asid": 100005,
+     "auid": 501,
+     "egid": 20,
+     "euid": 501,
+     "pid": 304,
+     "pidversion": 2129,
+     "rgid": 20,
+     "ruid": 501
+    },
+    "cdhash": "000000000000000000000000000000bbe1e08230",
+    "codesigning_flags": 536870912,
+    "cs_validation_category": 6,
+    "executable": {
+     "path": "/private/tmp/.x/agentd",
+     "path_truncated": false
+    },
+    "group_id": 304,
+    "is_es_client": false,
+    "is_platform_binary": false,
+    "original_ppid": 303,
+    "parent_audit_token": {
+     "asid": 100005,
+     "auid": 501,
+     "egid": 20,
+     "euid": 501,
+     "pid": 303,
+     "pidversion": 2122,
+     "rgid": 20,
+     "ruid": 501
+    },
+    "ppid": 303,
+    "responsible_audit_token": {
+     "asid": 100005,
+     "auid": 501,
+     "egid": 20,
+     "euid": 501,
+     "pid": 304,
+     "pidversion": 2129,
+     "rgid": 20,
+     "ruid": 501
+    },
+    "session_id": 200,
+    "signing_id": "",
+    "start_time": "2026-11-03T19:58:00.000000000Z",
+    "team_id": null,
+    "tty": null
+   },
+   "instigator_token": {
+    "asid": 100005,
+    "auid": 501,
+    "egid": 20,
+    "euid": 501,
+    "pid": 304,
+    "pidversion": 2129,
+    "rgid": 20,
+    "ruid": 501
+   },
+   "responsible": null,
+   "responsible_token": null,
+   "right": 1,
+   "service": "kTCCServiceSystemPolicyAllFiles",
+   "update_type": 1
+  },
+  "event": "tcc_modify",
+  "process": {
+   "path": "/System/Library/PrivateFrameworks/TCC.framework/Support/tccd",
+   "pid": 600,
+   "platform": true,
+   "ppid": 1,
+   "signer": "com.apple.tccd",
+   "uid": 0
+  }
+ }
+]

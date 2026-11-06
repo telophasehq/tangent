@@ -1,0 +1,19 @@
+# The judge on Claude Haiku 5.5 through Amazon Bedrock's Converse API, with the
+# AWS credential chain: `aws sso login --profile <p>`, then AWS_PROFILE=<p>.
+#
+#   tangent run --config haiku.yaml
+include:
+  - hosted.yaml
+
+inference:
+  judge:
+    backend: bedrock
+    model: ${JUDGE_MODEL:-us.anthropic.claude-haiku-5-5}   # the cross-region profile: Converse refuses the bare model id on demand
+    aws:
+      region: ${AWS_REGION:-us-west-2}
+    max_tokens: 400
+    timeout_ms: 90000
+    retries: 6
+    concurrency: 16                 # a hosted model takes many at once; one worker sends one (packs/macos/ingest.yaml)
+    extra:
+      thinking: { type: disabled }  # Haiku thinks by default and spends the verdict's budget on it
