@@ -11,8 +11,6 @@ use std::io::{BufRead, Write};
 use std::sync::Arc;
 use tangent_shared::sinks::common::{Column, ColumnType, Columns, Compression, Encoding};
 
-use crate::SINK_RECORDS_UNFIT_TOTAL;
-
 #[must_use]
 pub fn ndjson_ensure_newline(mut raw: BytesMut) -> BytesMut {
     if !raw.ends_with(b"\n") {
@@ -28,8 +26,7 @@ pub fn ndjson_to_json_array(raw: &[u8]) -> Result<BytesMut> {
 
 /// [`ndjson_to_json_array`] from a reader to a writer, a line in memory at
 /// a time. A line that is not one JSON value does not fail the file: it is
-/// dropped, counted in `tangent_sink_records_unfit_total{fate="dropped"}`,
-/// and the lines dropped are returned.
+/// dropped, and the lines dropped are returned.
 pub fn write_json_array<R: BufRead, W: Write>(input: R, mut out: W) -> Result<(W, usize)> {
     out.write_all(b"[")?;
     let mut first = true;
@@ -50,12 +47,6 @@ pub fn write_json_array<R: BufRead, W: Write>(input: R, mut out: W) -> Result<(W
         first = false;
     }
     out.write_all(b"]")?;
-    if dropped > 0 {
-        SINK_RECORDS_UNFIT_TOTAL
-            .with_label_values(&["dropped"])
-            .inc_by(dropped as u64);
-        tracing::warn!(dropped, "json: lines that are not JSON");
-    }
     Ok((out, dropped))
 }
 
@@ -85,8 +76,7 @@ pub fn ndjson_to_avro(raw: &[u8], avro_schema_json: &str, comp: &Compression) ->
 /// schema, an object to a record and a value to its union branch, before it
 /// is written. A line the schema does not take (not JSON, a value Avro has
 /// no type for, a value not of the schema) does not fail the file: it is
-/// dropped, counted in `tangent_sink_records_unfit_total{fate="dropped"}`,
-/// and the lines dropped are returned.
+/// dropped, and the lines dropped are returned.
 pub fn write_avro<R: BufRead, W: Write>(
     input: R,
     out: W,
@@ -112,12 +102,6 @@ pub fn write_avro<R: BufRead, W: Write>(
             continue;
         };
         writer.append(value)?;
-    }
-    if dropped > 0 {
-        SINK_RECORDS_UNFIT_TOTAL
-            .with_label_values(&["dropped"])
-            .inc_by(dropped as u64);
-        tracing::warn!(dropped, "avro: lines the schema does not take");
     }
     Ok((writer.into_inner()?, dropped))
 }
@@ -157,7 +141,7 @@ pub struct Unfit {
 /// for a field, a time arrow cannot parse) does not fail the file: with a
 /// record column it is kept there, its typed columns null, if it is JSON at
 /// all and every typed column may be null; otherwise it is dropped. Both are
-/// counted in `tangent_sink_records_unfit_total` and returned.
+/// returned.
 pub fn write_parquet<R: BufRead, W: Write + Send>(
     mut input: R,
     out: W,
@@ -225,19 +209,6 @@ pub fn write_parquet<R: BufRead, W: Write + Send>(
         if eof {
             break;
         }
-    }
-    if unfit != Unfit::default() {
-        SINK_RECORDS_UNFIT_TOTAL
-            .with_label_values(&["kept"])
-            .inc_by(unfit.kept as u64);
-        SINK_RECORDS_UNFIT_TOTAL
-            .with_label_values(&["dropped"])
-            .inc_by(unfit.dropped as u64);
-        tracing::warn!(
-            kept = unfit.kept,
-            dropped = unfit.dropped,
-            "parquet: lines the schema could not read"
-        );
     }
     Ok((writer.into_inner()?, unfit))
 }
