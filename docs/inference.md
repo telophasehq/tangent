@@ -39,9 +39,13 @@ pass-through body.
 The reply is read as JSON and nothing else, and the backend is asked to make
 it so: with `schema_file` (a JSON Schema next to the prompt) through
 `response_format` on an OpenAI-compatible server or structured output on
-Bedrock; without one, an `openai` server is put in JSON mode. A server that
-ignores both (mlx_lm.server does) is held to the prompt, and a reply that is
-not a JSON object is the error.
+Bedrock; without one, an `openai` server is put in JSON mode. Holding a reply
+to the schema is the server's work (llama-server compiles it to a grammar);
+tangent does not check an answer against it. A server that ignores both
+(mlx_lm.server does) is held to the prompt. A reply that is not a JSON object, or has no `answers` array,
+is the error; an answer that is a JSON object of another shape is attached
+as it is, so core's `{"flag": "true"}` or `{}` is not a flag, and `flagged`
+passes it over as it would a pass.
 
 ## Requests
 
@@ -99,7 +103,7 @@ or more after the first, exits at once.
 | `model` | | as the backend names it |
 | `aws` | | `bedrock`: `{ region, profile }`, the SDK's defaults when unset |
 | `prompt_file` | | the system message, relative to the file that names it |
-| `schema_file` | | a JSON Schema each answer must satisfy, relative to the file that names it |
+| `schema_file` | | a JSON Schema the backend is asked to hold each answer to (tangent does not check it), relative to the file that names it |
 | `fields` | the whole record | the fields the model is shown |
 | `encoding` | `{ type: ndjson }` | or `{ type: logfmt, keep, sources, budget_tokens: 90000, sidecar: false }` |
 | `group_by` | | a request holds one value of these fields |
