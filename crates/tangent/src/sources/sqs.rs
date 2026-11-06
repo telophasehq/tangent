@@ -74,9 +74,12 @@ async fn consume(
                                     s3_notification = true;
 
                                     for r in recs {
+                                        // Only a creation names an object to read (as in
+                                        // cloudtrail.rs): a removed one is not there.
+                                        let created = r["eventName"].as_str().is_none_or(|e| e.starts_with("ObjectCreated"));
                                         let bucket = r.pointer("/s3/bucket/name").and_then(|x| x.as_str());
                                         let key_enc = r.pointer("/s3/object/key").and_then(|x| x.as_str());
-                                        if let (Some(bucket), Some(key_enc)) = (bucket, key_enc) {
+                                        if let (true, Some(bucket), Some(key_enc)) = (created, bucket, key_enc) {
                                             let mut key = percent_decode_str(key_enc).decode_utf8_lossy().into_owned();
                                             if key.contains('+') {
                                                 key = key.replace('+', " ");
@@ -309,13 +312,20 @@ mod tests {
         json!({"MessageId": handle, "ReceiptHandle": handle, "Body": body})
     }
 
-    /// The S3 event notification of `keys` created in the bucket.
-    fn created(handle: &str, keys: &[&str]) -> Value {
+    /// The S3 event notification of `event` on `keys` in the bucket.
+    fn notification(handle: &str, event: &str, keys: &[&str]) -> Value {
         let records: Vec<Value> = keys
             .iter()
-            .map(|k| json!({"s3": {"bucket": {"name": "bucket"}, "object": {"key": k}}}))
+            .map(|k| {
+                json!({"eventName": event, "s3": {"bucket": {"name": "bucket"}, "object": {"key": k}}})
+            })
             .collect();
         message(handle, &json!({ "Records": records }).to_string())
+    }
+
+    /// The S3 event notification of `keys` created in the bucket.
+    fn created(handle: &str, keys: &[&str]) -> Value {
+        notification(handle, "ObjectCreated:Put", keys)
     }
 
     #[derive(Default)]
@@ -446,6 +456,27 @@ mod tests {
         run.result.unwrap();
         assert_eq!(run.deleted, ["read"]);
         assert_eq!(run.written, ["{\"n\":1}\n"], "only the message read whole");
+    }
+
+    /// A notification of a removed object is deleted unread: there is no
+    /// object to read. GetObject failed on it, so the message stayed on
+    /// the queue, back every visibility timeout until its retention ended.
+    #[tokio::test]
+    async fn a_notification_of_a_removed_object_is_not_read() {
+        let run = run(
+            "sqs-removed",
+            Aws {
+                messages: Mutex::new(vec![
+                    notification("removed", "ObjectRemoved:Delete", &["secret.json"]),
+                    notification("expired", "LifecycleExpiration:Delete", &["secret.json"]),
+                ]),
+                ..Aws::default()
+            },
+        )
+        .await;
+        run.result.unwrap();
+        assert_eq!(run.deleted, ["removed", "expired"]);
+        assert!(run.written.is_empty());
     }
 
     /// A body, or an object, that does not decode is counted and skipped,
