@@ -1,5 +1,5 @@
 //! Every config in the repo loads: alone, or through a config that includes
-//! it (a pack's ingest.yaml, say, is a plugin whose tables core gives). And
+//! it (a pack's ingest.yaml, say, is a plugin whose tables enrich gives). And
 //! the pipelines pass the checks `tangent run` makes before it starts: with
 //! the judge, as the examples run, and without it.
 

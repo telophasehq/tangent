@@ -20,7 +20,7 @@ include:
 enrichment_tables:
   profile: { type: document, path: profile/profile.yaml, required: true }   # a typo here stops it
 
-# JSON lines instead, at three times the tokens (packs/core/README.md):
+# JSON lines instead, at three times the tokens (packs/judge/README.md#the-model):
 # inference:
 #   judge:
 #     batch_bytes: 48000
@@ -41,7 +41,7 @@ sinks:
         ts: timestamp
         source: string
         _norm: { org: string, actor: string, kind: string, ip: string }
-  # What flagged keeps, to Slack too, with its edge at the end of `dag` (packs/core/README.md#slack):
+  # What flagged keeps, to Slack too, with its edge at the end of `dag` (packs/judge/README.md#slack):
   # slack:
   #   type: slack
   #   webhook_url: ${SLACK_WEBHOOK_URL}
@@ -90,7 +90,7 @@ dag:
       - google_workspace
       - app
   # Each pack's records: kept in the lake, folded into the actor's baseline,
-  # and judged (packs/core).
+  # and judged (packs/behavior-baseline, packs/judge).
   - from: aws
     to: [lake, baseline_builder, baseline_renderer]
   - from: github

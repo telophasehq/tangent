@@ -7,7 +7,7 @@ to copy for a new provider.
 
 ## What it writes
 
-`_norm` ([packs/core](../core#the-record) has the contract):
+`_norm` ([enrich](../enrich#the-record) has the contract):
 
 | field | from |
 |---|---|
@@ -21,16 +21,16 @@ to copy for a new provider.
 `_facts` is what the profile and the tables say; Okta adds no facts of its
 own.
 
-Your config routes each record to core's `lake` and [baseline](../core#baseline),
-which folds it into its actor's baseline: event types, applications, browsers
-and devices, addresses, sign-ins, failed sign-ins, MFA and password changes
-and grants, Okta's positive behaviors on a sign-in. That is what the judge's
-`_baseline` says of the actor.
+Your config routes each record to its sink and to
+[behavior-baseline](../behavior-baseline), which folds it into its actor's
+baseline: event types, applications, browsers and devices, addresses, sign-ins,
+failed sign-ins, MFA and password changes and grants, Okta's positive behaviors
+on a sign-in. That is what the judge's `_baseline` says of the actor.
 
 ## What it drops
 
 Kept: `ts`, `source`, `published`, `eventType`, `displayMessage`, `severity`,
-`outcome`, `device` (the registered device, whose `id` core's baseline keeps as
+`outcome`, `device` (the registered device, whose `id` behavior-baseline keeps as
 the actor's devices); the actor's `type`, `alternateId` and `displayName`; the
 client's `ipAddress`, `zone`, `device`, the user agent's `os` and `browser`,
 and the city, state and country; `securityContext`'s `asNumber`, `asOrg`,
@@ -53,16 +53,31 @@ came through, read before the trim drops them.
 
 ## Use it
 
-In your config, beside [core](../core):
+In your config, beside [judge](../judge), which brings enrich and
+behavior-baseline:
 
 ```yaml
 include:
-  - ../tangent/packs/core/ingest.yaml
-  - ../tangent/packs/core/judge.yaml
+  - ../tangent/packs/judge/ingest.yaml
   - ../tangent/packs/okta/ingest.yaml
 
-enrichment_tables:                  # your company: packs/core/README.md#the-profile
+enrichment_tables:                  # your company: packs/enrich/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
+
+sinks:
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }
 
 sources:
   okta_audit:
@@ -73,7 +88,7 @@ sources:
 dag:
   - from: okta_audit
     to: [okta]
-  - from: okta   # kept, learned, judged (packs/core)
+  - from: okta   # kept, learned, judged
     to: [lake, baseline_builder, baseline_renderer]
 ```
 

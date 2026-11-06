@@ -24,7 +24,7 @@ plugins:
 
 ## What it writes
 
-`_norm` ([packs/core](../core#the-record) has the contract):
+`_norm` ([enrich](../enrich#the-record) has the contract):
 
 | field | audit shape | agent shape |
 |---|---|---|
@@ -38,11 +38,12 @@ plugins:
 `_facts` is what the profile and the tables say; an agent's run has no
 principal.
 
-Your config routes each record to core's `lake` and [baseline](../core#baseline),
-which folds the audit shape, under `app` or a name of yours, into its actor's
-baseline: events, paths, keys, addresses, logins, key creations and role
-changes. The agent shape has no actor and passes through it unlearned. That
-is what the judge's `_baseline` says of the actor.
+Your config routes each record to its sink and to
+[behavior-baseline](../behavior-baseline), which folds the audit shape, under
+`app` or a name of yours, into its actor's baseline: events, paths, keys,
+addresses, logins, key creations and role changes. The agent shape has no actor
+and passes through it unlearned. That is what the judge's `_baseline` says of
+the actor.
 
 ## What it drops
 
@@ -63,16 +64,31 @@ agent's `destination` when it is an address rather than a host.
 
 ## Use it
 
-In your config, beside [core](../core):
+In your config, beside [judge](../judge), which brings enrich and
+behavior-baseline:
 
 ```yaml
 include:
-  - ../tangent/packs/core/ingest.yaml
-  - ../tangent/packs/core/judge.yaml
+  - ../tangent/packs/judge/ingest.yaml
   - ../tangent/packs/app/ingest.yaml
 
-enrichment_tables:                  # your company: packs/core/README.md#the-profile
+enrichment_tables:                  # your company: packs/enrich/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
+
+sinks:
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }
 
 sources:
   events:
@@ -82,7 +98,7 @@ sources:
 dag:
   - from: events
     to: [app]
-  - from: app   # kept, learned, judged (packs/core)
+  - from: app   # kept, learned, judged
     to: [lake, baseline_builder, baseline_renderer]
 ```
 
@@ -90,7 +106,7 @@ dag:
 `own_sources`, and each customer's actors are kept and judged apart. A name
 of yours in the audit shape wants a logfmt row of its own in your config,
 under `inference.judge.encoding.sources`, as `app` has in
-[core's judge.yaml](../core/judge.yaml), for its times and the fields on
+[judge's ingest.yaml](../judge/ingest.yaml), for its times and the fields on
 every line.
 
 One profile serves every customer for now, which is wrong in principle and

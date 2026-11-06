@@ -5,8 +5,10 @@ of its actor's recent records; a person reads what it flags. Install, point your
 logs at it, fill in one file about your company, run.
 
 It is built only from [packs](/packs): `tangent.yaml` includes
-[core](/packs/core) and five packs, and adds the sources, their edges, each
-pack's edges to the lake, the baseline and the judge, and the profile. One config, one process.
+[judge](/packs/judge), which brings [enrich](/packs/enrich) and
+[behavior-baseline](/packs/behavior-baseline), and five packs, and adds the
+sources, the lake, their edges, each pack's edges to the lake, the baseline
+and the judge, and the profile. One config, one process.
 
 ```
 CloudTrail ──▶ aws ────────────────────┐
@@ -35,7 +37,8 @@ NDJSON on :9400 ──▶ each pack ─────────┼──▶ base
   or nobody known; whether the address, destination and target are usual; which
   kinds you watch. Every record goes on.
 - **lake** keeps every record, as Parquet files a directory an hour under
-  `lake/`, for DataFusion or DuckDB; delete old hours to trim it.
+  `lake/`, for DataFusion or DuckDB; delete old hours to trim it
+  ([packs](/packs/README.md#the-lake) has what is in it).
 - **baseline_builder** folds every record into `state.sqlite` too: when each
   actor first did each thing, from where and with what, how much an hour, and
   each person's sign-ins and credential changes in every source (`people` in
@@ -49,12 +52,12 @@ NDJSON on :9400 ──▶ each pack ─────────┼──▶ base
   and in `state.sqlite`. It puts
   the same `_baseline` on each of an actor's records: what was known of the
   actor before its first record, facts, not verdicts
-  ([packs/core](/packs/core#baseline) has what is in it).
+  ([packs/behavior-baseline](/packs/behavior-baseline#what-it-stamps) has what is in it).
 - **judge** reads an actor's records together, never two actors in one
   request, and writes a verdict per record: a pass is
   the flag alone, a flag says why. **fresh** drops the `_context` records,
   judged before; **flagged** keeps the verdicts a person should see.
-  [packs/core](/packs/core#judgeyaml) has the model's settings and Slack.
+  [packs/judge](/packs/judge#the-model) has the model's settings and Slack.
 
 ## Install and run
 
@@ -84,7 +87,7 @@ here instead, as for a pack you are changing: `make test PLUGINS=compile`, then
 Rust WASM toolchain first (`./setup.sh toolchain`).
 
 The judge defaults to a local model on `:8080`
-([packs/core](/packs/core#judgeyaml) says how to serve it). For a hosted one:
+([packs/judge](/packs/judge#the-model) says how to serve it). For a hosted one:
 
 ```bash
 JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY make run
@@ -139,7 +142,7 @@ record no pack takes goes no further, with a warning.
 
 [profile/profile.yaml](profile/profile.yaml) is every fact about your company
 that no log carries, the `profile` table `tangent.yaml` names; the model reads
-it as `_facts`. [packs/core](/packs/core#the-profile) lists the keys. It ships
+it as `_facts`. [packs/enrich](/packs/enrich#the-profile) lists the keys. It ships
 filled in for the fictional company the cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases)
 describe.
 
@@ -154,6 +157,6 @@ The packs' fixtures were cut from eight of the cases; `make test` runs them, nee
 ## Files
 
 ```
-tangent.yaml          core and the five packs, the sources, every edge, the profile
+tangent.yaml          judge and the five packs, the sources, the lake, every edge, the profile
 profile/profile.yaml  your company (edit this)
 ```

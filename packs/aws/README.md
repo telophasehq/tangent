@@ -7,7 +7,7 @@ of an organization trail), or the same records sent as NDJSON.
 
 ## What it writes
 
-`_norm` ([packs/core](../core#the-record) has the contract):
+`_norm` ([enrich](../enrich#the-record) has the contract):
 
 | field | from |
 |---|---|
@@ -25,10 +25,11 @@ of an organization trail), or the same records sent as NDJSON.
 | `root` | `userIdentity.type` is `Root` | AWS root credentials used |
 | `world_open` | the call's parameters hold a CIDR with a `/0` prefix, every address (`0.0.0.0/0`, `::/0`, or any address before the `/0`) | opened to every address (`<cidr>`) |
 
-Your config routes each record to core's `lake` and [baseline](../core#baseline),
-which folds it into its actor's baseline: the APIs and resources it touched,
-its clients and addresses, sign-ins, credential changes, and who assumed each
-role session. That is what the judge's `_baseline` says of the actor.
+Your config routes each record to its sink and to
+[behavior-baseline](../behavior-baseline), which folds it into its actor's
+baseline: the APIs and resources it touched, its clients and addresses,
+sign-ins, credential changes, and who assumed each role session. That is what
+the judge's `_baseline` says of the actor.
 
 ## What it drops
 
@@ -64,16 +65,31 @@ Tor and VPN, and whether it is one of yours (`_facts.ip`). Next, through
 
 ## Use it
 
-In your config, beside [core](../core):
+In your config, beside [judge](../judge), which brings enrich and
+behavior-baseline:
 
 ```yaml
 include:
-  - ../tangent/packs/core/ingest.yaml
-  - ../tangent/packs/core/judge.yaml
+  - ../tangent/packs/judge/ingest.yaml
   - ../tangent/packs/aws/ingest.yaml
 
-enrichment_tables:                  # your company: packs/core/README.md#the-profile
+enrichment_tables:                  # your company: packs/enrich/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
+
+sinks:
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }
 
 sources:
   cloudtrail:
@@ -86,12 +102,12 @@ sources:
 dag:
   - from: cloudtrail
     to: [aws]
-  - from: aws   # kept, learned, judged (packs/core)
+  - from: aws   # kept, learned, judged
     to: [lake, baseline_builder, baseline_renderer]
 ```
 
 and `cloudtrail` in your profile's `own_sources`, so every account is your
-org. [Core's judge.yaml](../core/judge.yaml) has the row saying how the
+org. [Judge's ingest.yaml](../judge/ingest.yaml) has the row saying how the
 judge writes CloudTrail records as logfmt.
 
 ### Credentials

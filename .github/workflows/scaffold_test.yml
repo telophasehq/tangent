@@ -66,7 +66,7 @@ jobs:
       - name: Run cargo test (tangent-shared)
         run: cargo test -p tangent-shared --locked
 
-      # Every pack through include, with core and a profile; no model needed for the
+      # Every pack through include, with judge and a profile; no model needed for the
       # test. Compiled here: a tangent built from a checkout has no release to fetch from.
       - name: Run make test (examples/cloud-infra)
         run: make test PLUGINS=compile

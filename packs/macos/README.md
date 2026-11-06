@@ -32,8 +32,9 @@ or host as the target, and the laptop's user as the org; enriches any
 address the process connects to from the runtime's tables; and adds the
 profile's facts, with a profile of the laptop: which tools the developer
 uses, which publishers' extensions, which paths hold credentials. Every
-record goes to [core](../core)'s lake and baseline, and the judge reads a
-process tree's records a group at a time, as it reads an actor's elsewhere.
+record goes to its sink and [behavior-baseline](../behavior-baseline), and
+the judge reads a process tree's records a group at a time, as it reads an
+actor's elsewhere.
 
 ## What it needs
 

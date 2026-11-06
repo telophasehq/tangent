@@ -1,6 +1,6 @@
 //! The keys: each starts with the org, its parts joined by `|`, with `%` and
 //! `|` in a part %-escaped. The table of them is in
-//! packs/core/baseline/README.md.
+//! packs/behavior-baseline/README.md.
 
 use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv6Addr};

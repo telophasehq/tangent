@@ -32,6 +32,6 @@ dag:
   - from: events
     to: [app]
   # app's records: kept in the lake, folded into the actor's baseline, and
-  # judged (packs/core).
+  # judged (packs/behavior-baseline, packs/judge).
   - from: app
     to: [lake, baseline_builder, baseline_renderer]

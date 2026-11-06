@@ -8,7 +8,9 @@ says about it in `_facts`. How to use them is in the main
 
 | directory | what it is |
 |---|---|
-| [core](core) | not a provider: what every pack needs. `ingest.yaml`: the runtime, the enrichment tables, the lake and `baseline_builder`, which learns each actor's history; `judge.yaml`: `baseline_renderer`, grouping each actor's records and stamping `_baseline`, and the judge, with a row for each pack's sources. A pipeline includes `ingest.yaml`, and `judge.yaml` for the model, in one config, and routes each pack's plugin to them. Its README has the record contract and the profile's keys. Every config includes it. |
+| [enrich](enrich) | not a provider: the enrichment tables every pack's plugin reads. Its README has the record contract and the profile's keys. |
+| [behavior-baseline](behavior-baseline) | not a provider: `baseline_builder`, which learns each actor's history into the state store, and `baseline_renderer`, which stamps it on the actor's records as `_baseline`, and the state store they keep it in. |
+| [judge](judge) | not a provider: the judge, with a row for each pack's sources, and the renderer's records grouped an actor at a time for it. It includes enrich and behavior-baseline, so a pipeline with the model includes judge and its packs, routes each pack's plugin to `baseline_builder`, `baseline_renderer` and its own sink, and needs nothing else; one without the model includes enrich, behavior-baseline, or both. |
 | [aws](aws) | `cloudtrail` |
 | [github](github) | `github_audit`, `gha_ci`, `runner_egress` |
 | [okta](okta) | `okta` |
@@ -63,10 +65,10 @@ Its `ingest.yaml` names them for the test, so the fixtures mean the same in
 any config and on any day, with no data fetched.
 
 ```bash
-make -C packs test                # each pack alone: compile, then its fixtures; core's baseline; and the libraries' tests
+make -C packs test                # each pack alone: compile, then its fixtures; behavior-baseline's story and tests; and the libraries' tests
 make -C packs fixtures-okta       # okta/tests/expected.json from the plugin's output; read the diff
                                   # (a test that fails for any reason but its output leaves it as it was)
-make -C packs fixtures-baseline   # core/baseline/tests/expected.json, the same way
+make -C packs fixtures-baseline   # behavior-baseline/tests/expected.json, the same way
 make -C packs dist                # every plugin as a component in target/packs, what a release ships (dist.sh)
 ```
 
