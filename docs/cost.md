@@ -21,9 +21,9 @@ A month is thirty times as much. The count matters more than the size. A log
 reaches the model as a trimmed logfmt line, about a token for every 9 bytes
 it had, but each one also carries its `_norm` and `_facts`, a share of the
 prompt and of `_baseline`, and gets an answer (about 11 tokens to pass, 150
-to flag): below 1 KB, that is most of what a log costs. The rule fits real
-CloudTrail, GitHub and Google Workspace logs, and overstates Okta's, which
-trim further.
+to flag): below 1 KB, that is most of what a log costs. The rule was fitted
+to private samples of real CloudTrail, GitHub and Google Workspace logs
+([below](#how-these-were-made)), and overstates Okta's, which trim further.
 
 ## What the count includes
 
@@ -35,10 +35,15 @@ trim further.
   goes an hour after its first new log. Count a person as their logs plus ten
   for each hour they are active (or for each thirty of their logs, when that
   is more).
-- **Throughput.** At 2–10 s a Haiku 5.5 request, core's `concurrency: 4`
-  keeps up with 35k–170k requests a day (86,400 s × 4 ÷ 10 s, and ÷ 2 s),
-  1.4M–6.8M logs judged, 1M–5.2M of them new; raise
-  `inference.judge.concurrency` past that.
+- **Throughput.** At 2–10 s a Haiku 5.5 request (an estimate, not measured
+  here), core's `concurrency: 4` keeps up with 35k–170k requests a day
+  (86,400 s × 4 ÷ 10 s, and ÷ 2 s), 1.4M–6.8M logs judged, 1M–5.2M of them
+  new; raise `inference.judge.concurrency` past that. A local model on one
+  machine answers one request at a time (`-np 1`), at about five seconds a
+  request ([tangent-eval's README](https://github.com/EthanBlackburn/tangent-eval#run-it)):
+  about 17k requests a day, at most 0.7M logs. That covers the people
+  sources and the low end of aws's row below, not its top or the app row;
+  past it, use a hosted model or more model servers.
 
 ## Per provider
 
@@ -65,22 +70,40 @@ for them would roll flows up before the judge.
 ## Storage
 
 Core keeps every finished log once in its lake, Parquet files in a directory
-an hour, about 20 bytes a log on a day of CloudTrail, which deleting old
-hours trims; the judge's groups wait in memory; `state.sqlite` grows with
-actors, their active hours, role sessions and sign-ins, and each actor's ten
-latest records the judge saw, not with logs.
+an hour, about 20 bytes a log on a day of CloudTrail (a private sample),
+which deleting old hours trims; the judge's groups wait in memory;
+`state.sqlite` grows with actors, their active hours, role sessions and
+sign-ins, and each actor's ten latest records the judge saw, not with logs.
 
 ## How these were made
 
-These are estimates. Log sizes are measured on samples (CloudTrail on 20k
-events, the others on tens to hundreds), tokens with Claude Haiku 4.5's count
-scaled to 5.5's, and the volumes are typical of startups, not yours: a day of
-your own logs in the lake says what yours are.
+These are estimates. Log sizes and token counts were measured on private
+samples of real logs (CloudTrail on 20k events, the others on tens to
+hundreds), not on anything in this repository or tangent-eval, with Claude
+Haiku 4.5's token count scaled to 5.5's; the volumes are typical of
+startups, not yours: a day of your own logs in the lake says what yours are.
+One public check on the sizes: Datadog's Stratus Red Team recordings in
+[tangent-eval](https://github.com/EthanBlackburn/tangent-eval/tree/main/stratus/logs),
+310 CloudTrail events Datadog recorded in its own test accounts, average
+1.3 KB as compact JSON (median 1.0 KB), under the ~2 KB the aws row
+assumes.
 
-One measured cost: the corpus the packs are evaluated on, synthetic logs of a
-few hundred bytes that repeat less than real ones, came to $27 a million
-(921 requests, $0.98, Haiku 5.5 on Bedrock), on the layout
-before this one ([tangent-eval's RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)).
+The rule's two terms: the GB term is a token for every 9 bytes at $0.10 a
+million tokens in, about $11 a GB, which the rule rounds to $12. The per-log term is what a
+log costs whatever its size: its `_norm` and `_facts`, its share of the
+prompt and of `_baseline`, and its answer at $0.50 a million out (11 tokens
+to pass is $5.50 a million alone); it was fitted to the samples above, so it
+cannot be rederived from public data.
+
+One measured cost, which the rule comes in under: the corpus the packs are
+evaluated on, synthetic logs of a few hundred bytes that repeat less than
+real ones, came to $0.98 for 921 requests on Haiku 5.5 on Bedrock
+([tangent-eval's RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)),
+measured through an earlier harness and plugin set. A request holds at most
+40 records, context included, so that is at least $27 a million records
+read (921 × 40 is the most it could have read); the rule says about $19 a
+million for logs of 300 bytes. Until this layout is measured, read the
+tables as estimates that may be low.
 
 Per request, logfmt keeps an actor's forty records at a median of 6,817
 tokens, `_baseline` included, against 20,262 as JSON lines
