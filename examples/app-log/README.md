@@ -49,8 +49,9 @@ make run            # one process: the source, the app pack and the judge; liste
 As in cloud-infra, `make test` and `make run` take the packs' plugins
 prebuilt from the tangent release of this tangent's version, checked
 against GitHub's attestation of their build (it needs `gh`, not a login).
-To build them here instead, for a pack you are changing or a tangent built
-from a checkout: `make test PLUGINS=compile` and `make run PLUGINS=compile`,
+Until the release after 0.1.9 there are none to fetch, and the packs need a
+tangent built from the checkout anyway, so build them here, as for a pack
+you are changing: `make test PLUGINS=compile` and `make run PLUGINS=compile`,
 which install the Rust WASM toolchain first.
 
 The judge defaults to a local model on `:8080`
