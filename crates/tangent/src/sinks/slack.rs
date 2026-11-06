@@ -1,24 +1,37 @@
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
+use bytes::Bytes;
+use parking_lot::Mutex;
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use tangent_shared::sinks::slack::SlackConfig;
 
 use crate::sinks::manager::{Sink, SinkWrite};
-use crate::{SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL};
+use crate::{SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL, SINK_RECORDS_REJECTED_TOTAL};
 
 pub struct SlackSink {
     client: reqwest::Client,
     url: SecretString,
     text: String,
+    /// The line a failed write stopped at, by its payload. The manager retries
+    /// a write whole, and the retry starts there, so Slack does not get a line
+    /// twice. Two writes of one payload at once share an entry: a line is
+    /// then at worst posted twice, never skipped.
+    failed_at: Mutex<HashMap<Bytes, usize>>,
+    /// A refusal has been logged; later ones are only counted.
+    warned: AtomicBool,
 }
 
 impl SlackSink {
     pub fn new(cfg: &SlackConfig) -> Result<Arc<Self>> {
-        if !cfg.webhook_url.expose_secret().starts_with("https://") {
+        let url = reqwest::Url::parse(cfg.webhook_url.expose_secret())
+            .map_err(|e| anyhow!("slack webhook_url is not a url: {e}"))?;
+        if url.scheme() != "https" {
             bail!("slack webhook_url must be https");
         }
         let client = reqwest::Client::builder()
@@ -29,44 +42,52 @@ impl SlackSink {
             client,
             url: cfg.webhook_url.clone(),
             text: cfg.text.clone(),
+            failed_at: Mutex::default(),
+            warned: AtomicBool::new(false),
         }))
     }
 
-    async fn post(&self, text: &str) {
+    /// Ok once Slack has the message, or has refused it: posting it again
+    /// would be refused again. Err when another try can succeed: a 429, after
+    /// the wait its `retry-after` asks for, a 5xx, a timeout or no connection.
+    async fn post(&self, sink: &str, text: &str) -> Result<()> {
         let body =
             serde_json::json!({ "text": text, "unfurl_links": false, "unfurl_media": false });
-        for i in 1..=3 {
-            match self
-                .client
-                .post(self.url.expose_secret())
-                .json(&body)
-                .send()
-                .await
-            {
-                Ok(r) if r.status().is_success() => {
-                    SINK_OBJECTS_TOTAL.inc();
-                    SINK_BYTES_TOTAL.inc_by(text.len() as u64);
-                    return;
-                }
-                Ok(r) if r.status() == 429 && i < 3 => {
-                    let wait = r
-                        .headers()
-                        .get("retry-after")
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(1);
-                    tokio::time::sleep(Duration::from_secs(wait.min(5))).await;
-                }
-                Ok(r) => {
-                    tracing::warn!("slack post failed: {}", r.status());
-                    return;
-                }
-                Err(e) => {
-                    tracing::warn!("slack post failed: {}", e.without_url());
-                    return;
-                }
-            }
+        let r = self
+            .client
+            .post(self.url.expose_secret())
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| anyhow!("slack post failed: {}", e.without_url()))?;
+        let status = r.status();
+        if status.is_success() {
+            SINK_OBJECTS_TOTAL.inc();
+            SINK_BYTES_TOTAL.inc_by(text.len() as u64);
+            return Ok(());
         }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let wait = r
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1);
+            tokio::time::sleep(Duration::from_secs(wait)).await;
+            bail!("slack post failed: {status}, waited the {wait}s it asked");
+        }
+        if status.is_server_error() {
+            bail!("slack post failed: {status}");
+        }
+        SINK_RECORDS_REJECTED_TOTAL.with_label_values(&[sink]).inc();
+        if !self.warned.swap(true, Ordering::Relaxed) {
+            tracing::warn!(
+                sink,
+                "slack refused a post with {status} and it was dropped; later refusals \
+                 are only counted, in tangent_sink_records_rejected_total"
+            );
+        }
+        Ok(())
     }
 }
 
@@ -144,10 +165,19 @@ fn escape(s: &str) -> String {
 #[async_trait]
 impl Sink for SlackSink {
     async fn write(&self, req: SinkWrite) -> Result<()> {
-        for line in crate::inference::lines(&req.payload) {
-            match serde_json::from_slice::<Value>(line) {
-                Ok(v) => self.post(&render(&self.text, &v)).await,
-                Err(e) => tracing::warn!("slack sink: skipping non-JSON line: {e}"),
+        let payload = req.payload.freeze();
+        let start = self.failed_at.lock().remove(&payload).unwrap_or(0);
+        for (i, line) in crate::inference::lines(&payload).enumerate().skip(start) {
+            let v = match serde_json::from_slice::<Value>(line) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("slack sink: skipping non-JSON line: {e}");
+                    continue;
+                }
+            };
+            if let Err(e) = self.post(&req.sink_name, &render(&self.text, &v)).await {
+                self.failed_at.lock().insert(payload.clone(), i);
+                return Err(e);
             }
         }
         Ok(())
@@ -158,6 +188,8 @@ impl Sink for SlackSink {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::atomic::AtomicUsize;
+    use tracing_subscriber::layer::SubscriberExt;
 
     #[test]
     fn renders_escaped() {
@@ -225,5 +257,201 @@ mod tests {
             text: "t".into(),
         };
         assert!(SlackSink::new(&cfg).is_err());
+    }
+
+    #[test]
+    fn a_webhook_url_that_does_not_parse_is_refused() {
+        let cfg = SlackConfig {
+            webhook_url: "https://hooks.slack.com:99999/x".into(),
+            text: "t".into(),
+        };
+        let err = SlackSink::new(&cfg).err().expect("refused").to_string();
+        // the url is a secret: the error does not show it
+        assert!(!err.contains("hooks.slack.com"), "{err}");
+    }
+
+    /// How the stub webhook answers a post.
+    #[derive(Clone, Copy)]
+    enum Reply {
+        Status(u16),
+        /// 429, `retry-after: 1`
+        Later,
+        /// nothing before the client gives up
+        Hang,
+    }
+
+    /// Each post the stub got: its text, the status it answered (0 for none)
+    /// and when.
+    type Posts = Arc<std::sync::Mutex<Vec<(String, u16, std::time::Instant)>>>;
+
+    /// A Slack webhook on localhost: each post gets the next of `replies`, then
+    /// 200.
+    async fn webhook(replies: Vec<Reply>) -> (String, Posts) {
+        use axum::{http::StatusCode, response::IntoResponse, Json};
+        let posts = Posts::default();
+        let replies = Arc::new(std::sync::Mutex::new(std::collections::VecDeque::from(
+            replies,
+        )));
+        let handler = {
+            let posts = Arc::clone(&posts);
+            move |Json(body): Json<Value>| {
+                let (posts, replies) = (Arc::clone(&posts), Arc::clone(&replies));
+                async move {
+                    let text = body["text"].as_str().unwrap_or_default().to_string();
+                    let reply = replies.lock().unwrap().pop_front();
+                    let status = match reply.unwrap_or(Reply::Status(200)) {
+                        Reply::Status(s) => s,
+                        Reply::Later => 429,
+                        Reply::Hang => 0,
+                    };
+                    let now = std::time::Instant::now();
+                    posts.lock().unwrap().push((text, status, now));
+                    match reply {
+                        Some(Reply::Later) => {
+                            (StatusCode::TOO_MANY_REQUESTS, [("retry-after", "1")]).into_response()
+                        }
+                        Some(Reply::Hang) => {
+                            tokio::time::sleep(Duration::from_secs(30)).await;
+                            StatusCode::OK.into_response()
+                        }
+                        _ => StatusCode::from_u16(status).unwrap().into_response(),
+                    }
+                }
+            }
+        };
+        let app = axum::Router::new().route("/", axum::routing::post(handler));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        (url, posts)
+    }
+
+    /// Records how many posts the stub had got when the write was acked.
+    struct AckedAt(Posts, std::sync::Mutex<Option<usize>>);
+
+    #[async_trait]
+    impl crate::worker::Ack for AckedAt {
+        async fn ack(&self) -> Result<()> {
+            *self.1.lock().unwrap() = Some(self.0.lock().unwrap().len());
+            Ok(())
+        }
+    }
+
+    /// Writes `payload` to a slack sink named `name` through a sink manager,
+    /// as a node's edge does: the post count at its ack, if it was acked, and
+    /// the warnings logged.
+    async fn send(name: &str, url: &str, posts: &Posts, payload: &str) -> (Option<usize>, usize) {
+        // the stub is http, which `new` refuses; a short timeout keeps a hung post quick
+        let sink = Arc::new(SlackSink {
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_millis(300))
+                .build()
+                .unwrap(),
+            url: url.into(),
+            text: "{who}".into(),
+            failed_at: Mutex::default(),
+            warned: AtomicBool::new(false),
+        });
+        let name: Arc<str> = Arc::from(name);
+        let manager = crate::sinks::manager::SinkManager::for_test(
+            vec![(Arc::clone(&name), sink as Arc<dyn Sink>)],
+            1,
+        );
+        let ack = Arc::new(AckedAt(Arc::clone(posts), Default::default()));
+        // a #[tokio::test] runs every task on the test's thread, so this sees them all
+        let warnings = Arc::new(AtomicUsize::new(0));
+        let _log = tracing::subscriber::set_default(
+            tracing_subscriber::registry().with(Warnings(Arc::clone(&warnings))),
+        );
+        manager
+            .enqueue(name, bytes::BytesMut::from(payload), vec![ack.clone()])
+            .await
+            .unwrap();
+        manager.join().await.unwrap();
+        let acked_at = ack.1.lock().unwrap().take();
+        (acked_at, warnings.load(Ordering::SeqCst))
+    }
+
+    struct Warnings(Arc<AtomicUsize>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Warnings {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            if *event.metadata().level() == tracing::Level::WARN {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    }
+
+    fn seen(posts: &Posts) -> Vec<(String, u16)> {
+        let posts = posts.lock().unwrap();
+        posts.iter().map(|(t, s, _)| (t.clone(), *s)).collect()
+    }
+
+    #[tokio::test]
+    async fn a_failed_post_is_retried_and_acked_once_slack_has_it() {
+        let (url, posts) = webhook(vec![
+            Reply::Status(200),
+            Reply::Status(500),
+            Reply::Hang,
+            Reply::Later,
+            Reply::Status(503),
+        ])
+        .await;
+        let (acked_at, _) = send(
+            "retried",
+            &url,
+            &posts,
+            "{\"who\":\"a\"}\n{\"who\":\"b\"}\n",
+        )
+        .await;
+        let s = |t: &str, s| (t.to_string(), s);
+        // `a` went out first time and is not posted again; the write is acked
+        // after `b`'s 200, the sixth post
+        assert_eq!(
+            (seen(&posts), acked_at),
+            (
+                vec![
+                    s("a", 200),
+                    s("b", 500),
+                    s("b", 0),
+                    s("b", 429),
+                    s("b", 503),
+                    s("b", 200)
+                ],
+                Some(6)
+            )
+        );
+        let posts = posts.lock().unwrap();
+        assert!(
+            posts[4].2 - posts[3].2 >= Duration::from_secs(1),
+            "the post after a 429 waits its retry-after"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_post_is_dropped_counted_and_acked() {
+        let refused = || {
+            crate::SINK_RECORDS_REJECTED_TOTAL
+                .with_label_values(&["refused"])
+                .get()
+        };
+        let (url, posts) = webhook(vec![Reply::Status(400), Reply::Status(404)]).await;
+        let (acked_at, warnings) = send(
+            "refused",
+            &url,
+            &posts,
+            "{\"who\":\"a\"}\n{\"who\":\"b\"}\n{\"who\":\"c\"}\n",
+        )
+        .await;
+        let s = |t: &str, s| (t.to_string(), s);
+        // neither refusal is posted again, both are counted, the first logged
+        assert_eq!(
+            (seen(&posts), acked_at, refused(), warnings),
+            (vec![s("a", 400), s("b", 404), s("c", 200)], Some(3), 2, 1)
+        );
     }
 }
