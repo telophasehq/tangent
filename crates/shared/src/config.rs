@@ -139,10 +139,9 @@ impl Config {
             ("inference node", self.inference.keys().collect()),
             ("sink", self.sinks.keys().collect()),
         ];
-        let ok = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
         for (kind, names) in maps {
             for n in names {
-                if n.is_empty() || !n.chars().all(ok) {
+                if !is_name(n) {
                     bad.push(format!("{kind} `{n}`"));
                 }
                 kinds.entry(n).or_default().push(kind);
@@ -272,6 +271,15 @@ impl Config {
         }
         cycles
     }
+}
+
+/// Whether `name` can name a node: letters, digits, `_` and `-`, one at
+/// least ([`Config::check_names`] says why).
+pub fn is_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 /// A depth-first walk from `node`, `path` the nodes it came through: an
