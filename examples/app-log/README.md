@@ -23,8 +23,9 @@ app audit log, agent logs: NDJSON on :9401
 
 It is built only from [packs](/packs): `tangent.yaml` includes
 [core](/packs/core), its judge, and the [app](/packs/app) pack, and adds the
-NDJSON source on `:9401`, the plugin's edges to the lake, the baseline and the
-judge, and the profile. One config, one process; the
+NDJSON source on `127.0.0.1:9401` (this machine only, since nothing
+authenticates a record), the plugin's edges to the lake, the baseline and
+the judge, and the profile. One config, one process; the
 judge reads each actor's history from the same `state.sqlite`. The
 18 cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases)
 written only in product logs, `app` and `agent` lines, are this example's, 13

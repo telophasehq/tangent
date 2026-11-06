@@ -77,7 +77,7 @@ sources:
     token: ${GITHUB_TOKEN}            # read:audit_log
   events:                             # gha_ci and runner_egress, as NDJSON
     type: tcp
-    bind_address: 0.0.0.0:9400
+    bind_address: 127.0.0.1:9400     # this machine only: nothing authenticates a record
 
 dag:
   - from: github_audit

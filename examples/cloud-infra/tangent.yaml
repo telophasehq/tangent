@@ -56,7 +56,9 @@ sources:
     subject: ${GOOGLE_ADMIN_EMAIL}
   events:
     type: tcp
-    bind_address: 0.0.0.0:9400
+    # This machine only: nothing authenticates a record, and one sent here is
+    # judged and learned from as any other. 0.0.0.0:9400 takes other hosts'.
+    bind_address: 127.0.0.1:9400
 
 dag:
   - from: cloudtrail

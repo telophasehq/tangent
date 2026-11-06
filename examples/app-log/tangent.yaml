@@ -12,7 +12,9 @@ enrichment_tables:
 sources:
   events:
     type: tcp
-    bind_address: 0.0.0.0:9401
+    # This machine only: nothing authenticates a record, and one sent here is
+    # judged and learned from as any other. 0.0.0.0:9401 takes other hosts'.
+    bind_address: 127.0.0.1:9401
 
 dag:
   - from: events

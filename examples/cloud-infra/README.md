@@ -128,12 +128,17 @@ credential needs.
 | `okta_audit` | [okta](/packs/okta#use-it) | the System Log |
 | `workspace_audit` | [google_workspace](/packs/google_workspace#use-it) | login, token, drive and admin activity |
 
-Anything else is one JSON line per record on `:9400`, with a `source` field
-naming its shape and a `ts`: `gha_ci` and `runner_egress` for the
-[github](/packs/github) pack, `app` and `agent` for [app](/packs/app), or the
-`source` the four above give their records: `cloudtrail`, `github_audit`,
-`okta`, `google_workspace`. Every pack sees the stream and takes its own; a
-record no pack takes goes no further, with a warning.
+Anything else is one JSON line per record on `127.0.0.1:9400`, with a
+`source` field naming its shape and a `ts`: `gha_ci` and `runner_egress` for
+the [github](/packs/github) pack, `app` and `agent` for [app](/packs/app), or
+the `source` the four above give their records: `cloudtrail`,
+`github_audit`, `okta`, `google_workspace`. Every pack sees the stream and
+takes its own; a record no pack takes goes no further, with a warning. The
+listener takes only this machine's records: nothing authenticates one, and a
+record sent there is judged and folded into its actor's history like any
+other, so one from anyone who can reach it could make an address look
+familiar before it is used. To take records from other hosts, set
+`sources.events.bind_address` to `0.0.0.0:9400` behind a firewall.
 
 ## The profile
 
