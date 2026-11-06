@@ -76,29 +76,52 @@ pub fn normalize_from_ndjson(
 }
 
 pub fn ndjson_to_avro(raw: &[u8], avro_schema_json: &str, comp: &Compression) -> Result<BytesMut> {
-    let out = write_avro(raw, BytesMut::new().writer(), avro_schema_json, comp)?;
+    let (out, _) = write_avro(raw, BytesMut::new().writer(), avro_schema_json, comp)?;
     Ok(out.into_inner())
 }
 
 /// [`ndjson_to_avro`] from a reader to a writer, a line in memory at a time
-/// (and a block, in the Avro writer).
+/// (and a block, in the Avro writer). A line the schema does not take (not
+/// JSON, a value Avro has no type for, a value not of the schema) does not
+/// fail the file: it is dropped, counted in
+/// `tangent_sink_records_unfit_total{fate="dropped"}`, and the lines dropped
+/// are returned.
 pub fn write_avro<R: BufRead, W: Write>(
     input: R,
     out: W,
     avro_schema_json: &str,
     comp: &Compression,
-) -> Result<W> {
+) -> Result<(W, usize)> {
     let schema = apache_avro::Schema::parse_str(avro_schema_json)?;
     let mut writer = apache_avro::Writer::with_codec(&schema, out, avro_codec_from(comp));
+    let mut dropped = 0;
     for line in input.split(b'\n') {
         let line = line?;
         if line.is_empty() {
             continue;
         }
-        let value: serde_json::Value = serde_json::from_slice(&line)?;
-        writer.append_ser(value)?;
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&line) else {
+            dropped += 1;
+            continue;
+        };
+        match writer.append_ser(value) {
+            Ok(_) => {}
+            // the line's own, found before any of it is written: the
+            // writer's other errors are the file's, and fail it
+            Err(
+                apache_avro::Error::SerializeValue(_)
+                | apache_avro::Error::ValidationWithReason { .. },
+            ) => dropped += 1,
+            Err(e) => return Err(e.into()),
+        }
     }
-    Ok(writer.into_inner()?)
+    if dropped > 0 {
+        SINK_RECORDS_UNFIT_TOTAL
+            .with_label_values(&["dropped"])
+            .inc_by(dropped as u64);
+        tracing::warn!(dropped, "avro: lines the schema does not take");
+    }
+    Ok((writer.into_inner()?, dropped))
 }
 
 /// Lines in one Arrow batch, and the bytes they may come to: past either,
@@ -653,6 +676,32 @@ mod tests {
         let (out, dropped) = write_json_array(ndjson.as_bytes(), Vec::new()).unwrap();
         assert_eq!(out, br#"[{"n":1},{"n":2}]"#);
         assert_eq!(dropped, 3, "a blank line is no line");
+    }
+
+    #[test]
+    fn avro_drops_a_line_its_schema_does_not_take() {
+        let schema = r#"{"type":"map","values":"string"}"#;
+        let ndjson = [
+            r#"{"n":"1"}"#,
+            "not json",
+            r#"{"n":2}"#,                    // not of the schema
+            r#"{"n":18446744073709551615}"#, // a u64 Avro has no type for
+            "",
+            r#"{"n":"3","m":"y"}"#,
+        ]
+        .map(|l| format!("{l}\n"))
+        .concat();
+        let comp = Compression::Zstd { level: 3 };
+        let (out, dropped) = write_avro(ndjson.as_bytes(), Vec::new(), schema, &comp).unwrap();
+        assert_eq!(dropped, 3);
+        let read: Vec<std::collections::BTreeMap<String, String>> =
+            apache_avro::Reader::new(&out[..])
+                .unwrap()
+                .map(|v| apache_avro::from_value(&v.unwrap()).unwrap())
+                .collect();
+        assert_eq!(read.len(), 2);
+        assert_eq!(read[0]["n"], "1");
+        assert_eq!((read[1]["n"].as_str(), read[1]["m"].as_str()), ("3", "y"));
     }
 
     #[test]

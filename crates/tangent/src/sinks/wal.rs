@@ -535,7 +535,7 @@ fn encode_file(src: &Path, tmp: &Path, enc: &Encoding, comp: &Compression) -> Re
             },
             _,
         ) => encoding::write_parquet(fin, out, schema, record_column.as_deref(), comp)?.0,
-        (Encoding::Avro { schema }, _) => encoding::write_avro(fin, out, schema, comp)?,
+        (Encoding::Avro { schema }, _) => encoding::write_avro(fin, out, schema, comp)?.0,
         (_, Compression::Gzip { level }) => {
             let gz = GzEncoder::new(out, f2Compression::new(*level));
             write_whole(enc, fin, gz)?.finish()?

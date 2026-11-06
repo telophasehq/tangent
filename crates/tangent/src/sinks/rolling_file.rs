@@ -363,6 +363,24 @@ mod tests {
         assert!(dropped >= 1, "counted");
     }
 
+    #[tokio::test]
+    async fn an_avro_file_drops_a_line_its_schema_does_not_take_and_keeps_the_rest() {
+        let avro = Encoding::Avro {
+            schema: r#"{"type":"map","values":"string"}"#.into(),
+        };
+        // not JSON, then a number where the schema has strings
+        let payload = "{\"n\":\"1\"}\nnot json\n{\"n\":2}\n{\"n\":\"3\"}\n";
+        let (name, bytes, dropped) = sealed(avro, "unfit-avro", payload).await;
+        assert!(name.ends_with(".avro"), "{name}");
+        let got: Vec<BTreeMap<String, String>> = apache_avro::Reader::new(&bytes[..])
+            .unwrap()
+            .map(|v| apache_avro::from_value(&v.unwrap()).unwrap())
+            .collect();
+        let want = [("n", "1"), ("n", "3")].map(|(k, v)| BTreeMap::from([(k.into(), v.into())]));
+        assert_eq!(got, want);
+        assert!(dropped >= 2, "counted");
+    }
+
     /// From YAML through the sink manager, as `tangent run` builds it: a
     /// write is in a file once the manager is joined, in the directory its
     /// time renders.
