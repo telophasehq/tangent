@@ -21,7 +21,7 @@ to copy for a new provider.
 `_facts` is what the profile and the tables say; Okta adds no facts of its
 own.
 
-Each record goes to `logs` and to core's [baseline](../core#baseline) too,
+Your config routes each record to core's `lake` and [baseline](../core#baseline),
 which folds it into its actor's baseline: event types, applications, browsers
 and devices, addresses, sign-ins, failed sign-ins, MFA and password changes
 and grants, Okta's positive behaviors on a sign-in. That is what the judge's
@@ -101,6 +101,11 @@ make -C packs fixtures-okta       # after a change; read the diff
 ```
 
 Cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) with Okta
-records: `identity/admin-login-new-asn`, `identity/impossible-travel`,
-`identity/mfa-disabled`, `benign/oncall-3am-login` and
+records, 14: seven of `identity/` (`admin-login-new-asn`, `impossible-travel`,
+`mfa-disabled`, `mfa-reset-then-new-factor-new-asn`,
+`okta-failed-burst-then-success`, `okta-new-country-then-aws`,
+`okta-new-country-then-github`), five of `benign/`
+(`mfa-reset-then-new-factor-office`, `okta-typo-then-success`,
+`okta-usual-country-then-aws`, `okta-usual-country-then-github`,
+`oncall-3am-login`), `prompt-injection/okta-token-name-vouches` and
 `vendor/ai-app-oauth-token-stolen-sso-pivot`.

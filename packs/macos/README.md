@@ -7,10 +7,11 @@ built yet; this is the plan, so the shape is on record.
 ## Telemetry
 
 `eslogger`, Apple's built-in Endpoint Security command-line tool, emits
-process executions and file opens as JSON with nothing to install:
+process executions and file opens as JSON lines with nothing to install, and
+`nc` hands them to a `tcp` source (tangent reads no stdin):
 
 ```bash
-sudo eslogger exec open | tangent run --config tangent.yaml
+sudo eslogger exec open | nc 127.0.0.1 9400
 ```
 
 That is enough for the paths that matter:

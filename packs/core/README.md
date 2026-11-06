@@ -39,7 +39,10 @@ the one to `lake`: every record kept, and no model.
 - **`lake`**, a sink your config routes each pack's plugin to: every record, kept, as Parquet files in
   `lake/logs/<year>/<month>/<day>/<hour>/`, each record whole in `record` and
   `ts`, `source` and `_norm`'s org, actor, kind and ip as columns, for
-  DataFusion or DuckDB to read. A file is sealed an hour after it opened, and
+  DataFusion or DuckDB to read. Kind and ip are empty when the log already
+  holds them ([below](#the-record)), which is nearly always, so a query
+  reads them from `record` (CloudTrail's `eventName`, Okta's
+  `client.ipAddress`). A file is sealed an hour after it opened, and
   only sealed files are there; delete old hours to trim it.
 - **`baseline_builder`**, a plugin your config routes each pack's plugin to
   as well: it folds each record into the state store, under the namespace
@@ -147,7 +150,10 @@ would go on as nobody the org knows, in the provider's org rather than yours.
   closes it no sooner. It reaches the renderer whole, on workers of its own,
   with the actor's latest ten records again ahead of it, marked `_context`
   (`history: 10`): forty records a request, which `batch_bytes` is sized for.
-  Groups wait in memory; the end of input closes every open one. The renderer
+  Groups wait in memory; the end of input closes every open one. A signal
+  (Ctrl-C, a restart) does not: the open groups and the requests the model
+  has not answered end there, their records in the lake and the baseline
+  but with no verdict, and nothing asks about them again. The renderer
   reads `state.sqlite` and puts the same `_baseline` on each of an actor's
   records ([below](#baseline)). `drop_on_error: false`: when it fails, the
   records go to the model without `_baseline` rather than not at all.

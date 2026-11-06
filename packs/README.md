@@ -27,11 +27,11 @@ Its `ingest.yaml` names them for the test, so the fixtures mean the same in
 any config and on any day, with no data fetched.
 
 ```bash
-make test                # each pack alone: compile, then its fixtures; core's baseline; and the libraries' tests
-make fixtures-okta       # okta/tests/expected.json from the plugin's output; read the diff
-                         # (a test that fails for any reason but its output leaves it as it was)
-make fixtures-baseline   # core/baseline/tests/expected.json, the same way
-make dist                # every plugin as a component in ../target/packs, what a release ships (dist.sh)
+make -C packs test                # each pack alone: compile, then its fixtures; core's baseline; and the libraries' tests
+make -C packs fixtures-okta       # okta/tests/expected.json from the plugin's output; read the diff
+                                  # (a test that fails for any reason but its output leaves it as it was)
+make -C packs fixtures-baseline   # core/baseline/tests/expected.json, the same way
+make -C packs dist                # every plugin as a component in target/packs, what a release ships (dist.sh)
 ```
 
 A release carries each plugin compiled, with its build's attestation, and

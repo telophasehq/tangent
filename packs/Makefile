@@ -14,12 +14,14 @@ test: $(addprefix test-,$(PACKS)) test-baseline test-shared
 test-%:
 	cd $* && $(TANGENT) plugin compile --config ingest.yaml && $(TANGENT) plugin test --config ingest.yaml
 
-# Core's baseline: the unit tests of its kit, builder and renderer, then a
-# sign-in story through the renderer and the builder over one state
-# (core/baseline/story.sh).
+# Core's baseline: a sign-in story through the renderer and the builder over
+# one state (core/baseline/story.sh), then the unit tests of its kit, builder
+# and renderer. The story goes first: its `tangent plugin compile` writes the
+# renderer's .tangent/wit, which the renderer's `cargo test` needs, and a
+# fresh clone has none.
 test-baseline:
-	for c in kit builder renderer; do (cd core/baseline/$$c && cargo test) || exit 1; done
 	core/baseline/story.sh
+	for c in kit builder renderer; do (cd core/baseline/$$c && cargo test) || exit 1; done
 
 # The shared libraries' own tests.
 test-shared:

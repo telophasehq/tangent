@@ -10,7 +10,7 @@ says what they learn and what `_baseline` says; this is how.
 | [renderer](renderer) | `baseline_renderer` | the judge | puts `_baseline` on each of an actor's records; writes nothing |
 | [kit](kit) | | both link it | the keys, the event read off each source's record, the time helpers, the store as `Kv` |
 
-They run in different processes and share only the keys, so the kit holds
+They never call each other and share only the keys, so the kit holds
 everything both must agree on. The builder is a file per kind of key it
 writes; the renderer is a file per `_baseline` key, and `before.rs`, which
 every one of them reads state through.
@@ -32,7 +32,7 @@ passes on unchanged. A state call that fails fails the call; in the judge,
 
 ## Keys
 
-In the namespace `baseline`, with no partition: each key starts with the org.
+In the namespace `baseline`: each key starts with the org.
 `|` separates the parts, `%` and `|` in a value are %-escaped, `ms13` is epoch
 milliseconds in 13 digits. Nothing expires.
 
@@ -67,7 +67,7 @@ instead, and this table would go.
 ## Tests
 
 ```bash
-make -C packs test-baseline      # cargo test in kit, builder and renderer, then story.sh
+make -C packs test-baseline      # story.sh, then cargo test in kit, builder and renderer
 make -C packs fixtures-baseline  # story.sh write: tests/expected.json from the story
 ```
 

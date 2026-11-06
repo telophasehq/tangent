@@ -27,7 +27,7 @@ GitHub into finished records, by one plugin, `github`. It takes three
 A CI run's story is told per repository: a run id is new every time, and the
 repository is not a principal, so CI records get no `_facts.principal`.
 
-Each record goes to `logs` and to core's [baseline](../core#baseline) too,
+Your config routes each record to core's `lake` and [baseline](../core#baseline),
 which folds it into its actor's baseline: actions, repositories, clients,
 tokens and OAuth apps, addresses, keys and grants; a CI repository's steps and
 egress hosts. That is what the judge's `_baseline` says of the actor.
@@ -114,6 +114,9 @@ make -C packs fixtures-github     # after a change; read the diff
 ```
 
 Cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) with GitHub
-records: `github/*`, `supply-chain/*`, four of `benign/` (Dependabot, a repo
-made public as planned, a scanner action's usual run) and
+records, 23: `github/*`, `supply-chain/*`, six of `benign/` (Dependabot's
+two, a repo made public as planned, a scanner action's usual run, a pull
+request titled for its reviewers, a usual Okta sign-in then pushes),
+`identity/okta-new-country-then-github`,
+`prompt-injection/fork-pr-title-vouches` and
 `vendor/platform-breach-env-secrets-reused`.
