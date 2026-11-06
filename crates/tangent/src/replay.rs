@@ -37,7 +37,8 @@ use crate::worker::Ack;
 pub struct ReplayOptions {
     pub config: PathBuf,
     /// The range, `[from, to)`: each a date (midnight UTC), an RFC 3339
-    /// time, or a span before now (`1d`, `12h`). Without `to`, now.
+    /// time, or a span before now (`1d`, `12h`). Without `to`, five minutes
+    /// ago.
     pub from: String,
     pub to: Option<String>,
     /// Where the history replay builds is kept, as `state.sqlite`: it starts
@@ -86,12 +87,7 @@ struct Replayed {
 pub async fn replay(opts: ReplayOptions) -> Result<()> {
     let mut cfg = Config::from_file(&opts.config)?;
     cfg.validate()?;
-    let from = parse_when(&opts.from)?;
-    let to = match &opts.to {
-        Some(to) => parse_when(to)?,
-        None => Utc::now(),
-    };
-    ensure!(from < to, "from ({from}) is not before to ({to})");
+    let (from, to) = range(&opts.from, opts.to.as_deref())?;
 
     // A source with a past is read here and stays in the config, its edges
     // taking what is read on; the rest would mix today's records in.
@@ -120,6 +116,19 @@ pub async fn replay(opts: ReplayOptions) -> Result<()> {
         opts.config.display()
     );
     sweep(cfg, &opts.config, &opts.state_dir, sources, from, to).await
+}
+
+/// `[from, to)`, `to` five minutes ago when left out: CloudTrail typically
+/// has an event in Event history within five minutes of its call, so a range
+/// up to now would miss the last few minutes' late events.
+fn range(from: &str, to: Option<&str>) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
+    let from = parse_when(from)?;
+    let to = match to {
+        Some(to) => parse_when(to)?,
+        None => Utc::now() - cloudtrail_history::lag(),
+    };
+    ensure!(from < to, "from ({from}) is not before to ({to})");
+    Ok((from, to))
 }
 
 /// The range of `sources` through `cfg` an hour at a time, then every group
@@ -396,6 +405,19 @@ mod tests {
         for bad in ["last week", "1w", "-1d", "d", "1.5h"] {
             assert!(parse_when(bad).is_err(), "{bad}");
         }
+    }
+
+    /// Without --to the range ends five minutes before the replay starts:
+    /// Event history reads it whole, so past() says nothing of its end.
+    #[test]
+    fn to_left_out_is_five_minutes_ago() {
+        let (from, to) = range("1d", None).unwrap();
+        let started = Utc::now();
+        assert!(to <= started - cloudtrail_history::lag());
+        assert_eq!(
+            cloudtrail_history::range_end(from, to, started).unwrap(),
+            to
+        );
     }
 
     /// Records at fixed times, as a source's past would give them.

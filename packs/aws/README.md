@@ -164,10 +164,12 @@ refused. LookupEvents allows two calls a second per region and returns 50
 events a call, so an hour with 5,000 events in one region takes about 50
 seconds.
 
-Each LookupEvents call is a management event too, so the range ends when the
-replay starts. Its own calls that land in the range anyway (as they do when
-the machine's clock is ahead of AWS's) are left out, and so are earlier
-replays' calls from the same machine. Each replay's calls carry
+Without `--to` the range ends five minutes before the replay starts:
+CloudTrail typically has an event in Event history within five minutes of
+its call. Each LookupEvents call is a management event too, so a range never
+goes past the replay's start. A replay's own calls that land in the range
+anyway (as they do when the machine's clock is ahead of AWS's) are left out,
+and so are earlier replays' calls from the same machine. Each replay's calls carry
 `tangent-replay-` and a random 64-bit id of its own in their `userAgent`, but
 the tag alone is not trusted: anyone can set a user agent, and earlier
 replays' tags are in Event history for anyone who can read it. A record is

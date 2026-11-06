@@ -104,7 +104,8 @@ enum Commands {
         /// time, or a span before now (1d, 12h)
         #[arg(long, value_name = "WHEN")]
         from: String,
-        /// End of the range, as --from; now when left out
+        /// End of the range, as --from; five minutes ago when left out, since
+        /// CloudTrail typically has an event within five minutes of its call
         #[arg(long, value_name = "WHEN")]
         to: Option<String>,
     },
