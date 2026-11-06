@@ -3,7 +3,7 @@
 #   aws sso login --profile <your-profile>      (or any AWS credential source)
 #   tangent plugin compile --config tangent.yaml
 #   tangent run --config tangent.yaml
-#   nc localhost 9000 < events.ndjson
+#   nc -w 1 localhost 9000 < events.ndjson
 #   cat flagged.ndjson
 runtime:
   workers: 1
