@@ -17,7 +17,7 @@
 #       extra: { thinking: { type: disabled } }   # no thinking: the reply is the answer
 #
 # A null here removes what ingest.yaml set; a null on one of `extra`'s keys
-# would be sent as a null (docs/configuration.md).
+# would be sent as a null.
 include:
   - ingest.yaml
 
