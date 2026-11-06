@@ -53,9 +53,8 @@ struct Shard {
 #[derive(Clone)]
 enum SinkEntry {
     /// Through a WAL (`s3`, `rolling_file`): a write carries its route, the
-    /// bucket (s3's; empty for rolling_file) and the key prefix: the edge's,
-    /// below the directory a rolling_file's path renders for the time it is
-    /// routed.
+    /// bucket (s3's; empty for rolling_file) and, for a rolling_file, the
+    /// directory its path renders for the time it is routed.
     Wal {
         sink: Arc<dyn Sink>,
         bucket: Arc<str>,
@@ -183,10 +182,7 @@ impl SinkManager {
                             };
 
                             if let SinkEntry::Wal { bucket, path, .. } = entry {
-                                let mut prefix = item.req.s3.as_ref().and_then(|m| m.key_prefix.clone());
-                                if let Some(path) = path {
-                                    prefix = path.route(chrono::Utc::now(), prefix.as_deref());
-                                }
+                                let prefix = path.as_ref().and_then(|p| p.route(chrono::Utc::now()));
                                 item.req.s3 = Some(s3::S3SinkItem {
                                     bucket_name: bucket.clone(),
                                     key_prefix: prefix,
@@ -268,17 +264,12 @@ impl SinkManager {
     pub async fn enqueue(
         &self,
         sink_name: Arc<str>,
-        key_prefix: Option<Arc<str>>,
         payload: BytesMut,
         acks: Vec<Arc<dyn Ack>>,
     ) -> Result<()> {
         let shard_ix = {
             let mut h = AHasher::default();
             h.write(sink_name.as_bytes());
-            if let Some(prefix) = key_prefix.clone() {
-                h.write_u8(b'|');
-                h.write(prefix.as_bytes());
-            }
             (h.finish() as usize) % self.shards.len()
         };
 
@@ -292,10 +283,7 @@ impl SinkManager {
             req: SinkWrite {
                 sink_name: Arc::<str>::from(sink_name),
                 payload: payload,
-                s3: key_prefix.clone().map(|kp| s3::S3SinkItem {
-                    bucket_name: Arc::<str>::from(""), // placeholder; filled in shard
-                    key_prefix: Some(kp),
-                }),
+                s3: None, // filled in the shard
             },
         };
 
@@ -459,7 +447,6 @@ mod tests {
         manager
             .enqueue(
                 sink_name.clone(),
-                None,
                 BytesMut::from("{\"msg\":1}\n"),
                 vec![ack_dyn],
             )
@@ -469,7 +456,6 @@ mod tests {
         manager
             .enqueue(
                 sink_name.clone(),
-                None,
                 BytesMut::from("{\"msg\":2}\n"),
                 Vec::new(),
             )

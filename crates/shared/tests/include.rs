@@ -47,10 +47,7 @@ fn plugin(name: &str) -> NodeRef {
 }
 
 fn sink(name: &str) -> NodeRef {
-    NodeRef::Sink {
-        name: name.into(),
-        key_prefix: None,
-    }
+    NodeRef::Sink { name: name.into() }
 }
 
 const PIPELINE: &str = "
@@ -1133,7 +1130,7 @@ dag:
   - from: { kind: source, name: input }
     to: [{ kind: plugin, name: probe }]
   - from: { kind: plugin, name: probe }
-    to: [{ kind: sink, name: out }, { kind: sink, name: logs, key_prefix: p }]
+    to: [{ kind: sink, name: out }, { kind: sink, name: logs }]
 ",
     )]);
     let cfg = load(&dir, "tangent.yaml").unwrap().config;

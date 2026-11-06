@@ -17,8 +17,6 @@ pub enum NodeRef {
     },
     Sink {
         name: Arc<str>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        key_prefix: Option<Arc<str>>,
     },
 }
 

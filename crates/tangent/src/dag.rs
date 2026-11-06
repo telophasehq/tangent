@@ -618,7 +618,6 @@ mod tests {
         sink_manager
             .enqueue(
                 sink_name.clone(),
-                None,
                 BytesMut::from("{\"msg\":\"block\"}\n"),
                 vec![ack_dyn],
             )

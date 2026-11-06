@@ -50,15 +50,11 @@ impl PathTemplate {
         &self.root
     }
 
-    /// The directory below the root a write made at `now` goes to, with the
-    /// edge's key prefix below that.
-    pub fn route(&self, now: DateTime<Utc>, key_prefix: Option<&str>) -> Option<Arc<str>> {
-        let time = self.rest.as_ref().map(|r| now.format(r).to_string());
-        match (time, key_prefix) {
-            (Some(t), Some(p)) => Some(Arc::from(format!("{t}/{p}"))),
-            (Some(t), None) => Some(Arc::from(t)),
-            (None, p) => p.map(Arc::from),
-        }
+    /// The directory below the root a write made at `now` goes to.
+    pub fn route(&self, now: DateTime<Utc>) -> Option<Arc<str>> {
+        self.rest
+            .as_ref()
+            .map(|r| Arc::from(now.format(r).to_string()))
     }
 }
 
@@ -327,7 +323,6 @@ mod tests {
         manager
             .enqueue(
                 name,
-                None,
                 BytesMut::from((lines.join("\n") + "\n").as_str()),
                 Vec::new(),
             )
@@ -348,15 +343,10 @@ mod tests {
             .with_timezone(&Utc);
         let t = PathTemplate::parse("lake/logs/%Y/%m/%d/%H").unwrap();
         assert_eq!(t.root(), Path::new("lake/logs"));
-        assert_eq!(t.route(at, None).as_deref(), Some("2026/11/02/13"));
-        assert_eq!(
-            t.route(at, Some("aws")).as_deref(),
-            Some("2026/11/02/13/aws")
-        );
+        assert_eq!(t.route(at).as_deref(), Some("2026/11/02/13"));
         let fixed = PathTemplate::parse("/var/lake").unwrap();
         assert_eq!(fixed.root(), Path::new("/var/lake"));
-        assert_eq!(fixed.route(at, None), None);
-        assert_eq!(fixed.route(at, Some("aws")).as_deref(), Some("aws"));
+        assert_eq!(fixed.route(at), None);
         assert!(PathTemplate::parse("lake/%Y/../x").is_err());
         assert!(PathTemplate::parse("lake/%Q").is_err());
     }

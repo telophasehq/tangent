@@ -138,10 +138,7 @@ pub async fn run(opts: TestOptions) -> Result<()> {
 
             let exit = Edge {
                 from: NodeRef::Plugin { name: name.clone() },
-                to: vec![NodeRef::Sink {
-                    name: "out".into(),
-                    key_prefix: None,
-                }],
+                to: vec![NodeRef::Sink { name: "out".into() }],
             };
 
             let mut sinks = BTreeMap::new();

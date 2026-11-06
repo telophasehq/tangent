@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use crate::dag::{Edge, NodeRef};
 use crate::sinks::common::{Encoding, SinkConfig, SinkKind};
-use crate::sinks::rolling_file;
 use crate::sources::common::SourceConfig;
 
 pub mod dag;
@@ -102,10 +101,7 @@ impl Config {
                 NodeRef::Source { name } => this.sources.contains_key(name),
                 NodeRef::Plugin { name } => this.plugins.contains_key(name),
                 NodeRef::Inference { name } => this.inference.contains_key(name),
-                NodeRef::Sink {
-                    name,
-                    key_prefix: _,
-                } => this.sinks.contains_key(name),
+                NodeRef::Sink { name } => this.sinks.contains_key(name),
             }
         };
 
@@ -140,19 +136,6 @@ impl Config {
             }
         }
 
-        // a rolling_file sink's key prefix is a directory below its path
-        for t in self.dag.iter().flat_map(|e| &e.to) {
-            if let NodeRef::Sink {
-                name,
-                key_prefix: Some(prefix),
-            } = t
-            {
-                if let SinkKind::RollingFile(_) = &self.sinks[name].kind {
-                    rolling_file::subdir(prefix).with_context(|| format!("sink '{name}'"))?;
-                }
-            }
-        }
-
         Ok(())
     }
 }
@@ -176,25 +159,6 @@ fn dedupe(dag: Vec<Edge>) -> Vec<Edge> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn with_prefix(prefix: &str) -> Config {
-        serde_yaml::from_str(&format!(
-            "sources:\n  lines: {{ type: tcp, bind_address: \"127.0.0.1:9\" }}\n\
-             sinks:\n  lake: {{ type: rolling_file, path: /lake/out/%Y/%m/%d, wal_path: /lake/wal }}\n\
-             dag:\n  - from: {{ kind: source, name: lines }}\n    \
-             to: [{{ kind: sink, name: lake, key_prefix: \"{prefix}\" }}]\n"
-        ))
-        .unwrap()
-    }
-
-    #[test]
-    fn a_rolling_file_sinks_key_prefix_stays_below_its_path() {
-        assert!(with_prefix("acme/day").validate().is_ok());
-        for bad in ["../up", "/abs", "a/../../b"] {
-            let e = with_prefix(bad).validate().unwrap_err();
-            assert!(format!("{e:#}").contains("relative path"), "{bad}: {e:#}");
-        }
-    }
 
     #[test]
     fn a_file_sink_takes_ndjson_only() {
