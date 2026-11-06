@@ -135,7 +135,7 @@ enrichment_tables:
 | `about` | who an actor is, when its name does not say | `about`, in place of the "nobody it knows" note |
 | `hosts` | hosts your systems talk to (`*.suffix` allowed) | `dest_known` |
 | `sensitive` | buckets, repos, tables | `sensitive_target` |
-| `watch` | kinds a person wants seen every time | `watch` |
+| `watch` | kinds the model should weigh every time it sees one | `watch`, and the note "… is a kind the org watches every time", which the model reads; a watched record still reaches `alerts.ndjson` only when the judge flags it |
 
 `required: true` makes a mistyped path an error that stops `tangent run`;
 without it the table would answer nothing, with one warning, and every record
