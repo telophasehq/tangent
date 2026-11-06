@@ -17,6 +17,7 @@ use crate::sinks::rolling_file;
 use crate::sinks::s3::S3SinkItem;
 use crate::sinks::slack;
 use crate::sinks::sqlite;
+use crate::sinks::template::Template;
 use crate::INFLIGHT;
 use crate::{
     sinks::{s3, wal},
@@ -51,14 +52,13 @@ struct Queue {
 #[derive(Clone)]
 enum SinkEntry {
     /// Through a WAL (`s3`, `rolling_file`): a write carries its route, the
-    /// bucket (s3's; empty for rolling_file) and the key prefix rendered for
-    /// the time it is routed: a rolling_file's directory below its `path`'s
-    /// root, an s3 sink's `key_prefix`.
+    /// bucket (s3's; empty for rolling_file) and the key prefix `prefix`
+    /// renders for the time it is routed: a rolling_file's directory below
+    /// its `path`'s root, an s3 sink's `key_prefix`.
     Wal {
         sink: Arc<dyn Sink>,
         bucket: Arc<str>,
-        path: Option<Arc<rolling_file::PathTemplate>>,
-        key_prefix: Option<Arc<s3::KeyPrefix>>,
+        prefix: Option<Arc<Template>>,
     },
     Other {
         sink: Arc<dyn Sink>,
@@ -83,10 +83,10 @@ impl SinkManager {
         for (name, cfg) in cfgs {
             match &cfg.kind {
                 SinkKind::S3(s3cfg) => {
-                    let key_prefix = s3cfg
+                    let prefix = s3cfg
                         .key_prefix
                         .as_deref()
-                        .map(s3::KeyPrefix::parse)
+                        .map(s3::key_prefix)
                         .transpose()
                         .with_context(|| format!("sink '{name}'"))?
                         .map(Arc::new);
@@ -106,16 +106,13 @@ impl SinkManager {
                         SinkEntry::Wal {
                             sink: s3_sink as Arc<dyn Sink>,
                             bucket: Arc::<str>::from(s3cfg.bucket_name.clone()),
-                            path: None,
-                            key_prefix,
+                            prefix,
                         },
                     );
                 }
                 SinkKind::RollingFile(rcfg) => {
-                    let path = Arc::new(
-                        rolling_file::PathTemplate::parse(&rcfg.path)
-                            .with_context(|| format!("sink '{name}'"))?,
-                    );
+                    let path = rolling_file::PathTemplate::parse(&rcfg.path)
+                        .with_context(|| format!("sink '{name}'"))?;
                     let wal = wal::DurableFileSink::new(
                         Arc::new(rolling_file::RollingFileSink::new(path.root())),
                         rcfg.wal_path.clone(),
@@ -131,8 +128,7 @@ impl SinkManager {
                         SinkEntry::Wal {
                             sink: wal,
                             bucket: Arc::from(""),
-                            path: Some(path),
-                            key_prefix: None,
+                            prefix: path.rest().cloned(),
                         },
                     );
                 }
@@ -183,15 +179,11 @@ impl SinkManager {
 
                             let sink_name = item.req.sink_name.clone();
 
-                            if let SinkEntry::Wal { bucket, path, key_prefix, .. } = &entry {
+                            if let SinkEntry::Wal { bucket, prefix, .. } = &entry {
                                 let now = chrono::Utc::now();
-                                let prefix = path
-                                    .as_ref()
-                                    .and_then(|p| p.route(now))
-                                    .or_else(|| key_prefix.as_ref().map(|p| p.render(now)));
                                 item.req.s3 = Some(s3::S3SinkItem {
                                     bucket_name: bucket.clone(),
-                                    key_prefix: prefix,
+                                    key_prefix: prefix.as_ref().map(|p| p.render(now)),
                                 });
                             } else {
                                 item.req.s3 = None;
@@ -479,8 +471,7 @@ mod tests {
         let entry = SinkEntry::Wal {
             sink: recorder.clone(),
             bucket: Arc::from("b"),
-            path: None,
-            key_prefix: Some(Arc::new(s3::KeyPrefix::parse("logs/%Y/%m/%d").unwrap())),
+            prefix: Some(Arc::new(s3::key_prefix("logs/%Y/%m/%d").unwrap())),
         };
         let manager = SinkManager::from_entries(HashMap::from([(name.clone(), entry)]), |_| 1);
         let day = || chrono::Utc::now().format("logs/%Y/%m/%d").to_string();

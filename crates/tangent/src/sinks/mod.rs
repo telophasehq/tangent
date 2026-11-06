@@ -6,4 +6,5 @@ pub mod rolling_file;
 pub mod s3;
 pub mod slack;
 pub mod sqlite;
+pub mod template;
 pub mod wal;

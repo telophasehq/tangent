@@ -4,7 +4,6 @@ use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::byte_stream::ByteStream;
-use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -13,7 +12,7 @@ use tangent_shared::sinks::s3::S3Config;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use crate::sinks::rolling_file;
+use crate::sinks::template::Template;
 use crate::sinks::wal::{compressed_whole, WALSink};
 
 pub struct S3Sink {
@@ -237,38 +236,30 @@ impl S3Sink {
 /// resolves `.` and `..` (`aws s3 cp --recursive` skips a key that climbs
 /// out of the directory, and writes `a/../b` to `b`). A trailing `/` is
 /// fine: the key joins the prefix and the name with one `/`.
-#[derive(Debug)]
-pub struct KeyPrefix(String);
-
-impl KeyPrefix {
-    pub fn parse(template: &str) -> Result<Self> {
-        // a `{{ field }}` template is not rendered: its braces would go
-        // into every key
-        if template.contains("{{") {
-            bail!("key_prefix {template:?}: strftime only; a `{{{{ field }}}}` template is not rendered");
-        }
-        if !rolling_file::strftime_renders(template) {
-            bail!("key_prefix {template:?} is not a strftime template (`%%` is a `%`)");
-        }
-        // empty, the prefix is the bucket's root
-        let mut segments = template.trim_end_matches('/').split('/');
-        if !template.is_empty() && segments.any(|s| matches!(s, "" | "." | "..")) {
-            bail!(
-                "key_prefix {template:?}: a path in the bucket, without a leading `/`, `//`, or a `.` or `..` segment"
-            );
-        }
-        Ok(Self(template.to_string()))
+pub fn key_prefix(template: &str) -> Result<Template> {
+    // a `{{ field }}` template is not rendered: its braces would go into
+    // every key
+    if template.contains("{{") {
+        bail!(
+            "key_prefix {template:?}: strftime only; a `{{{{ field }}}}` template is not rendered"
+        );
     }
-
-    /// The prefix of the objects a write routed at `now` goes out in.
-    pub fn render(&self, now: DateTime<Utc>) -> Arc<str> {
-        Arc::from(now.format(&self.0).to_string())
+    let Some(parsed) = Template::parse(template) else {
+        bail!("key_prefix {template:?} is not a strftime template (`%%` is a `%`)");
+    };
+    // empty, the prefix is the bucket's root
+    let mut segments = template.trim_end_matches('/').split('/');
+    if !template.is_empty() && segments.any(|s| matches!(s, "" | "." | "..")) {
+        bail!(
+            "key_prefix {template:?}: a path in the bucket, without a leading `/`, `//`, or a `.` or `..` segment"
+        );
     }
+    Ok(parsed)
 }
 
-/// Each s3 sink's `key_prefix` is one [`KeyPrefix::parse`] takes, or the
-/// error names the sink: checked when `tangent run` and `tangent config`
-/// load a config.
+/// Each s3 sink's `key_prefix` is one [`key_prefix`] takes, or the error
+/// names the sink: checked when `tangent run` and `tangent config` load a
+/// config.
 pub fn check_key_prefixes(sinks: &BTreeMap<Arc<str>, SinkConfig>) -> Result<()> {
     for (name, cfg) in sinks {
         if let SinkKind::S3(S3Config {
@@ -276,7 +267,7 @@ pub fn check_key_prefixes(sinks: &BTreeMap<Arc<str>, SinkConfig>) -> Result<()> 
             ..
         }) = &cfg.kind
         {
-            KeyPrefix::parse(p).with_context(|| format!("sink '{name}'"))?;
+            key_prefix(p).with_context(|| format!("sink '{name}'"))?;
         }
     }
     Ok(())
@@ -292,6 +283,7 @@ fn object_key(prefix: Option<&str>, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{DateTime, Utc};
 
     #[test]
     fn object_key_is_the_prefix_then_the_name() {
@@ -314,7 +306,7 @@ mod tests {
     fn a_key_prefix_renders_in_utc_at_the_time_a_write_is_routed() {
         // 21:04 UTC on the 2nd, whatever zone the clock is read in
         let t = at("2026-11-02T13:04:05-08:00");
-        let render = |p: &str| KeyPrefix::parse(p).unwrap().render(t);
+        let render = |p: &str| key_prefix(p).unwrap().render(t);
         assert_eq!(
             &*render("logs/cloudtrail/%Y/%m/%d/%H"),
             "logs/cloudtrail/2026/11/02/21"
@@ -339,12 +331,12 @@ mod tests {
             "logs/./%Y",
             ".",
         ] {
-            assert!(KeyPrefix::parse(bad).is_err(), "{bad}");
+            assert!(key_prefix(bad).is_err(), "{bad}");
         }
         for good in ["", "logs/%Y/", "logs/%Y//", "logs/.%Y/x..y"] {
-            assert!(KeyPrefix::parse(good).is_ok(), "{good}");
+            assert!(key_prefix(good).is_ok(), "{good}");
         }
-        let braces = KeyPrefix::parse("logs/{{ source_type }}/%F/").unwrap_err();
+        let braces = key_prefix("logs/{{ source_type }}/%F/").unwrap_err();
         assert!(braces.to_string().contains("strftime only"), "{braces}");
         let sinks = |prefix: &str| -> BTreeMap<Arc<str>, SinkConfig> {
             let yaml = format!("type: s3\nbucket_name: b\nkey_prefix: \"{prefix}\"\n");
@@ -360,7 +352,7 @@ mod tests {
 
     #[test]
     fn an_objects_key_is_its_rendered_prefix_then_its_name() {
-        let prefix = KeyPrefix::parse("logs/cloudtrail/%Y/%m/%d").unwrap();
+        let prefix = key_prefix("logs/cloudtrail/%Y/%m/%d").unwrap();
         let rendered = prefix.render(at("2026-11-02T13:04:05Z"));
         assert_eq!(
             object_key(Some(&rendered), "01JBX4N3V2.parquet"),
