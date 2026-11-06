@@ -71,7 +71,7 @@ pub async fn run(opts: FetchOptions) -> Result<()> {
         };
         let out = plugins::fetched(&cache, prebuilt);
         fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
-        fetched.push(fetch_one(&client, name, prebuilt, &out).await?);
+        fetched.push(fetch_one(&client, name, plugin, prebuilt, &out).await?);
         if let Some(local) = remove_local_build(name, plugin, &plugins_dir)? {
             println!(
                 "   removed {}, a `tangent plugin compile` build, which would run in its place",
@@ -125,7 +125,7 @@ pub async fn missing(config_path: &Path) -> Result<()> {
         return Ok(());
     }
     let cache = cache?;
-    let names: Vec<&str> = wanted.iter().map(|(name, _)| *name).collect();
+    let names: Vec<&str> = wanted.iter().map(|(name, ..)| *name).collect();
     println!(
         "tangent {VERSION}, first run: fetching {} (once per version)",
         names.join(", ")
@@ -133,10 +133,10 @@ pub async fn missing(config_path: &Path) -> Result<()> {
     gh_present()?;
 
     let client = client()?;
-    for (name, prebuilt) in wanted {
+    for (name, plugin, prebuilt) in wanted {
         let out = plugins::fetched(&cache, prebuilt);
         fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
-        fetch_one(&client, name, prebuilt, &out)
+        fetch_one(&client, name, plugin, prebuilt, &out)
             .await
             .map_err(|e| unreached(name, e))?;
     }
@@ -151,12 +151,11 @@ fn wanted<'a>(
     cfg: &'a Config,
     plugins_dir: &Path,
     cache: Option<&Path>,
-) -> Vec<(&'a str, &'a Prebuilt)> {
+) -> Vec<(&'a str, &'a PluginConfig, &'a Prebuilt)> {
     cfg.plugins
         .iter()
-        .filter_map(|(name, plugin)| Some((name, plugin, plugin.prebuilt.as_ref()?)))
+        .filter_map(|(name, plugin)| Some((name.as_ref(), plugin, plugin.prebuilt.as_ref()?)))
         .filter(|(name, plugin, _)| plugins::compiled(name, plugin, plugins_dir, cache).is_none())
-        .map(|(name, _, prebuilt)| (name.as_ref(), prebuilt))
         .collect()
 }
 
@@ -192,6 +191,7 @@ struct Verified {
 async fn fetch_one(
     client: &reqwest::Client,
     name: &str,
+    plugin: &PluginConfig,
     p: &Prebuilt,
     out: &Path,
 ) -> Result<Verified> {
@@ -204,12 +204,7 @@ async fn fetch_one(
     println!("⬇️  {name}: {asset} from {}/{} {release}", p.host(), p.repo);
     let url = p.asset_url(VERSION, &asset);
     let Some(bytes) = download(client, &url).await? else {
-        bail!(
-            "{name}: {url} is not there: {} {release} has no {asset}. A release before the \
-             plugin was prebuilt, a tangent built from a checkout whose version has no release yet \
-             (set `prebuilt.release`), or a pack of its own; `tangent plugin compile` builds it from source",
-            p.repo
-        );
+        bail!(not_there(name, plugin, p, &url));
     };
     let digest = hex::encode(Sha256::digest(&bytes));
     if let Some(pin) = p.pinned_sha256() {
@@ -269,6 +264,25 @@ async fn fetch_one(
     }
     fs::rename(&cwasm, out.join(format!("{name}.cwasm")))?;
     Ok(verified)
+}
+
+/// Why plugin `name`'s component is not at `url`, its release's asset, and
+/// what builds it instead: `tangent plugin compile` only for a plugin with
+/// a source. A pack built into tangent has none, and compile skips it.
+fn not_there(name: &str, plugin: &PluginConfig, p: &Prebuilt, url: &str) -> String {
+    let compile = if plugin.path.as_os_str().is_empty() {
+        ""
+    } else {
+        "; `tangent plugin compile` builds it from source"
+    };
+    format!(
+        "{name}: {url} is not there: {} {} has no {}. A release before the plugin was prebuilt, \
+         a tangent built from a checkout whose version has no release yet (set \
+         `prebuilt.release`), or a pack of its own{compile}",
+        p.repo,
+        p.release(VERSION),
+        p.asset(name)
+    )
 }
 
 /// The body at `url`, or `None` when there is nothing there.
@@ -626,9 +640,9 @@ mod tests {
             fs::create_dir_all(&out).unwrap();
             fs::write(out.join(format!("{name}.cwasm")), "").unwrap();
         }
-        let names = |w: Vec<(&str, &Prebuilt)>| {
+        let names = |w: Vec<(&str, &PluginConfig, &Prebuilt)>| {
             w.into_iter()
-                .map(|(n, _)| n.to_string())
+                .map(|(n, ..)| n.to_string())
                 .collect::<Vec<_>>()
         };
         assert_eq!(
@@ -668,6 +682,39 @@ mod tests {
             format!("{:#}", unreached("aws", other)),
             "aws: aws.component.wasm did not verify, and is not kept"
         );
+    }
+
+    /// A release without the plugin points to `tangent plugin compile` only
+    /// for a plugin with a source: compile skips one without, so the next
+    /// fetch would fail the same way.
+    #[test]
+    fn a_missing_asset_suggests_compile_only_for_a_plugin_with_a_source() {
+        let cfg: Config = serde_yaml::from_str(
+            "plugins:
+  aws: { module_type: rust, path: ., prebuilt: { repo: a/b } }
+  okta: { module_type: rust, prebuilt: { repo: a/b } }
+",
+        )
+        .unwrap();
+        let msg = |name: &str| {
+            let plugin = &cfg.plugins[name];
+            not_there(name, plugin, plugin.prebuilt.as_ref().unwrap(), "URL")
+        };
+        let want = |name: &str| {
+            format!(
+                "{name}: URL is not there: a/b v{VERSION} has no {name}.component.wasm. A release \
+                 before the plugin was prebuilt, a tangent built from a checkout whose version has \
+                 no release yet (set `prebuilt.release`), or a pack of its own"
+            )
+        };
+        assert_eq!(
+            msg("aws"),
+            format!(
+                "{}; `tangent plugin compile` builds it from source",
+                want("aws")
+            )
+        );
+        assert_eq!(msg("okta"), want("okta"));
     }
 
     #[test]
