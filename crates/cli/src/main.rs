@@ -372,4 +372,27 @@ mod tests {
             "{err}"
         );
     }
+
+    #[test]
+    fn config_shows_the_default_url_only_where_it_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("tangent.yaml");
+        std::fs::write(
+            &file,
+            "inference:\n  cloud: { backend: bedrock, model: m, prompt_file: p.md }\n  local: { model: m, prompt_file: p.md }\n",
+        )
+        .unwrap();
+        let shown = show_config(&file).unwrap();
+        let value: Value = serde_yaml::from_str(&shown).unwrap();
+        assert_eq!(
+            value["inference"]["cloud"].get("url"),
+            None,
+            "bedrock reads no url: {shown}"
+        );
+        assert_eq!(
+            value["inference"]["local"]["url"],
+            Value::from("http://localhost:8080/v1"),
+            "{shown}"
+        );
+    }
 }

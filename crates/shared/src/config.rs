@@ -66,8 +66,9 @@ impl Config {
     pub fn load(path: &Path) -> Result<Loaded> {
         let read = include::read(path)?;
         if !read.map.contains_key("include") {
-            let config: Config = serde_yaml::from_str(&read.text)
+            let mut config: Config = serde_yaml::from_str(&read.text)
                 .with_context(|| format!("parsing YAML {}", path.display()))?;
+            config.inference.values_mut().for_each(|n| n.default_url());
             config
                 .check_names()
                 .with_context(|| format!("loading {}", path.display()))?;
@@ -83,6 +84,7 @@ impl Config {
                 .map_err(|e| merged.explain(e))
                 .with_context(|| format!("loading {}", path.display()))?;
         config.dag = dedupe(std::mem::take(&mut config.dag));
+        config.inference.values_mut().for_each(|n| n.default_url());
         config
             .check_names()
             .with_context(|| format!("loading {}", path.display()))?;
