@@ -146,7 +146,9 @@ enum PluginCommands {
 
     /// Download the plugins a config names as `prebuilt`, compiled by their
     /// repository's CI, and check GitHub's attestation of each before it is
-    /// kept: no WASM toolchain needed, only `gh`
+    /// kept, in tangent's cache for this version
+    /// (~/.cache/tangent/<version>/plugins), in place of any `tangent plugin
+    /// compile` build: no WASM toolchain needed, only `gh`
     Fetch {
         /// Path to YAML config
         #[arg(long, value_name = "FILE")]

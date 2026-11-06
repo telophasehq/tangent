@@ -2,7 +2,8 @@ use ahash::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::enrichment::TableConfig;
@@ -19,7 +20,8 @@ pub struct PluginConfig {
 
     /// Where the plugin is published compiled, for a machine without the
     /// toolchain: `tangent plugin fetch` downloads the component from the
-    /// release and checks GitHub's attestation of it before it is used.
+    /// release and checks GitHub's attestation of it before it is kept, in
+    /// tangent's cache.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prebuilt: Option<Prebuilt>,
 
@@ -107,9 +109,9 @@ impl Default for PluginConfig {
 /// component is the release asset `asset`, its attestation bundle the asset
 /// `<asset>.sigstore.json` beside it; `tangent plugin fetch` downloads both
 /// and has `gh attestation verify` check that `repo`'s workflow built the
-/// component from the release's tag before it is precompiled into
-/// `runtime.plugins_path`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// component from the release's tag before it is precompiled into tangent's
+/// cache ([`crate::cache::plugins`]).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Prebuilt {
     /// The GitHub repository, `owner/name`, whose release has the component
@@ -179,6 +181,42 @@ impl Prebuilt {
     }
 }
 
+/// The `.cwasm` plugin `name` runs: its local build ([`built`]) when there
+/// is one, else the copy `tangent plugin fetch` keeps for its `prebuilt`
+/// under `cache` ([`crate::cache::plugins`], see [`fetched`]).
+pub fn compiled(
+    name: &str,
+    plugin: &PluginConfig,
+    plugins_dir: &Path,
+    cache: Option<&Path>,
+) -> Option<PathBuf> {
+    if let Some(built) = built(name, plugin, plugins_dir).filter(|b| b.is_file()) {
+        return Some(built);
+    }
+    let cwasm = fetched(cache?, plugin.prebuilt.as_ref()?).join(format!("{name}.cwasm"));
+    cwasm.is_file().then_some(cwasm)
+}
+
+/// Where `tangent plugin compile` puts plugin `name`'s build:
+/// `plugins_dir/<name>.cwasm` (`runtime.plugins_path`, beside the config).
+/// Only a plugin with a source (`path`) has one: this config cannot have
+/// built one without, so a file there by that name (another config's, an
+/// old fetch's) is not this plugin's.
+pub fn built(name: &str, plugin: &PluginConfig, plugins_dir: &Path) -> Option<PathBuf> {
+    (!plugin.path.as_os_str().is_empty()).then(|| plugins_dir.join(format!("{name}.cwasm")))
+}
+
+/// The directory under `cache` where `tangent plugin fetch` keeps what it
+/// fetched for `prebuilt`, named by a hash of it: two configs that fetch
+/// one plugin name from two places (another release, a fork, a pinned
+/// digest) never write or read each other's. The hash is std's, the same
+/// for every run of one tangent.
+pub fn fetched(cache: &Path, prebuilt: &Prebuilt) -> PathBuf {
+    let mut h = DefaultHasher::new();
+    prebuilt.hash(&mut h);
+    cache.join(format!("{:016x}", h.finish()))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PluginTests {
@@ -226,6 +264,102 @@ mod tests {
             "https://github.acme.com/acme/packs/releases/download/packs-3/aws-pack.wasm"
         );
         assert_eq!(pre.pinned_sha256().as_deref(), Some("5b3b31"));
+    }
+
+    const PACK: &str =
+        "repo: EthanBlackburn/tangent\nworkflow: .github/workflows/attest-packs.yml\n";
+
+    fn plugin(prebuilt: Option<&str>) -> PluginConfig {
+        PluginConfig {
+            module_type: "rust".into(),
+            prebuilt: prebuilt.map(|p| serde_yaml::from_str(p).unwrap()),
+            ..PluginConfig::default()
+        }
+    }
+
+    /// `aws` as `tangent plugin fetch` keeps it, fetched as `prebuilt` says.
+    fn fetch(cache: &Path, prebuilt: &str) -> PathBuf {
+        let dir = fetched(cache, &serde_yaml::from_str(prebuilt).unwrap());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("aws.cwasm"), "fetched").unwrap();
+        dir.join("aws.cwasm")
+    }
+
+    #[test]
+    fn a_local_build_wins_and_else_the_copy_fetched_for_this_prebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let (local, cache) = (dir.path().join("plugins"), dir.path().join("cache"));
+        let aws = PluginConfig {
+            path: ".".into(),
+            ..plugin(Some(PACK))
+        };
+        assert_eq!(compiled("aws", &aws, &local, Some(&cache)), None);
+
+        let copy = fetch(&cache, PACK);
+        assert_eq!(compiled("aws", &aws, &local, Some(&cache)), Some(copy));
+        assert_eq!(compiled("aws", &aws, &local, None), None, "no cache");
+        let source_only = PluginConfig {
+            path: ".".into(),
+            ..plugin(None)
+        };
+        assert_eq!(
+            compiled("aws", &source_only, &local, Some(&cache)),
+            None,
+            "a plugin without `prebuilt` is compiled, never fetched"
+        );
+
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::write(local.join("aws.cwasm"), "compiled").unwrap();
+        for p in [&aws, &source_only] {
+            assert_eq!(
+                compiled("aws", p, &local, Some(&cache)),
+                Some(local.join("aws.cwasm"))
+            );
+        }
+    }
+
+    /// A pack built into tangent names no source, so `tangent plugin
+    /// compile` never built it: a plugins/aws.cwasm beside its config is
+    /// another's, and the copy fetched for it runs.
+    #[test]
+    fn a_plugin_without_a_source_has_no_local_build() {
+        let dir = tempfile::tempdir().unwrap();
+        let (local, cache) = (dir.path().join("plugins"), dir.path().join("cache"));
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::write(local.join("aws.cwasm"), "stray").unwrap();
+        let aws = plugin(Some(PACK));
+        assert_eq!(built("aws", &aws, &local), None);
+        assert_eq!(compiled("aws", &aws, &local, Some(&cache)), None);
+        let copy = fetch(&cache, PACK);
+        assert_eq!(compiled("aws", &aws, &local, Some(&cache)), Some(copy));
+    }
+
+    #[test]
+    fn a_copy_fetched_from_elsewhere_is_not_this_plugins() {
+        let dir = tempfile::tempdir().unwrap();
+        let (local, cache) = (dir.path().join("plugins"), dir.path().join("cache"));
+        let aws = plugin(Some(PACK));
+        let mut dirs = vec![fetched(&cache, aws.prebuilt.as_ref().unwrap())];
+        for other in [
+            "repo: acme/packs\nworkflow: .github/workflows/attest-packs.yml",
+            "repo: EthanBlackburn/tangent",
+            &format!("{PACK}release: v0.1.8"),
+            &format!("{PACK}asset: aws-pack.wasm"),
+            &format!("{PACK}sha256: 5b3b31"),
+            &format!("{PACK}host: github.acme.com"),
+        ] {
+            let copy = fetch(&cache, other);
+            assert_eq!(compiled("aws", &aws, &local, Some(&cache)), None, "{other}");
+            dirs.push(copy.parent().unwrap().to_path_buf());
+        }
+        dirs.sort();
+        dirs.dedup();
+        assert_eq!(dirs.len(), 7, "a directory for each `prebuilt`");
+        assert_eq!(
+            fetched(&cache, aws.prebuilt.as_ref().unwrap()),
+            fetched(&cache, &serde_yaml::from_str(PACK).unwrap()),
+            "one `prebuilt`, one directory"
+        );
     }
 
     #[test]

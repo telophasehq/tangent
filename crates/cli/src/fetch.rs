@@ -1,7 +1,8 @@
 //! `tangent plugin fetch`: each plugin's compiled component from the release
 //! its `prebuilt` names, checked against GitHub's attestation of the build,
-//! and precompiled into `runtime.plugins_path`, where `tangent plugin
-//! compile` puts it and `tangent run` reads it. Only a pack's author needs
+//! and precompiled into tangent's cache, per tangent version
+//! (`~/.cache/tangent/<version>/plugins`), where `tangent run` reads it when
+//! `runtime.plugins_path` has no build of its own. Only a pack's author needs
 //! the WASM toolchain: a component built once runs on every machine.
 //!
 //! The check is `gh attestation verify`, GitHub's own verifier: the
@@ -21,7 +22,7 @@ use std::process::Command;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use tangent_shared::plugins::Prebuilt;
+use tangent_shared::plugins::{self, PluginConfig, Prebuilt};
 use tangent_shared::Config;
 
 /// This tangent's version: the release a `prebuilt` without `release` is on.
@@ -37,9 +38,8 @@ pub struct FetchOptions {
 pub async fn run(opts: FetchOptions) -> Result<()> {
     let cfg = Config::from_file(&opts.config_path)?;
     let config_dir = opts.config_path.parent().unwrap_or_else(|| Path::new("."));
-    let out = config_dir.join(&cfg.runtime.plugins_path);
-    fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
-    let out = out.canonicalize().context("configured plugins path")?;
+    let plugins_dir = config_dir.join(&cfg.runtime.plugins_path);
+    let cache = tangent_shared::cache::plugins()?;
 
     if let Some(only) = &opts.plugin {
         if !cfg.plugins.contains_key(only.as_str()) {
@@ -70,17 +70,44 @@ pub async fn run(opts: FetchOptions) -> Result<()> {
             );
             continue;
         };
+        let out = plugins::fetched(&cache, prebuilt);
+        fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
         fetched.push(fetch_one(&client, name, prebuilt, &out).await?);
+        if let Some(local) = remove_local_build(name, plugin, &plugins_dir)? {
+            println!(
+                "   removed {}, a `tangent plugin compile` build, which would run in its place",
+                local.display()
+            );
+        }
     }
 
     if let Some(v) = fetched.first() {
         println!(
-            "\nEach component and its attestation bundle are in {}; to check one again:\n  {}",
-            out.display(),
+            "\nEach component and its attestation bundle are kept under {}; to check one again:\n  {}",
+            cache.display(),
             v.by_hand
         );
     }
     Ok(())
+}
+
+/// Plugin `name`'s local build ([`plugins::built`]), removed after a fetch,
+/// since it would run in place of the copy just fetched: whichever of
+/// `tangent plugin compile` and `fetch` ran last is what runs, as when both
+/// wrote `runtime.plugins_path`. Its path, when there was one.
+fn remove_local_build(
+    name: &str,
+    plugin: &PluginConfig,
+    plugins_dir: &Path,
+) -> Result<Option<PathBuf>> {
+    let Some(built) = plugins::built(name, plugin, plugins_dir) else {
+        return Ok(None);
+    };
+    match fs::remove_file(&built) {
+        Ok(()) => Ok(Some(built)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("removing {}", built.display())),
+    }
 }
 
 /// What `gh attestation verify` said of a component.
@@ -165,6 +192,8 @@ async fn fetch_one(
     compile_wasm::precompile(&component, &cwasm)
         .with_context(|| format!("{name}: {asset} is not a component tangent can load"))?;
 
+    // The .cwasm goes in last: until it is there, nothing takes what is
+    // here for a plugin, and a fetch that died midway is fetched again.
     fs::rename(&component, &dest_component)?;
     match bundle {
         Some(b) => fs::rename(b, &dest_bundle)?,
@@ -468,6 +497,36 @@ mod tests {
         );
         assert!(attested_as(b"[]", AWS, "aws.component.wasm").is_err());
         assert!(attested_as(b"not json", AWS, "aws.component.wasm").is_err());
+    }
+
+    /// A fetch removes the plugin's own `tangent plugin compile` build,
+    /// which would run in its place, and leaves a file of its name alone
+    /// when the plugin has no source, since this config never built it.
+    #[test]
+    fn a_fetch_removes_the_local_build_that_would_run_in_its_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let built = dir.path().join("plugins");
+        let cfg: Config = serde_yaml::from_str(
+            "plugins:
+  aws: { module_type: rust, path: ., prebuilt: { repo: a/b } }
+  okta: { module_type: rust, prebuilt: { repo: a/b } }
+",
+        )
+        .unwrap();
+        let (aws, okta) = (&cfg.plugins["aws"], &cfg.plugins["okta"]);
+        assert_eq!(remove_local_build("aws", aws, &built).unwrap(), None);
+
+        fs::create_dir_all(&built).unwrap();
+        for name in ["aws", "okta"] {
+            fs::write(built.join(format!("{name}.cwasm")), "").unwrap();
+        }
+        assert_eq!(
+            remove_local_build("aws", aws, &built).unwrap(),
+            Some(built.join("aws.cwasm"))
+        );
+        assert!(!built.join("aws.cwasm").exists());
+        assert_eq!(remove_local_build("okta", okta, &built).unwrap(), None);
+        assert!(built.join("okta.cwasm").exists());
     }
 
     #[test]
