@@ -28,7 +28,7 @@
 3. **Narrow probes:** Subscribe only to records you can transform; avoid doing selection inside `process_logs` if the probe can express it.
 4. **NDJSON out:** Encode **one line per emitted record**; return a single `bytes` buffer containing all lines.
 5. **WASM‑safe performance:** Use a local `bytearray` buffer, minimize allocations, avoid reflection/`__dict__` walks and large intermediates.
-6. **Tests drive correctness:** Provide `tests/input.json` and `tests/expected.json` (NDJSON). Keep them small and representative.
+6. **Tests drive correctness:** Provide `tests/input.json` and `tests/expected.json` (JSON, see [Tests & fixtures](#tests--fixtures)). Keep them small and representative.
 7. **No surprises:** No global mutable state (beyond module constants). No prints/logging from the mapper.
 
 ---
@@ -193,7 +193,7 @@ if lst is not None:
 * Manually craft JSON strings.
 * Return `str` (must be `bytes`).
 
-> If you need stricter textual stability in tests, you may set `json.dumps(..., separators=(',', ':'))` and mirror that in `tests/expected.json`.
+> The test compares parsed JSON, not text: whitespace, separators and key order in the output do not matter.
 
 ---
 
@@ -213,26 +213,27 @@ if lst is not None:
 Each mapper directory **must** include:
 
 ```
-tests/input.json     # NDJSON input
-tests/expected.json  # NDJSON expected output (one line per emitted record)
+tests/input.json     # JSON array of input records
+tests/expected.json  # JSON of the output: an array of the emitted records (an object if just one)
 ```
 
 **Rules:**
 
-* Both files are **NDJSON** (one JSON object per line).
-* The order of lines in `expected.json` matches the emission order.
+* `input.json` is a **JSON array** of input records.
+* `expected.json` is the plugin's output as JSON: an **array** of the emitted records in emission order, or a single **object** when the plugin emits one record. It is not NDJSON: a file with a record per line fails to parse.
+* `tangent plugin test --config tangent.yaml` writes what the plugin produced to `test_out.ndjson` and compares it with the expected as parsed JSON: key order and whitespace do not matter, types do (`0` is not `0.0`).
 * Include at least:
 
   * One fully‑populated record.
   * One record with missing optional fields (assert defaults/omissions).
   * One record filtered out by the probe (absent in expected).
-* Keep total lines small (3–8).
+* Keep them small (3–8 records).
 
-**Make targets used by CI:**
+**Make targets:**
 
-* `make build` — compiles to `.wasm`.
-* `make test` — runs the fixture comparison.
-* `make run` — runs locally against fixtures.
+* `make build` — `./setup.sh`, then `tangent plugin compile`: the plugin lands in `plugins/<name>.cwasm`.
+* `make test` — builds, then runs the fixture comparison.
+* `make run` — builds, then `tangent run`, the pipeline in `tangent.yaml`: it listens on tcp 0.0.0.0:9000 and does not read the fixtures.
 
 > Tests must pass without external resources or environment tweaks.
 
@@ -271,7 +272,7 @@ tests/expected.json  # NDJSON expected output (one line per emitted record)
 * [ ] Reads fields via `lv.get` / `lv.get_list` and accesses `.value` safely.
 * [ ] No I/O, no network, no randomness, no threads/async.
 * [ ] `tests/input.json` and `tests/expected.json` present, small, and pass.
-* [ ] `make build`, `make test`, and (optionally) `make run` succeed locally.
+* [ ] `make test` passes.
 * [ ] No prints/logging from the mapper; exceptions only for batch‑fatal errors.
 
 ---
@@ -283,6 +284,3 @@ tests/expected.json  # NDJSON expected output (one line per emitted record)
 * ❌ Huge dynamic dicts or reflection‑like patterns (`__dict__` walks) in the hot path.
 * ❌ Broad probes with heavy in‑function filtering.
 * ❌ Returning `str` instead of `bytes`.
-
-> Ensure `tests/input.json` and `tests/expected.json` reflect your exact textual encoding (whitespace, newline). If you switch to minified JSON (`separators=(',', ':')`), update the expected file accordingly.
-
