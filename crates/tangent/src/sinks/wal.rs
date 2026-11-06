@@ -180,7 +180,9 @@ impl DurableFileSink {
                 return Ok(());
             }
 
-            if let Some(f) = rs.cur.file.take() {
+            // the file stays the route's until it is sealed: a route whose
+            // seal failed takes its next write, and is sealed at the next try
+            if let Some(f) = &rs.cur.file {
                 f.sync_data().await?;
             }
 
@@ -189,6 +191,7 @@ impl DurableFileSink {
             fs::rename(&rs.cur.path, &sealed).await?;
             let sealed_bytes = rs.cur.bytes as u64;
             let meta = rs.meta.clone();
+            // and is closed with it
             routes.remove(&rkey);
 
             (sealed, sealed_bytes, meta)
@@ -945,6 +948,43 @@ mod tests {
         );
         wal.flush().await.unwrap();
         assert_eq!(rec.got.lock().await.len(), 41);
+        assert_eq!(names_in(&dir), Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A route whose seal failed keeps its file: its next write goes in,
+    /// and the next try seals both.
+    #[tokio::test]
+    async fn a_route_whose_seal_failed_takes_its_next_write() {
+        let dir = wal_dir("seal-failed");
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            1 << 20,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        wal.write(write("{\"n\":1}\n")).await.unwrap();
+        let (key, open) = {
+            let routes = wal.routes.lock().await;
+            let (k, rs) = routes.iter().next().unwrap();
+            (k.clone(), rs.cur.path.clone())
+        };
+        // a directory where the sealed file goes fails the rename
+        let blocker = open.with_extension("bin.sealed");
+        std::fs::create_dir(&blocker).unwrap();
+        assert!(wal.rotate_route(key, None).await.is_err());
+        wal.write(write("{\"n\":2}\n")).await.unwrap();
+        std::fs::remove_dir(&blocker).unwrap();
+        wal.flush().await.unwrap();
+        let got = rec.got.lock().await;
+        assert_eq!(got.len(), 1, "sent once");
+        assert_eq!(got[0].1, b"{\"n\":1}\n{\"n\":2}\n");
         assert_eq!(names_in(&dir), Vec::<String>::new());
         let _ = std::fs::remove_dir_all(dir);
     }
