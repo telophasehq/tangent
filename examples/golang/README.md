@@ -1,6 +1,6 @@
 # golang
 
-The Go plugin in the [benchmarks](../../README.md#benchmarks), and the
+The Go plugin in the [benchmarks](../../docs/benchmarks.md), and the
 smallest whole Go plugin to copy: a mapper, built with TinyGo on the
 [Go SDK](https://github.com/EthanBlackburn/tangent-sdk-go), that renames the
 fields of one service's records.

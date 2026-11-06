@@ -45,7 +45,7 @@ With `tangent run` still going (`tangent bench` reads its metrics on `:9184`), f
 ```bash
 tangent bench --config tangent.yaml --seconds 20 --connections 16 --payload tests/bench.json --synthesize
 ```
-[`tests/bench.json`](tests/bench.json) is a template, and `--synthesize` makes each record it sends from that template, the way the [benchmarks](../../README.md#benchmarks) in the main README were run. Without `--synthesize`, `--payload tests/input.json` sends the test records over and over, as they are. The probe drops one of the three.
+[`tests/bench.json`](tests/bench.json) is a template, and `--synthesize` makes each record it sends from that template, the way the [benchmarks](../../docs/benchmarks.md) were run. Without `--synthesize`, `--payload tests/input.json` sends the test records over and over, as they are. The probe drops one of the three.
 
 The first 5 seconds are warmup and not counted. It prints what it sent, what reached the sink (`end-to-end`) and the plugin's time per batch (`guest`). The main README's figure is this command on a dedicated 16-core machine; a laptop doing other work gets far less.
 

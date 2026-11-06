@@ -1,6 +1,6 @@
 # rust
 
-The Rust plugin in the [benchmarks](../../README.md#benchmarks), and the
+The Rust plugin in the [benchmarks](../../docs/benchmarks.md), and the
 smallest whole Rust plugin to copy: a mapper that renames the fields of one
 service's records.
 
