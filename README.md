@@ -67,7 +67,7 @@ plugins:
 
 A plugin may read files too: `data: <dir>` mounts a directory, relative to the file that names it, read-only at `/data` in the guest, for reference data too big for `config`. [examples/enrich](/examples/enrich) reads MaxMind GeoLite2 and the cloud providers' ranges that way, and its `setup.sh` fetches them. Each plugin instance on each worker reads such files into its own memory; reference data that several plugins read, or that is large, belongs in an [enrichment table](#enrichment-tables), which the process loads once.
 
-A plugin can take its records a group at a time, as Vector's `reduce` groups them, without the merge:
+A plugin can take its records a group at a time:
 
 ```yaml
 plugins:
@@ -79,7 +79,7 @@ plugins:
     history: 39                          # the key's latest records, sent again ahead of its next group
 ```
 
-Records reaching the plugin wait in their key's group, in memory, and are acked once there. A closed group reaches the plugin whole, in one call, on workers of the plugin's own, so a slow plugin, or a model after it, never holds up what feeds it, and one group per key is out at a time. At the end of input (`--once`, a shutdown) every open group closes; a crash loses the open ones, as with Vector. With `history`, a key's latest records are kept in the state store (namespace `groups`) and go again ahead of its next group, marked `"_context": true`, so the plugin sees what came before.
+Records reaching the plugin wait in their key's group, in memory, and are acked once there. A closed group reaches the plugin whole, in one call, on workers of the plugin's own, so a slow plugin, or a model after it, never holds up what feeds it, and one group per key is out at a time. At the end of input (`--once`, a shutdown) every open group closes; a crash loses the open ones. With `history`, a key's latest records are kept in the state store (namespace `groups`) and go again ahead of its next group, marked `"_context": true`, so the plugin sees what came before.
 
 When a plugin's call fails (it traps or returns an error), the records it was given are logged and dropped. `drop_on_error: false` passes them on unchanged instead, as if the plugin were not there: right for a plugin that only adds to records, such as context for a model, wrong for a filter. `tangent plugin test` always drops, so a failed call fails the test.
 

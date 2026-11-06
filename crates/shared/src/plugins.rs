@@ -48,8 +48,8 @@ pub struct PluginConfig {
     pub drop_on_error: bool,
 
     /// Records reaching the plugin wait in a group per value of these
-    /// fields, and the plugin gets a group at a time, on workers of its own:
-    /// Vector's `reduce`, without the merge. Empty: no grouping.
+    /// fields, and the plugin gets a group at a time, on workers of its own.
+    /// Empty: no grouping.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub group_by: Vec<String>,
 
@@ -78,7 +78,7 @@ const fn default_true() -> bool {
     true
 }
 
-/// Vector's `reduce` default.
+/// A group closes after 30 s with no new record.
 const fn default_expire_after_ms() -> u64 {
     30_000
 }
