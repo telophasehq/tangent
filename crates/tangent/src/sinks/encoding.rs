@@ -72,7 +72,10 @@ pub fn ndjson_to_avro(raw: &[u8], avro_schema_json: &str, comp: &Compression) ->
 /// (and a block, in the Avro writer). Each line is resolved against the
 /// schema, so a JSON object is a record's fields as well as a map's
 /// entries: a field the record does not name is skipped, and one it names
-/// that the line lacks takes the field's default.
+/// that the line lacks takes the field's default. A line the schema cannot
+/// take (not one JSON value, a field it lacks that has no default, a type
+/// the schema does not have) does not fail the file: it is dropped, and
+/// counted in `tangent_sink_records_unfit_total`.
 pub fn write_avro<R: BufRead, W: Write>(
     input: R,
     out: W,
@@ -81,16 +84,32 @@ pub fn write_avro<R: BufRead, W: Write>(
 ) -> Result<W> {
     let schema = apache_avro::Schema::parse_str(avro_schema_json)?;
     let mut writer = apache_avro::Writer::with_codec(&schema, out, avro_codec_from(comp));
+    let (mut dropped, mut first) = (0, None);
     for line in input.split(b'\n') {
         let line = line?;
         if line.is_empty() {
             continue;
         }
-        let value: serde_json::Value = serde_json::from_slice(&line)?;
         // a JSON object is an Avro map until it is resolved, and a record
         // schema cannot encode a map
-        let value = avro_value(value).resolve(&schema)?;
-        writer.append(value)?;
+        let value = serde_json::from_slice::<serde_json::Value>(&line)
+            .map_err(anyhow::Error::from)
+            .and_then(|v| Ok(avro_value(v).resolve(&schema)?));
+        match value {
+            Ok(value) => {
+                writer.append(value)?;
+            }
+            Err(e) => {
+                dropped += 1;
+                first.get_or_insert(e);
+            }
+        }
+    }
+    if let Some(first) = first {
+        SINK_RECORDS_UNFIT_TOTAL
+            .with_label_values(&["dropped"])
+            .inc_by(dropped);
+        tracing::warn!(dropped, %first, "avro: lines the schema could not take");
     }
     Ok(writer.into_inner()?)
 }
@@ -714,6 +733,51 @@ mod tests {
             .collect();
         let n = Value::Double(u64::MAX as f64);
         assert_eq!(read, vec![Value::Map([("n".to_string(), n)].into())]);
+    }
+
+    #[test]
+    fn a_line_the_avro_schema_cannot_take_is_dropped() {
+        use apache_avro::types::Value;
+        let schema = r#"{"type":"record","name":"event","fields":[
+            {"name":"source","type":"string"},
+            {"name":"n","type":"long","default":0}]}"#;
+        let comp = Compression::Deflate { level: 3 };
+        let read = |avro: BytesMut| -> Vec<Value> {
+            apache_avro::Reader::new(&avro[..])
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        };
+        let dropped = || {
+            SINK_RECORDS_UNFIT_TOTAL
+                .with_label_values(&["dropped"])
+                .get()
+        };
+        let before = dropped();
+
+        // no source, which has no default; not JSON; n not a long, twice
+        let ndjson = concat!(
+            "{\"source\":\"app\",\"n\":1}\n",
+            "{\"n\":2}\n",
+            "not json\n",
+            "{\"source\":\"web\",\"n\":\"three\"}\n",
+            "{\"source\":\"web\",\"n\":18446744073709551615}\n",
+            "{\"source\":\"web\"}\n",
+        );
+        let avro = ndjson_to_avro(ndjson.as_bytes(), schema, &comp).unwrap();
+        let record = |source: &str, n| {
+            Value::Record(vec![
+                ("source".to_string(), Value::String(source.to_string())),
+                ("n".to_string(), Value::Long(n)),
+            ])
+        };
+        assert_eq!(read(avro), vec![record("app", 1), record("web", 0)]);
+
+        // a file of lines none of which fit is still a file, of no records
+        let avro = ndjson_to_avro(b"{\"n\":1}\n", schema, &comp).unwrap();
+        assert!(read(avro).is_empty());
+        // other tests count theirs in the same counter
+        assert!(dropped() >= before + 5);
     }
 
     #[test]
