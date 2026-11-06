@@ -69,13 +69,18 @@ impl DagRuntime {
         let tables = Arc::new(Tables::load(&cfg.enrichment_tables, config_dir)?);
 
         for (name, p) in &cfg.plugins {
-            if p.group_by.is_empty() && (p.max_events.is_some() || p.history > 0) {
+            if p.group_by.is_empty()
+                && (p.max_events.is_some() || p.max_age_ms.is_some() || p.history > 0)
+            {
                 anyhow::bail!(
-                    "plugin {name}: max_events and history group records, and it has no group_by"
+                    "plugin {name}: max_events, max_age_ms and history group records, and it has no group_by"
                 );
             }
             if !p.group_by.is_empty() && p.expire_after_ms == 0 {
                 anyhow::bail!("plugin {name}: expire_after_ms must be at least 1");
+            }
+            if p.max_age_ms == Some(0) {
+                anyhow::bail!("plugin {name}: max_age_ms must be at least 1");
             }
         }
         let (engines, components) = load(&cfg, &plugin_root, config_dir, &store, &tables, workers)?;
@@ -138,6 +143,7 @@ impl DagRuntime {
                 group_by: p.group_by.clone(),
                 max_events: p.max_events,
                 expire_after: Duration::from_millis(p.expire_after_ms),
+                max_age: p.max_age_ms.map(Duration::from_millis),
                 history: p.history,
             };
             let (grouper, task) = group::spawn(

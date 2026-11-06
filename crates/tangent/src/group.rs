@@ -4,9 +4,10 @@
 //! grouped plugin owns its groups, so the workers that hand it records share
 //! nothing.
 //!
-//! A group closes when it holds `max_events` records, or when no record has
-//! joined it for `expire_after_ms` of wall-clock time; at the end of input
-//! every open group closes. A closed group goes whole to the plugin's own
+//! A group closes when it holds `max_events` records, when no record has
+//! joined it for `expire_after_ms` of wall-clock time, or `max_age_ms` after
+//! it opened, however often records join it; at the end of input every open
+//! group closes. A closed group goes whole to the plugin's own
 //! workers, and one group per key is out at a time: the next waits until the
 //! last is through the DAG. With `history`, a key's latest records are kept
 //! in the state store and go again, marked `"_context": true`, ahead of its
@@ -41,6 +42,7 @@ pub struct GroupConfig {
     pub group_by: Vec<String>,
     pub max_events: Option<usize>,
     pub expire_after: Duration,
+    pub max_age: Option<Duration>,
     pub history: usize,
 }
 
@@ -114,10 +116,18 @@ pub fn spawn(
     (Grouper { tx }, tokio::spawn(task.run(rx, done_rx)))
 }
 
+/// A group still taking records.
+struct Open {
+    records: Vec<JsonLogView>,
+    /// When its first record joined: `max_age` counts from here.
+    opened: Instant,
+    /// When its latest record joined: `expire_after` counts from here.
+    last: Instant,
+}
+
 #[derive(Default)]
 struct Key {
-    /// Records waiting for the group to close, and when the last joined.
-    open: Option<(Vec<JsonLogView>, Instant)>,
+    open: Option<Open>,
     /// Closed groups waiting for the one out to be through.
     waiting: VecDeque<Vec<JsonLogView>>,
     /// A group of this key is on its way through the DAG.
@@ -141,7 +151,11 @@ impl Task {
         mut rx: mpsc::Receiver<Msg>,
         mut done_rx: mpsc::UnboundedReceiver<(Arc<str>, Vec<JsonLogView>)>,
     ) {
-        let mut tick = tokio::time::interval(self.cfg.expire_after.min(Duration::from_secs(1)));
+        let mut every = self.cfg.expire_after.min(Duration::from_secs(1));
+        if let Some(age) = self.cfg.max_age {
+            every = every.min(age);
+        }
+        let mut tick = tokio::time::interval(every);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
@@ -191,26 +205,38 @@ impl Task {
     async fn add(&mut self, r: JsonLogView) {
         let key = self.key_of(&r);
         let k = self.keys.entry(Arc::clone(&key)).or_default();
-        let (records, last) = k.open.get_or_insert_with(|| (Vec::new(), Instant::now()));
-        records.push(r);
-        *last = Instant::now();
-        if self.cfg.max_events.is_some_and(|max| records.len() >= max) {
+        let now = Instant::now();
+        let open = k.open.get_or_insert_with(|| Open {
+            records: Vec::new(),
+            opened: now,
+            last: now,
+        });
+        open.records.push(r);
+        open.last = now;
+        if self
+            .cfg
+            .max_events
+            .is_some_and(|max| open.records.len() >= max)
+        {
             self.close(key).await;
         }
     }
 
+    /// Closes each group quiet for `expire_after`, or open for `max_age`.
     async fn expire(&mut self) {
-        let stale: Vec<Arc<str>> = self
+        let cfg = &self.cfg;
+        let due: Vec<Arc<str>> = self
             .keys
             .iter()
             .filter(|(_, k)| {
-                k.open
-                    .as_ref()
-                    .is_some_and(|(_, last)| last.elapsed() >= self.cfg.expire_after)
+                k.open.as_ref().is_some_and(|o| {
+                    o.last.elapsed() >= cfg.expire_after
+                        || cfg.max_age.is_some_and(|age| o.opened.elapsed() >= age)
+                })
             })
             .map(|(key, _)| Arc::clone(key))
             .collect();
-        for key in stale {
+        for key in due {
             self.close(key).await;
         }
     }
@@ -219,7 +245,7 @@ impl Task {
         let Some(k) = self.keys.get_mut(&key) else {
             return;
         };
-        let Some((records, _)) = k.open.take() else {
+        let Some(Open { records, .. }) = k.open.take() else {
             return;
         };
         if k.out {
@@ -428,14 +454,18 @@ mod tests {
     }
 
     fn start(max: Option<usize>, expire_ms: u64, history: usize) -> (Grouper, Arc<Out>) {
-        let out = Arc::new(Out::default());
-        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
-        let cfg = GroupConfig {
+        start_with(GroupConfig {
             group_by: vec!["actor".into()],
             max_events: Some(max.unwrap_or(1000)),
             expire_after: Duration::from_millis(expire_ms),
+            max_age: None,
             history,
-        };
+        })
+    }
+
+    fn start_with(cfg: GroupConfig) -> (Grouper, Arc<Out>) {
+        let out = Arc::new(Out::default());
+        let store: Arc<dyn StateStore> = Arc::new(LruStore::new(StateConfig::default()).unwrap());
         let (g, _task) = spawn(
             Arc::from("p"),
             cfg,
@@ -469,6 +499,29 @@ mod tests {
         assert!(out.ids().is_empty(), "not yet");
         tokio::time::sleep(Duration::from_millis(120)).await;
         assert_eq!(out.ids(), [vec![1]]);
+    }
+
+    /// A group closes `max_age_ms` after it opened, though its key never goes
+    /// quiet.
+    #[tokio::test]
+    async fn a_busy_group_closes_at_max_age() {
+        let (g, out) = start_with(GroupConfig {
+            group_by: vec!["actor".into()],
+            max_events: None,
+            expire_after: Duration::from_secs(60),
+            max_age: Some(Duration::from_millis(50)),
+            history: 0,
+        });
+        for id in 1..=20 {
+            g.add(vec![rec("a", id)]).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let ids = out.ids();
+        assert_eq!(ids.len(), 1, "the next waits for the first to be through");
+        assert!(
+            ids[0].len() < 20,
+            "closed while records kept joining: {ids:?}"
+        );
     }
 
     /// A key's next group waits until the last is through.

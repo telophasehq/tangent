@@ -74,7 +74,8 @@ plugins:
   renderer:
     group_by: [_norm.org, _norm.actor]   # a group per value of these fields
     max_events: 40                       # closes at 40 records,
-    expire_after_ms: 30000               # or once nothing has joined it for 30 s (the default)
+    expire_after_ms: 30000               # or once nothing has joined it for 30 s (the default),
+    max_age_ms: 600000                   # or 10 minutes after it opened, however busy its key (unset by default)
     history: 39                          # the key's latest records, sent again ahead of its next group
 ```
 
