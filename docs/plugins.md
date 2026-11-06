@@ -110,7 +110,9 @@ acked once there. A closed group reaches the plugin whole, in one call, on
 workers of the plugin's own, so a slow plugin, or a model after it, never
 holds up what feeds it, and one group per key is out at a time. At the end of
 input (`--once`, a shutdown) every open group closes; a crash loses the open
-ones. With `history`, a key's latest records are kept in the
+ones. A group closed by a shutdown's signal goes on into a
+DAG that is stopping: a model after the plugin does not answer it
+([inference](inference.md#running)). With `history`, a key's latest records are kept in the
 state store (namespace `groups`) and go again ahead of its next group, marked
 `"_context": true`, so the plugin sees what came before.
 

@@ -83,8 +83,11 @@ model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold;
 A signal (SIGINT or SIGTERM) ends the calls under way rather than wait out
 `timeout_ms` and `retries`: records waiting on one go to no sink and are not
 acked, so a source that resends what was not acked (a `sqlite` source, at its
-next start) sends them again. Another signal, a second or more after the
-first, exits at once.
+next start) sends them again. Records a plugin's `group_by` held are acked
+already, so behind a grouped plugin, as in core's judge, they are judged by
+no one: a stop closes every open group, sends it on, and ends its call
+("stopped before the model answered" in the log). Another signal, a second
+or more after the first, exits at once.
 
 ## Settings
 
