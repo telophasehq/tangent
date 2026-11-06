@@ -163,18 +163,28 @@ each active about eight hours a day:
 | [okta](packs/okta) | 1k–5k events, ~2 KB | 5k–9k logs | $0.20–0.35 |
 | [github](packs/github) | 1k–10k events, ~0.3 KB | 5k–14k logs | $0.09–0.26 |
 
-A person costs about a cent a day or less in each source that sees them.
-Send your product's audit log, not its request log: the app row is traffic,
-and it is the one that grows past a hundred dollars. It gets expensive where
+AWS, Okta, GitHub and Google Workspace together come to $3.10–27 a day,
+about $90–820 a month. A person costs about a cent a day or less in each
+source that sees them. The app row is optional, and priced by traffic: send
+your product's audit log, not its request log, since that row is the one
+that grows past a hundred dollars. It gets expensive where
 the volume is machines: a trail that also logs data events (S3 objects,
 Lambda invocations) has 10 to 100 times aws's events, and AWS VPC Flow Logs,
 5M–30M records a day, would be $80–500 a day, which is why they have no pack.
 
-At 2–10 s a request, core's `concurrency: 4` keeps up with 35k–170k requests
-a day, 1.4M–6.8M logs judged. A local model, the default, costs only the
-machine it runs on. These are estimates from sampled log sizes and typical
-startup volumes; [docs/cost.md](docs/cost.md) has how they were made, the
-lake's and state's size, and the arithmetic.
+At 2–10 s a Haiku request (an estimate), core's `concurrency: 4` keeps up
+with 35k–170k requests a day, 1.4M–6.8M logs judged. A local model, the
+default, costs only the machine it runs on, and answers one request at a
+time, about one every five seconds
+([tangent-eval's README](https://github.com/EthanBlackburn/tangent-eval#run-it)):
+about 17k requests or at most 0.7M logs a day, enough for the people sources
+and the low end of aws's row, not its top or the app row.
+
+These are estimates, from private samples of real logs and typical startup
+volumes, and the one measured run came in above them: at least $27 a million
+records read, where the rule says about $19 for logs of its size
+([docs/cost.md](docs/cost.md#how-these-were-made), which also has the
+lake's and state's size).
 
 ## Try it
 
