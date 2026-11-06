@@ -2,10 +2,9 @@
 # Writes a pack's tests/expected.json from what its plugin makes of
 # tests/input.json, against the tables its ingest.yaml names for the test.
 # Run after the plugin or its fixtures change, read the diff, commit it if it
-# is what you meant. Keep two records or more in tests/input.json: a test of
-# one record compares as an object, not a list. Keys are written sorted, as
-# the committed fixtures are and as the test ignores their order, so the diff
-# is what changed and not the order the plugin writes them in.
+# is what you meant. Keys are written sorted, as the committed fixtures are
+# and as the test ignores their order, so the diff is what changed and not
+# the order the plugin writes them in.
 #
 # expected.json is written only when the test ran through: it may fail for
 # its output differing from expected.json (that is why this runs), but any
@@ -25,7 +24,7 @@ rm -f test_out.ndjson
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 if ! NO_COLOR=1 "$T" plugin test --config ingest.yaml >"$log" 2>&1; then
-  if ! grep -Eq '^Error: (output differs from expected|output is array)' "$log"; then
+  if ! grep -q '^Error: output differs from expected' "$log"; then
     cat "$log" >&2
     echo "$0: the test failed for another reason (above); tests/expected.json is as it was" >&2
     exit 1
