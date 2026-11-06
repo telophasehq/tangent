@@ -12,7 +12,7 @@ pub use tangent_compact::{CompactConfig, SourceSpec};
 /// is that filter.
 ///
 /// The node runs inside each worker, in DAG order with the plugins, so a
-/// partition's records reach the model and leave it in order.
+/// batch's records reach the model and leave it in order.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct InferenceConfig {

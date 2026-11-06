@@ -40,10 +40,10 @@ state.sqlite ─────────────────┘             
 - **`baseline_builder`**, the plugin every pack's plugin has an edge to as
   well: it folds each record into the state store, under the namespace
   `baseline`, and passes nothing on ([below](#baseline)).
-- **The runtime**: a worker per CPU and no `partition` ([below](#baseline));
-  plugins compiled into `plugins/` beside the config you run; and the state
-  store at `state.sqlite`, where the API sources keep their place and baseline
-  its keys.
+- **The runtime**: a worker per CPU ([below](#baseline)); plugins compiled
+  into `plugins/` beside the config you run; and the state store at
+  `state.sqlite`, where the API sources keep their place and baseline its
+  keys.
 
 No sources and no profile: your config adds them, and sends each source to
 its pack.
@@ -282,13 +282,10 @@ share; JSON lines repeat it on every record ([the cost](#judgeyaml)).
   seen as, their sign-ins and credential changes, the role sessions they
   assumed. The renderer reads persons off the records and out of state and
   resolves no one, so the judge config names no profile.
-- **No partition**: ingest sets no `runtime.partition`, and your ingest
-  config must not either, since it wins over core's. A partition files every
-  key under it, where the judge, which has none, does not look; baseline's keys
-  carry the org instead. Workers are free: the builder reads an hour's
-  counts, adds to them and writes them back, as it does first-seen times and
-  role sessions, all in one state transaction per batch, so no worker's
-  update lands inside another's.
+- **Any number of workers**: baseline's keys carry the org, and the builder
+  reads an hour's counts, adds to them and writes them back, as it does
+  first-seen times and role sessions, all in one state transaction per batch,
+  so no worker's update lands inside another's.
 - **Read-only state**: the judge opens ingest's `state.sqlite` with
   `runtime.state.read_only: true`, without the lock, creating nothing, and
   its writes fail. Start ingest first: the judge refuses a state file that is

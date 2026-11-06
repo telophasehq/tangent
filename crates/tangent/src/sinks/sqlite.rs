@@ -11,7 +11,7 @@ use std::time::Duration;
 use tangent_shared::sinks::sqlite::SqliteConfig;
 
 use crate::inference::lines;
-use crate::partition;
+use crate::record;
 use crate::sinks::manager::{Sink, SinkWrite};
 use crate::state::now_ms;
 use crate::wasm::host::JsonLogView;
@@ -147,7 +147,7 @@ impl Sink for SqliteSink {
             };
             // a time ahead of the clock would make every partition look due
             let at =
-                partition::time_of(&lv, self.timestamp_key.as_deref()).map_or(now, |t| t.min(now));
+                record::time_of(&lv, self.timestamp_key.as_deref()).map_or(now, |t| t.min(now));
             let mut row = vec![
                 Value::Integer(at),
                 Value::Text(String::from_utf8_lossy(line).into_owned()),
@@ -156,7 +156,7 @@ impl Sink for SqliteSink {
                 row.push(
                     lv.lookup(f)
                         .and_then(JsonLogView::to_scalar)
-                        .map_or(Value::Null, |s| Value::Text(partition::scalar_text(s))),
+                        .map_or(Value::Null, |s| Value::Text(record::scalar_text(s))),
                 );
             }
             rows.push(row);

@@ -1,6 +1,6 @@
 //! What the polling sources share. A poller keeps a cursor and a set of
-//! recently seen ids in the state store (namespace `sources`, partition the
-//! source's name), so a restart resumes where it stopped and an overlapping
+//! recently seen ids in the state store (namespace `sources`, keys starting
+//! with the source's name), so a restart resumes where it stopped and an overlapping
 //! poll does not emit an event twice. Records go out stamped with `source`
 //! and `ts`, one frame each, in time order.
 //!
@@ -54,7 +54,11 @@ impl Poller {
 
     /// Where the last poll stopped, if there was one.
     pub async fn cursor(&self) -> Option<DateTime<Utc>> {
-        match self.store.get(SOURCES_NS, &self.name, "cursor").await {
+        match self
+            .store
+            .get(SOURCES_NS, &format!("{}:cursor", self.name))
+            .await
+        {
             Ok(Some(StateValue::Str(s))) => s.parse().ok(),
             _ => None,
         }
@@ -82,8 +86,7 @@ impl Poller {
             .store
             .set(
                 SOURCES_NS,
-                &self.name,
-                "cursor",
+                &format!("{}:cursor", self.name),
                 &StateValue::Str(at.to_rfc3339()),
                 Some(0),
             )
@@ -96,20 +99,14 @@ impl Poller {
     /// True the first time `id` is seen. It is remembered for as long as a
     /// later poll could find it again.
     pub async fn first_sight(&self, id: &str) -> bool {
-        let key = format!("seen:{id}");
-        match self.store.get(SOURCES_NS, &self.name, &key).await {
+        let key = format!("{}:seen:{id}", self.name);
+        match self.store.get(SOURCES_NS, &key).await {
             Ok(Some(_)) => false,
             _ => {
                 let ttl = (self.late.num_milliseconds() * 3).max(60_000) as u64;
                 let _ = self
                     .store
-                    .set(
-                        SOURCES_NS,
-                        &self.name,
-                        &key,
-                        &StateValue::Bool(true),
-                        Some(ttl),
-                    )
+                    .set(SOURCES_NS, &key, &StateValue::Bool(true), Some(ttl))
                     .await;
                 true
             }

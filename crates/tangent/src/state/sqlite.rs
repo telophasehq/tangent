@@ -4,7 +4,7 @@
 //! read-only without the lock. Calls are microseconds of local I/O, so they
 //! run inline on the async executor.
 //!
-//! Schema: `state(ns, partition, key, kind, value, expires_at, updated_at)`.
+//! Schema: `state(ns, key, kind, value, expires_at, updated_at)`.
 
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -28,13 +28,12 @@ static OPEN_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS state (
     ns         TEXT NOT NULL,
-    partition  TEXT NOT NULL DEFAULT '',
     key        TEXT NOT NULL,
     kind       TEXT NOT NULL,
     value      BLOB NOT NULL,
     expires_at INTEGER,
     updated_at INTEGER NOT NULL,
-    PRIMARY KEY (ns, partition, key)
+    PRIMARY KEY (ns, key)
 );
 CREATE INDEX IF NOT EXISTS state_expires_idx ON state(expires_at);
 ";
@@ -177,16 +176,15 @@ fn from_sqlite(kind: &str, v: Value) -> Result<StateValue> {
 }
 
 fn row_entry(r: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
-    let kind: String = r.get(3)?;
-    let raw: Value = r.get(4)?;
-    let expires_at: Option<i64> = r.get(5)?;
+    let kind: String = r.get(2)?;
+    let raw: Value = r.get(3)?;
+    let expires_at: Option<i64> = r.get(4)?;
     Ok(Entry {
         ns: r.get(0)?,
-        partition: r.get(1)?,
-        key: r.get(2)?,
+        key: r.get(1)?,
         value: from_sqlite(&kind, raw).unwrap_or(StateValue::Str("<unreadable>".into())),
         expires_at_ms: expires_at.map(|e| e as u64),
-        updated_at_ms: r.get::<_, i64>(6)? as u64,
+        updated_at_ms: r.get::<_, i64>(5)? as u64,
     })
 }
 
@@ -210,27 +208,18 @@ impl StateStore for SqliteStore {
         }))
     }
 
-    async fn scan(
-        &self,
-        ns: Option<&str>,
-        partition: Option<&str>,
-        key_prefix: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>> {
+    async fn scan(&self, ns: Option<&str>, key_prefix: &str, limit: usize) -> Result<Vec<Entry>> {
         let now = now_ms() as i64;
         let _turn = self.turn.lock().await;
         let conn = self.conn.lock();
         let mut st = conn.prepare_cached(
-            "SELECT ns, partition, key, kind, value, expires_at, updated_at FROM state
-             WHERE (?1 IS NULL OR ns = ?1) AND (?2 IS NULL OR partition = ?2)
-               AND substr(key, 1, length(?3)) = ?3
-               AND (expires_at IS NULL OR expires_at > ?4)
-             ORDER BY ns, partition, key LIMIT ?5",
+            "SELECT ns, key, kind, value, expires_at, updated_at FROM state
+             WHERE (?1 IS NULL OR ns = ?1)
+               AND substr(key, 1, length(?2)) = ?2
+               AND (expires_at IS NULL OR expires_at > ?3)
+             ORDER BY ns, key LIMIT ?4",
         )?;
-        let rows = st.query_map(
-            params![ns, partition, key_prefix, now, limit as i64],
-            row_entry,
-        )?;
+        let rows = st.query_map(params![ns, key_prefix, now, limit as i64], row_entry)?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
@@ -239,15 +228,14 @@ impl StateStore for SqliteStore {
         let _turn = self.turn.lock().await;
         let conn = self.conn.lock();
         let mut st = conn.prepare_cached(
-            "SELECT ns, partition, count(*) FROM state
+            "SELECT ns, count(*) FROM state
              WHERE (?1 IS NULL OR ns = ?1) AND (expires_at IS NULL OR expires_at > ?2)
-             GROUP BY ns, partition ORDER BY ns, partition",
+             GROUP BY ns ORDER BY ns",
         )?;
         let rows = st.query_map(params![ns, now], |r| {
             Ok(Count {
                 ns: r.get(0)?,
-                partition: r.get(1)?,
-                keys: r.get::<_, i64>(2)? as u64,
+                keys: r.get::<_, i64>(1)? as u64,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -296,14 +284,12 @@ impl SqliteTxn {
 
 #[async_trait]
 impl Txn for SqliteTxn {
-    async fn get(&mut self, ns: &str, partition: &str, key: &str) -> Result<Option<StateValue>> {
+    async fn get(&mut self, ns: &str, key: &str) -> Result<Option<StateValue>> {
         let now = now_ms() as i64;
         let conn = self.conn()?;
         let found = conn
-            .prepare_cached(
-                "SELECT kind, value, expires_at FROM state WHERE ns = ?1 AND partition = ?2 AND key = ?3",
-            )?
-            .query_row(params![ns, partition, key], |r| {
+            .prepare_cached("SELECT kind, value, expires_at FROM state WHERE ns = ?1 AND key = ?2")?
+            .query_row(params![ns, key], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, Value>(1)?,
@@ -317,8 +303,8 @@ impl Txn for SqliteTxn {
                 // A reader leaves the row to the writer.
                 if self.writer {
                     conn.execute(
-                        "DELETE FROM state WHERE ns = ?1 AND partition = ?2 AND key = ?3",
-                        params![ns, partition, key],
+                        "DELETE FROM state WHERE ns = ?1 AND key = ?2",
+                        params![ns, key],
                     )?;
                 }
                 Ok(None)
@@ -330,7 +316,6 @@ impl Txn for SqliteTxn {
     async fn set(
         &mut self,
         ns: &str,
-        partition: &str,
         key: &str,
         value: &StateValue,
         ttl_ms: Option<u64>,
@@ -339,39 +324,32 @@ impl Txn for SqliteTxn {
         let (kind, raw) = to_sqlite(value)?;
         let expires_at = expires_at(&self.cfg, ttl_ms, now).map(|e| e as i64);
         self.conn()?.execute(
-            "INSERT INTO state (ns, partition, key, kind, value, expires_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT (ns, partition, key) DO UPDATE SET
+            "INSERT INTO state (ns, key, kind, value, expires_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (ns, key) DO UPDATE SET
                 kind = excluded.kind, value = excluded.value,
                 expires_at = excluded.expires_at, updated_at = excluded.updated_at",
-            params![ns, partition, key, kind, raw, expires_at, now as i64],
+            params![ns, key, kind, raw, expires_at, now as i64],
         )?;
         Ok(())
     }
 
-    async fn del(&mut self, ns: &str, partition: &str, key: &str) -> Result<bool> {
+    async fn del(&mut self, ns: &str, key: &str) -> Result<bool> {
         let n = self.conn()?.execute(
-            "DELETE FROM state WHERE ns = ?1 AND partition = ?2 AND key = ?3",
-            params![ns, partition, key],
+            "DELETE FROM state WHERE ns = ?1 AND key = ?2",
+            params![ns, key],
         )?;
         Ok(n > 0)
     }
 
-    async fn incr(
-        &mut self,
-        ns: &str,
-        partition: &str,
-        key: &str,
-        by: i64,
-        ttl_ms: Option<u64>,
-    ) -> Result<i64> {
+    async fn incr(&mut self, ns: &str, key: &str, by: i64, ttl_ms: Option<u64>) -> Result<i64> {
         let now = now_ms();
         let expires_at = expires_at(&self.cfg, ttl_ms, now).map(|e| e as i64);
         let conn = self.conn()?;
         let current: Option<(String, Value, Option<i64>)> = conn
             .query_row(
-                "SELECT kind, value, expires_at FROM state WHERE ns = ?1 AND partition = ?2 AND key = ?3",
-                params![ns, partition, key],
+                "SELECT kind, value, expires_at FROM state WHERE ns = ?1 AND key = ?2",
+                params![ns, key],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
@@ -385,44 +363,27 @@ impl Txn for SqliteTxn {
         };
         let next = base.saturating_add(by);
         conn.execute(
-            "INSERT INTO state (ns, partition, key, kind, value, expires_at, updated_at)
-             VALUES (?1, ?2, ?3, 'int', ?4, ?5, ?6)
-             ON CONFLICT (ns, partition, key) DO UPDATE SET
+            "INSERT INTO state (ns, key, kind, value, expires_at, updated_at)
+             VALUES (?1, ?2, 'int', ?3, ?4, ?5)
+             ON CONFLICT (ns, key) DO UPDATE SET
                 kind = 'int', value = excluded.value,
                 expires_at = excluded.expires_at, updated_at = excluded.updated_at",
-            params![
-                ns,
-                partition,
-                key,
-                Value::Integer(next),
-                expires_at,
-                now as i64
-            ],
+            params![ns, key, Value::Integer(next), expires_at, now as i64],
         )?;
         Ok(next)
     }
 
-    async fn range(
-        &mut self,
-        ns: &str,
-        partition: &str,
-        from: &str,
-        to: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>> {
+    async fn range(&mut self, ns: &str, from: &str, to: &str, limit: usize) -> Result<Vec<Entry>> {
         let now = now_ms() as i64;
         let conn = self.conn()?;
-        // Walks the primary key (ns, partition, key): one index range.
+        // Walks the primary key (ns, key): one index range.
         let mut st = conn.prepare_cached(
-            "SELECT ns, partition, key, kind, value, expires_at, updated_at FROM state
-             WHERE ns = ?1 AND partition = ?2 AND key >= ?3 AND key < ?4
-               AND (expires_at IS NULL OR expires_at > ?5)
-             ORDER BY key LIMIT ?6",
+            "SELECT ns, key, kind, value, expires_at, updated_at FROM state
+             WHERE ns = ?1 AND key >= ?2 AND key < ?3
+               AND (expires_at IS NULL OR expires_at > ?4)
+             ORDER BY key LIMIT ?5",
         )?;
-        let rows = st.query_map(
-            params![ns, partition, from, to, now, limit as i64],
-            row_entry,
-        )?;
+        let rows = st.query_map(params![ns, from, to, now, limit as i64], row_entry)?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
@@ -506,18 +467,13 @@ mod tests {
         let dir = temp_dir("rolled-back");
         let store = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
         let mut tx = store.begin().await.unwrap();
-        tx.set("ns", "", "a", &StateValue::Int(1), None)
-            .await
-            .unwrap();
+        tx.set("ns", "a", &StateValue::Int(1), None).await.unwrap();
         // As SQLite does on some errors, a full disk among them.
         store.conn.lock().execute_batch("ROLLBACK").unwrap();
-        assert!(tx
-            .set("ns", "", "b", &StateValue::Int(2), None)
-            .await
-            .is_err());
+        assert!(tx.set("ns", "b", &StateValue::Int(2), None).await.is_err());
         assert!(tx.commit().await.is_err());
-        assert_eq!(store.get("ns", "", "a").await.unwrap(), None);
-        assert_eq!(store.get("ns", "", "b").await.unwrap(), None);
+        assert_eq!(store.get("ns", "a").await.unwrap(), None);
+        assert_eq!(store.get("ns", "b").await.unwrap(), None);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -526,20 +482,20 @@ mod tests {
         let dir = temp_dir("reader");
         let store = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
         store
-            .set("detect", "org-1", "seen", &StateValue::Int(3), Some(0))
+            .set("detect", "org-1:seen", &StateValue::Int(3), Some(0))
             .await
             .unwrap();
         let path = sqlite_path(&StateConfig::default(), &dir);
         let reader = SqliteStore::open_readonly(&path).unwrap();
         assert_eq!(
-            reader.get("detect", "org-1", "seen").await.unwrap(),
+            reader.get("detect", "org-1:seen").await.unwrap(),
             Some(StateValue::Int(3))
         );
         let rows = reader
-            .sql("SELECT ns, partition, key FROM state ORDER BY key", 10)
+            .sql("SELECT ns, key FROM state ORDER BY key", 10)
             .unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["partition"], "org-1");
+        assert_eq!(rows[0]["key"], "org-1:seen");
         assert!(
             reader.sql("DELETE FROM state", 10).is_err(),
             "writes are refused"
@@ -569,36 +525,36 @@ mod tests {
         assert!(format!("{err:#}").contains("no `state` table"), "{err:#}");
         let writer = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
         writer
-            .set("history", "", "gone", &StateValue::Int(1), Some(1))
+            .set("history", "gone", &StateValue::Int(1), Some(1))
             .await
             .unwrap();
         let reader = crate::state::open(&cfg, &dir).unwrap();
         writer
-            .set("history", "", "seen", &StateValue::Int(3), Some(0))
+            .set("history", "seen", &StateValue::Int(3), Some(0))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(5)).await;
         assert_eq!(
-            reader.get("history", "", "seen").await.unwrap(),
+            reader.get("history", "seen").await.unwrap(),
             Some(StateValue::Int(3))
         );
         assert_eq!(
-            reader.get("history", "", "gone").await.unwrap(),
+            reader.get("history", "gone").await.unwrap(),
             None,
             "expired, and left to the writer"
         );
         assert!(reader
-            .set("history", "", "k", &StateValue::Int(1), None)
+            .set("history", "k", &StateValue::Int(1), None)
             .await
             .is_err());
         // A reader's transaction reads one snapshot and writes nothing.
         let mut tx = reader.begin().await.unwrap();
         assert_eq!(
-            tx.get("history", "", "seen").await.unwrap(),
+            tx.get("history", "seen").await.unwrap(),
             Some(StateValue::Int(3))
         );
         assert!(tx
-            .set("history", "", "k", &StateValue::Int(1), None)
+            .set("history", "k", &StateValue::Int(1), None)
             .await
             .is_err());
         drop(tx);
