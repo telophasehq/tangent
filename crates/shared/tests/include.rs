@@ -1194,6 +1194,7 @@ fn every_path_field_is_rebased() {
         group_by: _,
         max_events: _,
         expire_after_ms: _,
+        max_age_ms: _,
         history: _,
     } = PluginConfig::default();
     let PluginTests {

@@ -62,6 +62,12 @@ pub struct PluginConfig {
     #[serde(default = "default_expire_after_ms")]
     pub expire_after_ms: u64,
 
+    /// A group closes this long after it opened, by the wall clock, however
+    /// often records join it. Unset: only `max_events` and `expire_after_ms`
+    /// close it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_age_ms: Option<u64>,
+
     /// How many of a key's latest records are kept in the state store and
     /// sent again, marked `"_context": true`, ahead of its next group.
     #[serde(default)]
@@ -91,6 +97,7 @@ impl Default for PluginConfig {
             group_by: Vec::new(),
             max_events: None,
             expire_after_ms: default_expire_after_ms(),
+            max_age_ms: None,
             history: 0,
         }
     }
