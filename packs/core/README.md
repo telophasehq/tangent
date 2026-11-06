@@ -150,10 +150,11 @@ would go on as nobody the org knows, in the provider's org rather than yours.
   closes it no sooner. It reaches the renderer whole, on workers of its own,
   with the actor's latest ten records again ahead of it, marked `_context`
   (`history: 10`): forty records a request, which `batch_bytes` is sized for.
-  Groups wait in memory; the end of input closes every open one. A signal
-  (Ctrl-C, a restart) does not: the open groups and the requests the model
-  has not answered end there, their records in the lake and the baseline
-  but with no verdict, and nothing asks about them again. The renderer
+  Groups wait in memory; the end of input closes every open one, and so does
+  a signal (Ctrl-C, a restart). After a signal, though, the model calls have
+  ended: the groups it closes and the requests the model has not answered
+  get no verdict, their records in the lake and the baseline, and nothing
+  asks about them again. The renderer
   reads `state.sqlite` and puts the same `_baseline` on each of an actor's
   records ([below](#baseline)). `drop_on_error: false`: when it fails, the
   records go to the model without `_baseline` rather than not at all.
