@@ -41,7 +41,7 @@ install_wasm_tools() {
 }
 
 install_tinygo() {
-  local version="${TINYGO_VERSION:-0.39.0}"
+  local version="${TINYGO_VERSION:-0.43.0}"
 
   if has_cmd tinygo; then
     echo "tinygo already installed: $(tinygo version || true)"
