@@ -57,8 +57,8 @@ enum SinkEntry {
     /// bucket (s3's; empty for rolling_file) and the key prefix `prefix`
     /// renders: a rolling_file's directory below its `path`'s root, an s3
     /// sink's `key_prefix`. With `time`, each record goes under the prefix
-    /// its own time renders; without, a frame goes under the time it
-    /// reaches the sink.
+    /// its own time renders; without, the prefix has no specifier, and a
+    /// frame goes whole under it.
     Wal {
         sink: Arc<dyn Sink>,
         bucket: Arc<str>,
@@ -179,6 +179,8 @@ impl SinkManager {
                 SinkKind::RollingFile(rcfg) => {
                     let path = rolling_file::PathTemplate::parse(&rcfg.path)
                         .with_context(|| format!("sink '{name}'"))?;
+                    let field = FieldPath::parse(&rcfg.timestamp_field)
+                        .with_context(|| format!("sink '{name}'"))?;
                     let wal = wal::DurableFileSink::new(
                         Arc::new(rolling_file::RollingFileSink::new(path.root())),
                         rcfg.wal_path.clone(),
@@ -191,12 +193,7 @@ impl SinkManager {
                     .await?;
                     sinks.insert(
                         Arc::clone(name),
-                        SinkEntry::Wal {
-                            sink: wal,
-                            bucket: Arc::from(""),
-                            prefix: path.rest().cloned(),
-                            time: None,
-                        },
+                        SinkEntry::wal(name, wal, Arc::from(""), path.into_rest(), field),
                     );
                 }
                 SinkKind::File(filecfg) => {

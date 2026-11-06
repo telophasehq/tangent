@@ -7,12 +7,23 @@ use std::path::{Component, Path, PathBuf};
 /// without flush is sealed at the next start), a WAL file is sealed by
 /// `object_max_bytes` or `max_file_age_seconds`, and each sealed file
 /// becomes one file in the directory, in the sink's `encoding`, named as
-/// `s3` names its objects. `path` may hold strftime specifiers
-/// (`lake/%Y/%m/%d/%H`), rendered in UTC when a write reaches the sink.
+/// `s3` names its objects.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RollingFileConfig {
+    /// The directory the files go in. It may hold strftime specifiers
+    /// (`lake/%Y/%m/%d/%H`), rendered in UTC for each record's own time,
+    /// read from `timestamp_field`, so each hour's records go in a directory
+    /// of their own, whenever they arrive.
     pub path: String,
+
+    /// The field holding each record's own time, an RFC 3339 string, for
+    /// `path` to render, found as an s3 sink's `timestamp_field` is. A
+    /// record whose field is missing or not RFC 3339 goes under the time it
+    /// reaches the sink, counted in `tangent_sink_records_untimed_total`. A
+    /// `path` without a specifier reads no time.
+    #[serde(default = "crate::sinks::common::timestamp_field")]
+    pub timestamp_field: String,
 
     /// The WAL's own directory: no other sink's, and not in `path`, where a
     /// reader would find the files it stages (tangent will not start

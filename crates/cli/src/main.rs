@@ -255,10 +255,10 @@ async fn main() -> Result<()> {
 
 /// The config at `path` as YAML, after a header naming the files it was
 /// merged from. Every path that names a file is absolute; `runtime` paths
-/// are as written, relative to `path`. The DAG, each s3 sink's `key_prefix`
-/// and `timestamp_field`, and the required tables' files are checked after:
-/// a config that does not hold together still prints, then fails. What `run`
-/// would warn of is warned of on stderr.
+/// are as written, relative to `path`. The DAG, each s3 sink's `key_prefix`,
+/// each s3 and rolling_file sink's `timestamp_field`, and the required
+/// tables' files are checked after: a config that does not hold together
+/// still prints, then fails. What `run` would warn of is warned of on stderr.
 fn show_config(path: &Path) -> Result<String> {
     let loaded = tangent_shared::Config::load(path)?;
     let dir = path

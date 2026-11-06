@@ -240,6 +240,12 @@ pub const fn in_flight_limit() -> usize {
     16
 }
 
+/// A WAL sink's `timestamp_field` unless set: the field every pack
+/// normalizes a record's time to.
+pub fn timestamp_field() -> String {
+    "ts".into()
+}
+
 const fn default_sink() -> bool {
     false
 }

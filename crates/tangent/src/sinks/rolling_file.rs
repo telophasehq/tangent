@@ -3,7 +3,6 @@ use async_trait::async_trait;
 use std::fs::File;
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
 use tangent_shared::sinks::common::{Compression, Encoding};
 use tangent_shared::sinks::rolling_file::subdir;
 use tokio::task::spawn_blocking;
@@ -13,12 +12,12 @@ use crate::sinks::template::Template;
 use crate::sinks::wal::WALSink;
 
 /// A rolling_file sink's `path`: the part with no strftime specifier, where
-/// the WAL puts files, and the rest, rendered in UTC when a write is routed,
-/// as the directory below it each write goes to.
+/// the WAL puts files, and the rest, rendered in UTC for each record's own
+/// time, as the directory below it the record goes to.
 #[derive(Debug)]
 pub struct PathTemplate {
     root: PathBuf,
-    rest: Option<Arc<Template>>,
+    rest: Option<Template>,
 }
 
 impl PathTemplate {
@@ -38,8 +37,8 @@ impl PathTemplate {
         let rest = match rest.join("/") {
             r if r.is_empty() => None,
             r => match Template::parse(&r) {
-                Some(t) => Some(Arc::new(t)),
                 None => anyhow::bail!("path {path:?}: {r:?} is not a strftime template"),
+                t => t,
             },
         };
         Ok(Self { root, rest })
@@ -50,10 +49,10 @@ impl PathTemplate {
         &self.root
     }
 
-    /// What a write's directory below the root renders from; none for a
+    /// What a record's directory below the root renders from; none for a
     /// `path` without a specifier.
-    pub fn rest(&self) -> Option<&Arc<Template>> {
-        self.rest.as_ref()
+    pub fn into_rest(self) -> Option<Template> {
+        self.rest
     }
 }
 
@@ -302,23 +301,26 @@ mod tests {
         })
     }
 
+    /// A rolling_file sink `name` from YAML, as `tangent run` reads one: its
+    /// `path` is `rest` below `root/out`, its WAL in `root/wal`.
+    fn config(root: &Path, name: &Arc<str>, rest: &str) -> BTreeMap<Arc<str>, SinkConfig> {
+        let yaml = format!(
+            "type: rolling_file\npath: {}/{rest}\nwal_path: {}\nmax_file_age_seconds: 3600\n\
+             encoding: {{type: parquet, record_column: record, schema: {{n: int, _norm: {{actor: string}}}}}}\n",
+            root.join("out").display(),
+            root.join("wal").display(),
+        );
+        BTreeMap::from([(name.clone(), serde_yaml::from_str(&yaml).unwrap())])
+    }
+
     /// From YAML through the sink manager, as `tangent run` builds it: a
     /// write is in a file once the manager is joined, in the directory its
     /// time renders.
     #[tokio::test]
     async fn a_rolling_file_sink_from_config_has_its_files_by_shutdown() {
         let root = scratch("config");
-        let yaml = format!(
-            "type: rolling_file\npath: {}/%Y\nwal_path: {}\nmax_file_age_seconds: 3600\n\
-             encoding: {{type: parquet, record_column: record, schema: {{n: int, _norm: {{actor: string}}}}}}\n",
-            root.join("out").display(),
-            root.join("wal").display(),
-        );
-        let cfg: SinkConfig = serde_yaml::from_str(&yaml).unwrap();
         let name: Arc<str> = Arc::from("logs");
-        let manager = SinkManager::new(&BTreeMap::from([(name.clone(), cfg)]))
-            .await
-            .unwrap();
+        let manager = SinkManager::new(&config(&root, &name, "%Y")).await.unwrap();
         let lines: Vec<String> = (0..3).map(line).collect();
         manager
             .enqueue(
@@ -336,6 +338,185 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    fn timed(ts: &str, n: usize) -> String {
+        format!(r#"{{"ts":"{ts}","n":{n},"_norm":{{"actor":"a"}}}}"#)
+    }
+
+    /// Each directory below `out` that holds files, as a path from `out`,
+    /// with its files' records, the files in name order; sorted.
+    fn tree(out: &Path) -> Vec<(String, Vec<String>)> {
+        let mut dirs = vec![out.to_path_buf()];
+        let mut got = Vec::new();
+        while let Some(dir) = dirs.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            let mut has_files = false;
+            for e in entries {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    dirs.push(p);
+                } else {
+                    has_files = true;
+                }
+            }
+            if has_files {
+                let records = files(&dir).into_iter().flat_map(|f| f.1).collect();
+                let rel = dir.strip_prefix(out).unwrap().display().to_string();
+                got.push((rel, records));
+            }
+        }
+        got.sort();
+        got
+    }
+
+    #[derive(Default)]
+    struct Acked(std::sync::atomic::AtomicUsize);
+
+    impl Acked {
+        fn count(&self) -> usize {
+            self.0.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl crate::worker::Ack for Acked {
+        async fn ack(&self) -> Result<()> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    const H13: &str = "2026-11-02T13:59:59Z";
+    const H14: &str = "2026-11-02T14:00:00Z";
+    /// 13:30 in UTC
+    const H13_WEST: &str = "2026-11-02T05:30:00-08:00";
+
+    /// A frame of 13:00 and 14:00 records, in UTC.
+    fn two_hours() -> String {
+        [timed(H13, 0), timed(H14, 1), timed(H13_WEST, 2)].join("\n") + "\n"
+    }
+
+    /// Where [`two_hours`] goes: each record in its own hour, in the frame's
+    /// order.
+    fn in_their_hours() -> Vec<(String, Vec<String>)> {
+        vec![
+            (
+                "2026/11/02/13".to_string(),
+                vec![timed(H13, 0), timed(H13_WEST, 2)],
+            ),
+            ("2026/11/02/14".to_string(), vec![timed(H14, 1)]),
+        ]
+    }
+
+    /// A rolling_file sink's `path` renders each record's own time, its
+    /// `ts`, in UTC: a frame of two hours is files in two directories, and
+    /// its ack follows both.
+    #[tokio::test]
+    async fn a_frame_of_two_hours_is_files_in_two_directories() {
+        let root = scratch("hours");
+        let name: Arc<str> = Arc::from("rolling-hours");
+        let manager = SinkManager::new(&config(&root, &name, "%Y/%m/%d/%H"))
+            .await
+            .unwrap();
+        let ack = Arc::new(Acked::default());
+        manager
+            .enqueue(
+                name,
+                BytesMut::from(two_hours().as_str()),
+                vec![ack.clone()],
+            )
+            .await
+            .unwrap();
+        manager.join().await.unwrap();
+        assert_eq!(tree(&root.join("out")), in_their_hours());
+        assert_eq!(ack.count(), 1);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A record without an RFC 3339 time in its `ts` goes in the directory
+    /// of the hour it reaches the sink, and is counted for its sink: it is
+    /// kept, not dropped.
+    #[tokio::test]
+    async fn a_record_without_a_time_goes_in_the_hour_it_reaches_the_sink() {
+        let root = scratch("untimed");
+        let name: Arc<str> = Arc::from("rolling-untimed");
+        let manager = SinkManager::new(&config(&root, &name, "%Y/%m/%d/%H"))
+            .await
+            .unwrap();
+        let untimed = vec![
+            line(0),
+            r#"{"ts":"noon","n":1,"_norm":{"actor":"a"}}"#.to_string(),
+        ];
+        let frame = [untimed.clone(), vec![timed(H13, 2)]].concat().join("\n") + "\n";
+        let hour = || Utc::now().format("%Y/%m/%d/%H").to_string();
+        let before = hour();
+        manager
+            .enqueue(name, BytesMut::from(frame.as_str()), Vec::new())
+            .await
+            .unwrap();
+        manager.join().await.unwrap();
+        let (timed_dir, now_dir): (Vec<_>, Vec<_>) = tree(&root.join("out"))
+            .into_iter()
+            .partition(|(dir, _)| dir == "2026/11/02/13");
+        assert_eq!(
+            timed_dir,
+            [("2026/11/02/13".to_string(), vec![timed(H13, 2)])]
+        );
+        assert_eq!(now_dir.len(), 1, "{now_dir:?}");
+        assert!([before, hour()].contains(&now_dir[0].0), "{now_dir:?}");
+        assert_eq!(now_dir[0].1, untimed);
+        let counted = crate::SINK_RECORDS_UNTIMED_TOTAL.with_label_values(&["rolling-untimed"]);
+        assert_eq!(counted.get(), 2);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Each hour's WAL file keeps its directory in its meta: a process
+    /// killed with them open, and started again, puts each in its own hour.
+    #[test]
+    fn a_restart_puts_each_wal_file_in_its_own_hour() {
+        let root = scratch("restart");
+        let name: Arc<str> = Arc::from("rolling-restart");
+        let ack = Arc::new(Acked::default());
+        // killed: the runtime goes once the frame is acked, and every task
+        // with it, with no join and no flush
+        let killed = tokio::runtime::Runtime::new().unwrap();
+        killed.block_on(async {
+            let manager = SinkManager::new(&config(&root, &name, "%Y/%m/%d/%H"))
+                .await
+                .unwrap();
+            manager
+                .enqueue(
+                    name.clone(),
+                    BytesMut::from(two_hours().as_str()),
+                    vec![ack.clone()],
+                )
+                .await
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while ack.count() == 0 {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("acked once in the WAL");
+        });
+        drop(killed);
+        assert!(
+            tree(&root.join("out")).is_empty(),
+            "sent before the restart"
+        );
+
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let manager = SinkManager::new(&config(&root, &name, "%Y/%m/%d/%H"))
+                .await
+                .unwrap();
+            manager.join().await.unwrap();
+        });
+        assert_eq!(tree(&root.join("out")), in_their_hours());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn a_path_is_a_root_and_a_strftime_rest() {
         let at = DateTime::parse_from_rfc3339("2026-11-02T13:05:00Z")
@@ -343,10 +524,10 @@ mod tests {
             .with_timezone(&Utc);
         let t = PathTemplate::parse("lake/logs/%Y/%m/%d/%H").unwrap();
         assert_eq!(t.root(), Path::new("lake/logs"));
-        assert_eq!(&*t.rest().unwrap().render(at), "2026/11/02/13");
+        assert_eq!(&*t.into_rest().unwrap().render(at), "2026/11/02/13");
         let fixed = PathTemplate::parse("/var/lake").unwrap();
         assert_eq!(fixed.root(), Path::new("/var/lake"));
-        assert!(fixed.rest().is_none());
+        assert!(fixed.into_rest().is_none());
         assert!(PathTemplate::parse("lake/%Y/../x").is_err());
         assert!(PathTemplate::parse("lake/%Q").is_err());
         // chrono parses `%#z` but cannot write it

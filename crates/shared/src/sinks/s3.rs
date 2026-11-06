@@ -26,7 +26,7 @@ pub struct S3Config {
     /// time it reaches the sink, counted in
     /// `tangent_sink_records_untimed_total`. A `key_prefix` without a
     /// specifier reads no time.
-    #[serde(default = "timestamp_field")]
+    #[serde(default = "crate::sinks::common::timestamp_field")]
     pub timestamp_field: String,
 
     #[serde(default = "wal_path")]
@@ -34,10 +34,6 @@ pub struct S3Config {
 
     #[serde(default = "max_file_age_seconds")]
     pub max_file_age_seconds: u64,
-}
-
-fn timestamp_field() -> String {
-    "ts".into()
 }
 
 fn wal_path() -> PathBuf {
