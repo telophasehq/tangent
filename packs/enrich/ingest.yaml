@@ -1,7 +1,7 @@
-# enrich: the tables every pack's plugin reads, and where its records go.
-# Not a provider: include it, with the packs you want, in your config, which
-# names your sources, routes each to its pack and each pack's plugin on to
-# `lake`, and gives the `profile` table (README.md).
+# enrich: the tables every pack's plugin reads. Not a provider: include it,
+# with the packs you want, in your config, which names your sources, routes
+# each to its pack and each pack's plugin on to where its records go, and
+# gives the `profile` table (README.md).
 
 # Read once for the process and shared by every pack's plugin, however many are
 # included. examples/enrich/setup.sh fetches them; a missing file is a warning,
@@ -22,19 +22,3 @@ runtime:
     path: state.sqlite
     default_ttl_ms: 0
     max_ttl_ms: 0
-
-# Your config routes each pack's plugin to it.
-sinks:
-  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
-    type: rolling_file
-    path: lake/logs/%Y/%m/%d/%H
-    wal_path: lake/wal
-    max_file_age_seconds: 3600
-    compression: { type: zstd, level: 3 }
-    encoding:
-      type: parquet
-      record_column: record      # each record whole, for the fields the schema leaves out
-      schema:
-        ts: timestamp
-        source: string
-        _norm: { org: string, actor: string, kind: string, ip: string }

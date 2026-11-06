@@ -139,7 +139,8 @@ fn pipelines_validate_with_and_without_the_judge() {
     for f in &files {
         yaml += &format!("  - {}\n", f.display());
     }
-    yaml += "sources:\n  events: { type: tcp, bind_address: 127.0.0.1:0 }\ndag:\n";
+    yaml += "sources:\n  events: { type: tcp, bind_address: 127.0.0.1:0 }\n";
+    yaml += "sinks:\n  lake: { type: file, path: lake.ndjson }\ndag:\n";
     for p in &plugins {
         yaml += &format!("  - from: events\n    to: [{p}]\n");
         yaml += &format!("  - from: {p}\n    to: [lake]\n");

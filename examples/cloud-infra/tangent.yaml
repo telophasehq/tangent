@@ -27,12 +27,25 @@ enrichment_tables:
 #     encoding:
 #       type: ndjson
 
-# What flagged keeps, to Slack too, with its edge at the end of `dag` (packs/core/README.md#slack):
-# sinks:
-#   slack:
-#     type: slack
-#     webhook_url: ${SLACK_WEBHOOK_URL}
-#     text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
+sinks:
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }
+  # What flagged keeps, to Slack too, with its edge at the end of `dag` (packs/core/README.md#slack):
+  # slack:
+  #   type: slack
+  #   webhook_url: ${SLACK_WEBHOOK_URL}
+  #   text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
 
 sources:
   cloudtrail:
