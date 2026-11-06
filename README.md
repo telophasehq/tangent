@@ -307,11 +307,15 @@ much as anyone. What stands between that text and the verdict:
   in which no value or key can end a field, a row or a section; controls and
   non-ASCII characters are escaped ([crates/compact](crates/compact/src/lib.rs),
   fuzzed in `crates/compact/fuzz`).
-- **It shares a prompt with one actor.** A request holds one actor's records,
-  so an attacker's text sits only beside its own actor's. A Slack message
-  escapes mentions and links.
-- **The answer has one shape.** The reply is held to the schema (a grammar
-  on llama-server, structured output on Bedrock). An unreadable reply is
+- **It shares a prompt with one actor, but for agents.** A request holds one
+  actor's records, so an attacker's text sits only beside its own actor's.
+  An AI agent's run log is the exception: its records name no actor, so an
+  organization's runs are grouped together, and one run's text sits beside
+  the others' ([packs/app](packs/app/src/lib.rs)). A Slack message escapes
+  mentions and links.
+- **The model server holds the answer's shape.** The server holds the reply
+  to the schema (a grammar on llama-server, structured output on Bedrock);
+  tangent does not check an answer against it. A reply it cannot read is
   asked again in halves; a record the reply skipped becomes `judge.error`,
   and `flagged` keeps errors, so a person sees them.
 - **The history is not the model's.** `_baseline` is computed from state, and
@@ -319,8 +323,11 @@ much as anyone. What stands between that text and the verdict:
   read against.
 
 The gap: if the model obeys an injection and writes `{"flag": false}`, that
-is a well-formed pass, and nothing checks it a second way. tangent-eval has
-4 [prompt-injection cases](https://github.com/EthanBlackburn/tangent-eval/blob/main/cases/prompt-injection/README.md);
+is a well-formed pass, and nothing checks it a second way. Nor is an answer
+of another shape caught: from a server that does not hold the reply to the
+schema, `{"flag": "true"}` or `{}` is no flag, and `flagged` passes it over
+like a pass. tangent-eval has 4
+[prompt-injection cases](https://github.com/EthanBlackburn/tangent-eval/blob/main/cases/prompt-injection/README.md);
 they came after the measured runs and are not measured yet.
 
 ## Where your data goes
@@ -395,8 +402,12 @@ To run it: `make` in tangent-eval (Haiku 5.5 on Bedrock, about $1), or
 
 - **No spend cap.** Spend is bounded in rate (4 requests in flight, 200 tokens
   a record), not in total, and the runtime's metrics count no requests,
-  tokens or errors. An unreadable reply, asked again in halves, can take 79
-  requests for a 40-record group at worst.
+  tokens or errors. A reply that cannot be read is asked again in halves,
+  down to single records, and an empty one is first retried twice: at worst
+  (2n − 1) × 3 requests for an n-record group, 237 for 40.
+- **An answer's shape is not checked.** Tangent attaches any JSON object the
+  model answers, and a wrong-shaped one counts as a pass; only a model
+  server that holds the reply to the schema rules that out.
 - **No provenance on a verdict.** It carries the model's answer and nothing
   else: no model id, prompt hash or request id, and the request's text and
   token use are not logged.
