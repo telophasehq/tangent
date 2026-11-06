@@ -552,7 +552,7 @@ fn encode_file(src: &Path, tmp: &Path, enc: &Encoding, comp: &Compression) -> Re
 /// NDJSON as it is, or JSON as one array.
 fn write_whole<W: Write>(enc: &Encoding, mut fin: impl BufRead, mut out: W) -> Result<W> {
     if matches!(enc, Encoding::JSON) {
-        return encoding::write_json_array(fin, out);
+        return Ok(encoding::write_json_array(fin, out)?.0);
     }
     copy(&mut fin, &mut out)?;
     Ok(out)

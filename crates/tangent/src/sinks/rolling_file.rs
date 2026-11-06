@@ -146,6 +146,7 @@ mod tests {
     use super::*;
     use crate::sinks::manager::{Sink, SinkManager, SinkWrite};
     use crate::sinks::wal::DurableFileSink;
+    use crate::SINK_RECORDS_UNFIT_TOTAL;
     use arrow_array::cast::AsArray;
     use bytes::BytesMut;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -311,6 +312,55 @@ mod tests {
             })
             .count()
         })
+    }
+
+    /// The one file a WAL in `encoding` makes of `payload`, its name and
+    /// bytes, and how far `tangent_sink_records_unfit_total{fate="dropped"}`
+    /// rose meanwhile: by at least the lines dropped, as other tests drop
+    /// lines at the same time.
+    async fn sealed(encoding: Encoding, tag: &str, payload: &str) -> (String, Vec<u8>, u64) {
+        let root = scratch(tag);
+        let (out, wal_dir) = (root.join("out"), root.join("wal"));
+        let wal = DurableFileSink::new(
+            Arc::new(RollingFileSink::new(&out)),
+            &wal_dir,
+            4,
+            1 << 20,
+            Duration::from_secs(3600),
+            Compression::None,
+            encoding,
+        )
+        .await
+        .unwrap();
+        let dropped = || {
+            SINK_RECORDS_UNFIT_TOTAL
+                .with_label_values(&["dropped"])
+                .get()
+        };
+        let before = dropped();
+        wal.write(write(payload.to_string(), None)).await.unwrap();
+        wal.flush().await.unwrap();
+        let rose = dropped() - before;
+        assert_eq!(files_in(&out), 1, "the sealed file is in place");
+        let entry = std::fs::read_dir(&out).unwrap().next().unwrap().unwrap();
+        let name = entry.file_name().into_string().unwrap();
+        let bytes = std::fs::read(entry.path()).unwrap();
+        let _ = std::fs::remove_dir_all(root);
+        (name, bytes, rose)
+    }
+
+    #[tokio::test]
+    async fn a_json_file_drops_a_line_that_is_not_json_and_keeps_the_rest() {
+        let payload = format!("{}\nnot json\n{}\n", line(1), line(2));
+        let (name, bytes, dropped) = sealed(Encoding::JSON, "unfit-json", &payload).await;
+        assert!(name.ends_with(".json"), "{name}");
+        let got: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
+        let want: Vec<serde_json::Value> = [line(1), line(2)]
+            .iter()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(got, want);
+        assert!(dropped >= 1, "counted");
     }
 
     /// From YAML through the sink manager, as `tangent run` builds it: a

@@ -22,21 +22,27 @@ pub fn ndjson_ensure_newline(mut raw: BytesMut) -> BytesMut {
 }
 
 pub fn ndjson_to_json_array(raw: &[u8]) -> Result<BytesMut> {
-    let out = write_json_array(raw, BytesMut::new().writer())?;
+    let (out, _) = write_json_array(raw, BytesMut::new().writer())?;
     Ok(out.into_inner())
 }
 
 /// [`ndjson_to_json_array`] from a reader to a writer, a line in memory at
-/// a time.
-pub fn write_json_array<R: BufRead, W: Write>(input: R, mut out: W) -> Result<W> {
+/// a time. A line that is not one JSON value does not fail the file: it is
+/// dropped, counted in `tangent_sink_records_unfit_total{fate="dropped"}`,
+/// and the lines dropped are returned.
+pub fn write_json_array<R: BufRead, W: Write>(input: R, mut out: W) -> Result<(W, usize)> {
     out.write_all(b"[")?;
     let mut first = true;
+    let mut dropped = 0;
     for line in input.split(b'\n') {
         let line = line?;
         if line.is_empty() {
             continue;
         }
-        let v: serde_json::Value = serde_json::from_slice(&line)?;
+        let Ok(v) = serde_json::from_slice::<serde_json::Value>(&line) else {
+            dropped += 1;
+            continue;
+        };
         if !first {
             out.write_all(b",")?;
         }
@@ -44,7 +50,13 @@ pub fn write_json_array<R: BufRead, W: Write>(input: R, mut out: W) -> Result<W>
         first = false;
     }
     out.write_all(b"]")?;
-    Ok(out)
+    if dropped > 0 {
+        SINK_RECORDS_UNFIT_TOTAL
+            .with_label_values(&["dropped"])
+            .inc_by(dropped as u64);
+        tracing::warn!(dropped, "json: lines that are not JSON");
+    }
+    Ok((out, dropped))
 }
 
 pub fn normalize_from_ndjson(
@@ -633,6 +645,14 @@ mod tests {
             .map(Result::unwrap)
             .collect();
         assert_eq!(read.len(), 2);
+    }
+
+    #[test]
+    fn json_drops_a_line_that_is_not_one_json_value() {
+        let ndjson = "{\"n\":1}\nnot json\n{\"n\":\n{\"n\":4}{\"n\":4}\n\n{\"n\":2}\n";
+        let (out, dropped) = write_json_array(ndjson.as_bytes(), Vec::new()).unwrap();
+        assert_eq!(out, br#"[{"n":1},{"n":2}]"#);
+        assert_eq!(dropped, 3, "a blank line is no line");
     }
 
     #[test]
