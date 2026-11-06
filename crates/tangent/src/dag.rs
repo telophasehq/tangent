@@ -42,10 +42,31 @@ pub struct DagRuntime {
 }
 
 impl DagRuntime {
+    /// The DAG, and a consumer reading each source until `shutdown`.
     pub async fn build(
         cfg: Config,
         cfg_path: &Path,
         shutdown: CancellationToken,
+        stop_models: CancellationToken,
+    ) -> anyhow::Result<Self> {
+        Self::assemble(cfg, cfg_path, Some(shutdown), stop_models).await
+    }
+
+    /// The DAG with nothing reading its sources: the caller hands each
+    /// source's records to `router` as the source would, and the source's
+    /// edges take them on. `tangent replay` feeds it the sources' past.
+    pub async fn fed(
+        cfg: Config,
+        cfg_path: &Path,
+        stop_models: CancellationToken,
+    ) -> anyhow::Result<Self> {
+        Self::assemble(cfg, cfg_path, None, stop_models).await
+    }
+
+    async fn assemble(
+        cfg: Config,
+        cfg_path: &Path,
+        consumers: Option<CancellationToken>,
         stop_models: CancellationToken,
     ) -> anyhow::Result<Self> {
         let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
@@ -163,13 +184,16 @@ impl DagRuntime {
         }
         router.set_groupers(groupers);
 
-        let consumer_handles = spawn_consumers(
-            cfg.sources,
-            batch_size,
-            router.clone(),
-            Arc::clone(&store),
-            shutdown.clone(),
-        );
+        let consumer_handles = match consumers {
+            Some(shutdown) => spawn_consumers(
+                cfg.sources,
+                batch_size,
+                router.clone(),
+                Arc::clone(&store),
+                shutdown,
+            ),
+            None => Vec::new(),
+        };
 
         Ok(Self {
             router,
@@ -684,6 +708,45 @@ mod tests {
         assert_eq!(blocking_sink.write_count().await, 1);
         assert!(blocking_sink.flush_completed());
         assert_eq!(ack.count(), 1);
+    }
+
+    /// A fed DAG reads none of its sources, and what its caller hands it as
+    /// a source's records goes on along that source's edges.
+    #[tokio::test]
+    async fn a_fed_dag_takes_a_sources_records_from_its_caller() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("in.ndjson"), "{\"n\":1}\n").unwrap();
+        let cfg_path = root.join("tangent.yaml");
+        std::fs::write(
+            &cfg_path,
+            format!(
+                "runtime: {{ state: {{ backend: lru }} }}\nsources:\n  in: {{ type: file, path: {r}/in.ndjson, decoding: {{ format: {{ type: ndjson }} }} }}\nsinks:\n  out: {{ type: file, path: {r}/out.ndjson, compression: {{ type: none }} }}\ndag:\n  - from: in\n    to: [out]\n",
+                r = root.display()
+            ),
+        )
+        .unwrap();
+        let cfg = Config::from_file(&cfg_path).unwrap();
+        let dag = DagRuntime::fed(cfg, &cfg_path, CancellationToken::new())
+            .await
+            .unwrap();
+        let ack = Arc::new(CountingAck::default());
+        dag.router
+            .forward(
+                &NodeRef::Source { name: "in".into() },
+                vec![BytesMut::from("{\"n\":2}\n")],
+                vec![ack.clone() as Arc<dyn Ack>],
+            )
+            .await
+            .unwrap();
+        dag.shutdown(Duration::from_secs(5), Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(ack.count(), 1);
+        assert_eq!(
+            std::fs::read_to_string(root.join("out.ndjson")).unwrap(),
+            "{\"n\":2}\n"
+        );
     }
 
     /// Three actors' records in open groups, and a walk that takes `walk` a
