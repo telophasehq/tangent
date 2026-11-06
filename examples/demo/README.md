@@ -36,7 +36,7 @@ instead of a local one, `JUDGE_URL`, `JUDGE_MODEL` and `JUDGE_API_KEY` (two
 requests, well under a cent).
 
 It prints what `alerts.ndjson` holds. With GLM-4.7-Flash on llama-server,
-four runs on 2026-11-06 gave the same two verdicts: dave's promotion passed,
+five runs on 2026-11-06 gave the same two verdicts: dave's promotion passed,
 and carol's export was flagged with
 
 ```json
