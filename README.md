@@ -504,8 +504,8 @@ before it starts. One process runs it all.
 - **State**: SQLite or an in-memory LRU, with TTLs, transactions, and
   `tangent state` to read it while it runs ([docs/state.md](docs/state.md)).
 - **Enrichment tables**: MaxMind DBs, CIDR lists and YAML documents, loaded
-  once per process; a lookup takes tens of nanoseconds to about a
-  microsecond ([docs/enrichment-tables.md](docs/enrichment-tables.md)).
+  once per process and shared by every plugin, a lookup a search in memory
+  ([docs/enrichment-tables.md](docs/enrichment-tables.md)).
 - **One config from many files**: `include:`, `${VAR:-default}`, and
   `tangent config` to print the merged result with secrets left out
   ([docs/configuration.md](docs/configuration.md)).
@@ -514,9 +514,10 @@ before it starts. One process runs it all.
 |---|---|---|---|
 | throughput | 483.35 MB/s | 399.54 MB/s | 76.91 MB/s |
 
-_Measured in November 2025 on a dedicated 16-core AMD machine, one simple
-transformation plugin each, with `tangent run` and `tangent bench` pinned to
-separate cores ([docs/benchmarks.md](docs/benchmarks.md))._
+_Measured in November 2025, on tangent as of v0.1.9 and not re-run since,
+on a dedicated 16-core AMD machine, one simple transformation plugin each,
+with `tangent run` and `tangent bench` pinned to separate cores
+([docs/benchmarks.md](docs/benchmarks.md))._
 
 ## License
 

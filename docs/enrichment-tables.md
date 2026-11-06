@@ -42,9 +42,10 @@ all answer nothing.
 `tangent run` reads every table when it builds the DAG, before the first
 record, into one copy every worker and every plugin shares: two plugins, or
 two packs, that read GeoLite2 hold it in memory once, and a lookup is a
-search in that memory, with no file read and no lock: tens of nanoseconds for
-a `cidr` table, about a microsecond for a GeoLite2 Country record. A file
-named by two tables, as the same type, is read once.
+search in that memory, with no file read and no lock (on the order of tens
+of nanoseconds for a `cidr` table and a microsecond for a GeoLite2 Country
+record, an estimate: no benchmark here measures it). A file named by two
+tables, as the same type, is read once.
 
 - A file that is missing is a warning, once, and its table answers nothing,
   as a missing file did for a plugin that read its own.
