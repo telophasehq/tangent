@@ -174,6 +174,16 @@ impl DurableFileSink {
         Ok(s)
     }
 
+    /// Stops the rotator and leaves each open file as it is, as a process
+    /// killed before its flush does.
+    #[cfg(test)]
+    pub(crate) async fn stop_without_flush(&self) {
+        self.stop.cancel();
+        if let Some(h) = self.rotator.lock().await.take() {
+            let _ = h.await;
+        }
+    }
+
     /// Seals the route's open file and closes the route: its next file is
     /// opened by the write that needs it. With `only`, only if the open file
     /// is still that one, so writers that each found it full seal it once

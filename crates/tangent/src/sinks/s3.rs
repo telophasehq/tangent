@@ -12,6 +12,7 @@ use tangent_shared::sinks::s3::S3Config;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
+use crate::sinks::event_time::FieldPath;
 use crate::sinks::template::Template;
 use crate::sinks::wal::{compressed_whole, WALSink};
 
@@ -228,14 +229,15 @@ impl S3Sink {
 }
 
 /// An s3 sink's `key_prefix`: a strftime template, rendered whole in UTC
-/// when a write is routed, as a rolling_file sink's `path` is. It is a path
-/// in the bucket, so it may not start with `/` or hold an empty (`//`), `.`
-/// or `..` segment: S3 keeps each as written, so `/logs` objects are not
-/// under `logs/` and `logs//2026` ones not under `logs/2026/` for a listing
-/// or a table's location, and a tool that copies the bucket to disk
-/// resolves `.` and `..` (`aws s3 cp --recursive` skips a key that climbs
-/// out of the directory, and writes `a/../b` to `b`). A trailing `/` is
-/// fine: the key joins the prefix and the name with one `/`.
+/// for each record's own time, read from its `timestamp_field` (the time
+/// the record reaches the sink, for one without). It is a path in the bucket, so
+/// it may not start with `/` or hold an empty (`//`), `.` or `..` segment:
+/// S3 keeps each as written, so `/logs` objects are not under `logs/` and
+/// `logs//2026` ones not under `logs/2026/` for a listing or a table's
+/// location, and a tool that copies the bucket to disk resolves `.` and
+/// `..` (`aws s3 cp --recursive` skips a key that climbs out of the
+/// directory, and writes `a/../b` to `b`). A trailing `/` is fine: the key
+/// joins the prefix and the name with one `/`.
 pub fn key_prefix(template: &str) -> Result<Template> {
     // a `{{ field }}` template is not rendered: its braces would go into
     // every key
@@ -257,18 +259,23 @@ pub fn key_prefix(template: &str) -> Result<Template> {
     Ok(parsed)
 }
 
-/// Each s3 sink's `key_prefix` is one [`key_prefix`] takes, or the error
-/// names the sink: checked when `tangent run` and `tangent config` load a
-/// config.
-pub fn check_key_prefixes(sinks: &BTreeMap<Arc<str>, SinkConfig>) -> Result<()> {
+/// Each s3 sink's `key_prefix` is one [`key_prefix`] takes, and its
+/// `timestamp_field` one [`FieldPath::parse`] takes, or the error names the
+/// sink: checked when `tangent run` and `tangent config` load a config.
+pub fn check_sinks(sinks: &BTreeMap<Arc<str>, SinkConfig>) -> Result<()> {
     for (name, cfg) in sinks {
-        if let SinkKind::S3(S3Config {
-            key_prefix: Some(p),
+        let SinkKind::S3(S3Config {
+            key_prefix: prefix,
+            timestamp_field: field,
             ..
         }) = &cfg.kind
-        {
+        else {
+            continue;
+        };
+        if let Some(p) = prefix {
             key_prefix(p).with_context(|| format!("sink '{name}'"))?;
         }
+        FieldPath::parse(field).with_context(|| format!("sink '{name}'"))?;
     }
     Ok(())
 }
@@ -303,8 +310,8 @@ mod tests {
     }
 
     #[test]
-    fn a_key_prefix_renders_in_utc_at_the_time_a_write_is_routed() {
-        // 21:04 UTC on the 2nd, whatever zone the clock is read in
+    fn a_key_prefix_renders_a_time_in_utc() {
+        // 21:04 UTC on the 2nd, whatever zone the time is written in
         let t = at("2026-11-02T13:04:05-08:00");
         let render = |p: &str| key_prefix(p).unwrap().render(t);
         assert_eq!(
@@ -342,12 +349,31 @@ mod tests {
             let yaml = format!("type: s3\nbucket_name: b\nkey_prefix: \"{prefix}\"\n");
             BTreeMap::from([(Arc::from("archive"), serde_yaml::from_str(&yaml).unwrap())])
         };
-        assert!(check_key_prefixes(&sinks("logs/%Y/%m/%d")).is_ok());
-        let e = format!("{:#}", check_key_prefixes(&sinks("logs/%Q")).unwrap_err());
+        assert!(check_sinks(&sinks("logs/%Y/%m/%d")).is_ok());
+        let e = format!("{:#}", check_sinks(&sinks("logs/%Q")).unwrap_err());
         assert!(
             e.contains("sink 'archive'") && e.contains("not a strftime template"),
             "{e}"
         );
+    }
+
+    #[test]
+    fn a_timestamp_field_names_a_field() {
+        let sinks = |extra: &str| -> BTreeMap<Arc<str>, SinkConfig> {
+            let yaml = format!("type: s3\nbucket_name: b\n{extra}");
+            BTreeMap::from([(Arc::from("archive"), serde_yaml::from_str(&yaml).unwrap())])
+        };
+        for good in [
+            "",
+            "timestamp_field: event.time\n",
+            "timestamp_field: events[0].time\n",
+        ] {
+            assert!(check_sinks(&sinks(good)).is_ok(), "{good}");
+        }
+        for bad in ["\"\"", "event..time", ".ts", "ts.", "\"events[x].time\""] {
+            let e = check_sinks(&sinks(&format!("timestamp_field: {bad}\n"))).unwrap_err();
+            assert!(e.to_string().contains("sink 'archive'"), "{e}");
+        }
     }
 
     #[test]
@@ -366,6 +392,7 @@ mod tests {
             bucket_name: "lake".into(),
             region: Some("eu-west-3".into()),
             key_prefix: None,
+            timestamp_field: "ts".into(),
             wal_path: "/unused".into(),
             max_file_age_seconds: 60,
         };
@@ -382,6 +409,7 @@ mod tests {
             bucket_name: "lake".into(),
             region: Some("".into()),
             key_prefix: None,
+            timestamp_field: "ts".into(),
             wal_path: "/unused".into(),
             max_file_age_seconds: 60,
         };

@@ -30,6 +30,18 @@ impl Template {
         Some(parsed)
     }
 
+    /// Whether it renders differently for different times: text alone
+    /// (`logs/cloudtrail`, `100%%`, empty) does not, so a sink with such a
+    /// template reads no record's time.
+    pub fn timed(&self) -> bool {
+        !self.items.iter().all(|i| {
+            matches!(
+                i,
+                Item::Literal(_) | Item::OwnedLiteral(_) | Item::Space(_) | Item::OwnedSpace(_)
+            )
+        })
+    }
+
     /// Appends the template rendered for `at` to `out`.
     pub fn render_into(&self, at: DateTime<Utc>, out: &mut String) {
         // `parse` made sure every time writes
@@ -40,5 +52,20 @@ impl Template {
         let mut out = String::new();
         self.render_into(at, &mut out);
         Arc::from(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_template_of_text_alone_is_not_timed() {
+        for timeless in ["", "logs/cloudtrail", "100%%", "a b/%%/%n%t"] {
+            assert!(!Template::parse(timeless).unwrap().timed(), "{timeless}");
+        }
+        for timed in ["%Y", "logs/%F/", "logs/%H", "%s"] {
+            assert!(Template::parse(timed).unwrap().timed(), "{timed}");
+        }
     }
 }

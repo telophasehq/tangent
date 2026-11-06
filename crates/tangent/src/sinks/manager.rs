@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bytes::BytesMut;
+use chrono::{DateTime, Utc};
 use rand::{rng, Rng};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Component, Path, PathBuf};
@@ -12,6 +13,7 @@ use tokio::time::{sleep, Instant};
 
 use crate::sinks::blackhole;
 use crate::sinks::encoding;
+use crate::sinks::event_time::{EventTime, FieldPath};
 use crate::sinks::file;
 use crate::sinks::rolling_file;
 use crate::sinks::s3::S3SinkItem;
@@ -53,16 +55,77 @@ struct Queue {
 enum SinkEntry {
     /// Through a WAL (`s3`, `rolling_file`): a write carries its route, the
     /// bucket (s3's; empty for rolling_file) and the key prefix `prefix`
-    /// renders for the time it is routed: a rolling_file's directory below
-    /// its `path`'s root, an s3 sink's `key_prefix`.
+    /// renders: a rolling_file's directory below its `path`'s root, an s3
+    /// sink's `key_prefix`. With `time`, each record goes under the prefix
+    /// its own time renders; without, a frame goes under the time it
+    /// reaches the sink.
     Wal {
         sink: Arc<dyn Sink>,
         bucket: Arc<str>,
         prefix: Option<Arc<Template>>,
+        time: Option<Arc<EventTime>>,
     },
     Other {
         sink: Arc<dyn Sink>,
     },
+}
+
+impl SinkEntry {
+    /// A WAL sink whose prefix renders each record's own time, read from
+    /// `field`: only a prefix with a specifier reads one.
+    fn wal(
+        name: &Arc<str>,
+        sink: Arc<dyn Sink>,
+        bucket: Arc<str>,
+        prefix: Option<Template>,
+        field: FieldPath,
+    ) -> Self {
+        let time = prefix
+            .as_ref()
+            .filter(|p| p.timed())
+            .map(|_| Arc::new(EventTime::new(name, field)));
+        Self::Wal {
+            sink,
+            bucket,
+            prefix: prefix.map(Arc::new),
+            time,
+        }
+    }
+
+    fn sink(&self) -> &Arc<dyn Sink> {
+        match self {
+            Self::Wal { sink, .. } | Self::Other { sink } => sink,
+        }
+    }
+
+    /// The writes a frame reaching the sink at `now` makes, each with its
+    /// route: the frame whole, or a part for each prefix its records' times
+    /// render.
+    fn writes(&self, frame: BytesMut, now: DateTime<Utc>) -> Vec<(Option<S3SinkItem>, BytesMut)> {
+        let Self::Wal {
+            bucket,
+            prefix,
+            time,
+            ..
+        } = self
+        else {
+            return vec![(None, frame)];
+        };
+        let route = |key_prefix| {
+            Some(S3SinkItem {
+                bucket_name: bucket.clone(),
+                key_prefix,
+            })
+        };
+        match (prefix, time) {
+            (Some(p), Some(t)) => t
+                .split(frame, p, now)
+                .into_iter()
+                .map(|(key_prefix, part)| (route(Some(key_prefix)), part))
+                .collect(),
+            _ => vec![(route(prefix.as_ref().map(|p| p.render(now))), frame)],
+        }
+    }
 }
 
 pub struct SinkManager {
@@ -73,7 +136,7 @@ pub struct SinkManager {
 impl SinkManager {
     pub async fn new(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<Self> {
         check_wal_dirs(cfgs)?;
-        s3::check_key_prefixes(cfgs)?;
+        s3::check_sinks(cfgs)?;
         for (name, cfg) in cfgs {
             encoding::check(&cfg.common.encoding, &cfg.common.compression)
                 .with_context(|| format!("sink '{name}'"))?;
@@ -88,8 +151,9 @@ impl SinkManager {
                         .as_deref()
                         .map(s3::key_prefix)
                         .transpose()
-                        .with_context(|| format!("sink '{name}'"))?
-                        .map(Arc::new);
+                        .with_context(|| format!("sink '{name}'"))?;
+                    let field = FieldPath::parse(&s3cfg.timestamp_field)
+                        .with_context(|| format!("sink '{name}'"))?;
                     let remote = Arc::new(s3::S3Sink::new(Arc::clone(name), s3cfg).await?);
                     let s3_sink = wal::DurableFileSink::new(
                         remote,
@@ -102,12 +166,14 @@ impl SinkManager {
                     )
                     .await?;
                     sinks.insert(
-                        Arc::clone(&name),
-                        SinkEntry::Wal {
-                            sink: s3_sink as Arc<dyn Sink>,
-                            bucket: Arc::<str>::from(s3cfg.bucket_name.clone()),
+                        Arc::clone(name),
+                        SinkEntry::wal(
+                            name,
+                            s3_sink,
+                            Arc::from(s3cfg.bucket_name.as_str()),
                             prefix,
-                        },
+                            field,
+                        ),
                     );
                 }
                 SinkKind::RollingFile(rcfg) => {
@@ -129,6 +195,7 @@ impl SinkManager {
                             sink: wal,
                             bucket: Arc::from(""),
                             prefix: path.rest().cloned(),
+                            time: None,
                         },
                     );
                 }
@@ -179,64 +246,36 @@ impl SinkManager {
 
                             let sink_name = item.req.sink_name.clone();
 
-                            if let SinkEntry::Wal { bucket, prefix, .. } = &entry {
-                                let now = chrono::Utc::now();
-                                item.req.s3 = Some(s3::S3SinkItem {
-                                    bucket_name: bucket.clone(),
-                                    key_prefix: prefix.as_ref().map(|p| p.render(now)),
-                                });
-                            } else {
-                                item.req.s3 = None;
-                            }
-
-                            let sink: Arc<dyn Sink> = match &entry {
-                                SinkEntry::Wal { sink, .. } => sink.clone(),
-                                SinkEntry::Other { sink } => sink.clone(),
-                            };
+                            // the frame's own task takes a copy of the entry: its Arcs
+                            let entry = entry.clone();
+                            // what a record without a time of its own goes under
+                            let now = Utc::now();
 
                             let Ok(permit) = sem.clone().acquire_owned().await else { break };
 
+                            // the split reads every record, so it is done in the
+                            // frame's own task: every frame of a sink passes
+                            // through this one loop, which would read them one
+                            // frame at a time
                             js.spawn(async move {
                                 let _permit: OwnedSemaphorePermit = permit;
                                 let start = Instant::now();
-                                let mut delay = Duration::from_millis(50);
-                                // Move on first attempt; reconstruct from a frozen snapshot on retries
-                                let frozen = item.req.payload.clone().freeze();
-                                let mut first_attempt = true;
-                                loop {
-                                    let payload_to_send = if first_attempt {
-                                        first_attempt = false;
-                                        std::mem::take(&mut item.req.payload)
-                                    } else {
-                                        BytesMut::from(frozen.as_ref())
-                                    };
-
-                                    match sink.write(SinkWrite {
-                                        sink_name: sink_name.clone(),
-                                        payload: payload_to_send,
-                                        s3: item.req.s3.clone(),
-                                    }).await {
-                                        Ok(()) => {
-                                            for a in item.acks.drain(..) {
-                                                if let Err(e) = a.ack().await {
-                                                    tracing::warn!("ack failed: {e}");
-                                                }
-                                            }
-                                            tracing::debug!(
-                                                took_us = start.elapsed().as_micros(),
-                                                "wrote sink item"
-                                            );
-                                            INFLIGHT.dec();
-                                            break;
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!("sink write failed: {e}");
-                                            let j = rng().random_range(0..=delay.as_millis() as u64 / 4);
-                                            sleep(delay + Duration::from_millis(j)).await;
-                                            delay = (delay * 2).min(Duration::from_secs(5));
-                                        }
+                                let frame = std::mem::take(&mut item.req.payload);
+                                // the frame is acked once every part is in, and a
+                                // part in is not written again
+                                for (route, part) in entry.writes(frame, now) {
+                                    write_until_in(entry.sink(), &sink_name, route, part).await;
+                                }
+                                for a in item.acks.drain(..) {
+                                    if let Err(e) = a.ack().await {
+                                        tracing::warn!("ack failed: {e}");
                                     }
                                 }
+                                tracing::debug!(
+                                    took_us = start.elapsed().as_micros(),
+                                    "wrote sink item"
+                                );
+                                INFLIGHT.dec();
                             });
                         }
                     }
@@ -301,16 +340,43 @@ impl SinkManager {
         }
 
         for (nm, entry) in sinks.iter() {
-            let sink: &Arc<dyn Sink> = match entry {
-                SinkEntry::Wal { sink, .. } => sink,
-                SinkEntry::Other { sink } => sink,
-            };
-            if let Err(e) = sink.flush().await {
+            if let Err(e) = entry.sink().flush().await {
                 tracing::warn!("sink '{nm}' flush failed during shutdown: {e}");
                 return Err(e);
             }
         }
         Ok(())
+    }
+}
+
+/// Writes `payload` until the sink takes it, backing off between tries.
+async fn write_until_in(
+    sink: &Arc<dyn Sink>,
+    sink_name: &Arc<str>,
+    route: Option<S3SinkItem>,
+    payload: BytesMut,
+) {
+    let mut delay = Duration::from_millis(50);
+    // moved on the first try; each retry copies a frozen snapshot
+    let frozen = payload.clone().freeze();
+    let mut first = Some(payload);
+    loop {
+        let write = SinkWrite {
+            sink_name: sink_name.clone(),
+            payload: first
+                .take()
+                .unwrap_or_else(|| BytesMut::from(frozen.as_ref())),
+            s3: route.clone(),
+        };
+        match sink.write(write).await {
+            Ok(()) => return,
+            Err(e) => {
+                tracing::warn!("sink write failed: {e}");
+                let j = rng().random_range(0..=delay.as_millis() as u64 / 4);
+                sleep(delay + Duration::from_millis(j)).await;
+                delay = (delay * 2).min(Duration::from_secs(5));
+            }
+        }
     }
 }
 
@@ -382,12 +448,14 @@ mod tests {
     use async_trait::async_trait;
     use bytes::BytesMut;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use tangent_shared::sinks::common::{Compression, Encoding};
     use tokio::sync::Mutex;
 
+    /// Each write's key prefix (empty without one) and payload, in the
+    /// order written.
     #[derive(Default)]
     struct RecordingSink {
-        writes: Mutex<Vec<Vec<u8>>>,
-        prefixes: Mutex<Vec<Option<Arc<str>>>>,
+        writes: Mutex<Vec<(String, Vec<u8>)>>,
     }
 
     impl RecordingSink {
@@ -396,7 +464,17 @@ mod tests {
         }
 
         async fn take(&self) -> Vec<Vec<u8>> {
-            self.writes.lock().await.drain(..).collect()
+            self.writes.lock().await.drain(..).map(|w| w.1).collect()
+        }
+
+        async fn got(&self) -> Vec<(String, String)> {
+            let writes = self.writes.lock().await;
+            writes
+                .iter()
+                .map(|(prefix, payload)| {
+                    (prefix.clone(), String::from_utf8(payload.clone()).unwrap())
+                })
+                .collect()
         }
     }
 
@@ -404,8 +482,9 @@ mod tests {
     impl Sink for RecordingSink {
         async fn write(&self, req: SinkWrite) -> Result<()> {
             let prefix = req.s3.and_then(|m| m.key_prefix);
-            self.prefixes.lock().await.push(prefix);
-            self.writes.lock().await.push(req.payload.freeze().to_vec());
+            let prefix = prefix.as_deref().unwrap_or_default().to_string();
+            let payload = req.payload.freeze().to_vec();
+            self.writes.lock().await.push((prefix, payload));
             Ok(())
         }
     }
@@ -462,31 +541,307 @@ mod tests {
         assert_eq!(ack.count(), 1);
     }
 
-    /// An s3 sink's write carries its `key_prefix` rendered when the write
-    /// is routed, as a rolling_file's carries the directory its path renders.
+    /// An s3 sink's entry over `sink`, its key_prefix `prefix` read from
+    /// each record's `field`, as `SinkManager::new` makes one.
+    fn s3_entry(name: &Arc<str>, sink: Arc<dyn Sink>, prefix: &str, field: &str) -> SinkEntry {
+        let prefix = Some(s3::key_prefix(prefix).unwrap());
+        let field = FieldPath::parse(field).unwrap();
+        SinkEntry::wal(name, sink, Arc::from("b"), prefix, field)
+    }
+
+    fn manager_of(name: &Arc<str>, entry: SinkEntry) -> SinkManager {
+        SinkManager::from_entries(HashMap::from([(name.clone(), entry)]), |_| 1)
+    }
+
+    fn record(ts: &str, n: usize) -> String {
+        format!("{{\"ts\":\"{ts}\",\"n\":{n}}}\n")
+    }
+
+    fn untimed(sink: &str) -> u64 {
+        crate::SINK_RECORDS_UNTIMED_TOTAL
+            .with_label_values(&[sink])
+            .get()
+    }
+
+    const DAY1: &str = "2026-11-01T23:59:59Z";
+    const DAY2: &str = "2026-11-02T00:00:00Z";
+
+    /// An s3 sink's key_prefix renders each record's own time, in UTC: a
+    /// frame of two days is a write under each, each day's records in the
+    /// frame's order, and its ack follows both. A blank line goes with the
+    /// record before it, and a last line without its `\n` is a record.
     #[tokio::test]
-    async fn an_s3_write_carries_its_key_prefix_rendered_when_routed() {
-        let name: Arc<str> = Arc::from("archive");
+    async fn a_frame_of_two_days_is_written_under_two_prefixes() {
+        let name: Arc<str> = Arc::from("two-days");
         let recorder = RecordingSink::new();
-        let entry = SinkEntry::Wal {
-            sink: recorder.clone(),
-            bucket: Arc::from("b"),
-            prefix: Some(Arc::new(s3::key_prefix("logs/%Y/%m/%d").unwrap())),
-        };
-        let manager = SinkManager::from_entries(HashMap::from([(name.clone(), entry)]), |_| 1);
-        let day = || chrono::Utc::now().format("logs/%Y/%m/%d").to_string();
-        let before = day();
+        let manager = manager_of(
+            &name,
+            s3_entry(&name, recorder.clone(), "logs/%Y/%m/%d", "ts"),
+        );
+        // 01:30 on the 2nd in UTC
+        let west = "2026-11-01T17:30:00-08:00";
+        let last = record(west, 3);
+        let last = last.trim_end();
+        let frame = [
+            record(DAY1, 0),
+            "\n".into(),
+            record(DAY2, 1),
+            record(DAY1, 2),
+        ]
+        .concat()
+            + last;
+        let ack = Arc::new(TestAck::default());
         manager
-            .enqueue(name, BytesMut::from("{}\n"), Vec::new())
+            .enqueue(name, BytesMut::from(frame.as_str()), vec![ack.clone()])
             .await
             .unwrap();
         manager.join().await.unwrap();
-        let after = day();
-        let prefixes = recorder.prefixes.lock().await.clone();
-        let [Some(got)] = prefixes.as_slice() else {
-            panic!("{prefixes:?}")
+        assert_eq!(
+            recorder.got().await,
+            [
+                (
+                    "logs/2026/11/01".to_string(),
+                    record(DAY1, 0) + "\n" + &record(DAY1, 2)
+                ),
+                ("logs/2026/11/02".to_string(), record(DAY2, 1) + last),
+            ]
+        );
+        assert_eq!(ack.count(), 1);
+        assert_eq!(untimed("two-days"), 0, "a blank line is no record");
+    }
+
+    /// A dotted `timestamp_field` is read as a node's `group_by` reads one:
+    /// a key holding all of it, as a flattened record has, or else the
+    /// field inside an object.
+    #[tokio::test]
+    async fn a_dotted_timestamp_field_reads_a_flat_key_or_a_nested_time() {
+        let name: Arc<str> = Arc::from("dotted");
+        let recorder = RecordingSink::new();
+        let manager = manager_of(
+            &name,
+            s3_entry(&name, recorder.clone(), "logs/%Y/%m/%d", "event.time"),
+        );
+        let nested = format!("{{\"event\":{{\"time\":\"{DAY1}\"}}}}\n");
+        let flat = format!("{{\"event.time\":\"{DAY2}\"}}\n");
+        manager
+            .enqueue(
+                name,
+                BytesMut::from((nested.clone() + &flat).as_str()),
+                Vec::new(),
+            )
+            .await
+            .unwrap();
+        manager.join().await.unwrap();
+        assert_eq!(
+            recorder.got().await,
+            [
+                ("logs/2026/11/01".to_string(), nested),
+                ("logs/2026/11/02".to_string(), flat),
+            ]
+        );
+        assert_eq!(untimed("dotted"), 0);
+    }
+
+    /// A record without an RFC 3339 time in its field goes under the time
+    /// it reaches the sink, and is counted for its sink: it is not dropped.
+    #[tokio::test]
+    async fn a_record_without_a_time_goes_under_the_time_it_reaches_the_sink_and_is_counted() {
+        let name: Arc<str> = Arc::from("untimed");
+        let recorder = RecordingSink::new();
+        let manager = manager_of(
+            &name,
+            s3_entry(&name, recorder.clone(), "logs/%Y/%m/%d", "ts"),
+        );
+        let without = [
+            "{\"n\":0}\n",
+            "{\"ts\":1792501200,\"n\":1}\n",
+            "{\"ts\":\"noon\",\"n\":2}\n",
+            "not json\n",
+        ]
+        .concat();
+        let day = || Utc::now().format("logs/%Y/%m/%d").to_string();
+        let before = day();
+        manager
+            .enqueue(
+                name,
+                BytesMut::from((without.clone() + &record(DAY1, 4)).as_str()),
+                Vec::new(),
+            )
+            .await
+            .unwrap();
+        manager.join().await.unwrap();
+        let got = recorder.got().await;
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert!([before, day()].contains(&got[0].0), "{got:?}");
+        assert_eq!(got[0].1, without);
+        assert_eq!(got[1], ("logs/2026/11/01".to_string(), record(DAY1, 4)));
+        assert_eq!(untimed("untimed"), 4);
+    }
+
+    /// A key_prefix without a specifier renders the same for every time, so
+    /// the sink reads none: the frame goes whole under it, and nothing is
+    /// counted.
+    #[tokio::test]
+    async fn a_static_prefix_reads_no_time() {
+        let name: Arc<str> = Arc::from("static");
+        let recorder = RecordingSink::new();
+        let entry = s3_entry(&name, recorder.clone(), "logs/cloudtrail", "ts");
+        assert!(matches!(entry, SinkEntry::Wal { time: None, .. }));
+        let manager = manager_of(&name, entry);
+        let frame = [record(DAY2, 0), "not json\n".into(), record(DAY1, 2)].concat();
+        manager
+            .enqueue(name, BytesMut::from(frame.as_str()), Vec::new())
+            .await
+            .unwrap();
+        manager.join().await.unwrap();
+        assert_eq!(
+            recorder.got().await,
+            [("logs/cloudtrail".to_string(), frame)]
+        );
+        assert_eq!(untimed("static"), 0);
+    }
+
+    /// Fails every write under `failing` until `released`, then records as
+    /// [`RecordingSink`] does.
+    struct FailsUnder {
+        failing: &'static str,
+        released: std::sync::atomic::AtomicBool,
+        failed: AtomicUsize,
+        rec: RecordingSink,
+    }
+
+    #[async_trait]
+    impl Sink for FailsUnder {
+        async fn write(&self, req: SinkWrite) -> Result<()> {
+            let prefix = req.s3.as_ref().and_then(|m| m.key_prefix.as_deref());
+            if prefix == Some(self.failing) && !self.released.load(Ordering::SeqCst) {
+                self.failed.fetch_add(1, Ordering::SeqCst);
+                anyhow::bail!("the bucket is down");
+            }
+            self.rec.write(req).await
+        }
+    }
+
+    /// A frame is acked once every part is in: a part that fails holds the
+    /// ack back, and is tried again alone, the part already in not written
+    /// twice.
+    #[tokio::test]
+    async fn a_frames_ack_waits_for_every_part_and_a_failed_part_alone_is_tried_again() {
+        let name: Arc<str> = Arc::from("fails");
+        let sink = Arc::new(FailsUnder {
+            failing: "logs/2026/11/02",
+            released: Default::default(),
+            failed: Default::default(),
+            rec: RecordingSink::default(),
+        });
+        let manager = manager_of(&name, s3_entry(&name, sink.clone(), "logs/%Y/%m/%d", "ts"));
+        let frame = [record(DAY1, 0), record(DAY2, 1), record(DAY1, 2)].concat();
+        let ack = Arc::new(TestAck::default());
+        manager
+            .enqueue(name, BytesMut::from(frame.as_str()), vec![ack.clone()])
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while sink.failed.load(Ordering::SeqCst) < 2 {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the second day's part fails, and fails again");
+        assert_eq!(ack.count(), 0, "acked with a part not in");
+        let day1 = (
+            "logs/2026/11/01".to_string(),
+            record(DAY1, 0) + &record(DAY1, 2),
+        );
+        assert_eq!(sink.rec.got().await, vec![day1.clone()]);
+        sink.released.store(true, Ordering::SeqCst);
+        manager.join().await.unwrap();
+        assert_eq!(
+            sink.rec.got().await,
+            [day1, ("logs/2026/11/02".to_string(), record(DAY2, 1))]
+        );
+        assert_eq!(ack.count(), 1);
+    }
+
+    /// Each sealed file's key prefix, from its meta.
+    #[derive(Default)]
+    struct PrefixRecorder {
+        got: Mutex<Vec<(String, String)>>,
+    }
+
+    #[async_trait]
+    impl wal::WALSink for PrefixRecorder {
+        async fn write_path_with(
+            &self,
+            path: &Path,
+            _name: &str,
+            _encoding: &Encoding,
+            _compression: &Compression,
+            meta: &S3SinkItem,
+        ) -> Result<()> {
+            let prefix = meta.key_prefix.as_deref().unwrap_or_default().to_string();
+            let bytes = std::fs::read_to_string(path)?;
+            self.got.lock().await.push((prefix, bytes));
+            Ok(())
+        }
+    }
+
+    /// The parts of a frame are WAL files of their own, each with its
+    /// prefix in its meta: a start after a stop without a flush sends each
+    /// under its own.
+    #[tokio::test]
+    async fn a_restart_sends_each_wal_file_under_its_own_prefix() {
+        let dir = std::env::temp_dir().join(format!("tangent-evt-restart-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let wal_on = |sink: Arc<PrefixRecorder>| {
+            wal::DurableFileSink::new(
+                sink,
+                &dir,
+                4,
+                1 << 20,
+                Duration::from_secs(3600),
+                Compression::None,
+                Encoding::NDJSON,
+            )
         };
-        assert!([before, after].contains(&got.to_string()), "{got}");
+        let gone = Arc::new(PrefixRecorder::default());
+        let first = wal_on(gone.clone()).await.unwrap();
+        let name: Arc<str> = Arc::from("restart");
+        let manager = manager_of(&name, s3_entry(&name, first.clone(), "logs/%Y/%m/%d", "ts"));
+        let frame = [record(DAY1, 0), record(DAY2, 1), record(DAY1, 2)].concat();
+        let ack = Arc::new(TestAck::default());
+        manager
+            .enqueue(name, BytesMut::from(frame.as_str()), vec![ack.clone()])
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while ack.count() == 0 {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("acked once in the WAL");
+        // killed: no join, no flush
+        first.stop_without_flush().await;
+        drop((manager, first));
+
+        let rec = Arc::new(PrefixRecorder::default());
+        let second = wal_on(rec.clone()).await.unwrap();
+        second.flush().await.unwrap();
+        let mut got = rec.got.lock().await.clone();
+        got.sort();
+        assert_eq!(
+            got,
+            [
+                (
+                    "logs/2026/11/01".to_string(),
+                    record(DAY1, 0) + &record(DAY1, 2)
+                ),
+                ("logs/2026/11/02".to_string(), record(DAY2, 1)),
+            ]
+        );
+        assert!(gone.got.lock().await.is_empty());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// `tangent run` stops at a key_prefix that is not a strftime template,

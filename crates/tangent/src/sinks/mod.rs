@@ -1,5 +1,6 @@
 pub mod blackhole;
 pub mod encoding;
+pub mod event_time;
 pub mod file;
 pub mod manager;
 pub mod rolling_file;
