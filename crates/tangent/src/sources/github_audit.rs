@@ -75,6 +75,7 @@ async fn poll(
     let end = Utc::now();
     let mut newest: Option<DateTime<Utc>> = None;
     let mut out: Vec<(DateTime<Utc>, String, Value)> = Vec::new();
+    let mut capped = false;
     let mut url = Some(format!(
         "{}/orgs/{}/audit-log?phrase={}&include={}&order=asc&per_page=100",
         cfg.api.trim_end_matches('/'),
@@ -129,11 +130,12 @@ async fn poll(
             out.push((t, id, v));
         }
         if out.len() >= 5_000 {
+            capped = true;
             break;
         }
     }
     let n = poller.emit(SOURCE, out).await?;
-    poller.finish(newest, end).await;
+    poller.finish(newest, (!capped).then_some(end)).await;
     Ok(n)
 }
 
@@ -142,7 +144,44 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::sources::poll::testing::{throttled_on_page_two, Keeper};
+    use crate::sources::poll::testing::{oldest_first, throttled_on_page_two, Keeper};
+
+    #[tokio::test]
+    async fn the_page_cap_leaves_the_rest_to_the_next_poll() {
+        let t0 = DateTime::from_timestamp(Utc::now().timestamp() - 2 * 86_400, 0).unwrap();
+        let events = (0..5_500)
+            .map(|i| {
+                let t = t0 + Duration::seconds(i);
+                let v = json!({
+                    "_document_id": format!("e{i}"),
+                    "@timestamp": t.timestamp_millis(),
+                    "action": "repo.create",
+                });
+                (t, v)
+            })
+            .collect();
+        let base = oldest_first(events, |q| {
+            q["phrase"]
+                .trim_start_matches("created:>=")
+                .parse()
+                .unwrap()
+        })
+        .await;
+        let cfg: GithubAuditConfig =
+            serde_json::from_value(json!({"api": base, "since": "7d"})).unwrap();
+        let client = reqwest::Client::new();
+        let keeper = Keeper::new("github_audit");
+        let n = poll(&client, &cfg, "acme", "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 5_000, "up to the cap");
+        let n = poll(&client, &cfg, "acme", "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 500, "the rest, on the next poll");
+        let all: Vec<String> = (0..5_500).map(|i| format!("e{i}")).collect();
+        assert_eq!(keeper.sent("/_document_id").await, all);
+    }
 
     #[tokio::test]
     async fn a_429_on_page_two_leaves_page_one_to_the_next_poll() {

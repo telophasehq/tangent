@@ -108,7 +108,7 @@ pub async fn run_consumer(
                             (a, b) => a.or(b),
                         };
                     }
-                    poller.finish(newest, end).await;
+                    poller.finish(newest, Some(end)).await;
                     Ok::<usize, anyhow::Error>(total)
                 }
                 .await;

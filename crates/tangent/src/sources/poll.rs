@@ -7,7 +7,8 @@
 //! Each API reports events some time after they happen (Google Workspace by
 //! up to an hour, say). A source names that lateness; every poll reads
 //! from the cursor less the lateness, and the cursor ends a poll at the
-//! newest event seen or at `now - lateness`, whichever is later. An id is
+//! newest event seen or at `now - lateness`, whichever is later (only at
+//! the newest event when the poll stopped at its page cap). An id is
 //! remembered for a few times the lateness, which is as long as a poll can
 //! find it again.
 
@@ -75,10 +76,14 @@ impl Poller {
 
     /// A poll is over: the cursor moves to the newest event seen, or to
     /// `end` less the lateness window if that is later (so a quiet source
-    /// does not re-read its past forever). It never moves back.
-    pub async fn finish(&self, newest: Option<DateTime<Utc>>, end: DateTime<Utc>) {
-        let floor = end - self.late;
-        let mut at = newest.map_or(floor, |n| n.max(floor));
+    /// does not re-read its past forever). It never moves back. A poll
+    /// that stopped at its page cap with pages left passes no `end`: the
+    /// cursor moves only to the newest event read, and the next poll goes
+    /// on from there.
+    pub async fn finish(&self, newest: Option<DateTime<Utc>>, end: Option<DateTime<Utc>>) {
+        let Some(mut at) = newest.max(end.map(|e| e - self.late)) else {
+            return;
+        };
         if let Some(prev) = self.cursor().await {
             at = at.max(prev);
         }
@@ -295,11 +300,12 @@ mod tests {
 /// that keeps them, and an API served on 127.0.0.1.
 #[cfg(test)]
 pub(crate) mod testing {
+    use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
 
     use async_trait::async_trait;
-    use axum::{http::StatusCode, response::IntoResponse, routing::get, Json};
+    use axum::{extract::Query, http::StatusCode, response::IntoResponse, routing::get, Json};
     use serde_json::json;
 
     use super::*;
@@ -407,6 +413,45 @@ pub(crate) mod testing {
                     let resp = ([("link", link.clone())], Json(page_one.clone())).into_response();
                     async move { resp }
                 })
+        })
+        .await
+    }
+
+    /// An API serving `events` (each at its time) oldest first, from the
+    /// time `since` reads off the first request's query on, 1000 a page,
+    /// each page linking to the next: the way Okta and GitHub page.
+    pub(crate) async fn oldest_first(
+        events: Vec<(DateTime<Utc>, Value)>,
+        since: fn(&HashMap<String, String>) -> DateTime<Utc>,
+    ) -> String {
+        let events = Arc::new(events);
+        serve(|base| {
+            let base = base.to_string();
+            axum::Router::new().fallback(move |Query(q): Query<HashMap<String, String>>| {
+                let from = match q.get("from") {
+                    Some(ms) => DateTime::from_timestamp_millis(ms.parse().unwrap()).unwrap(),
+                    None => since(&q),
+                };
+                let after: usize = q.get("after").map_or(0, |a| a.parse().unwrap());
+                let page: Vec<Value> = events
+                    .iter()
+                    .filter(|(t, _)| *t >= from)
+                    .skip(after)
+                    .take(1000)
+                    .map(|(_, v)| v.clone())
+                    .collect();
+                let resp = if page.is_empty() {
+                    Json(page).into_response()
+                } else {
+                    let link = format!(
+                        "<{base}/next?from={}&after={}>; rel=\"next\"",
+                        from.timestamp_millis(),
+                        after + page.len()
+                    );
+                    ([("link", link)], Json(page)).into_response()
+                };
+                async move { resp }
+            })
         })
         .await
     }
