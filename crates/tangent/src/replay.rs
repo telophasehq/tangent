@@ -171,7 +171,7 @@ async fn sweep(
     let mut read = false;
     let swept = tokio::select! {
         r = async {
-            step(&mut sources, first, &mut hour, to, &dag.router, chunks).await?;
+            step(&mut sources, first, &mut hour, to, &dag, chunks).await?;
             read = true;
             tracing::info!("replay: the range is read; closing every group");
             dag.finish().await;
@@ -222,24 +222,41 @@ async fn sweep(
     swept
 }
 
+/// Records replay lets wait in groups behind their key's before it reads
+/// the next hour. Parsed, a CloudTrail record takes about 6 KB, so this is
+/// about 300 MB. A key sends one group at a time, so reading further ahead
+/// would not get the judge through them any sooner.
+const WAITING: usize = 50_000;
+
 /// Each hour's records into the DAG, until the range is read.
 async fn step(
     sources: &mut [Replayed],
     first: Vec<Vec<Value>>,
     hour: &mut DateTime<Utc>,
     to: DateTime<Utc>,
-    router: &Router,
+    dag: &DagRuntime,
     chunks: usize,
 ) -> Result<()> {
     let mut got = first;
     loop {
         for (s, records) in sources.iter_mut().zip(got) {
             s.records += records.len() as u64;
-            store(router, &s.node, frames(records, chunks)?).await?;
+            store(&dag.router, &s.node, frames(records, chunks)?).await?;
         }
         tracing::info!(hour = %when(*hour), "replay: stored up to");
         if *hour >= to {
             return Ok(());
+        }
+        // A busy actor's next groups wait in memory; on a long range they
+        // would fill it.
+        if dag.waiting() > WAITING {
+            tracing::info!(
+                waiting = dag.waiting(),
+                "replay: waiting for the judge to catch up"
+            );
+            while dag.waiting() > WAITING {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
         }
         *hour = (*hour + TimeDelta::hours(1)).min(to);
         got = Vec::new();
