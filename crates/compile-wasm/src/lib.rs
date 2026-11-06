@@ -208,8 +208,16 @@ fn prepare_python_env(py_dir: &Path) -> Result<PathBuf> {
             .context("creating venv")?;
     }
 
+    // pip runs only when there is something to install, so a plugin with the
+    // empty requirements.txt `plugin scaffold` writes compiles even where
+    // .venv has no pip (Debian or Ubuntu without python3-venv).
     let reqs = py_dir.join("requirements.txt");
-    if reqs.exists() {
+    let wants_packages = reqs.exists()
+        && !fs::read_to_string(&reqs)
+            .with_context(|| format!("reading {}", reqs.display()))?
+            .trim()
+            .is_empty();
+    if wants_packages {
         let status = Command::new(&py_bin)
             .args(["-m", "pip", "install", "-r"])
             .arg(&reqs)
