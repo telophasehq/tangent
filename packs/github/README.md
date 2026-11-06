@@ -92,7 +92,9 @@ and `github_audit`, `gha_ci` and `runner_egress` in your profile's
 `own_sources`.
 
 The audit log API is a GitHub Enterprise Cloud feature; the token needs
-`read:audit_log`. The source keeps its place in the runtime's state store, so
+`read:audit_log`. An organization on Team or Free has no audit log API:
+its `github_audit` source stays idle, and the pack judges only the
+`gha_ci` and `runner_egress` lines you send it. The source keeps its place in the runtime's state store, so
 a restart resumes where it stopped; on first start it reads the last hour
 (`since`). Left without a token, it says so once and stays idle.
 

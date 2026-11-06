@@ -446,7 +446,7 @@ not this tree.
 | pack | logs |
 |---|---|
 | [aws](packs/aws) | CloudTrail, read as a trail's files through SQS, organization trails included; adds `root` and `world_open` |
-| [github](packs/github) | the organization audit log (Enterprise Cloud, `read:audit_log`), Actions job logs and runner egress |
+| [github](packs/github) | the organization audit log (Enterprise Cloud only, `read:audit_log`), Actions job logs and runner egress; on Team or Free, the job logs and egress you send it |
 | [okta](packs/okta) | the System Log, with Okta's own risk signals |
 | [google_workspace](packs/google_workspace) | login, token, Drive and admin events, through a service account with domain-wide delegation |
 | [app](packs/app) | your product's audit log, with the customer's tenant as the org, and an AI agent's run log |
@@ -460,18 +460,26 @@ judge's settings.
 
 ## Install
 
-Until the next release, build tangent from this checkout:
+No release carries the packs yet, so build tangent from this checkout:
 
 ```bash
 cargo install --path crates/cli --locked
 cargo install --git https://github.com/EthanBlackburn/tangent tangent-cli --locked   # or without a checkout, from main
 ```
 
-The release installers (the shell script on the
-[releases page](https://github.com/EthanBlackburn/tangent/releases), the
-Homebrew tap `telophasehq/telophase`, the Docker image
-`ghcr.io/telophasehq/tangent-toolchain`) still serve 0.1.9, which predates
-`include:`, `group_by`, the packs and the edges these docs use.
+The release installers serve older builds, which predate `include:`,
+`group_by`, the packs and the edges these docs use. The shell script on the
+[releases page](https://github.com/EthanBlackburn/tangent/releases) and the
+Homebrew tap `telophasehq/telophase` serve 0.1.9, which
+[docs.telophasehq.com](https://docs.telophasehq.com) documents:
+
+```bash
+brew tap telophasehq/telophase && brew install tangent-cli
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/EthanBlackburn/tangent/releases/latest/download/tangent-cli-installer.sh | sh
+```
+
+The Docker image `ghcr.io/telophasehq/tangent-toolchain` is older still:
+its `latest` is a 0.1.5 build (commit e84ef0e, 2025-10-28).
 
 ## The runtime underneath
 
