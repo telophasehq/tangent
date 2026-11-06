@@ -1,0 +1,27 @@
+# core, judge, for a hosted model: judge.yaml without the local model's
+# sampling settings (temperature 0.7, top_p 0.95, chat_template_kwargs),
+# which a hosted model may refuse (Claude Haiku 5.5 refuses temperature and
+# top_p; chat_template_kwargs is llama.cpp's). Include it in place of
+# judge.yaml. JUDGE_URL, JUDGE_MODEL and JUDGE_API_KEY name an
+# OpenAI-compatible one; your config sets anything else, `extra` included,
+# as for Claude Haiku 5.5 on Bedrock (tangent-eval's harness/maincfg.py
+# runs it with these settings):
+#
+#   include: [packs/core/judge-hosted.yaml]
+#   inference:
+#     judge:
+#       backend: bedrock
+#       model: us.anthropic.claude-haiku-5-5
+#       aws: { region: us-west-2 }             # and `profile`; the SDK's chain when unset
+#       max_tokens: 400                        # per record
+#       extra: { thinking: { type: disabled } }   # no thinking: the reply is the answer
+#
+# A null here removes what judge.yaml set; a null on one of `extra`'s keys
+# would be sent as a null (docs/configuration.md).
+include:
+  - judge.yaml
+
+inference:
+  judge:
+    temperature: ~
+    extra: ~
