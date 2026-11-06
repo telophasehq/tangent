@@ -11,8 +11,6 @@ use std::io::{BufRead, Write};
 use std::sync::Arc;
 use tangent_shared::sinks::common::{Column, ColumnType, Columns, Compression, Encoding};
 
-use crate::SINK_RECORDS_UNFIT_TOTAL;
-
 #[must_use]
 pub fn ndjson_ensure_newline(mut raw: BytesMut) -> BytesMut {
     if !raw.ends_with(b"\n") {
@@ -22,21 +20,26 @@ pub fn ndjson_ensure_newline(mut raw: BytesMut) -> BytesMut {
 }
 
 pub fn ndjson_to_json_array(raw: &[u8]) -> Result<BytesMut> {
-    let out = write_json_array(raw, BytesMut::new().writer())?;
+    let (out, _) = write_json_array(raw, BytesMut::new().writer())?;
     Ok(out.into_inner())
 }
 
 /// [`ndjson_to_json_array`] from a reader to a writer, a line in memory at
-/// a time.
-pub fn write_json_array<R: BufRead, W: Write>(input: R, mut out: W) -> Result<W> {
+/// a time. A line that is not one JSON value does not fail the file: it is
+/// dropped, and the lines dropped are returned.
+pub fn write_json_array<R: BufRead, W: Write>(input: R, mut out: W) -> Result<(W, usize)> {
     out.write_all(b"[")?;
     let mut first = true;
+    let mut dropped = 0;
     for line in input.split(b'\n') {
         let line = line?;
         if line.is_empty() {
             continue;
         }
-        let v: serde_json::Value = serde_json::from_slice(&line)?;
+        let Ok(v) = serde_json::from_slice::<serde_json::Value>(&line) else {
+            dropped += 1;
+            continue;
+        };
         if !first {
             out.write_all(b",")?;
         }
@@ -44,7 +47,7 @@ pub fn write_json_array<R: BufRead, W: Write>(input: R, mut out: W) -> Result<W>
         first = false;
     }
     out.write_all(b"]")?;
-    Ok(out)
+    Ok((out, dropped))
 }
 
 pub fn normalize_from_ndjson(
@@ -64,29 +67,43 @@ pub fn normalize_from_ndjson(
 }
 
 pub fn ndjson_to_avro(raw: &[u8], avro_schema_json: &str, comp: &Compression) -> Result<BytesMut> {
-    let out = write_avro(raw, BytesMut::new().writer(), avro_schema_json, comp)?;
+    let (out, _) = write_avro(raw, BytesMut::new().writer(), avro_schema_json, comp)?;
     Ok(out.into_inner())
 }
 
 /// [`ndjson_to_avro`] from a reader to a writer, a line in memory at a time
-/// (and a block, in the Avro writer).
+/// (and a block, in the Avro writer). Each line is resolved against the
+/// schema, an object to a record and a value to its union branch, before it
+/// is written. A line the schema does not take (not JSON, a value Avro has
+/// no type for, a value not of the schema) does not fail the file: it is
+/// dropped, and the lines dropped are returned.
 pub fn write_avro<R: BufRead, W: Write>(
     input: R,
     out: W,
     avro_schema_json: &str,
     comp: &Compression,
-) -> Result<W> {
+) -> Result<(W, usize)> {
     let schema = apache_avro::Schema::parse_str(avro_schema_json)?;
     let mut writer = apache_avro::Writer::with_codec(&schema, out, avro_codec_from(comp));
+    let mut dropped = 0;
     for line in input.split(b'\n') {
         let line = line?;
         if line.is_empty() {
             continue;
         }
-        let value: serde_json::Value = serde_json::from_slice(&line)?;
-        writer.append_ser(value)?;
+        // the line's errors come before the writer has any of it: the
+        // writer's are the file's, and fail it
+        let Some(value) = serde_json::from_slice::<serde_json::Value>(&line)
+            .ok()
+            .and_then(|v| apache_avro::to_value(v).ok())
+            .and_then(|v| v.resolve(&schema).ok())
+        else {
+            dropped += 1;
+            continue;
+        };
+        writer.append(value)?;
     }
-    Ok(writer.into_inner()?)
+    Ok((writer.into_inner()?, dropped))
 }
 
 /// Lines in one Arrow batch, and the bytes they may come to: past either,
@@ -124,7 +141,7 @@ pub struct Unfit {
 /// for a field, a time arrow cannot parse) does not fail the file: with a
 /// record column it is kept there, its typed columns null, if it is JSON at
 /// all and every typed column may be null; otherwise it is dropped. Both are
-/// counted in `tangent_sink_records_unfit_total` and returned.
+/// returned.
 pub fn write_parquet<R: BufRead, W: Write + Send>(
     mut input: R,
     out: W,
@@ -192,19 +209,6 @@ pub fn write_parquet<R: BufRead, W: Write + Send>(
         if eof {
             break;
         }
-    }
-    if unfit != Unfit::default() {
-        SINK_RECORDS_UNFIT_TOTAL
-            .with_label_values(&["kept"])
-            .inc_by(unfit.kept as u64);
-        SINK_RECORDS_UNFIT_TOTAL
-            .with_label_values(&["dropped"])
-            .inc_by(unfit.dropped as u64);
-        tracing::warn!(
-            kept = unfit.kept,
-            dropped = unfit.dropped,
-            "parquet: lines the schema could not read"
-        );
     }
     Ok((writer.into_inner()?, unfit))
 }
@@ -623,7 +627,6 @@ mod tests {
         let json = ndjson_to_json_array(ndjson.as_bytes()).unwrap();
         assert_eq!(&json[..], br#"[{"n":1,"m":"x"},{"n":2,"m":"y"}]"#);
 
-        // append_ser makes a JSON object an Avro map, so a map schema
         let schema = r#"{"type":"map","values":"string"}"#;
         let ndjson = "{\"n\":\"1\"}\n\n{\"n\":\"2\",\"m\":\"y\"}\n";
         let avro =
@@ -633,6 +636,77 @@ mod tests {
             .map(Result::unwrap)
             .collect();
         assert_eq!(read.len(), 2);
+    }
+
+    #[test]
+    fn json_drops_a_line_that_is_not_one_json_value() {
+        let ndjson = "{\"n\":1}\nnot json\n{\"n\":\n{\"n\":4}{\"n\":4}\n\n{\"n\":2}\n";
+        let (out, dropped) = write_json_array(ndjson.as_bytes(), Vec::new()).unwrap();
+        assert_eq!(out, br#"[{"n":1},{"n":2}]"#);
+        assert_eq!(dropped, 3, "a blank line is no line");
+    }
+
+    #[test]
+    fn avro_drops_a_line_its_schema_does_not_take() {
+        let schema = r#"{"type":"map","values":"string"}"#;
+        let ndjson = [
+            r#"{"n":"1"}"#,
+            "not json",
+            r#"{"n":2}"#,                    // not of the schema
+            r#"{"n":18446744073709551615}"#, // a u64 Avro has no type for
+            "",
+            r#"{"n":"3","m":"y"}"#,
+        ]
+        .map(|l| format!("{l}\n"))
+        .concat();
+        let comp = Compression::Zstd { level: 3 };
+        let (out, dropped) = write_avro(ndjson.as_bytes(), Vec::new(), schema, &comp).unwrap();
+        assert_eq!(dropped, 3);
+        let read: Vec<std::collections::BTreeMap<String, String>> =
+            apache_avro::Reader::new(&out[..])
+                .unwrap()
+                .map(|v| apache_avro::from_value(&v.unwrap()).unwrap())
+                .collect();
+        assert_eq!(read.len(), 2);
+        assert_eq!(read[0]["n"], "1");
+        assert_eq!((read[1]["n"].as_str(), read[1]["m"].as_str()), ("3", "y"));
+    }
+
+    #[test]
+    fn avro_takes_an_object_as_a_record_and_a_value_as_its_union_branch() {
+        use apache_avro::types::Value as A;
+        let record = r#"{"type":"record","name":"r","fields":[
+            {"name":"n","type":"string"},
+            {"name":"m","type":["null","long"],"default":null}]}"#;
+        let ndjson = [
+            r#"{"n":"good"}"#,
+            r#"{"n":2}"#, // not of the schema
+            r#"{"n":"x","m":3,"extra":true}"#,
+        ]
+        .map(|l| format!("{l}\n"))
+        .concat();
+        let comp = Compression::None;
+        let (out, dropped) = write_avro(ndjson.as_bytes(), Vec::new(), record, &comp).unwrap();
+        assert_eq!(dropped, 1);
+        let read: Vec<A> = apache_avro::Reader::new(&out[..])
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        let rec =
+            |n: &str, m: A| A::Record(vec![("n".into(), A::String(n.into())), ("m".into(), m)]);
+        assert_eq!(
+            read,
+            [
+                rec("good", A::Union(0, Box::new(A::Null))),
+                rec("x", A::Union(1, Box::new(A::Long(3))))
+            ]
+        );
+
+        let union = r#"{"type":"map","values":["null","string"]}"#;
+        let ndjson = "{\"a\":\"x\",\"b\":null}\n";
+        let (out, dropped) = write_avro(ndjson.as_bytes(), Vec::new(), union, &comp).unwrap();
+        assert_eq!(dropped, 0);
+        assert_eq!(apache_avro::Reader::new(&out[..]).unwrap().count(), 1);
     }
 
     #[test]

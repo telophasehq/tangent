@@ -19,13 +19,13 @@ use tokio::task::{spawn_blocking, JoinHandle, JoinSet};
 use tokio::time::{sleep, Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
-use crate::sinks::encoding;
+use crate::sinks::encoding::{self, Unfit};
 use crate::sinks::manager::{Sink, SinkWrite};
 use crate::sinks::s3;
 use crate::SINK_BYTES_UNCOMPRESSED_TOTAL;
 use crate::{
-    SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL, WAL_PENDING_BYTES, WAL_PENDING_FILES,
-    WAL_SEALED_BYTES_TOTAL, WAL_SEALED_FILES_TOTAL,
+    SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL, SINK_RECORDS_UNFIT_TOTAL, WAL_PENDING_BYTES,
+    WAL_PENDING_FILES, WAL_SEALED_BYTES_TOTAL, WAL_SEALED_FILES_TOTAL,
 };
 
 /// How often a sealed file whose send failed is tried again.
@@ -285,7 +285,7 @@ impl DurableFileSink {
                 &wal_meta.encoding,
                 &wal_meta.compression,
             );
-            let (upload_path, upload_size) = encode_sealed(
+            let (upload_path, upload_size, unfit) = encode_sealed(
                 &sealed_path_clone,
                 orig_size,
                 &name,
@@ -316,20 +316,35 @@ impl DurableFileSink {
             let _ = fs::remove_file(&sealed_path_clone).await;
             let _ = fs::remove_file(&meta_path).await;
 
-            Ok::<u64, anyhow::Error>(upload_size)
+            Ok::<_, anyhow::Error>((upload_size, unfit))
         };
 
         let mut js = self.uploads.lock().await;
 
         js.spawn(async move {
             match fut.await {
-                Ok(uploaded) => {
+                Ok((uploaded, unfit)) => {
                     SINK_OBJECTS_TOTAL.inc();
                     SINK_BYTES_TOTAL.inc_by(uploaded);
                     SINK_BYTES_UNCOMPRESSED_TOTAL.inc_by(orig_size);
                     WAL_PENDING_FILES.dec();
                     WAL_PENDING_BYTES.sub(orig_size as i64);
                     tracing::debug!(bytes = uploaded, "WAL uploaded & removed");
+                    // counted once the file is out: each try encodes it again
+                    if unfit != Unfit::default() {
+                        SINK_RECORDS_UNFIT_TOTAL
+                            .with_label_values(&["kept"])
+                            .inc_by(unfit.kept as u64);
+                        SINK_RECORDS_UNFIT_TOTAL
+                            .with_label_values(&["dropped"])
+                            .inc_by(unfit.dropped as u64);
+                        tracing::warn!(
+                            kept = unfit.kept,
+                            dropped = unfit.dropped,
+                            "{:?}: lines its encoding could not read",
+                            sealed_path
+                        );
+                    }
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -485,16 +500,16 @@ impl Sink for DurableFileSink {
 
 /// The sealed NDJSON as the object it goes out as: the sealed file itself
 /// for NDJSON left uncompressed, and otherwise an encoded copy beside it
-/// under the object's name.
+/// under the object's name. With the records the encoding could not take.
 async fn encode_sealed(
     sealed: &Path,
     size: u64,
     name: &str,
     enc: &Encoding,
     comp: &Compression,
-) -> Result<(PathBuf, u64)> {
+) -> Result<(PathBuf, u64, Unfit)> {
     if matches!(enc, Encoding::NDJSON) && !compresses_whole(comp) {
-        return Ok((sealed.to_path_buf(), size));
+        return Ok((sealed.to_path_buf(), size, Unfit::default()));
     }
     encode_to_file(sealed, &sealed.with_file_name(name), enc, comp).await
 }
@@ -504,58 +519,66 @@ async fn encode_to_file(
     dst: &Path,
     enc: &Encoding,
     comp: &Compression,
-) -> Result<(PathBuf, u64)> {
+) -> Result<(PathBuf, u64, Unfit)> {
     let (src, dst) = (src.to_path_buf(), dst.to_path_buf());
     let (enc, comp) = (enc.clone(), comp.clone());
-    spawn_blocking(move || -> Result<(PathBuf, u64)> {
+    spawn_blocking(move || -> Result<(PathBuf, u64, Unfit)> {
         let tmp = tmp_path(&dst);
         let made = encode_file(&src, &tmp, &enc, &comp);
         if made.is_err() {
             let _ = std::fs::remove_file(&tmp);
         }
-        made?;
+        let unfit = made?;
         std::fs::rename(&tmp, &dst)?;
         let size = std::fs::metadata(&dst)?.len();
-        Ok((dst, size))
+        Ok((dst, size, unfit))
     })
     .await?
 }
 
 /// `src`'s records into `tmp` in the encoding, a batch, a line or a block in
 /// memory at a time, not the file. NDJSON and JSON are compressed whole,
-/// Parquet and Avro inside the file.
-fn encode_file(src: &Path, tmp: &Path, enc: &Encoding, comp: &Compression) -> Result<()> {
+/// Parquet and Avro inside the file. Returns the records the encoding could
+/// not take.
+fn encode_file(src: &Path, tmp: &Path, enc: &Encoding, comp: &Compression) -> Result<Unfit> {
     let fin = BufReader::new(stdFile::open(src)?);
     let out = BufWriter::new(stdFile::create(tmp)?);
-    let mut out = match (enc, comp) {
+    let (mut out, unfit) = match (enc, comp) {
         (
             Encoding::Parquet {
                 schema,
                 record_column,
             },
             _,
-        ) => encoding::write_parquet(fin, out, schema, record_column.as_deref(), comp)?.0,
-        (Encoding::Avro { schema }, _) => encoding::write_avro(fin, out, schema, comp)?,
+        ) => encoding::write_parquet(fin, out, schema, record_column.as_deref(), comp)?,
+        (Encoding::Avro { schema }, _) => {
+            let (out, dropped) = encoding::write_avro(fin, out, schema, comp)?;
+            (out, Unfit { kept: 0, dropped })
+        }
         (_, Compression::Gzip { level }) => {
             let gz = GzEncoder::new(out, f2Compression::new(*level));
-            write_whole(enc, fin, gz)?.finish()?
+            let (gz, unfit) = write_whole(enc, fin, gz)?;
+            (gz.finish()?, unfit)
         }
         (_, Compression::Zstd { level }) => {
-            write_whole(enc, fin, zstd::stream::Encoder::new(out, *level)?)?.finish()?
+            let zst = zstd::stream::Encoder::new(out, *level)?;
+            let (zst, unfit) = write_whole(enc, fin, zst)?;
+            (zst.finish()?, unfit)
         }
         _ => write_whole(enc, fin, out)?,
     };
     out.flush()?;
-    Ok(())
+    Ok(unfit)
 }
 
 /// NDJSON as it is, or JSON as one array.
-fn write_whole<W: Write>(enc: &Encoding, mut fin: impl BufRead, mut out: W) -> Result<W> {
+fn write_whole<W: Write>(enc: &Encoding, mut fin: impl BufRead, mut out: W) -> Result<(W, Unfit)> {
     if matches!(enc, Encoding::JSON) {
-        return encoding::write_json_array(fin, out);
+        let (out, dropped) = encoding::write_json_array(fin, out)?;
+        return Ok((out, Unfit { kept: 0, dropped }));
     }
     copy(&mut fin, &mut out)?;
-    Ok(out)
+    Ok((out, Unfit::default()))
 }
 
 /// Whether the compression is applied around a whole NDJSON or JSON file
