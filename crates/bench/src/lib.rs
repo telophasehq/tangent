@@ -192,10 +192,10 @@ pub async fn run_one_payload(
                             )
                             .await
                         }
-                        SourceConfig::NPMRegistry(_) => unimplemented!("not implemented"),
-                        SourceConfig::GithubWebhook(_) => unimplemented!("not implemented"),
-                        SourceConfig::File(_) => unimplemented!("not implemented"),
-                        SourceConfig::Sqlite(_) => unimplemented!("not implemented"),
+                        SourceConfig::NPMRegistry(_) => undriven(name, "npm_registry"),
+                        SourceConfig::GithubWebhook(_) => undriven(name, "github_webhook"),
+                        SourceConfig::File(_) => undriven(name, "file"),
+                        SourceConfig::Sqlite(_) => undriven(name, "sqlite"),
                         SourceConfig::Cloudtrail(_)
                         | SourceConfig::GithubAudit(_)
                         | SourceConfig::Okta(_)
@@ -261,4 +261,45 @@ pub async fn run_one_payload(
     }
 
     Ok(())
+}
+
+/// The error for a source bench has no producer for: it names the source,
+/// its type and the types bench can drive.
+fn undriven(name: &str, kind: &str) -> Result<()> {
+    anyhow::bail!(
+        "source {name} is type {kind}; tangent bench drives only tcp, socket, msk and sqs sources"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn undriven_sources_are_errors_not_panics() {
+        let sources = [
+            json!({"type": "github_webhook", "path": "/webhook", "token": ""}),
+            json!({"type": "npm_registry", "packages": ["left-pad"]}),
+            json!({"type": "file", "path": "in.ndjson",
+                   "decoding": {"format": {"type": "ndjson"}}}),
+            json!({"type": "sqlite", "path": "q.sqlite", "table": "t", "partition": "p",
+                   "batch_size": 1, "timeout_secs": 1}),
+        ];
+        for src in sources {
+            let kind = src["type"].as_str().unwrap().to_string();
+            let cfg: Config = serde_json::from_value(json!({"sources": {"s": src}})).unwrap();
+            let err = run_one_payload(cfg, "", 1, 0, 1, Vec::new(), None, None, true, false)
+                .await
+                .unwrap_err()
+                .to_string();
+            assert_eq!(
+                err,
+                format!(
+                    "source s is type {kind}; \
+                     tangent bench drives only tcp, socket, msk and sqs sources"
+                )
+            );
+        }
+    }
 }
