@@ -227,11 +227,13 @@ impl S3Sink {
 
 /// An s3 sink's `key_prefix`: a strftime template, rendered whole in UTC
 /// when a write is routed, as a rolling_file sink's `path` is. It is a path
-/// in the bucket, so it may not start with `/` or hold a `..` segment: S3
-/// keeps both as written, so `/logs` is not under `logs/` for a listing or
-/// a table's location, and `..` is a segment of its own, which a tool that
-/// copies the bucket to disk resolves (`aws s3 cp --recursive` skips a key
-/// that climbs out of the directory, and writes `a/../b` to `b`).
+/// in the bucket, so it may not start with `/` or hold an empty (`//`), `.`
+/// or `..` segment: S3 keeps each as written, so `/logs` objects are not
+/// under `logs/` and `logs//2026` ones not under `logs/2026/` for a listing
+/// or a table's location, and a tool that copies the bucket to disk
+/// resolves `.` and `..` (`aws s3 cp --recursive` skips a key that climbs
+/// out of the directory, and writes `a/../b` to `b`). A trailing `/` is
+/// fine: the key joins the prefix and the name with one `/`.
 #[derive(Debug)]
 pub struct KeyPrefix(String);
 
@@ -240,8 +242,12 @@ impl KeyPrefix {
         if !rolling_file::strftime_renders(template) {
             bail!("key_prefix {template:?} is not a strftime template (`%%` is a `%`)");
         }
-        if template.starts_with('/') || template.split('/').any(|s| s == "..") {
-            bail!("key_prefix {template:?}: a path in the bucket, without a leading `/` or `..`");
+        // empty, the prefix is the bucket's root
+        let mut segments = template.trim_end_matches('/').split('/');
+        if !template.is_empty() && segments.any(|s| matches!(s, "" | "." | "..")) {
+            bail!(
+                "key_prefix {template:?}: a path in the bucket, without a leading `/`, `//`, or a `.` or `..` segment"
+            );
         }
         Ok(Self(template.to_string()))
     }
@@ -317,10 +323,18 @@ mod tests {
             "logs/100%",
             "logs/%#z",
             "/logs/%Y",
+            "/",
             "logs/../%Y",
             "..",
+            "logs//%Y",
+            "%Y//%m",
+            "logs/./%Y",
+            ".",
         ] {
             assert!(KeyPrefix::parse(bad).is_err(), "{bad}");
+        }
+        for good in ["", "logs/%Y/", "logs/%Y//", "logs/.%Y/x..y"] {
+            assert!(KeyPrefix::parse(good).is_ok(), "{good}");
         }
         let sinks = |prefix: &str| -> BTreeMap<Arc<str>, SinkConfig> {
             let yaml = format!("type: s3\nbucket_name: b\nkey_prefix: \"{prefix}\"\n");
