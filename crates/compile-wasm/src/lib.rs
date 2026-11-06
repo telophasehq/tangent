@@ -192,6 +192,8 @@ fn find_host_python() -> Result<PathBuf> {
         })
 }
 
+/// The plugin's `.venv`, created if missing, with its requirements.txt
+/// installed.
 fn prepare_python_env(py_dir: &Path) -> Result<PathBuf> {
     let venv_dir = py_dir.join(".venv");
     let py_bin = venv_dir.join("bin/python");
@@ -214,7 +216,7 @@ fn prepare_python_env(py_dir: &Path) -> Result<PathBuf> {
             .status()
             .context("installing Python requirements")?;
     }
-    Ok(py_bin)
+    Ok(venv_dir)
 }
 
 fn run_componentize_py(
@@ -224,11 +226,23 @@ fn run_componentize_py(
     out_component: &Path,
 ) -> anyhow::Result<()> {
     let py_dir = entry_point_path.parent().unwrap_or(Path::new("."));
-    let _ = prepare_python_env(py_dir)?;
+    let venv_dir = prepare_python_env(py_dir)?;
     let app_module = file_stem(&entry_point_path)?;
+
+    // componentize-py bundles the site-packages of `$VIRTUAL_ENV`, so it runs
+    // as if `.venv` were activated: what requirements.txt installed there goes
+    // into the component whether or not the shell that ran compile activated
+    // it, and a componentize-py installed there is the one that runs.
+    let inherited = std::env::var_os("PATH").unwrap_or_default();
+    let path = std::env::join_paths(
+        std::iter::once(venv_dir.join("bin")).chain(std::env::split_paths(&inherited)),
+    )
+    .context("building PATH for componentize-py")?;
 
     let status = Command::new("componentize-py")
         .current_dir(&py_dir)
+        .env("VIRTUAL_ENV", &venv_dir)
+        .env("PATH", path)
         .arg("--wit-path")
         .arg(wit_path)
         .arg("--world")
