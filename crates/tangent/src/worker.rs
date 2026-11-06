@@ -206,7 +206,9 @@ impl Worker {
 
                     let payload_len = rec.payload.len();
 
-                    if total_size + payload_len > self.batch_max_size {
+                    // What came before goes first; a record over the size on
+                    // its own finds nothing before it and goes alone below.
+                    if total_size + payload_len > self.batch_max_size && !batch.is_empty() {
                         self.flush_batch(&mut batch, &mut total_size).await?;
                         deadline = TokioInstant::now() + self.batch_max_age;
                         sleeper.as_mut().reset(deadline);
