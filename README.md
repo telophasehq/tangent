@@ -367,17 +367,23 @@ they came after the measured runs and are not measured yet.
 ## How well it works, and where it loses
 
 [tangent-eval](https://github.com/EthanBlackburn/tangent-eval) is the
-corpus: 66 cases (49 that should flag, 17 that must not) in 10 categories,
-from cloud, identity, GitHub and supply chain to AI agents and prompt
-injection; Datadog's 35 recorded Stratus Red Team techniques, each with a
-control; and, with the macOS pack ([#85](https://github.com/EthanBlackburn/tangent/pull/85)),
-90 synthetic laptop cases. Every case sits inside 13 months of a fictional
-company's ordinary traffic, 207,886 records, so the judge sees it against
-the history of the people and systems involved.
+corpus: 66 cases of ours (49 that should flag, 17 that must not) in 10
+categories, from cloud, identity, GitHub and supply chain to AI agents and
+prompt injection, and 140 made from Datadog's 35 recorded Stratus Red Team
+techniques, each spliced in twice with a harmless control for each. Every
+case sits inside 13 months of a fictional company's ordinary traffic,
+207,886 records, so the judge sees it against the history of the people and
+systems involved. 90 synthetic laptop cases arrive with the macOS pack
+([#85](https://github.com/EthanBlackburn/tangent/pull/85)) and are not
+public yet.
 
-What has been measured: Claude Haiku 5.5 on Bedrock, 201 cases, four runs on
-2026-10-31 and 11-01, two without a history header and two with one
-([RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)):
+What has been measured: Claude Haiku 5.5 on Bedrock, four runs on
+2026-10-31 and 11-01, two without a history header and two with one,
+through an earlier harness and plugin set (one cloud-infra pack, its history
+header `_hist`) on a differently placed stream
+([RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)).
+The 201 cases were 61 of ours (the 4 injection cases and 1 look-alike came
+after) and the 140 Stratus ones:
 
 | | without the header | with it |
 |---|---|---|
@@ -390,17 +396,23 @@ Where it loses: of our 16 must-not-flag cases, the ones written to look
 alarming and be fine, it flagged 10 or 11 in every run. And what these
 numbers cannot say:
 
-- They were measured on the layout before this one, with `_hist`, which
-  `_baseline` has since replaced; this layout has not been run yet.
+- None was measured on the per-provider packs, `_baseline` or the one-config
+  judge; this layout has not been run yet.
 - They are in-sample: the brief and the profile were revised on these cases.
 - The Stratus numbers are withdrawn: the splice could be told from acme's
-  traffic by things that had nothing to do with the attack.
-- The local default model has never been measured, nor the 4 injection cases.
+  traffic by things that had nothing to do with the attack, and in every run
+  the controls were flagged about as often as the attacks. The tells are
+  fixed and not yet re-measured
+  ([stratus/README.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/stratus/README.md#not-citable-yet)).
+- The local default model has never been measured, nor the 4 injection cases
+  or the newest look-alike.
 - Nothing here estimates alerts a day for a real company: only the hours
   around cases are judged, and acme has nine people.
 
 To run it: `make` in tangent-eval (Haiku 5.5 on Bedrock, about $1), or
-`make JUDGE=local`, free and well over an hour.
+`make JUDGE=local`, free and well over an hour. Both run the tangent that
+tangent-eval's `tangent.ref` pins (ad0407c, before the one-config pipeline),
+not this tree.
 
 ## Not done yet
 
