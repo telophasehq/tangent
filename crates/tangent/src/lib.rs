@@ -105,6 +105,12 @@ lazy_static::lazy_static! {
         "Records dropped because no target on their node's edges took them",
         &["node"]
     ).unwrap();
+
+    pub static ref SOURCE_UNDECODABLE_TOTAL: IntCounterVec = register_int_counter_vec!(
+        "tangent_source_undecodable_total",
+        "Messages, or objects they name, that a source could not decode and skipped",
+        &["source"]
+    ).unwrap();
 }
 
 pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
