@@ -233,7 +233,10 @@ dag:
 In `text`, `{a.b}` is the record's field (`-` when it has none) and `{x|words y}`
 the first of them it has, so a record the model could not judge says why. A
 field's value is escaped: a log line cannot mention anyone, link or start a
-line in the message. A post that fails is logged and dropped.
+line in the message. A post that can work later (a 429, after its
+`retry-after`, a 5xx, a timeout) is tried again, and its record is acked
+only once Slack has it; one Slack refuses (another 4xx) is logged and
+dropped.
 
 ## baseline
 
