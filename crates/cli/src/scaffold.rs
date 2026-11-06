@@ -833,8 +833,9 @@ const TEST_BENCH: &str = r#"{
   }
 }"#;
 
+// setup.sh is its own target: it can add lines to the shell profile, which
+// the scaffold leaves to --setup, so a build does not run it
 const MAKEFILE: &str = "build:\n\t\
-./setup.sh\n\t\
 tangent plugin compile --config tangent.yaml\n\
 \n\
 test: build\n\t\
@@ -843,7 +844,10 @@ tangent plugin test --config tangent.yaml\n\
 run: build\n\t\
 tangent run --config tangent.yaml\n\
 \n\
-.PHONY: build test\n";
+setup:\n\t\
+./setup.sh\n\
+\n\
+.PHONY: build test run setup\n";
 
 fn py_project_for(module: &str) -> String {
     let tpl = r#"
