@@ -58,7 +58,10 @@ which install the Rust WASM toolchain first.
 The judge defaults to a local model on `:8080`
 ([packs/core](/packs/core#judgeyaml) says how to serve it); `JUDGE_URL`,
 `JUDGE_MODEL` and `JUDGE_API_KEY` point it at any OpenAI-compatible one (the
-Makefile has a hosted example).
+Makefile has a hosted example). For a hosted one, include
+`../../packs/core/judge-hosted.yaml` in `tangent.yaml` in place of
+`judge.yaml`, which leaves out the local model's sampling settings that a
+hosted model may refuse.
 
 ## Try it
 

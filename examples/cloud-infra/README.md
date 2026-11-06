@@ -84,7 +84,10 @@ here instead, as for a pack you are changing: `make test PLUGINS=compile`, then
 Rust WASM toolchain first (`./setup.sh toolchain`).
 
 The judge defaults to a local model on `:8080`
-([packs/core](/packs/core#judgeyaml) says how to serve it). For a hosted one:
+([packs/core](/packs/core#judgeyaml) says how to serve it). For a hosted one,
+include `../../packs/core/judge-hosted.yaml` in `tangent.yaml` in place of
+`judge.yaml`, which leaves out the local model's sampling settings that a
+hosted model may refuse, and set the model:
 
 ```bash
 JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY make run
