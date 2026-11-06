@@ -1,22 +1,12 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"errors"
 	"math"
-	"sync"
 	"time"
-
-	"github.com/telophasehq/go-ocsf/ocsf/v1_5_0"
 
 	tangent_sdk "github.com/ethanblackburn/tangent-sdk-go"
 )
-
-var (
-	bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
-)
-
-type NetworkActivityAlias v1_5_0.NetworkActivity
 
 type SPCap struct {
 	URL     *string `json:"url,omitempty"`
@@ -41,34 +31,25 @@ type OCSFUnMapped struct {
 
 var metadata = tangent_sdk.Metadata{
 	Name:    "zeek-conn → ocsf.network_activity",
-	Version: "0.1.3",
+	Version: "0.2.0",
 }
 
 var selectors = []tangent_sdk.Selector{
 	{
 		All: []tangent_sdk.Predicate{
 			tangent_sdk.Has("uid"),
+			tangent_sdk.Has("ts"),
 			tangent_sdk.EqString("_path", "conn"),
 		},
 	},
 }
 
-func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
-	rawTS := lv.GetString("ts")
-	rawWTS := lv.GetString("_write_ts")
-
-	ts, err := time.Parse(time.RFC3339Nano, *rawTS)
-	if err != nil {
-		return nil, err
+func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivity, error) {
+	timeMs, ok := zeekTime(lv, "ts")
+	if !ok {
+		return nil, errors.New("zeek conn: ts is neither ISO 8601 text nor epoch seconds")
 	}
-	timeMs := ts.UnixMilli()
-
-	var writeTimeMs int64
-	if rawWTS != nil {
-		if wts, err := time.Parse(time.RFC3339Nano, *rawWTS); err == nil {
-			writeTimeMs = wts.UnixMilli()
-		}
-	}
+	writeTimeMs, _ := zeekTime(lv, "_write_ts")
 
 	const classUID int32 = 4001 // network_activity
 	const categoryUID int32 = 4 // Network Activity
@@ -91,11 +72,15 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 	case localOrig != nil && !*localOrig && localResp != nil && *localResp:
 		in := int32(1) // inbound
 		directionID = &in
+	case localOrig != nil && *localOrig && localResp != nil && *localResp:
+		lateral := int32(3) // lateral: both ends inside the network
+		directionID = &lateral
 	}
 
+	// Zeek's duration is seconds; OCSF's is milliseconds.
 	var duration *int64
-	if d := lv.GetFloat64("duration"); d != nil {
-		ms := int64(math.Round(*d))
+	if d := number(lv, "duration"); d != nil {
+		ms := int64(math.Round(*d * 1000))
 		duration = &ms
 	}
 
@@ -110,7 +95,7 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 	respH := lv.GetString("id.resp_h")
 	respP := lv.GetInt64("id.resp_p")
 
-	var src, dst *v1_5_0.NetworkEndpoint
+	var src, dst *NetworkEndpoint
 	if origH != nil && origP != nil {
 		src = toNetEndpoint(*origH, int(*origP))
 
@@ -125,7 +110,7 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 			dst.Mac = dstMac
 		}
 		if cc := lv.GetString("resp_cc"); cc != nil {
-			dst.Location = &v1_5_0.GeoLocation{Country: cc}
+			dst.Location = &GeoLocation{Country: cc}
 		}
 	}
 
@@ -135,7 +120,7 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 	if proto != nil {
 		pn, pName = protoToOCSF(*proto)
 	}
-	connInfo := &v1_5_0.NetworkConnectionInformation{}
+	connInfo := &NetworkConnectionInformation{}
 	if pName != "" {
 		p := pName
 		connInfo.ProtocolName = &p
@@ -182,9 +167,9 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 		totalBytes, totalPkts = &tb, &tp
 	}
 
-	var traffic *v1_5_0.NetworkTraffic
+	var traffic *NetworkTraffic
 	if ob != nil || rb != nil || mb != nil || op != nil || rp != nil {
-		traffic = &v1_5_0.NetworkTraffic{
+		traffic = &NetworkTraffic{
 			BytesOut:    ob,
 			PacketsOut:  op,
 			BytesIn:     rb,
@@ -199,10 +184,10 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 	ver := "1.5.0"
 	productName := "Zeek"
 	vendorName := "Zeek"
-	md := v1_5_0.Metadata{
+	md := Metadata{
 		Version: ver,
 		Uid:     uid,
-		Product: v1_5_0.Product{
+		Product: Product{
 			Name:       &productName,
 			VendorName: &vendorName,
 		},
@@ -212,7 +197,7 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 		md.LoggedTime = writeTimeMs
 	}
 	if systemName != nil {
-		md.Loggers = []v1_5_0.Logger{{Name: systemName}}
+		md.Loggers = []Logger{{Name: systemName}}
 	}
 
 	// Optional strings
@@ -279,15 +264,11 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 	if corelightShunted := lv.GetBool("corelight_shunted"); corelightShunted != nil {
 		unmapped.CorelightShunted = corelightShunted
 	}
-	unmapped.SPCap = &sp
-
-	var unmappedPtr *string
-	if b, err := json.Marshal(unmapped); err == nil {
-		s := string(b)
-		unmappedPtr = &s
+	if sp.URL != nil || sp.Rule != nil || sp.Trigger != nil {
+		unmapped.SPCap = &sp
 	}
 
-	na := NetworkActivityAlias{
+	na := NetworkActivity{
 		ActivityId:     activityID,
 		CategoryUid:    categoryUID,
 		ClassUid:       classUID,
@@ -303,7 +284,7 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 		Duration:       duration,
 		StatusCode:     statusCode,
 		Observables:    objs,
-		Unmapped:       unmappedPtr,
+		Unmapped:       &unmapped,
 	}
 	if duration != nil {
 		na.StartTime = startTime
@@ -315,8 +296,37 @@ func ZeekMapper(lv tangent_sdk.Log) (*NetworkActivityAlias, error) {
 
 /* ---------------- helpers: domain-specific ---------------- */
 
-func toNetEndpoint(ip string, port int) *v1_5_0.NetworkEndpoint {
-	ep := &v1_5_0.NetworkEndpoint{}
+// zeekTime reads a Zeek timestamp as epoch milliseconds: ISO 8601 text, as
+// Corelight writes it (and Zeek with LogAscii::json_timestamps =
+// JSON::TS_ISO8601), or epoch seconds, Zeek's own JSON default.
+func zeekTime(lv tangent_sdk.Log, path string) (int64, bool) {
+	if s := lv.GetString(path); s != nil {
+		t, err := time.Parse(time.RFC3339Nano, *s)
+		if err != nil {
+			return 0, false
+		}
+		return t.UnixMilli(), true
+	}
+	if secs := number(lv, path); secs != nil {
+		return int64(math.Round(*secs * 1000)), true
+	}
+	return 0, false
+}
+
+// number reads a JSON number at path, written with or without a fraction.
+func number(lv tangent_sdk.Log, path string) *float64 {
+	if f := lv.GetFloat64(path); f != nil {
+		return f
+	}
+	if i := lv.GetInt64(path); i != nil {
+		f := float64(*i)
+		return &f
+	}
+	return nil
+}
+
+func toNetEndpoint(ip string, port int) *NetworkEndpoint {
+	ep := &NetworkEndpoint{}
 	if ip != "" {
 		ep.Ip = &ip
 	}
@@ -339,8 +349,8 @@ func protoToOCSF(p string) (int, string) {
 	}
 }
 
-func buildObservablesFromLogview(v tangent_sdk.Log) []v1_5_0.Observable {
-	var out []v1_5_0.Observable
+func buildObservablesFromLogview(v tangent_sdk.Log) []Observable {
+	var out []Observable
 
 	srcProvider := v.GetString("id.orig_h_name.src")
 	if vals, ok := v.GetStringList("id.orig_h_name.vals"); ok {
@@ -350,12 +360,12 @@ func buildObservablesFromLogview(v tangent_sdk.Log) []v1_5_0.Observable {
 			val := s
 			base := float64(0)
 			scoreID := int32(0)
-			rep := &v1_5_0.Reputation{
+			rep := &Reputation{
 				Provider:  srcProvider,
 				BaseScore: base,
 				ScoreId:   scoreID,
 			}
-			out = append(out, v1_5_0.Observable{
+			out = append(out, Observable{
 				Name:       &name,
 				TypeId:     typ,
 				Value:      &val,
@@ -372,12 +382,12 @@ func buildObservablesFromLogview(v tangent_sdk.Log) []v1_5_0.Observable {
 			val := s
 			base := float64(0)
 			scoreID := int32(0)
-			rep := &v1_5_0.Reputation{
+			rep := &Reputation{
 				Provider:  dstProvider,
 				BaseScore: base,
 				ScoreId:   scoreID,
 			}
-			out = append(out, v1_5_0.Observable{
+			out = append(out, Observable{
 				Name:       &name,
 				TypeId:     typ,
 				Value:      &val,
@@ -389,7 +399,7 @@ func buildObservablesFromLogview(v tangent_sdk.Log) []v1_5_0.Observable {
 }
 
 func init() {
-	tangent_sdk.Wire[*NetworkActivityAlias](
+	tangent_sdk.Wire[*NetworkActivity](
 		metadata,
 		selectors,
 		ZeekMapper,

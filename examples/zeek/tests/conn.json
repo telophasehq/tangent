@@ -51,4 +51,30 @@
   ],
   "uid": "CmRFd61N7G7YA909D1",
   "vlan": 12
+},
+{
+  "_path": "conn",
+  "ts": 1729051700.25,
+  "uid": "CsKpQf3vD2Uq0tBjXe",
+  "id.orig_h": "10.4.30.7",
+  "id.orig_p": 53211,
+  "id.resp_h": "10.4.0.1",
+  "id.resp_p": 53,
+  "proto": "udp",
+  "service": "dns",
+  "duration": 0.012,
+  "orig_bytes": 40,
+  "resp_bytes": 120,
+  "orig_pkts": 1,
+  "resp_pkts": 1,
+  "conn_state": "SF",
+  "local_orig": true,
+  "local_resp": true
+},
+{
+  "_path": "dns",
+  "ts": "2024-10-16T04:08:20.250000Z",
+  "uid": "CsKpQf3vD2Uq0tBjXe",
+  "query": "ip.anysrc.net",
+  "qtype_name": "A"
 }]
