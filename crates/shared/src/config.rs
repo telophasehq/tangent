@@ -272,6 +272,26 @@ mod tests {
         assert!(e.contains("to `lines`: a source takes nothing in"), "{e}");
     }
 
+    /// An s3 sink may name its objects' prefix; without one they go to the
+    /// bucket's root.
+    #[test]
+    fn an_s3_sink_takes_a_key_prefix() {
+        let s3 = |extra: &str| match serde_yaml::from_str::<SinkConfig>(&format!(
+            "type: s3\nbucket_name: logs\n{extra}"
+        ))
+        .unwrap()
+        .kind
+        {
+            SinkKind::S3(c) => c.key_prefix,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            s3("key_prefix: cloudtrail/%Y/%m/%d\n").as_deref(),
+            Some("cloudtrail/%Y/%m/%d")
+        );
+        assert_eq!(s3(""), None);
+    }
+
     #[test]
     fn a_file_sink_takes_ndjson_only() {
         let file = |encoding: &str| -> Config {

@@ -53,12 +53,14 @@ struct Shard {
 #[derive(Clone)]
 enum SinkEntry {
     /// Through a WAL (`s3`, `rolling_file`): a write carries its route, the
-    /// bucket (s3's; empty for rolling_file) and, for a rolling_file, the
-    /// directory its path renders for the time it is routed.
+    /// bucket (s3's; empty for rolling_file) and the key prefix rendered for
+    /// the time it is routed: a rolling_file's directory below its `path`'s
+    /// root, an s3 sink's `key_prefix`.
     Wal {
         sink: Arc<dyn Sink>,
         bucket: Arc<str>,
         path: Option<Arc<rolling_file::PathTemplate>>,
+        key_prefix: Option<Arc<s3::KeyPrefix>>,
     },
     Other {
         sink: Arc<dyn Sink>,
@@ -73,6 +75,7 @@ pub struct SinkManager {
 impl SinkManager {
     pub async fn new(cfgs: &BTreeMap<Arc<str>, SinkConfig>) -> Result<Self> {
         check_wal_dirs(cfgs)?;
+        s3::check_key_prefixes(cfgs)?;
         for (name, cfg) in cfgs {
             encoding::check(&cfg.common.encoding, &cfg.common.compression)
                 .with_context(|| format!("sink '{name}'"))?;
@@ -84,6 +87,13 @@ impl SinkManager {
         for (name, cfg) in cfgs {
             match &cfg.kind {
                 SinkKind::S3(s3cfg) => {
+                    let key_prefix = s3cfg
+                        .key_prefix
+                        .as_deref()
+                        .map(s3::KeyPrefix::parse)
+                        .transpose()
+                        .with_context(|| format!("sink '{name}'"))?
+                        .map(Arc::new);
                     let bucket: Arc<str> = Arc::<str>::from(s3cfg.bucket_name.clone());
                     let remote = Arc::new(s3::S3Sink::new(Arc::clone(&name), bucket).await?);
                     let s3_sink = wal::DurableFileSink::new(
@@ -102,6 +112,7 @@ impl SinkManager {
                             sink: s3_sink as Arc<dyn Sink>,
                             bucket: Arc::<str>::from(s3cfg.bucket_name.clone()),
                             path: None,
+                            key_prefix,
                         },
                     );
                 }
@@ -126,6 +137,7 @@ impl SinkManager {
                             sink: wal,
                             bucket: Arc::from(""),
                             path: Some(path),
+                            key_prefix: None,
                         },
                     );
                 }
@@ -181,8 +193,12 @@ impl SinkManager {
                                 }
                             };
 
-                            if let SinkEntry::Wal { bucket, path, .. } = entry {
-                                let prefix = path.as_ref().and_then(|p| p.route(chrono::Utc::now()));
+                            if let SinkEntry::Wal { bucket, path, key_prefix, .. } = entry {
+                                let now = chrono::Utc::now();
+                                let prefix = path
+                                    .as_ref()
+                                    .and_then(|p| p.route(now))
+                                    .or_else(|| key_prefix.as_ref().map(|p| p.render(now)));
                                 item.req.s3 = Some(s3::S3SinkItem {
                                     bucket_name: bucket.clone(),
                                     key_prefix: prefix,
@@ -395,13 +411,12 @@ mod tests {
     #[derive(Default)]
     struct RecordingSink {
         writes: Mutex<Vec<Vec<u8>>>,
+        prefixes: Mutex<Vec<Option<Arc<str>>>>,
     }
 
     impl RecordingSink {
         fn new() -> Arc<Self> {
-            Arc::new(Self {
-                writes: Mutex::new(Vec::new()),
-            })
+            Arc::new(Self::default())
         }
 
         async fn take(&self) -> Vec<Vec<u8>> {
@@ -412,6 +427,8 @@ mod tests {
     #[async_trait]
     impl Sink for RecordingSink {
         async fn write(&self, req: SinkWrite) -> Result<()> {
+            let prefix = req.s3.and_then(|m| m.key_prefix);
+            self.prefixes.lock().await.push(prefix);
             self.writes.lock().await.push(req.payload.freeze().to_vec());
             Ok(())
         }
@@ -467,6 +484,45 @@ mod tests {
         let writes = recorder.take().await;
         assert_eq!(writes.len(), 2);
         assert_eq!(ack.count(), 1);
+    }
+
+    /// An s3 sink's write carries its `key_prefix` rendered when the write
+    /// is routed, as a rolling_file's carries the directory its path renders.
+    #[tokio::test]
+    async fn an_s3_write_carries_its_key_prefix_rendered_when_routed() {
+        let name: Arc<str> = Arc::from("archive");
+        let recorder = RecordingSink::new();
+        let entry = SinkEntry::Wal {
+            sink: recorder.clone(),
+            bucket: Arc::from("b"),
+            path: None,
+            key_prefix: Some(Arc::new(s3::KeyPrefix::parse("logs/%Y/%m/%d").unwrap())),
+        };
+        let manager = SinkManager::from_entries(HashMap::from([(name.clone(), entry)]), 1);
+        let day = || chrono::Utc::now().format("logs/%Y/%m/%d").to_string();
+        let before = day();
+        manager
+            .enqueue(name, BytesMut::from("{}\n"), Vec::new())
+            .await
+            .unwrap();
+        manager.join().await.unwrap();
+        let after = day();
+        let prefixes = recorder.prefixes.lock().await.clone();
+        let [Some(got)] = prefixes.as_slice() else {
+            panic!("{prefixes:?}")
+        };
+        assert!([before, after].contains(&got.to_string()), "{got}");
+    }
+
+    /// `tangent run` stops at a key_prefix that is not a strftime template,
+    /// naming the sink, before any sink starts.
+    #[tokio::test]
+    async fn a_key_prefix_not_strftime_stops_the_sinks_at_load() {
+        let cfg = serde_yaml::from_str("type: s3\nbucket_name: b\nkey_prefix: logs/%Q\n").unwrap();
+        let Err(e) = SinkManager::new(&BTreeMap::from([(Arc::from("archive"), cfg)])).await else {
+            panic!("a bad key_prefix loaded");
+        };
+        assert!(format!("{e:#}").contains("sink 'archive'"), "{e:#}");
     }
 
     fn s3(wal: &str) -> SinkConfig {

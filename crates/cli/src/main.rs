@@ -255,9 +255,9 @@ async fn main() -> Result<()> {
 
 /// The config at `path` as YAML, after a header naming the files it was
 /// merged from. Every path that names a file is absolute; `runtime` paths
-/// are as written, relative to `path`. The DAG and the required tables'
-/// files are checked after: a config that does not hold together still
-/// prints, then fails.
+/// are as written, relative to `path`. The DAG, each s3 sink's `key_prefix`
+/// and the required tables' files are checked after: a config that does not
+/// hold together still prints, then fails.
 fn show_config(path: &Path) -> Result<String> {
     let loaded = tangent_shared::Config::load(path)?;
     let dir = path
@@ -285,13 +285,17 @@ fn show_config(path: &Path) -> Result<String> {
         "# secrets (tokens, api_key, webhook_url, passwords) are left out: read it, don't run it\n",
     );
     out.push_str(&serde_yaml::to_string(&value)?);
-    let checked = loaded.config.validate().and_then(|()| {
-        loaded
-            .config
-            .enrichment_tables
-            .iter()
-            .try_for_each(|(name, table)| table.check(name, &dir))
-    });
+    let checked = loaded
+        .config
+        .validate()
+        .and_then(|()| tangent_runtime::sinks::s3::check_key_prefixes(&loaded.config.sinks))
+        .and_then(|()| {
+            loaded
+                .config
+                .enrichment_tables
+                .iter()
+                .try_for_each(|(name, table)| table.check(name, &dir))
+        });
     if let Err(e) = checked {
         print!("{out}");
         return Err(e);
@@ -344,6 +348,27 @@ mod tests {
         assert!(err.contains("enrichment table profile: "), "{err}");
         assert!(
             err.contains("profle/profile.yaml not found, and the table is required"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn config_prints_an_s3_key_prefix_and_fails_on_one_not_strftime() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = |prefix: &str| {
+            let file = dir.path().join("tangent.yaml");
+            std::fs::write(
+                &file,
+                format!("sinks:\n  archive: {{ type: s3, bucket_name: logs, key_prefix: \"{prefix}\" }}\n"),
+            )
+            .unwrap();
+            show_config(&file)
+        };
+        let shown = config("cloudtrail/%Y/%m/%d").unwrap();
+        assert!(shown.contains("key_prefix: cloudtrail/%Y/%m/%d"), "{shown}");
+        let err = format!("{:#}", config("cloudtrail/%Q").unwrap_err());
+        assert!(
+            err.contains("sink 'archive'") && err.contains("not a strftime template"),
             "{err}"
         );
     }

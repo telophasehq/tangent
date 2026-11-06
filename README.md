@@ -179,6 +179,17 @@ sinks:
         _norm: { org: string, actor: string }
 ```
 
+An `s3` sink goes through the same WAL and puts each sealed file in `bucket_name` as one object, named as a `rolling_file` sink's files are. Its `key_prefix` is what each object's key starts with, before a `/` and the name: a strftime template rendered in UTC when a write reaches the sink, as a `rolling_file` sink's `path` is, so `logs/cloudtrail/%Y/%m/%d` puts each day's objects under a prefix of their own (`%%` is a `%`). It is a path in the bucket: `tangent run` and `tangent config` refuse one that is not a strftime template, starts with `/` or has a `..` segment. Without it, objects go to the bucket's root:
+
+```yaml
+sinks:
+  archive:
+    type: s3
+    bucket_name: acme-logs
+    key_prefix: logs/cloudtrail/%Y/%m/%d   # logs/cloudtrail/2026/11/06/<ULID>.ndjson.zst
+    wal_path: /var/lib/tangent/wal
+```
+
 A write is acked once it is in the open WAL file; that file is synced only when it is sealed. What was acked survives tangent stopping without its flush (killed, crashed, out of time at shutdown): the next start seals and sends the files left open, cut back to their last whole line. It does not survive the machine going down before the file is sealed.
 
 `tangent_sink_bytes_total` counts a file's bytes when it is in place, and `tangent_sink_bytes_uncompressed_total` the records' NDJSON bytes it holds; a write acked into the WAL counts only once its file is sealed and written.
