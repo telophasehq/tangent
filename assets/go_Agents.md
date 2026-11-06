@@ -77,7 +77,7 @@ The pointer tells a missing field from a zero value.
 ## Tests and fixtures
 - `tests/input.json` and `tests/expected.json`, named under the plugin's `tests:` in `tangent.yaml`. The input is a JSON array of records. The expected is a JSON array of the output records in order, or a single object when the plugin emits one record. Neither is NDJSON: an expected file with a record per line fails to parse.
 - `tangent plugin test --config tangent.yaml` feeds the input to the plugin, writes what comes out to `test_out.ndjson` and compares it with the expected as parsed JSON (key order and whitespace do not matter); it ends with `✅ test passed: output matches expected`.
-- Cover a record with every field, one with fields missing (their zero values in the expected, or nothing for an `omitempty` field), and one the selectors leave out (absent from the expected).
+- Cover a record with every field, one with fields missing (their zero values in the expected, or nothing for an `omitempty` field), and one the selectors leave out (absent from the expected). A `float64` zero is written `0`, and the test does not take `0.0` for it.
 
 ## Make targets
 - `make build`: `./setup.sh`, then `tangent plugin compile`, which leaves the plugin in `plugins/<name>.cwasm`.
