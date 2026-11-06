@@ -58,7 +58,7 @@ fn every_config_in_the_repo_loads() {
     assert!(
         found
             .iter()
-            .any(|p| p.ends_with("examples/partition/tangent.yaml")),
+            .any(|p| p.ends_with("examples/counter/tangent.yaml")),
         "found the examples: {found:?}"
     );
 
