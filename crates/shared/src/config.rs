@@ -9,10 +9,12 @@ use crate::dag::{Edge, NodeRef};
 use crate::sinks::common::{Encoding, SinkConfig, SinkKind};
 use crate::sources::common::SourceConfig;
 
+pub mod cache;
 pub mod dag;
 pub mod enrichment;
 pub mod include;
 pub mod inference;
+pub mod packs;
 pub mod plugins;
 pub mod runtime;
 pub mod sinks;

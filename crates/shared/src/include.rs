@@ -16,7 +16,10 @@
 //! - in a plugin's `config` and an inference node's `extra`, which tangent
 //!   hands on as written, a null is a value like any other;
 //! - a top-level key that starts `x-` is the file's own (a place for YAML
-//!   anchors) and is not merged.
+//!   anchors) and is not merged;
+//! - an entry `pack:<name>` is a pack built into tangent, read from the copy
+//!   written out under the cache ([`crate::packs`]), and a message names it
+//!   so.
 //!
 //! The result does not depend on the order of `include:`, only the order of
 //! the edges does: a file included twice is the same file to both includers,
@@ -34,6 +37,8 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+
+use crate::packs;
 
 /// The keys a config file may have at its top, besides the `x-` keys it
 /// keeps for itself.
@@ -566,7 +571,12 @@ pub(crate) fn merge(root: &Path, read: Read) -> Result<Merged> {
 }
 
 impl Loader {
+    /// `path` as a message names it: a pack built in by its name, a file
+    /// under the working directory relative to it.
     fn show(&self, path: &Path) -> String {
+        if let Some(name) = packs::name(path) {
+            return name;
+        }
         self.cwd
             .as_deref()
             .and_then(|cwd| path.strip_prefix(cwd).ok())
@@ -629,9 +639,12 @@ impl Loader {
         self.stack.push(path.to_path_buf());
         let mut includes = Vec::with_capacity(named.len());
         for name in named {
-            let target = dir.join(&name);
+            let target = match name.strip_prefix(packs::PREFIX) {
+                Some(pack) => packs::file(pack),
+                None => Ok(dir.join(&name)),
+            };
             let canonical = target
-                .canonicalize()
+                .and_then(|t| Ok(t.canonicalize()?))
                 .with_context(|| format!("{shown} includes {name}"))?;
             includes.push(self.visit(&canonical, None)?);
         }

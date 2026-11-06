@@ -18,6 +18,23 @@ says about it in `_facts`. How to use them is in the main
 | [macos](macos) | planned, not built |
 | [shared](shared) | not a pack: `normkit`, `enrichkit`, `identitykit` and `factskit`, the Rust libraries every pack's plugin links |
 
+A config includes a pack by name, the copy built into tangent
+([Including files](/README.md#including-files)). A new YAML file here, or a
+file one names (a prompt, say), goes in `FILES` in
+[crates/shared/src/packs.rs](/crates/shared/src/packs.rs) too; its tests fail
+until it does.
+
+| name | file |
+|---|---|
+| `pack:enrich-ip` | enrich-ip/ingest.yaml |
+| `pack:behavior-baseline` | behavior-baseline/ingest.yaml |
+| `pack:judge` | judge/ingest.yaml |
+| `pack:judge/hosted` | judge/hosted.yaml |
+| `pack:aws` | aws/ingest.yaml |
+| `pack:github` | github/ingest.yaml |
+| `pack:okta` | okta/ingest.yaml |
+| `pack:google_workspace` | google_workspace/ingest.yaml |
+
 A `source` value belongs to one pack: two packs taking it would store each
 record twice.
 
