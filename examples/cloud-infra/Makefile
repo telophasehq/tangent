@@ -43,7 +43,10 @@ compile:
 test: $(PLUGINS)
 	$(TANGENT) plugin test --config tangent.yaml
 
-run: $(PLUGINS)
+# `tangent run` fetches the plugins it has no copy of, once per tangent
+# version, so only `compile` comes first; `make fetch` fetches them again,
+# in place of a compiled build.
+run: $(if $(filter compile,$(PLUGINS)),compile,setup)
 	$(TANGENT) run --config tangent.yaml
 
 .PHONY: setup fetch compile test run

@@ -73,18 +73,20 @@ make run            # one process: the sources, the packs and the judge; listens
 ```
 
 Nothing is compiled: `make test` and `make run` take the packs' plugins
-prebuilt. `tangent plugin fetch` downloads each from the tangent release of
-this tangent's version and has `gh attestation verify` check, before it is
-kept, that this repository's release workflow built it from that tag
-([Prebuilt plugins](/README.md#prebuilt-plugins)); it needs `gh`, not a
-login.
+prebuilt (`make test` with `tangent plugin fetch`; `tangent run` fetches the
+ones it has no copy of, once per tangent version). Each comes from the
+tangent release of this tangent's version, and `gh attestation verify`
+checks, before it is kept, that this repository's release workflow built it
+from that tag ([Prebuilt plugins](/README.md#prebuilt-plugins)); it needs
+`gh`, not a login.
 
 Until the release after 0.1.9 there are none to fetch (`make test` stops at
 "v0.1.9 has no aws.component.wasm"), and the packs need a tangent built from
 the checkout anyway ([Using packs](/README.md#using-packs)). Build the plugins
 here instead, as for a pack you are changing: `make test PLUGINS=compile`, then
 `make run PLUGINS=compile`, or `export PLUGINS=compile` once. It installs the
-Rust WASM toolchain first (`./setup.sh toolchain`).
+Rust WASM toolchain first (`./setup.sh toolchain`). `make fetch` puts the
+release's builds back.
 
 The judge defaults to a local model on `:8080`
 ([packs/judge](/packs/judge#the-model) says how to serve it). For a hosted one:
