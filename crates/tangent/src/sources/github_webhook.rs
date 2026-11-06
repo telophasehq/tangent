@@ -32,9 +32,21 @@ const LOGS_FETCHER_CHANNEL_CAPACITY: usize = 512;
 #[derive(Clone)]
 struct WebhookState {
     cfg: Arc<GithubWebhookConfig>,
-    err_tx: mpsc::Sender<anyhow::Error>,
     logs_tx: mpsc::Sender<BytesMut>,
 }
+
+/// A delivery whose `X-Hub-Signature-256` is missing, malformed, or not the
+/// body's under `secret`. It is answered 401.
+#[derive(Debug)]
+struct BadSignature(&'static str);
+
+impl std::fmt::Display for BadSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for BadSignature {}
 
 lazy_static! {
     static ref GITHUB_LOG_LINE_RE: Regex = Regex::new(
@@ -89,7 +101,7 @@ pub async fn run_consumer(
     let (err_tx, mut err_rx) = mpsc::channel::<anyhow::Error>(64);
     let (logs_tx, logs_rx) = mpsc::channel::<BytesMut>(LOGS_FETCHER_CHANNEL_CAPACITY);
 
-    let fetcher_err_tx = err_tx.clone();
+    let fetcher_err_tx = err_tx;
     let fetcher_router = router.clone();
     let fetcher_shutdown = shutdown.clone();
     let fetcher_name = name.clone();
@@ -111,7 +123,6 @@ pub async fn run_consumer(
 
     let state = WebhookState {
         cfg: cfg.clone(),
-        err_tx,
         logs_tx,
     };
 
@@ -152,7 +163,13 @@ async fn webhook_handler(
 ) -> impl IntoResponse {
     let result = handle_request(req, state.cfg.clone(), state.logs_tx.clone()).await;
     if let Err(err) = result {
-        let _ = state.err_tx.send(err).await;
+        // A delivery that fails is refused, and the source keeps listening:
+        // the failure is the sender's (a bad signature, a body cut short),
+        // and anyone who can reach the port can send one.
+        tracing::warn!("github webhook delivery refused: {err:#}");
+        if err.is::<BadSignature>() {
+            return (StatusCode::UNAUTHORIZED, "bad signature");
+        }
         return (StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     }
 
@@ -196,10 +213,10 @@ async fn handle_request(
     let mut buf = read_body(body).await?;
 
     if let Some(secret) = &cfg.secret {
-        let provided = sig_header.ok_or_else(|| anyhow!("missing X-Hub-Signature-256 header"))?;
+        let provided = sig_header.ok_or(BadSignature("missing X-Hub-Signature-256 header"))?;
 
         if !provided.starts_with("sha256=") {
-            return Err(anyhow!("invalid X-Hub-Signature-256 format"));
+            return Err(BadSignature("invalid X-Hub-Signature-256 format").into());
         }
         let provided_sig = &provided["sha256=".len()..];
 
@@ -209,7 +226,7 @@ async fn handle_request(
 
         let expected = hex::encode(mac.finalize().into_bytes());
         if !constant_time_eq::constant_time_eq(expected.as_bytes(), provided_sig.as_bytes()) {
-            return Err(anyhow!("invalid webhook signature"));
+            return Err(BadSignature("invalid webhook signature").into());
         }
     }
 
@@ -459,7 +476,112 @@ async fn process_webhook_frame(
 
 #[cfg(test)]
 mod tests {
-    use super::split_timestamp_and_message;
+    use std::net::SocketAddr;
+    use std::time::{Duration, Instant};
+
+    use super::*;
+    use crate::sinks::manager::{Sink, SinkManager, SinkWrite};
+
+    /// What reached the sink, a write at a time.
+    #[derive(Default)]
+    struct Deliveries(tokio::sync::Mutex<Vec<BytesMut>>);
+
+    #[async_trait::async_trait]
+    impl Sink for Deliveries {
+        async fn write(&self, req: SinkWrite) -> Result<()> {
+            self.0.lock().await.push(req.payload);
+            Ok(())
+        }
+    }
+
+    /// `X-Hub-Signature-256` for `body` under the secret `s3cret`.
+    fn signature(body: &str) -> String {
+        let mut mac = HmacSha256::new_from_slice(b"s3cret").unwrap();
+        mac.update(body.as_bytes());
+        format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    }
+
+    /// POST `body` to the webhook, with `signature` if any: the status.
+    async fn deliver(addr: SocketAddr, body: &'static str, signature: Option<String>) -> u16 {
+        let mut req = reqwest::Client::new()
+            .post(format!("http://{addr}/webhook"))
+            .header("X-GitHub-Event", "push")
+            .body(body);
+        if let Some(signature) = signature {
+            req = req.header("X-Hub-Signature-256", signature);
+        }
+        let resp = req.send().await.expect("the webhook is listening");
+        resp.status().as_u16()
+    }
+
+    /// A delivery without a good signature is refused with 401, and the
+    /// source takes the next: one used to end the source, closing the port
+    /// until tangent restarted.
+    #[tokio::test]
+    async fn a_badly_signed_delivery_is_refused_and_a_signed_one_after_it_taken() {
+        let deliveries = Arc::new(Deliveries::default());
+        let sink: Arc<dyn Sink> = deliveries.clone();
+        let sinks = SinkManager::for_test(vec![(Arc::from("deliveries"), sink)], 1);
+        let mut outs = ahash::AHashMap::default();
+        outs.insert(
+            NodeRef::Source {
+                name: Arc::from("github"),
+            },
+            vec![NodeRef::Sink {
+                name: Arc::from("deliveries"),
+            }],
+        );
+        let router = Arc::new(Router::new(outs, Arc::new(sinks)));
+        // a port that was free a moment ago
+        let addr = std::net::TcpListener::bind("127.0.0.1:0")
+            .and_then(|l| l.local_addr())
+            .unwrap();
+        let cfg = GithubWebhookConfig {
+            bind_address: addr,
+            path: "/webhook".to_string(),
+            secret: Some("s3cret".into()),
+            token: "unused".into(),
+        };
+        let shutdown = CancellationToken::new();
+        let source = tokio::spawn(run_consumer(
+            Arc::from("github"),
+            cfg,
+            router,
+            shutdown.clone(),
+        ));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while tokio::net::TcpStream::connect(addr).await.is_err() {
+            assert!(Instant::now() < deadline, "the webhook never listened");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        let unsigned = deliver(addr, r#"{"n":1}"#, None).await;
+        assert_eq!(unsigned, 401, "unsigned");
+        let wrong = deliver(addr, r#"{"n":2}"#, Some(signature("another body"))).await;
+        assert_eq!(wrong, 401, "signed over another body");
+        let malformed = deliver(addr, r#"{"n":3}"#, Some("md5=0f".to_string())).await;
+        assert_eq!(malformed, 401, "not sha256=");
+        let signed = deliver(addr, r#"{"n":4}"#, Some(signature(r#"{"n":4}"#))).await;
+        assert_eq!(signed, 200, "signed");
+
+        while deliveries.0.lock().await.is_empty() {
+            assert!(
+                Instant::now() < deadline,
+                "the signed delivery never reached the sink"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let got: Vec<String> = deliveries
+            .0
+            .lock()
+            .await
+            .iter()
+            .map(|w| String::from_utf8_lossy(w).trim_end().to_string())
+            .collect();
+        assert_eq!(got, [r#"{"n":4}"#], "the signed delivery, and only it");
+        shutdown.cancel();
+        source.await.unwrap().unwrap();
+    }
 
     #[test]
     fn splits_timestamp_and_message_with_bom() {
