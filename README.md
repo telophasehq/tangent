@@ -192,15 +192,17 @@ lake's and state's size).
 
 ```bash
 cargo install --path crates/cli --locked      # tangent from this checkout
-llama-server -hf unsloth/GLM-4.7-Flash-GGUF:Q4_K_M --port 8080 -np 1 -c 32768 -ngl 99 -fa on --jinja   # the judge, in another shell; an 18 GB download
+llama-server -hf unsloth/GLM-4.7-Flash-GGUF:Q4_K_M --port 8080 -np 1 -c 32768 -ngl 99 -fa on --jinja   # the judge, in another shell: 18.3 GB of weights
 make -C examples/demo PLUGINS=compile
 ```
 
-[examples/demo](examples/demo) says what it does and what you should see. A
-hosted model instead of a local one is `JUDGE_URL`, `JUDGE_MODEL` and
-`JUDGE_API_KEY`, for any OpenAI-compatible endpoint; core's judge also sends
-the local model's sampling settings, which some hosted models refuse
-([Not done yet](#not-done-yet)).
+[examples/demo](examples/demo) says what it does and what you should see.
+llama-server holds the model's 18.3 GB in memory, so it wants a GPU or an
+Apple silicon machine with more than that to spare. Without one, use a
+hosted model, any OpenAI-compatible endpoint: set `JUDGE_URL`, `JUDGE_MODEL`
+and `JUDGE_API_KEY`, and run
+`make -C examples/demo PLUGINS=compile CONFIG=hosted.yaml`, which leaves out
+the local model's sampling settings (two requests).
 
 **Your own logs**, in [examples/cloud-infra](examples/cloud-infra): every pack
 for one company.
@@ -224,11 +226,31 @@ org per customer.
 WASM toolchain (`make compile` installs it). It is needed until a release
 carries the plugins: v0.1.9, the latest, came before the packs.
 
-**On Bedrock**, in your own AWS account: `backend: bedrock` takes the AWS
-credential chain ([docs/inference.md](docs/inference.md#backends),
-[examples/inference-bedrock](examples/inference-bedrock)).
-[tangent-eval's harness/maincfg.py](https://github.com/EthanBlackburn/tangent-eval/blob/main/harness/maincfg.py)
-writes core's judge for Claude Haiku 5.5 on Bedrock, the measured setup.
+**A hosted judge for your own logs**: include
+[packs/core/judge-hosted.yaml](packs/core/judge-hosted.yaml) in place of
+`judge.yaml` (in examples/cloud-infra, its `tangent.yaml`'s
+`../../packs/core/judge.yaml`). It is core's judge without the local model's
+sampling settings, which a hosted model may refuse. An OpenAI-compatible
+endpoint is then `JUDGE_URL`, `JUDGE_MODEL` and `JUDGE_API_KEY`. Claude
+Haiku 5.5 on Bedrock, in your own AWS account and its credential chain,
+with the settings tangent-eval's
+[harness/maincfg.py](https://github.com/EthanBlackburn/tangent-eval/blob/main/harness/maincfg.py)
+runs it with, is the rest of your config:
+
+```yaml
+include: [packs/core/judge-hosted.yaml]
+inference:
+  judge:
+    backend: bedrock
+    model: us.anthropic.claude-haiku-5-5
+    aws: { region: us-west-2 }               # and `profile`; the SDK's chain when unset
+    max_tokens: 400                          # per record
+    extra: { thinking: { type: disabled } }
+```
+
+That merges as shown with `tangent config`; no run of this layout has
+called Bedrock yet ([docs/inference.md](docs/inference.md#backends) has the
+backends).
 
 ## How it decides
 
@@ -390,11 +412,6 @@ To run it: `make` in tangent-eval (Haiku 5.5 on Bedrock, about $1), or
   the model calls under way, so those records are never judged; a crash
   loses the groups outright. Either way that is up to an hour of each active
   actor's records unjudged. They are in the lake.
-- **Core's judge is set for the local model.** `judge.yaml` sends
-  `temperature: 0.7`, `top_p` and `chat_template_kwargs`, which Haiku 5.5
-  does not take, and which other hosted models may refuse. An include can
-  null `extra`'s keys but not drop them, so a hosted judge means overriding
-  `extra` from two files, or writing the node out as tangent-eval does.
 - **No release carries the packs yet**, so every path above compiles them.
 
 ## What it reads
