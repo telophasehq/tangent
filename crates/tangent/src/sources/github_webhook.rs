@@ -35,6 +35,19 @@ struct WebhookState {
     logs_tx: mpsc::Sender<BytesMut>,
 }
 
+/// A delivery whose `X-Hub-Signature-256` is missing, malformed, or not the
+/// body's under `secret`. It is answered 401.
+#[derive(Debug)]
+struct BadSignature(&'static str);
+
+impl std::fmt::Display for BadSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for BadSignature {}
+
 lazy_static! {
     static ref GITHUB_LOG_LINE_RE: Regex = Regex::new(
         r"^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))\s+(?P<msg>.*)$"
@@ -154,6 +167,9 @@ async fn webhook_handler(
         // the failure is the sender's (a bad signature, a body cut short),
         // and anyone who can reach the port can send one.
         tracing::warn!("github webhook delivery refused: {err:#}");
+        if err.is::<BadSignature>() {
+            return (StatusCode::UNAUTHORIZED, "bad signature");
+        }
         return (StatusCode::INTERNAL_SERVER_ERROR, "internal error");
     }
 
@@ -197,10 +213,10 @@ async fn handle_request(
     let mut buf = read_body(body).await?;
 
     if let Some(secret) = &cfg.secret {
-        let provided = sig_header.ok_or_else(|| anyhow!("missing X-Hub-Signature-256 header"))?;
+        let provided = sig_header.ok_or(BadSignature("missing X-Hub-Signature-256 header"))?;
 
         if !provided.starts_with("sha256=") {
-            return Err(anyhow!("invalid X-Hub-Signature-256 format"));
+            return Err(BadSignature("invalid X-Hub-Signature-256 format").into());
         }
         let provided_sig = &provided["sha256=".len()..];
 
@@ -210,7 +226,7 @@ async fn handle_request(
 
         let expected = hex::encode(mac.finalize().into_bytes());
         if !constant_time_eq::constant_time_eq(expected.as_bytes(), provided_sig.as_bytes()) {
-            return Err(anyhow!("invalid webhook signature"));
+            return Err(BadSignature("invalid webhook signature").into());
         }
     }
 
@@ -498,9 +514,9 @@ mod tests {
         resp.status().as_u16()
     }
 
-    /// A delivery without a good signature is refused, and the source takes
-    /// the next: one used to end the source, closing the port until tangent
-    /// restarted.
+    /// A delivery without a good signature is refused with 401, and the
+    /// source takes the next: one used to end the source, closing the port
+    /// until tangent restarted.
     #[tokio::test]
     async fn a_badly_signed_delivery_is_refused_and_a_signed_one_after_it_taken() {
         let deliveries = Arc::new(Deliveries::default());
@@ -540,10 +556,12 @@ mod tests {
         }
 
         let unsigned = deliver(addr, r#"{"n":1}"#, None).await;
-        assert_eq!(unsigned, 500, "unsigned");
+        assert_eq!(unsigned, 401, "unsigned");
         let wrong = deliver(addr, r#"{"n":2}"#, Some(signature("another body"))).await;
-        assert_eq!(wrong, 500, "signed over another body");
-        let signed = deliver(addr, r#"{"n":3}"#, Some(signature(r#"{"n":3}"#))).await;
+        assert_eq!(wrong, 401, "signed over another body");
+        let malformed = deliver(addr, r#"{"n":3}"#, Some("md5=0f".to_string())).await;
+        assert_eq!(malformed, 401, "not sha256=");
+        let signed = deliver(addr, r#"{"n":4}"#, Some(signature(r#"{"n":4}"#))).await;
         assert_eq!(signed, 200, "signed");
 
         while deliveries.0.lock().await.is_empty() {
@@ -560,7 +578,7 @@ mod tests {
             .iter()
             .map(|w| String::from_utf8_lossy(w).trim_end().to_string())
             .collect();
-        assert_eq!(got, [r#"{"n":3}"#], "the signed delivery, and only it");
+        assert_eq!(got, [r#"{"n":4}"#], "the signed delivery, and only it");
         shutdown.cancel();
         source.await.unwrap().unwrap();
     }
