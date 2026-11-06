@@ -15,10 +15,14 @@ pub fn dir() -> Result<PathBuf> {
 
 /// Where `tangent plugin fetch` keeps what it downloaded: each plugin's
 /// component, its attestation bundle and its `.cwasm`, in a directory for
-/// each `prebuilt` ([`crate::plugins::fetched`]). Per version, as a `.cwasm`
-/// is: the next tangent's wasmtime refuses this one's.
+/// each `prebuilt` ([`crate::plugins::fetched`]). Per version, and under
+/// that per engine ([`crate::wasm_engine::compatibility`]), since a `.cwasm`
+/// loads only on the engine that made it: a tangent of the same version
+/// built with another wasmtime, or a cache shared by machines with other
+/// CPUs, fetches its own instead of failing on this one's.
 pub fn plugins() -> Result<PathBuf> {
-    Ok(dir()?.join("plugins"))
+    let engine = crate::wasm_engine::compatibility()?;
+    Ok(dir()?.join("plugins").join(format!("{engine:016x}")))
 }
 
 /// [`dir`], with `var` for the environment. A variable that is unset, empty

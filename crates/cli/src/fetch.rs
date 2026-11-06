@@ -1,9 +1,10 @@
 //! `tangent plugin fetch`: each plugin's compiled component from the release
 //! its `prebuilt` names, checked against GitHub's attestation of the build,
-//! and precompiled into tangent's cache, per tangent version
-//! (`~/.cache/tangent/<version>/plugins`), where `tangent run` reads it when
-//! `runtime.plugins_path` has no build of its own. Only a pack's author needs
-//! the WASM toolchain: a component built once runs on every machine.
+//! and precompiled into tangent's cache, per tangent version and engine
+//! (`~/.cache/tangent/<version>/plugins/<engine>`), where `tangent run` reads
+//! it when `runtime.plugins_path` has no build of its own. Only a pack's
+//! author needs the WASM toolchain: a component built once runs on every
+//! machine.
 //!
 //! The check is `gh attestation verify`, GitHub's own verifier: the
 //! component's attestation (a Sigstore bundle, the asset beside it on the
