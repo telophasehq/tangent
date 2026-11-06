@@ -17,7 +17,8 @@ setup:
 fetch: setup
 	$(TANGENT) plugin fetch --config tangent.yaml
 
-compile: setup
+# `./setup.sh toolchain` fetches the tables too, so not `compile: setup`.
+compile:
 	./setup.sh toolchain
 	$(TANGENT) plugin compile --config tangent.yaml
 
