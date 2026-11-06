@@ -1,4 +1,4 @@
-//! Drops the records the sqlite source sent as `_context`, judged when they were new.
+//! Drops the `_context` records, the actor's earlier records that baseline_renderer's `history` sends again; they were judged when they were new.
 
 wit_bindgen::generate!({
     path: ".tangent/wit",
