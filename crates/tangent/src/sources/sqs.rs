@@ -115,6 +115,11 @@ async fn consume(
                                                         }
                                                     }
                                                 }
+                                                // Removed or moved before it was read: no later
+                                                // read finds it, so keeping the message is no use.
+                                                Err(e) if e.as_service_error().is_some_and(|e| e.is_no_such_key()) => {
+                                                    tracing::warn!("S3 object {bucket}/{key} is gone; skipped");
+                                                }
                                                 Err(e) => {
                                                     tracing::error!("S3 get {bucket}/{key}: {e}; the message stays on the queue");
                                                     unread = true;
@@ -248,12 +253,13 @@ mod tests {
 
     /// A queue and a bucket on one local port. ReceiveMessage hands out
     /// `messages` once and nothing after; DeleteMessage is noted; a GET of
-    /// `/bucket/<key>` (percent-decoded) answers with the object, or 403
-    /// for a key not there.
+    /// `/bucket/<key>` (percent-decoded) answers with the object, 404
+    /// NoSuchKey for a key in `gone`, or 403 for any other key.
     #[derive(Default)]
     struct Aws {
         messages: Mutex<Vec<Value>>,
         objects: Vec<(&'static str, &'static str)>,
+        gone: Vec<&'static str>,
         receives: AtomicUsize,
         deleted: Mutex<Vec<String>>,
     }
@@ -298,6 +304,15 @@ mod tests {
                 .find(|(k, _)| path == format!("/bucket/{k}"))
             {
                 Some((_, object)) => Response::new(Body::from(*object)),
+                None if aws.gone.iter().any(|k| path == format!("/bucket/{k}")) => {
+                    Response::builder()
+                        .status(404)
+                        .header("content-type", "application/xml")
+                        .body(Body::from(
+                            "<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>",
+                        ))
+                        .unwrap()
+                }
                 None => Response::builder()
                     .status(403)
                     .header("content-type", "application/xml")
@@ -478,6 +493,30 @@ mod tests {
         run.result.unwrap();
         assert_eq!(run.deleted, ["removed", "expired"]);
         assert!(run.written.is_empty());
+    }
+
+    /// An object removed (or moved) before it was read is skipped, and the
+    /// rest of its message read: no later read can find it. Keeping the
+    /// message brought it back every visibility timeout until its
+    /// retention ended.
+    #[tokio::test]
+    async fn an_object_gone_before_it_was_read_is_skipped() {
+        let run = run(
+            "sqs-gone",
+            Aws {
+                messages: Mutex::new(vec![
+                    created("gone", &["moved.json"]),
+                    created("half", &["a.json", "moved.json"]),
+                ]),
+                objects: vec![("a.json", "{\"n\":1}\n")],
+                gone: vec!["moved.json"],
+                ..Aws::default()
+            },
+        )
+        .await;
+        run.result.unwrap();
+        assert_eq!(run.deleted, ["gone", "half"]);
+        assert_eq!(run.written, ["{\"n\":1}\n"]);
     }
 
     /// A notification's key is form-encoded: '+' is a space, "%2B" a '+'.
