@@ -6,6 +6,15 @@ use memchr::{memchr, memchr_iter};
 use serde::Deserialize;
 use tangent_shared::sources::common::{DecodeCompression, DecodeFormat};
 
+use crate::SOURCE_UNDECODABLE_TOTAL;
+
+/// What a source read and could not decode: it is counted and skipped, and
+/// the source reads on. Read again, it would fail again.
+pub fn skip_undecodable(source: &str, what: &str, e: &anyhow::Error) {
+    SOURCE_UNDECODABLE_TOTAL.with_label_values(&[source]).inc();
+    tracing::warn!(source, "{what} does not decode, skipped: {e:#}");
+}
+
 pub fn decompress_bytes(comp: &DecodeCompression, data: BytesMut) -> Result<BytesMut> {
     Ok(match comp {
         DecodeCompression::None | DecodeCompression::Auto => data,

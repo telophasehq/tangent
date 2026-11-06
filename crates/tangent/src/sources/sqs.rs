@@ -38,7 +38,9 @@ async fn consume(
 ) -> Result<()> {
     let qurl = Arc::new(cfg.queue_url);
     let dc = cfg.decoding.clone();
-    let from = NodeRef::Source { name: name };
+    let from = NodeRef::Source {
+        name: Arc::clone(&name),
+    };
 
     loop {
         tokio::select! {
@@ -100,8 +102,10 @@ async fn consume(
                                                                 }
                                                             };
 
-                                                            let mut ndjson = decoding::normalize_to_ndjson(&cfg.decoding.format, raw)?;
-                                                            frames_all.extend(decoding::chunk_ndjson(&mut ndjson, chunks));
+                                                            match decoding::normalize_to_ndjson(&cfg.decoding.format, raw) {
+                                                                Ok(mut ndjson) => frames_all.extend(decoding::chunk_ndjson(&mut ndjson, chunks)),
+                                                                Err(e) => decoding::skip_undecodable(&name, &format!("S3 object {bucket}/{key}"), &e),
+                                                            }
                                                         }
                                                         Err(e) => {
                                                             tracing::error!("S3 collect {bucket}/{key}: {e}; the message stays on the queue");
@@ -141,8 +145,10 @@ async fn consume(
                                     }
                                 };
 
-                                let mut ndjson = decoding::normalize_to_ndjson(&cfg.decoding.format, raw)?;
-                                frames_all.extend(decoding::chunk_ndjson(&mut ndjson, chunks));
+                                match decoding::normalize_to_ndjson(&cfg.decoding.format, raw) {
+                                    Ok(mut ndjson) => frames_all.extend(decoding::chunk_ndjson(&mut ndjson, chunks)),
+                                    Err(e) => decoding::skip_undecodable(&name, "the message body", &e),
+                                }
                             }
 
                             if !frames_all.is_empty() {
@@ -226,6 +232,7 @@ impl Ack for SqsAck {
 mod tests {
     use super::*;
     use crate::sinks::manager::{Sink, SinkManager, SinkWrite};
+    use crate::SOURCE_UNDECODABLE_TOTAL;
     use axum::{
         body::Body,
         extract::{Request, State},
@@ -439,5 +446,35 @@ mod tests {
         run.result.unwrap();
         assert_eq!(run.deleted, ["read"]);
         assert_eq!(run.written, ["{\"n\":1}\n"], "only the message read whole");
+    }
+
+    /// A body, or an object, that does not decode is counted and skipped,
+    /// and the source reads on. It ended the source: tangent ran on with
+    /// no input, and the message, back after its visibility timeout, ended
+    /// the next run's source too.
+    #[tokio::test]
+    async fn a_message_that_does_not_decode_is_skipped() {
+        let run = run(
+            "sqs-undecodable",
+            Aws {
+                messages: Mutex::new(vec![
+                    created("object", &["notes.txt"]),
+                    message("body", "not ndjson"),
+                    message("good", "{\"n\":2}"),
+                ]),
+                objects: vec![("notes.txt", "not ndjson either")],
+                ..Aws::default()
+            },
+        )
+        .await;
+        run.result.unwrap();
+        assert_eq!(run.written, ["{\"n\":2}\n"]);
+        assert_eq!(
+            run.deleted,
+            ["object", "body", "good"],
+            "skipped, not kept to fail again"
+        );
+        let skipped = SOURCE_UNDECODABLE_TOTAL.with_label_values(&["sqs-undecodable"]);
+        assert_eq!(skipped.get(), 2);
     }
 }
