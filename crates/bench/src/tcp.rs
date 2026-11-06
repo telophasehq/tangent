@@ -67,6 +67,9 @@ pub async fn run_bench(
                 .filter(|line| !line.is_empty())
                 .map(|line| serde_json::from_slice::<Value>(line))
                 .collect::<Result<_, _>>()?;
+            // The payload is NDJSON, one record per line: each copy of it
+            // sends this many records.
+            let records_per_payload = templates.len() as u64;
 
             let deadline = Instant::now() + Duration::from_secs(seconds);
             let mut buf = Vec::with_capacity(max_bytes.max(payload.len()));
@@ -100,7 +103,7 @@ pub async fn run_bench(
                 } else {
                     while max_bytes == 0 || buf.len() + payload.len() <= max_bytes {
                         buf.extend_from_slice(&payload);
-                        events_per_buff += 1;
+                        events_per_buff += records_per_payload;
                         if max_bytes == 0 {
                             break;
                         }
@@ -109,7 +112,7 @@ pub async fn run_bench(
 
                 if buf.is_empty() {
                     buf.extend_from_slice(&payload);
-                    events_per_buff = 1;
+                    events_per_buff = records_per_payload;
                 }
 
                 let buf_len = buf.len();
