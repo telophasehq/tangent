@@ -152,15 +152,24 @@ fi
   rm -rf "$tmpdir"
 }
 
+# Appends `line` to each profile that lacks it. A second argument, an extended
+# regex, first deletes the lines it matches: the ones `line` replaces.
 persist_export_line() {
-  local line="$1"
+  local line="$1" stale="${2:-}"
   local profiles=(
     "${HOME}/.zshrc" "${HOME}/.zprofile"
     "${HOME}/.bashrc" "${HOME}/.bash_profile"
     "${HOME}/.profile"
   )
+  local tmp
   for f in "${profiles[@]}"; do
     [[ -f "$f" ]] || continue
+    if [[ -n "$stale" ]] && grep -Eq "$stale" "$f"; then
+      tmp="$(mktemp)"
+      # cat >, not mv: a profile that is a symlink stays one
+      sed -E "\\#${stale}#d" "$f" > "$tmp" && cat "$tmp" > "$f"
+      rm -f "$tmp"
+    fi
     if ! grep -Fqx "$line" "$f"; then
       printf '\n%s\n' "$line" >> "$f"
     fi
@@ -172,7 +181,9 @@ persist_path_userbin() {
 }
 
 persist_tinygoroot() {
-  persist_export_line 'export TINYGOROOT="$HOME/.local/opt/tinygo/current"'
+  # replaces a line an earlier setup.sh wrote naming one version, which an upgrade left stale
+  persist_export_line 'export TINYGOROOT="$HOME/.local/opt/tinygo/current"' \
+    '^export TINYGOROOT="\$HOME/\.local/opt/tinygo/[0-9][^"]*"$'
 }
 
 print_versions() {
