@@ -1,6 +1,5 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use std::fs::File;
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
@@ -10,6 +9,7 @@ use tangent_shared::sinks::rolling_file::subdir;
 use tokio::task::spawn_blocking;
 
 use crate::sinks::s3::S3SinkItem;
+use crate::sinks::template::Template;
 use crate::sinks::wal::WALSink;
 
 /// A rolling_file sink's `path`: the part with no strftime specifier, where
@@ -18,7 +18,7 @@ use crate::sinks::wal::WALSink;
 #[derive(Debug)]
 pub struct PathTemplate {
     root: PathBuf,
-    rest: Option<String>,
+    rest: Option<Arc<Template>>,
 }
 
 impl PathTemplate {
@@ -35,12 +35,13 @@ impl PathTemplate {
                 anyhow::bail!("path {path:?}: no `.` or `..` after the first strftime specifier");
             }
         }
-        let rest = (!rest.is_empty()).then(|| rest.join("/"));
-        if let Some(r) = &rest {
-            if !strftime_renders(r) {
-                anyhow::bail!("path {path:?}: {r:?} is not a strftime template");
-            }
-        }
+        let rest = match rest.join("/") {
+            r if r.is_empty() => None,
+            r => match Template::parse(&r) {
+                Some(t) => Some(Arc::new(t)),
+                None => anyhow::bail!("path {path:?}: {r:?} is not a strftime template"),
+            },
+        };
         Ok(Self { root, rest })
     }
 
@@ -49,24 +50,11 @@ impl PathTemplate {
         &self.root
     }
 
-    /// The directory below the root a write made at `now` goes to.
-    pub fn route(&self, now: DateTime<Utc>) -> Option<Arc<str>> {
-        self.rest
-            .as_ref()
-            .map(|r| Arc::from(now.format(r).to_string()))
+    /// What a write's directory below the root renders from; none for a
+    /// `path` without a specifier.
+    pub fn rest(&self) -> Option<&Arc<Template>> {
+        self.rest.as_ref()
     }
-}
-
-/// Whether chrono can write `template` for a UTC time: a rolling_file
-/// sink's `path` and an s3 sink's `key_prefix` are checked with it at load.
-/// chrono's strftime parser takes a few specifiers it can only read
-/// (`%#z`), so parsing is not enough: writing one fails, and
-/// `format(..).to_string()` panics on the first write routed through it.
-/// Whether a UTC time writes does not depend on which time it is, so one
-/// trial render covers every write.
-pub(crate) fn strftime_renders(template: &str) -> bool {
-    use std::fmt::Write as _;
-    write!(String::new(), "{}", Utc::now().format(template)).is_ok()
 }
 
 /// The far side of a WAL for a local directory: each sealed file, in the
@@ -148,6 +136,7 @@ mod tests {
     use crate::sinks::wal::DurableFileSink;
     use arrow_array::cast::AsArray;
     use bytes::BytesMut;
+    use chrono::{DateTime, Utc};
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
     use std::collections::BTreeMap;
     use std::sync::Arc;
@@ -354,10 +343,10 @@ mod tests {
             .with_timezone(&Utc);
         let t = PathTemplate::parse("lake/logs/%Y/%m/%d/%H").unwrap();
         assert_eq!(t.root(), Path::new("lake/logs"));
-        assert_eq!(t.route(at).as_deref(), Some("2026/11/02/13"));
+        assert_eq!(&*t.rest().unwrap().render(at), "2026/11/02/13");
         let fixed = PathTemplate::parse("/var/lake").unwrap();
         assert_eq!(fixed.root(), Path::new("/var/lake"));
-        assert_eq!(fixed.route(at), None);
+        assert!(fixed.rest().is_none());
         assert!(PathTemplate::parse("lake/%Y/../x").is_err());
         assert!(PathTemplate::parse("lake/%Q").is_err());
         // chrono parses `%#z` but cannot write it

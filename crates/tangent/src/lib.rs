@@ -91,6 +91,12 @@ lazy_static::lazy_static! {
         &["sink"]
     ).unwrap();
 
+    pub static ref SINK_RECORDS_UNTIMED_TOTAL: IntCounterVec = register_int_counter_vec!(
+        "tangent_sink_records_untimed_total",
+        "Records without an RFC 3339 time in their sink's timestamp_field: put under the prefix of the time they reached the sink",
+        &["sink"]
+    ).unwrap();
+
     pub static ref INFLIGHT: IntGauge =
         register_int_gauge!("tangent_inflight", "Batches enqueued but not yet persisted").unwrap();
 

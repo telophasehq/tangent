@@ -179,7 +179,7 @@ sinks:
         _norm: { org: string, actor: string }
 ```
 
-An `s3` sink goes through the same WAL and puts each sealed file in `bucket_name` as one object, named as a `rolling_file` sink's files are. Its `key_prefix` is what each object's key starts with, before a `/` and the name: a strftime template rendered in UTC when a write reaches the sink, as a `rolling_file` sink's `path` is, so `logs/cloudtrail/%Y/%m/%d` puts each day's objects under a prefix of their own (`%%` is a `%`). It is a path in the bucket, and strftime is all that is rendered: `tangent run` and `tangent config` refuse one that is not a strftime template, holds a `{{ field }}`, starts with `/`, or has an empty (`//`), `.` or `..` segment. Without it, objects go to the bucket's root:
+An `s3` sink goes through the same WAL and puts each sealed file in `bucket_name` as one object, named as a `rolling_file` sink's files are. Its `key_prefix` is what each object's key starts with, before a `/` and the name: a strftime template rendered in UTC for each record's own time, the RFC 3339 string in the field `timestamp_field` names (`ts` unless set; found as `group_by` finds a field, so `a.b` is a key holding all of it or else field `b` of the object at `a`, and `a[0].b` is in the first item of the list at `a`), so `logs/cloudtrail/%Y/%m/%d` puts each day's records under a prefix of their own, whenever they arrive, a replay's too (`%%` is a `%`). It is a path in the bucket, and strftime is all that is rendered: `tangent run` and `tangent config` refuse one that is not a strftime template, holds a `{{ field }}`, starts with `/`, or has an empty (`//`), `.` or `..` segment. Without it, objects go to the bucket's root. A record whose field is missing or not RFC 3339 (an epoch number, which a `sqlite` sink's `timestamp_key` takes, is not) goes under the time it reaches the sink, and `tangent_sink_records_untimed_total{sink}` counts it; a `key_prefix` with no specifier reads no record's time. A record arriving after its prefix's objects went out adds another object under it. The WAL keeps a file open for at most 32 prefixes at once, sealing the one written longest ago, so records far out of time order make small objects:
 
 ```yaml
 sinks:
@@ -187,6 +187,7 @@ sinks:
     type: s3
     bucket_name: acme-logs
     key_prefix: logs/cloudtrail/%Y/%m/%d   # logs/cloudtrail/2026/11/06/<ULID>.ndjson.zst
+    timestamp_field: ts                    # the default
     wal_path: /var/lib/tangent/wal
 ```
 

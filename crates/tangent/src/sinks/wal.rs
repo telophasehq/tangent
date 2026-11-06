@@ -35,6 +35,14 @@ const RETRY_EVERY: Duration = if cfg!(test) {
     Duration::from_secs(30)
 };
 
+/// The most routes a WAL keeps a file open for at once. Each open route
+/// holds a file descriptor, and a prefix rendered from records' own times
+/// can name thousands of routes (a year of hours is 8,760): at the cap, the
+/// route written longest ago is sealed before another opens. Live records
+/// and a replay in time order keep one or two routes open. 32 leaves room
+/// for several WAL sinks under macOS's default of 256 descriptors.
+const MAX_OPEN_ROUTES: usize = if cfg!(test) { 4 } else { 32 };
+
 pub struct DurableFileSink {
     inner: Arc<dyn WALSink>,
     dir: PathBuf,
@@ -166,6 +174,16 @@ impl DurableFileSink {
         Ok(s)
     }
 
+    /// Stops the rotator and leaves each open file as it is, as a process
+    /// killed before its flush does.
+    #[cfg(test)]
+    pub(crate) async fn stop_without_flush(&self) {
+        self.stop.cancel();
+        if let Some(h) = self.rotator.lock().await.take() {
+            let _ = h.await;
+        }
+    }
+
     /// Seals the route's open file and closes the route: its next file is
     /// opened by the write that needs it. With `only`, only if the open file
     /// is still that one, so writers that each found it full seal it once
@@ -180,7 +198,9 @@ impl DurableFileSink {
                 return Ok(());
             }
 
-            if let Some(f) = rs.cur.file.take() {
+            // the file stays the route's until it is sealed: a route whose
+            // seal failed takes its next write, and is sealed at the next try
+            if let Some(f) = &rs.cur.file {
                 f.sync_data().await?;
             }
 
@@ -189,6 +209,7 @@ impl DurableFileSink {
             fs::rename(&rs.cur.path, &sealed).await?;
             let sealed_bytes = rs.cur.bytes as u64;
             let meta = rs.meta.clone();
+            // and is closed with it
             routes.remove(&rkey);
 
             (sealed, sealed_bytes, meta)
@@ -320,6 +341,12 @@ impl DurableFileSink {
         };
 
         let mut js = self.uploads.lock().await;
+        // a finished send is let go here, not kept until the next flush
+        while let Some(done) = js.try_join_next() {
+            if let Err(e) = done {
+                tracing::warn!("upload task join error: {e}");
+            }
+        }
 
         js.spawn(async move {
             match fut.await {
@@ -382,6 +409,25 @@ impl Sink for DurableFileSink {
             // a route has a file only while a write needs one, opened under
             // the lock: concurrent writes open one file, not one each, the
             // losers' left empty in the WAL
+            if !routes.contains_key(&rkey) && routes.len() >= MAX_OPEN_ROUTES {
+                let (oldest, rs) = routes
+                    .iter()
+                    .min_by_key(|(_, rs)| rs.last_used)
+                    .expect("routes at the cap");
+                let (oldest, path) = (oldest.clone(), rs.cur.path.clone());
+                if rs.cur.bytes == 0 {
+                    // a route whose only write failed: sealing passes an
+                    // empty file by, so it goes, as at a flush
+                    routes.remove(&oldest);
+                    drop(routes);
+                    let _ = fs::remove_file(&path).await;
+                    let _ = fs::remove_file(meta_path_for(&path)).await;
+                } else {
+                    drop(routes);
+                    self.rotate_route(oldest, Some(&path)).await?;
+                }
+                continue;
+            }
             if !routes.contains_key(&rkey) {
                 let cur = open_route_current(
                     &self.dir,
@@ -401,7 +447,6 @@ impl Sink for DurableFileSink {
                         last_used: Instant::now(),
                     },
                 );
-                // TODO: enforce self.max_open_routes
             }
             let rs = routes.get_mut(&rkey).expect("route opened above");
             // a write bigger than a file gets a file of its own: rotating
@@ -869,6 +914,137 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    fn routed(payload: &str, prefix: &str) -> SinkWrite {
+        let mut w = write(payload);
+        w.s3.as_mut().unwrap().key_prefix = Some(Arc::from(prefix));
+        w
+    }
+
+    async fn open_routes(wal: &DurableFileSink) -> Vec<String> {
+        let routes = wal.routes.lock().await;
+        let mut open: Vec<String> = routes
+            .keys()
+            .map(|k| k.prefix.as_deref().unwrap_or_default().to_string())
+            .collect();
+        open.sort();
+        open
+    }
+
+    #[tokio::test]
+    async fn past_the_cap_a_new_route_seals_the_one_written_longest_ago() {
+        let dir = wal_dir("cap");
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            1 << 20,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        let record = |n: usize, h: &str| format!("{{\"n\":{n},\"h\":\"{h}\"}}\n");
+        let hours = ["h0", "h1", "h2", "h3", "h0", "h4"];
+        for (n, h) in hours.iter().enumerate() {
+            wal.write(routed(&record(n, h), h)).await.unwrap();
+            assert!(open_routes(&wal).await.len() <= MAX_OPEN_ROUTES);
+        }
+        assert_eq!(
+            open_routes(&wal).await,
+            ["h0", "h2", "h3", "h4"],
+            "h1 was written longest ago; h0 again since"
+        );
+        let mut want: Vec<String> = hours
+            .iter()
+            .enumerate()
+            .map(|(n, h)| record(n, h))
+            .collect();
+        for n in 6..12 {
+            let h = format!("h{n}");
+            wal.write(routed(&record(n, &h), &h)).await.unwrap();
+            assert!(open_routes(&wal).await.len() <= MAX_OPEN_ROUTES);
+            want.push(record(n, &h));
+        }
+        wal.flush().await.unwrap();
+        let mut got: Vec<String> = rec
+            .got
+            .lock()
+            .await
+            .iter()
+            .flat_map(|(_, bytes)| {
+                let text = String::from_utf8(bytes.clone()).unwrap();
+                text.split_inclusive('\n')
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        got.sort();
+        want.sort();
+        assert_eq!(got, want, "every record sent once");
+        assert_eq!(names_in(&dir), Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A route whose only write failed holds an empty file, which sealing
+    /// passes by: at the cap it goes, with its meta, or the write waiting
+    /// for its slot would wait for ever.
+    #[tokio::test]
+    async fn at_the_cap_an_empty_route_is_removed() {
+        let dir = wal_dir("cap-empty");
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            1 << 20,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        let meta = WalMeta {
+            bucket_name: Arc::from(""),
+            key_prefix: None,
+            encoding: Encoding::NDJSON,
+            compression: Compression::None,
+        };
+        for n in 0..MAX_OPEN_ROUTES {
+            let cur = open_route_current(&dir, &meta).await.unwrap();
+            wal.routes.lock().await.insert(
+                RouteKey {
+                    sink_name: Arc::from("logs"),
+                    prefix: Some(Arc::from(format!("failed{n}"))),
+                },
+                RouteState {
+                    cur,
+                    meta: s3::S3SinkItem {
+                        bucket_name: Arc::from(""),
+                        key_prefix: Some(Arc::from(format!("failed{n}"))),
+                    },
+                    last_used: Instant::now(),
+                },
+            );
+        }
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            wal.write(routed("{\"n\":1}\n", "new")),
+        )
+        .await
+        .expect("the write returns")
+        .unwrap();
+        let open = open_routes(&wal).await;
+        assert_eq!(open.len(), MAX_OPEN_ROUTES, "{open:?}");
+        assert!(!open.contains(&"failed0".to_string()), "{open:?}");
+        // the removed route's file and meta, and the rest at the flush
+        wal.flush().await.unwrap();
+        assert_eq!(rec.got.lock().await.len(), 1);
+        assert_eq!(names_in(&dir), Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[tokio::test]
     async fn a_route_sealed_by_age_leaves_no_file_open() {
         let dir = wal_dir("idle");
@@ -899,6 +1075,84 @@ mod tests {
         .await
         .expect("each route sealed, sent and gone by age");
         assert_eq!(wal.routes.lock().await.len(), 0, "no route kept open");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A finished send is let go when the next one starts, not kept until
+    /// a flush.
+    #[tokio::test]
+    async fn a_finished_send_is_not_kept() {
+        let dir = wal_dir("reap");
+        let rec = Arc::new(Recorder::default());
+        // a file holds one write: each write seals the one before
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            8,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        for n in 0..40 {
+            wal.write(write(&format!("{{\"n\":{n}}}\n"))).await.unwrap();
+        }
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while rec.got.lock().await.len() < 39 || wal.inflight.load(Ordering::Acquire) > 0 {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("39 sealed and sent");
+        sleep(Duration::from_millis(50)).await;
+        wal.write(write("{\"n\":40}\n")).await.unwrap();
+        assert_eq!(
+            wal.uploads.lock().await.len(),
+            1,
+            "only the send just started"
+        );
+        wal.flush().await.unwrap();
+        assert_eq!(rec.got.lock().await.len(), 41);
+        assert_eq!(names_in(&dir), Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A route whose seal failed keeps its file: its next write goes in,
+    /// and the next try seals both.
+    #[tokio::test]
+    async fn a_route_whose_seal_failed_takes_its_next_write() {
+        let dir = wal_dir("seal-failed");
+        let rec = Arc::new(Recorder::default());
+        let wal = DurableFileSink::new(
+            rec.clone(),
+            &dir,
+            4,
+            1 << 20,
+            Duration::from_secs(3600),
+            Compression::None,
+            Encoding::NDJSON,
+        )
+        .await
+        .unwrap();
+        wal.write(write("{\"n\":1}\n")).await.unwrap();
+        let (key, open) = {
+            let routes = wal.routes.lock().await;
+            let (k, rs) = routes.iter().next().unwrap();
+            (k.clone(), rs.cur.path.clone())
+        };
+        // a directory where the sealed file goes fails the rename
+        let blocker = open.with_extension("bin.sealed");
+        std::fs::create_dir(&blocker).unwrap();
+        assert!(wal.rotate_route(key, None).await.is_err());
+        wal.write(write("{\"n\":2}\n")).await.unwrap();
+        std::fs::remove_dir(&blocker).unwrap();
+        wal.flush().await.unwrap();
+        let got = rec.got.lock().await;
+        assert_eq!(got.len(), 1, "sent once");
+        assert_eq!(got[0].1, b"{\"n\":1}\n{\"n\":2}\n");
+        assert_eq!(names_in(&dir), Vec::<String>::new());
         let _ = std::fs::remove_dir_all(dir);
     }
 
