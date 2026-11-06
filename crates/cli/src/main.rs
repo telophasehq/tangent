@@ -148,7 +148,9 @@ enum PluginCommands {
     /// repository's CI, and check GitHub's attestation of each before it is
     /// kept, in tangent's cache for this version
     /// (~/.cache/tangent/<version>/plugins), in place of any `tangent plugin
-    /// compile` build: no WASM toolchain needed, only `gh`
+    /// compile` build: no WASM toolchain needed, only `gh`. `tangent run`
+    /// fetches the ones it is missing; this fetches them again, or ahead of
+    /// time
     Fetch {
         /// Path to YAML config
         #[arg(long, value_name = "FILE")]
@@ -169,6 +171,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Run { config, once } => {
             let cfg = config.canonicalize().unwrap_or(config);
+            fetch::missing(&cfg).await?;
             let opts = RuntimeOptions {
                 once,
                 ..Default::default()

@@ -49,9 +49,7 @@ pub async fn run(opts: FetchOptions) -> Result<()> {
     }
     gh_present()?;
 
-    let client = reqwest::Client::builder()
-        .user_agent(format!("tangent/{VERSION}"))
-        .build()?;
+    let client = client()?;
     let mut fetched: Vec<Verified> = Vec::new();
     for (name, plugin) in &cfg.plugins {
         if opts
@@ -109,6 +107,73 @@ fn remove_local_build(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e).with_context(|| format!("removing {}", built.display())),
     }
+}
+
+/// Before `tangent run` starts: each prebuilt plugin it has neither a local
+/// build of nor a copy fetched for its `prebuilt`, fetched and checked as
+/// `tangent plugin fetch` does, once per tangent version. With none missing
+/// it returns before looking for `gh`, so a machine whose cache has them
+/// never needs it, nor the network.
+pub async fn missing(config_path: &Path) -> Result<()> {
+    let cfg = Config::load(config_path)?.config;
+    cfg.validate()?;
+    let config_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
+    let cache = tangent_shared::cache::plugins();
+    let plugins_dir = config_dir.join(&cfg.runtime.plugins_path);
+    let wanted = wanted(&cfg, &plugins_dir, cache.as_deref().ok());
+    if wanted.is_empty() {
+        return Ok(());
+    }
+    let cache = cache?;
+    let names: Vec<&str> = wanted.iter().map(|(name, _)| *name).collect();
+    println!(
+        "tangent {VERSION}, first run: fetching {} (once per version)",
+        names.join(", ")
+    );
+    gh_present()?;
+
+    let client = client()?;
+    for (name, prebuilt) in wanted {
+        let out = plugins::fetched(&cache, prebuilt);
+        fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
+        fetch_one(&client, name, prebuilt, &out)
+            .await
+            .map_err(|e| unreached(name, e))?;
+    }
+    Ok(())
+}
+
+/// The plugins `tangent run` must fetch first: those with `prebuilt` and
+/// neither a local build nor a copy under `cache` fetched for that
+/// `prebuilt` ([`plugins::compiled`]). A plugin without `prebuilt` is left
+/// to `tangent plugin compile`.
+fn wanted<'a>(
+    cfg: &'a Config,
+    plugins_dir: &Path,
+    cache: Option<&Path>,
+) -> Vec<(&'a str, &'a Prebuilt)> {
+    cfg.plugins
+        .iter()
+        .filter_map(|(name, plugin)| Some((name, plugin, plugin.prebuilt.as_ref()?)))
+        .filter(|(name, plugin, _)| plugins::compiled(name, plugin, plugins_dir, cache).is_none())
+        .map(|(name, _, prebuilt)| (name.as_ref(), prebuilt))
+        .collect()
+}
+
+/// A fetch for `tangent run` that could not reach the release: the plugin
+/// and the request's error, which names the URL, then why tangent needs the
+/// network. Any other failure is left as it is.
+fn unreached(name: &str, e: anyhow::Error) -> anyhow::Error {
+    if !e.chain().any(|c| c.is::<reqwest::Error>()) {
+        return e;
+    }
+    anyhow!("{name}: {e:#}\ntangent fetches each pack's plugin once per version and needs the network for it")
+}
+
+fn client() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(format!("tangent/{VERSION}"))
+        .build()
 }
 
 /// What `gh attestation verify` said of a component.
@@ -234,8 +299,9 @@ fn gh_present() -> Result<()> {
             String::from_utf8_lossy(&o.stderr).trim()
         ),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!(
-            "`gh` (GitHub CLI) not found: it checks each component's attestation. \
-             Install it (brew install gh; https://cli.github.com) and run this again; no login is needed"
+            "`gh` (GitHub CLI) not found: it checks each component's attestation (needed once per \
+             version; later runs use what was fetched). Install it (brew install gh; \
+             https://cli.github.com) and run this again; no login is needed"
         ),
         Err(e) => Err(e).context("running gh"),
     }
@@ -528,6 +594,80 @@ mod tests {
         assert!(!built.join("aws.cwasm").exists());
         assert_eq!(remove_local_build("okta", okta, &built).unwrap(), None);
         assert!(built.join("okta.cwasm").exists());
+    }
+
+    /// Only a prebuilt plugin built nowhere, or fetched for another
+    /// `prebuilt`, is fetched before a run; a file of its name in plugins/
+    /// counts only for a plugin with a source.
+    #[test]
+    fn a_run_fetches_only_the_prebuilt_plugins_it_has_no_copy_of() {
+        let dir = tempfile::tempdir().unwrap();
+        let (built, cache) = (dir.path().join("plugins"), dir.path().join("cache"));
+        let cfg: Config = serde_yaml::from_str(
+            "plugins:
+  compiled: { module_type: rust, path: . }
+  built: { module_type: rust, path: ., prebuilt: { repo: a/b } }
+  stray: { module_type: rust, prebuilt: { repo: a/b } }
+  fetched: { module_type: rust, prebuilt: { repo: a/b } }
+  moved: { module_type: rust, path: ., prebuilt: { repo: a/b, release: v2 } }
+  missing: { module_type: rust, path: ., prebuilt: { repo: a/b } }
+",
+        )
+        .unwrap();
+        fs::create_dir_all(&built).unwrap();
+        for name in ["built", "stray"] {
+            fs::write(built.join(format!("{name}.cwasm")), "").unwrap();
+        }
+        for (name, prebuilt) in [
+            ("fetched", "repo: a/b"),
+            ("moved", "{ repo: a/b, release: v1 }"),
+        ] {
+            let out = plugins::fetched(&cache, &serde_yaml::from_str(prebuilt).unwrap());
+            fs::create_dir_all(&out).unwrap();
+            fs::write(out.join(format!("{name}.cwasm")), "").unwrap();
+        }
+        let names = |w: Vec<(&str, &Prebuilt)>| {
+            w.into_iter()
+                .map(|(n, _)| n.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            names(wanted(&cfg, &built, Some(&cache))),
+            ["missing", "moved", "stray"]
+        );
+        assert_eq!(
+            names(wanted(&cfg, &built, None)),
+            ["fetched", "missing", "moved", "stray"],
+            "no cache: every prebuilt plugin not built here"
+        );
+        fs::write(built.join("missing.cwasm"), "").unwrap();
+        fs::write(built.join("moved.cwasm"), "").unwrap();
+        assert_eq!(names(wanted(&cfg, &built, Some(&cache))), ["stray"]);
+    }
+
+    /// A release out of reach fails the run naming the plugin and the
+    /// request's error, then why tangent needs the network, and sends no one
+    /// to `tangent plugin compile`, which has nothing to build for a pack's
+    /// plugin; nothing leaves this machine (port 0 is never listened on).
+    #[tokio::test]
+    async fn a_release_out_of_reach_says_a_run_needs_the_network_once() {
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let url = "http://127.0.0.1:0/aws.component.wasm";
+        let e = download(&client, url).await.unwrap_err();
+        let err = format!("{:#}", unreached("aws", e));
+        assert!(err.starts_with(&format!("aws: GET {url}: ")), "{err}");
+        assert!(
+            err.ends_with(
+                "\ntangent fetches each pack's plugin once per version and needs the network for it"
+            ),
+            "{err}"
+        );
+
+        let other = anyhow!("aws: aws.component.wasm did not verify, and is not kept");
+        assert_eq!(
+            format!("{:#}", unreached("aws", other)),
+            "aws: aws.component.wasm did not verify, and is not kept"
+        );
     }
 
     #[test]
