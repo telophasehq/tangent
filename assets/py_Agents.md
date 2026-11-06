@@ -54,7 +54,7 @@ class Mapper(wit_world.WitWorld):
 * **`probe()`**: return a list of `mapper.Selector` with predicates in `any` / `all` / `none`. Use `mapper.Pred_Eq((path, log.Scalar_*))`.
 * **`process_logs()`**: accept `List[log.Logview]`, return **`bytes`** (NDJSON for the entire batch).
 
-> The runtime wires these methods via WIT; do **not** rename or change signatures. Raising an exception inside `process_logs` is treated as a **batch failure**.
+> The runtime wires these methods via WIT; do **not** rename or change signatures. `raise Err("why")` inside `process_logs` fails the batch (see [Error handling policy](#error-handling-policy)).
 
 **Required imports used in this repo:**
 
@@ -201,7 +201,8 @@ if lst is not None:
 
 **Default (strict):** If any unrecoverable transform/encode issue occurs:
 
-* **Raise** a `RuntimeError` (or a plain `Exception`) to signal **batch failure** to the runtime.
+* `raise Err("why")`, with `from componentize_py_types import Err`. The runtime logs `guest error` with the message and drops the batch (`drop_on_error`, on by default; `false` passes its records on unchanged).
+* Any other exception (a `RuntimeError`, a `KeyError` from a bug) **traps** the plugin: the runtime logs the Python traceback and `plugin trapped; reinstantiating it`, drops the batch and starts a fresh instance, which is slow. Catch what you expect and turn it into `Err`.
 * Do **not** emit partial output for that batch.
 
 **Dropping records:** If a record is not applicable (should not be emitted), simply **do nothing** for that record (no line added). This should be rare if your probe is narrow.
@@ -273,7 +274,7 @@ tests/expected.json  # JSON of the output: an array of the emitted records (an o
 * [ ] No I/O, no network, no randomness, no threads/async.
 * [ ] `tests/input.json` and `tests/expected.json` present, small, and pass.
 * [ ] `make test` passes.
-* [ ] No prints/logging from the mapper; exceptions only for batch‑fatal errors.
+* [ ] No prints/logging from the mapper; `raise Err(...)` only for batch‑fatal errors.
 
 ---
 
