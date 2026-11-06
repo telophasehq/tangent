@@ -251,7 +251,7 @@ A pack is what tangent knows about one provider's logs, and it is one plugin, na
 | [okta](/packs/okta) | `okta` | the `okta` source: the System Log | Okta's own risk signals kept |
 | [google_workspace](/packs/google_workspace) | `google_workspace` | the `google_workspace` source: login, token, drive and admin activity | each event's parameters by name |
 | [app](/packs/app) | `app`, `agent`, and names you list | NDJSON from your product: its audit log, an AI agent's run log | the customer's tenant as the org |
-| [macos](/packs/macos) | `macos` | `eslogger`, Apple's Endpoint Security tool, through a socket: every program run, the writes and telling reads on an AI agent's settings, instructions, MCP config, transcripts and plugins, on credentials and on what runs at login | the program as actor (its signing identity, else its path) with the programs above it, environments cut to the names that steer an agent; core's queue and judge, examples/macos |
+| [macos](/packs/macos) | `macos` | `eslogger`, Apple's Endpoint Security tool, through a socket: every program run, the writes and telling reads on an AI agent's settings, instructions, MCP config, transcripts and plugins, on credentials and on what runs at login | the program as actor (its signing identity, else its path) with the programs above it, environments cut to the names that steer an agent; one worker, for the process tree; examples/macos |
 
 A pack is a directory: the plugin (`Cargo.toml`, `src/`, Rust compiled to WASM), its fixtures (`tests/`), `ingest.yaml` (the plugin and its fixtures; your config says where its records go), and a README saying what it reads, writes, drops and enriches, with the lines to paste.
 

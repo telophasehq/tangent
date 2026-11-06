@@ -1,8 +1,8 @@
-# judge.yaml without what only a local server takes: its url and key, the
-# sampling, the chat template. judge-haiku.yaml includes it; a file can remove
+# tangent.yaml without what only a local server takes: its url and key, the
+# sampling, the chat template. haiku.yaml includes it; a file can remove
 # `extra` but not one key inside it, so this is a file of its own.
 include:
-  - judge.yaml
+  - tangent.yaml
 
 inference:
   judge:

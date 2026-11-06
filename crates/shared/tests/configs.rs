@@ -101,6 +101,7 @@ fn pipelines_validate_with_and_without_the_judge() {
     for example in [
         "examples/cloud-infra/tangent.yaml",
         "examples/app-log/tangent.yaml",
+        "examples/macos/tangent.yaml",
     ] {
         let cfg = Config::load(&repo.join(example)).unwrap().config;
         cfg.validate()

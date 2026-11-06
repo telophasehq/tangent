@@ -121,7 +121,7 @@ fn proc_of(v: &Value) -> Option<Proc> {
 }
 
 impl Proc {
-    /// Who the program is, for the queue's windows and the baseline: for an
+    /// Who the program is, for the judge's groups and the baseline: for an
     /// interpreter, the script it runs, so npm, a package's postinstall and
     /// an MCP server are not one `node`; else a vendor's signing identity,
     /// which an update keeps (Claude Code's path names its version); else

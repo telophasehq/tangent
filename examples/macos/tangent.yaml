@@ -1,0 +1,35 @@
+# macos: this Mac's eslogger events through packs/macos, each record kept in
+# the lake and folded into its program's history in state.sqlite, and each
+# program's records judged a group at a time, with packs/macos's brief in
+# place of core's, which is written for a company's cloud. One config, one
+# process.
+#
+#   tangent plugin compile --config tangent.yaml
+#   tangent run --config tangent.yaml &     # a local model: JUDGE_URL, JUDGE_MODEL (packs/core/README.md); haiku.yaml for Claude Haiku
+#   sudo eslogger exec fork exit open close create rename unlink btm_launch_item_add tcc_modify \
+#     | nc -U es.sock
+#   tail -f alerts.ndjson
+#
+# eslogger needs root, and the terminal it runs in Full Disk Access (System
+# Settings, Privacy & Security), restarted after the grant. It writes to
+# stdout only, so nc joins it to the socket: root writes it, you own it, and
+# nothing listens on a port.
+include:
+  - ../../packs/core/ingest.yaml              # the runtime, the tables, the lake, each program's baseline
+  - ../../packs/core/judge.yaml               # the judge: each program's records a group at a time
+  - ../../packs/macos/ingest.yaml             # plugin macos, on one worker
+
+inference:
+  judge:
+    prompt_file: ../../packs/macos/judge.md
+
+sources:
+  es:
+    type: socket
+    socket_path: es.sock
+
+dag:
+  - from: { kind: source, name: es }
+    to: [{ kind: plugin, name: macos }]
+  - from: { kind: plugin, name: macos }       # kept, learned, judged (packs/core)
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]

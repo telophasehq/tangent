@@ -6,17 +6,16 @@ describes, where a package script plants a hook in the agent's settings,
 poisons its instructions, adds an MCP server, reads its transcripts, or starts
 it with its API traffic pointed elsewhere. The telemetry is `eslogger`,
 Apple's Endpoint Security command-line tool, already on every Mac. The pack
-is one plugin, `macos`, and it goes where every pack's plugin goes: into
-[core](../core)'s queue, `logs.sqlite`, its lake, and each program's
-baseline, and core's judge reads a program's records back together with
-what it did before. [examples/macos](/examples/macos) runs it:
+is one plugin, `macos`, and its records go where every pack's go: into
+[core](../core)'s lake and each program's baseline, and to core's judge,
+which reads a program's records together with what it did before.
+[examples/macos](/examples/macos) runs it, one config:
 
 ```bash
 cd examples/macos
-tangent plugin compile --config ingest.yaml && tangent plugin compile --config judge.yaml
-tangent run --config ingest.yaml &
+tangent plugin compile --config tangent.yaml
+tangent run --config haiku.yaml &               # or tangent.yaml: a local model
 sudo eslogger exec fork exit open close create rename unlink btm_launch_item_add tcc_modify | nc -U es.sock
-tangent run --config judge-haiku.yaml           # or judge.yaml: a local model
 tail -f alerts.ndjson
 ```
 
@@ -61,8 +60,8 @@ and `parents`, the programs above it nearest first, each by its name (else
 its path) and the arguments it was given after it, cut at 80 bytes, so
 the npm above a package's script says `test` or `install`; from a process
 tree the plugin keeps in state from `fork`, `exec` and `exit` (the pack
-runs ingest on one worker, which keeps the events in order; an entry lasts
-a day). An exec also
+runs the pipeline on one worker, which keeps the events in order; an entry
+lasts a day). An exec also
 carries `started_by`, the nearest parent's name alone, which the baseline
 counts as a resource; the judge reads `parents`. `_norm.actor` is the program, for an exec the one that
 started: an interpreter's `name`, the script it runs, so npm and a package's
@@ -75,16 +74,18 @@ the file; `_facts` adds `agent_env`,
 
 ## The judge
 
-Core's: a program's latest forty records from `logs.sqlite`, the ones already
-judged marked `_context`, with its `_baseline` from ingest's `state.sqlite`.
+Core's: a program's records wait in its group, thirty or an hour's worth, and
+reach the model with its ten before them marked `_context` and its
+`_baseline` from `state.sqlite`. On the pack's one worker the model gets one
+group at a time.
 The baseline reads these records as `macos` ([../core/baseline](../core/baseline)):
 the verb is the event and the group of its file (`write agent_mcp`), the
 resources the file and, for an exec, the program that started it, so it can
 say a program wrote an agent's MCP config, or was started by `node`, for the
-first time. `judge.yaml` here is how the records are written as logfmt; the
-brief is `judge.md`, which a judge config names in place of core's
-(examples/macos/judge.yaml does), since core's is written for a company's
-cloud. It tells the model what the catalog's techniques look like in these
+first time. Core's judge.yaml has the row saying how the records are written
+as logfmt; the brief is `judge.md`, which your config names in place of
+core's (examples/macos/tangent.yaml does), since core's is written for a
+company's cloud. It tells the model what the catalog's techniques look like in these
 records and what an agent does to its own files in the ordinary course: its
 settings and transcripts, `~/.claude.json` written as a tmp file and renamed
 over, a marketplace refresh that writes hundreds of plugin files in a minute,

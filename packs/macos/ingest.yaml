@@ -2,14 +2,16 @@
 # `macos`: every program run (its environment cut to the names that steer an
 # AI agent), and the writes and telling reads on an agent's settings,
 # instructions, MCP config, transcripts and plugins, on credentials and on
-# what runs at login; the rest dropped. Include it in an ingest config with
-# packs/core/ingest.yaml and route a socket source to plugin macos:
-# examples/macos has the lines.
+# what runs at login; the rest dropped. Include it in your config with
+# packs/core/ingest.yaml and judge.yaml, route a socket source to plugin
+# macos, and plugin macos to where its records go: examples/macos has the
+# lines.
 runtime:
   # The plugin builds the process tree from fork, exec and exit, in order.
-  # Without a `partition` (core allows none) the workers take records in
-  # turn, so one process's fork and exec would race: one worker keeps them
-  # in order, for the whole ingest this is included in.
+  # The workers take a source's batches in turn, so with more than one a
+  # process's fork and its exec could race: one worker keeps them in order.
+  # It is the whole pipeline's, the judge's workers too, so the model gets one
+  # request at a time.
   workers: 1
 plugins:
   macos:
@@ -19,7 +21,3 @@ plugins:
     tests:
       - input: tests/input.json
         expected: tests/expected.json
-
-dag:
-  - from: { kind: plugin, name: macos }
-    to: [{ kind: sink, name: logs }, { kind: sink, name: lake }, { kind: plugin, name: baseline_builder }]   # packs/core/ingest.yaml's: the judge's queue, the lake, each program's baseline
