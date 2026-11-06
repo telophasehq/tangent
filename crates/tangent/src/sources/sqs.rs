@@ -80,10 +80,8 @@ async fn consume(
                                         let bucket = r.pointer("/s3/bucket/name").and_then(|x| x.as_str());
                                         let key_enc = r.pointer("/s3/object/key").and_then(|x| x.as_str());
                                         if let (true, Some(bucket), Some(key_enc)) = (created, bucket, key_enc) {
-                                            let mut key = percent_decode_str(key_enc).decode_utf8_lossy().into_owned();
-                                            if key.contains('+') {
-                                                key = key.replace('+', " ");
-                                            }
+                                            // Form-encoded: '+' is a space, so it goes first.
+                                            let key = percent_decode_str(&key_enc.replace('+', " ")).decode_utf8_lossy().into_owned();
 
                                             match s3_client.get_object().bucket(bucket).key(&key).send().await {
                                                 Ok(obj) => {
@@ -250,7 +248,8 @@ mod tests {
 
     /// A queue and a bucket on one local port. ReceiveMessage hands out
     /// `messages` once and nothing after; DeleteMessage is noted; a GET of
-    /// `/bucket/<key>` answers with the object, or 403 for a key not there.
+    /// `/bucket/<key>` (percent-decoded) answers with the object, or 403
+    /// for a key not there.
     #[derive(Default)]
     struct Aws {
         messages: Mutex<Vec<Value>>,
@@ -266,7 +265,9 @@ mod tests {
             .and_then(|t| t.to_str().ok())
             .unwrap_or_default()
             .to_string();
-        let path = req.uri().path().to_string();
+        let path = percent_decode_str(req.uri().path())
+            .decode_utf8_lossy()
+            .into_owned();
         let body = axum::body::to_bytes(req.into_body(), usize::MAX)
             .await
             .unwrap();
@@ -477,6 +478,31 @@ mod tests {
         run.result.unwrap();
         assert_eq!(run.deleted, ["removed", "expired"]);
         assert!(run.written.is_empty());
+    }
+
+    /// A notification's key is form-encoded: '+' is a space, "%2B" a '+'.
+    /// Decoding the percents first made a key's '+' a space, so the
+    /// object was asked for under a key it does not have.
+    #[tokio::test]
+    async fn a_key_with_a_plus_or_a_space_is_read() {
+        let run = run(
+            "sqs-plus",
+            Aws {
+                messages: Mutex::new(vec![
+                    created("plus", &["logs/a%2Bb.json"]),
+                    created("space", &["logs/c+d.json"]),
+                ]),
+                objects: vec![
+                    ("logs/a+b.json", "{\"n\":1}\n"),
+                    ("logs/c d.json", "{\"n\":2}\n"),
+                ],
+                ..Aws::default()
+            },
+        )
+        .await;
+        run.result.unwrap();
+        assert_eq!(run.deleted, ["plus", "space"]);
+        assert_eq!(run.written.concat(), "{\"n\":1}\n{\"n\":2}\n");
     }
 
     /// A body, or an object, that does not decode is counted and skipped,
