@@ -9,3 +9,6 @@ __pycache__/
 **/plugins/
 cache.sqlite*
 state.sqlite*
+alerts.ndjson
+# tangent plugin compile writes it before building and removes it after
+json_generated.go

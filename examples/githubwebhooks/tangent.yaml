@@ -1,5 +1,10 @@
 runtime:
   plugins_path: "plugins/"
+  # The plugin follows a run's log lines in order (the publish step, then its
+  # `+ package@version` line), keeping where it is in the state store. Records
+  # are dealt out to workers one at a time, so with more than one worker a
+  # run's lines can be handled out of order and a publish missed.
+  workers: 1
 plugins:
   githubwebhooks:
     module_type: go
@@ -12,13 +17,17 @@ sources:
     type: github_webhook
     bind_address: 0.0.0.0:9000
     path: /webhook
-    token: "${GITHUB_TOKEN}"  
+    # Reads a completed workflow run's logs from the GitHub API.
+    token: "${GITHUB_TOKEN}"
+    # With a secret, a delivery must carry GitHub's X-Hub-Signature-256.
+    # secret: "${GITHUB_WEBHOOK_SECRET}"
 sinks:
-  blackhole:
-    type: blackhole
+  alerts:
+    type: file
+    path: alerts.ndjson
 dag:
   - from: github
     to: [githubwebhooks]
 
   - from: githubwebhooks
-    to: [blackhole]
+    to: [alerts]
