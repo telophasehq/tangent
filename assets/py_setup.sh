@@ -88,7 +88,7 @@ install_componentize_py() {
 }
 
 print_versions() {
-  echo "\n==> Versions"
+  printf '\n==> Versions\n'
   if has_cmd wasm-tools; then wasm-tools --version || true; else echo "wasm-tools: not found"; fi
   if has_cmd componentize-py; then componentize-py --version || true; else echo "componentize-py: not found"; fi
 }
@@ -98,6 +98,6 @@ install_componentize_py
 
 print_versions
 
-echo "\n==> Done. You may need to restart your shell so pipx changes take effect."
+printf '\n==> Done. You may need to restart your shell so pipx changes take effect.\n'
 
 
