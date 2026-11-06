@@ -212,14 +212,17 @@ impl WALSink for S3Sink {
 }
 
 impl S3Sink {
-    pub async fn new(name: Arc<str>, bucket_name: Arc<str>) -> Result<Self> {
-        let aws_cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-        let client = Client::new(&aws_cfg);
+    pub async fn new(name: Arc<str>, cfg: &S3Config) -> Result<Self> {
+        let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+        if let Some(region) = &cfg.region {
+            loader = loader.region(aws_config::Region::new(region.clone()));
+        }
+        let client = Client::new(&loader.load().await);
 
         Ok(Self {
             name: name,
             client,
-            bucket_name: bucket_name,
+            bucket_name: Arc::from(cfg.bucket_name.as_str()),
             part_size: 8 * 1024 * 1024,
         })
     }
@@ -362,6 +365,22 @@ mod tests {
         assert_eq!(
             object_key(Some(&rendered), "01JBX4N3V2.parquet"),
             "logs/cloudtrail/2026/11/02/01JBX4N3V2.parquet"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_client_uses_the_configured_region() {
+        let cfg = S3Config {
+            bucket_name: "lake".into(),
+            region: Some("eu-west-3".into()),
+            key_prefix: None,
+            wal_path: "/unused".into(),
+            max_file_age_seconds: 60,
+        };
+        let sink = S3Sink::new(Arc::from("lake"), &cfg).await.unwrap();
+        assert_eq!(
+            sink.client.config().region().map(|r| r.as_ref()),
+            Some("eu-west-3")
         );
     }
 }

@@ -94,8 +94,7 @@ impl SinkManager {
                         .transpose()
                         .with_context(|| format!("sink '{name}'"))?
                         .map(Arc::new);
-                    let bucket: Arc<str> = Arc::<str>::from(s3cfg.bucket_name.clone());
-                    let remote = Arc::new(s3::S3Sink::new(Arc::clone(&name), bucket).await?);
+                    let remote = Arc::new(s3::S3Sink::new(Arc::clone(name), s3cfg).await?);
                     let s3_sink = wal::DurableFileSink::new(
                         remote,
                         s3cfg.wal_path.clone(),
