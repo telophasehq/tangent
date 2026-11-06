@@ -2,7 +2,7 @@
   <img src="https://github.com/user-attachments/assets/7da02584-0a4e-4e41-af6d-61cb081029c4" alt="Tangent logo" height=170>
 </p>
 <h1 align="center">Tangent</h1>
-<p align="center"><em>A model reads every audit log line next to what its actor did before. You read only what it flags.</em></p>
+<p align="center"><em>A model reads every audit log line beside what its actor did before, and flags what a person should look at. For a 50-person company's AWS, Okta, GitHub and Google Workspace logs: about $90–820 a month on Claude Haiku 5.5, or free on your own machine.</em></p>
 
 <p align="center">
   <a href="https://github.com/EthanBlackburn/tangent/actions">
@@ -17,24 +17,34 @@
   <a href="https://github.com/EthanBlackburn/tangent/issues/new">Issues</a>
 </p>
 
-Tangent is one open-source process. It reads your AWS CloudTrail, GitHub,
-Okta, Google Workspace and product audit logs, groups each actor's records,
-and gives them to a model together with that actor's history: how long it
-has been seen, what it has never done before, its usual hours, and its
-person's sign-ins in every source. The pipeline computes that history from
-its own state, so the model only reads it, and the model can answer nothing
-but a pass, or a flag with its reason. On Claude Haiku 5.5 a person costs
-about a cent a day in each source that sees them, and CloudTrail $2.60–26 a
-day for a 50-person startup (estimates, [below](#what-it-costs)). By default
-the model runs on your own machine, and every number below says where it was
-measured, including where it loses.
+Tangent is one open-source process. It reads your AWS CloudTrail, Okta,
+GitHub and Google Workspace logs, and your product's audit log if you send
+it. It keeps each actor's history in its own state, and sends each actor's
+new records to a model with that history written on them. The model answers
+each record with a pass, or a flag and its reason.
+
+- **Cost.** About $3–27 a day for those four sources at a 50-person company,
+  on Claude Haiku 5.5; a person costs about a cent a day in each source that
+  sees them. Your product's log is optional and priced by its traffic:
+  $17–170 a day at 0.6M–6M lines. These are estimates, and may be low
+  ([What it costs](#what-it-costs)). A local model, the default, costs only
+  the machine it runs on.
+- **Measured.** On [tangent-eval](https://github.com/EthanBlackburn/tangent-eval)'s
+  corpus, Haiku 5.5 caught 45 of 45 attacks in each of four runs, about $1 a
+  run, and flagged 0.8–2.0% of ordinary records and 10–11 of 16 look-alikes.
+  Those runs went through an earlier harness and plugin set, on cases the
+  brief was revised on ([How well it works](#how-well-it-works-and-where-it-loses)).
+- **Your data.** The model is local by default. Credentials are dropped
+  before anything is kept or judged. The history is computed by the
+  pipeline, not written by the model, and the model can do nothing but
+  answer ([Where your data goes](#where-your-data-goes)).
 
 ## It caught this
 
 Two lines from a product's audit log, six minutes apart at 2 a.m. Neither
 looks wrong on its own. They are tangent-eval's
 [`identity/role-change-then-privileged-action`](https://github.com/EthanBlackburn/tangent-eval/blob/main/cases/identity/role-change-then-privileged-action/case.yaml)
-case, set inside 13 months of a fictional company's ordinary traffic:
+case:
 
 ```json
 {"ts":"2025-04-19T02:13:00Z","source":"app","event":"member.role.changed","actor":"dave@acme.io","ip":"73.162.14.9","org":"acme","target":"carol@acme.io","from_role":"viewer","to_role":"admin"}
@@ -42,58 +52,82 @@ case, set inside 13 months of a fictional company's ordinary traffic:
 ```
 
 Before a model sees carol's line, tangent writes her history on it as
-`_baseline`. The pipeline computed it from the 10,132 product-log records
-before it; no model wrote it (four of its seven keys):
+`_baseline`. The pipeline computed it from the 10,132 records of the
+product's log in the seven months before; no model wrote it. Four of its
+seven keys ([examples/demo](examples/demo) shows all seven):
 
 ```
 seen   seen 207.4 days (since 2024-09-23), 529 events on 150 days, from app
-new    network: ASN 62041 Telegram Messenger Inc (new to org), country NL (new to org), net 91.108.4.0/24 (new to org)
+new    api: org.export.started (1 of 1 in window)
+       network: ASN 62041 Telegram Messenger Inc (new to org), country NL (new to org), net 91.108.4.0/24 (new to org)
 time   window 02 UTC active on 0 of its 20 active days in 28d; usual 15-20 UTC; last active 5h before
 auth   last 72h, person carol@acme.io: 3 logins (app 3), 0 failed; grant role viewer -> admin by dave@acme.io 6m before from 73.162.14.9; last login app sso 9h before from 73.162.14.9 ASN 7922 US, mfa yes
 ```
 
-The model can answer only `{"flag": false}` or
+The model may answer `{"flag": false}` or
 `{"flag": true, "why": "<at most 400 characters>"}`
-([judge.schema.json](packs/core/judge.schema.json)), and its whole brief is
-[seven short paragraphs](packs/core/judge.md). Any other reply becomes an
-error, and errors reach a person too. Its answer for carol's line, from
+([judge.schema.json](packs/core/judge.schema.json)), a shape the model
+server holds it to (llama-server compiles it to a grammar). Its brief is
+[seven short paragraphs](packs/core/judge.md), beside the format
+instructions tangent adds. Its answer for carol's line, from
 `alerts.ndjson`:
 
 ```json
 {"flag": true, "why": "The actor is using a Telegram Messenger IP address (91.108.4.12) for an org export, which is unusual for this human user and organization."}
 ```
 
-It passed dave's promotion of her: his first, at an hour he had not been
-active in 28 days, made from acme's office address. acme's profile watches
-both kinds. And its why does not mention the promotion, which
-`_baseline.auth` put on carol's line and which the case wants checked first.
+It passed dave's promotion of her.
 
-A rule could catch this, if you kept what the rule needs: every network your
-org has used, each person's usual hours, and who changed whose role, in every
-source. Tangent keeps that for every actor and writes it on the record. The
-model reads it, so you don't write the rule.
+A rule catches this once someone writes it: an export from a network the
+org has never used. That rule needs every network the org has used, kept
+somewhere, and it covers one attack. Tangent keeps every actor's history in
+every source and writes it on the record, and the judge has one brief for
+all 45 of tangent-eval's attacks, from a stopped trail to a GitHub Action's
+tags moved to a stealer. No rule is written for any of them: the packs add
+facts and flag nothing.
 
 | | model | cost |
 |---|---|---|
-| this alert | GLM-4.7-Flash, the free default, on `llama-server` on one Mac Studio (M4 Max), at temperature 0 (the demo sets it; core ships 0.7): the same two verdicts in each of five runs | 2 requests, **$0** |
-| the eval corpus | Claude Haiku 5.5 on Bedrock: **45 of 45 attacks caught in each of four runs**; 0.8–0.9% of 6,587 ordinary records flagged; **10–11 of 16 look-alikes flagged anyway** | 921 requests, about 7M tokens in, **about $1 a run** ([RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)) |
+| this alert | GLM-4.7-Flash, the free default, on `llama-server`, at temperature 0 (the demo sets it; core ships 0.7): the same two verdicts in each of five runs ([examples/demo](examples/demo)) | 2 requests, **$0** |
+| the eval corpus | Claude Haiku 5.5 on Bedrock, through an earlier harness: **45 of 45 attacks caught in each of four runs**; 0.8–2.0% of 6,587 ordinary records flagged; **10–11 of 16 look-alikes flagged anyway** | 921 requests a run, **about $1** ([RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)); about 7M tokens in ([tangent-eval's README](https://github.com/EthanBlackburn/tangent-eval#run-it)) |
 | your logs | Claude Haiku 5.5 | **$15 per million lines + $12 per GB**, an estimate ([What it costs](#what-it-costs)) |
+
+**What the model can't do.** It answers, and takes no action. Nothing it
+writes reaches state or `_baseline`, which the pipeline computes from what
+came before. A request holds one actor's records (an AI agent's run log is
+grouped by organization, beside that organization's other runs). Text in a record that
+speaks to the reviewer is, by its brief, a reason to flag; whether a model
+obeys such text anyway has not been measured
+([What a log line can't make it do](#what-a-log-line-cant-make-it-do)).
 
 **Before you believe it**
 
-- The free local model wrote this alert. It has not been measured on the
-  corpus; the measured model is Haiku 5.5.
-- Haiku's numbers come from the layout before this one (a `_hist` header,
-  since replaced by `_baseline`), and they are in-sample: the brief was
-  revised on these same cases.
-- Alerts a day for a real company have not been measured. Flags are per
-  record, one actor per request, with no incident grouping yet.
+- **Nothing here was measured on what ships.** Every measured number came
+  through an earlier harness and plugin set (one cloud-infra pack with a
+  `_hist` header) on a differently placed stream
+  ([RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)),
+  not through the per-provider packs, `_baseline` or the one-config judge.
+  The cases are in-sample: the brief and acme's profile were revised on
+  them. The free local model that wrote this alert has not been measured.
+- **Flags are per record, and ungrouped.** At the corpus's 0.8–2.0%, 50k–500k
+  CloudTrail events a day would be 400 to 10,000 flags a day. A model this
+  cheap is the triage: it reads everything, so that a person, or a larger
+  model, reads only what it flags. Grouping flags into incidents is not
+  built yet, and alerts a day on a real company have not been measured.
+- **No spend cap.** Spend is bounded in rate (4 requests in flight, 200
+  tokens a record), not in total, and the metrics count no requests or
+  tokens ([Not done yet](#not-done-yet)).
+- **This alert's why is incomplete.** It names the address, not the
+  promotion six minutes before, which `_baseline.auth` put on carol's line
+  and the case wants checked first; and acme's `watch` list names both
+  kinds, a note the model reads, yet it passed the promotion.
 
 **Check it yourself:** [examples/demo](examples/demo) replays this case on
-your machine for free ([Try it](#try-it)). In
-[tangent-eval](https://github.com/EthanBlackburn/tangent-eval), `make` runs
-the whole corpus on Haiku 5.5, about $1 and 11 minutes on the layout before
-this one, or free on a local model in well over an hour.
+your machine for free ([Try it](#try-it)).
+[tangent-eval](https://github.com/EthanBlackburn/tangent-eval)'s `make`
+runs the whole corpus on Haiku 5.5 (about $1) or on a local model (free,
+well over an hour), but through the tangent its `tangent.ref` pins
+(ad0407c, before the one-config pipeline); it does not run this layout yet.
 
 ## What it costs
 
