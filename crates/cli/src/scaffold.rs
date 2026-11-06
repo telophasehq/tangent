@@ -267,6 +267,7 @@ __pycache__/
 **/.test.yaml
 **/plugins/
 state.sqlite*
+json_generated.go
 "#;
 
 const PYTHON_REQUIREMENTS: &str = r#""#;
@@ -408,16 +409,19 @@ make run
     }
 }
 
+/// golang.org/x/tools is pinned past the SDK's v0.38.0: `tangent plugin
+/// compile` runs the SDK's generator, which loads the plugin with x/tools'
+/// go/packages, and before v0.50.0 that cannot read Go 1.27's export data
+/// ("package ... without types was imported"). v0.50.0 needs go 1.26. The
+/// same pin as the Go examples; drop it once the SDK moves past v0.38.0.
 fn go_mod_for(name: &str) -> String {
     format!(
         r#"module {name}
     
-go 1.24.0
-
-toolchain go1.24.7
+go 1.26.0
 
 require (
-	github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102180530-cda85d226be0
+	github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102190949-bf65266c13bb
 	go.bytecodealliance.org/cm v0.3.0 // indirect
 )
 
@@ -437,8 +441,9 @@ require (
 	github.com/ulikunitz/xz v0.5.12 // indirect
 	github.com/urfave/cli/v3 v3.3.3 // indirect
 	go.bytecodealliance.org v0.7.0 // indirect
-	golang.org/x/mod v0.29.0 // indirect
-	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
 )
 
 tool go.bytecodealliance.org/cmd/wit-bindgen-go

@@ -41,7 +41,9 @@ install_wasm_tools() {
 }
 
 install_tinygo() {
-  local version="${TINYGO_VERSION:-0.39.0}"
+  # a TinyGo release builds only with the Go versions it knows: 0.39 stops
+  # at Go 1.25, 0.43 builds with 1.27
+  local version="${TINYGO_VERSION:-0.43.0}"
 
   if has_cmd tinygo; then
     echo "tinygo already installed: $(tinygo version || true)"
