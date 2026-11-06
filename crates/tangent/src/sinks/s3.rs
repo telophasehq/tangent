@@ -214,8 +214,8 @@ impl WALSink for S3Sink {
 impl S3Sink {
     pub async fn new(name: Arc<str>, cfg: &S3Config) -> Result<Self> {
         let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
-        if let Some(region) = &cfg.region {
-            loader = loader.region(aws_config::Region::new(region.clone()));
+        if let Some(region) = crate::sources::poll::opt(&cfg.region) {
+            loader = loader.region(aws_config::Region::new(region.to_string()));
         }
         let client = Client::new(&loader.load().await);
 
@@ -382,5 +382,18 @@ mod tests {
             sink.client.config().region().map(|r| r.as_ref()),
             Some("eu-west-3")
         );
+    }
+
+    #[tokio::test]
+    async fn an_empty_region_leaves_the_default_chain() {
+        let cfg = S3Config {
+            bucket_name: "lake".into(),
+            region: Some("".into()),
+            key_prefix: None,
+            wal_path: "/unused".into(),
+            max_file_age_seconds: 60,
+        };
+        let sink = S3Sink::new(Arc::from("lake"), &cfg).await.unwrap();
+        assert_ne!(sink.client.config().region().map(|r| r.as_ref()), Some(""));
     }
 }
