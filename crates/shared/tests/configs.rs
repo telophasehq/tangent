@@ -140,12 +140,8 @@ fn pipelines_validate_with_and_without_the_judge() {
     }
     yaml += "sources:\n  events: { type: tcp, bind_address: 127.0.0.1:0 }\ndag:\n";
     for p in &plugins {
-        yaml += &format!(
-            "  - from: {{ kind: source, name: events }}\n    to: [{{ kind: plugin, name: {p} }}]\n"
-        );
-        yaml += &format!(
-            "  - from: {{ kind: plugin, name: {p} }}\n    to: [{{ kind: sink, name: lake }}]\n"
-        );
+        yaml += &format!("  - from: events\n    to: [{p}]\n");
+        yaml += &format!("  - from: {p}\n    to: [lake]\n");
     }
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("tangent.yaml");

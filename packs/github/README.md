@@ -80,12 +80,12 @@ sources:
     bind_address: 0.0.0.0:9400
 
 dag:
-  - from: { kind: source, name: github_audit }
-    to: [{ kind: plugin, name: github }]
-  - from: { kind: source, name: events }
-    to: [{ kind: plugin, name: github }]
-  - from: { kind: plugin, name: github }   # kept, learned, judged (packs/core)
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: github_audit
+    to: [github]
+  - from: events
+    to: [github]
+  - from: github   # kept, learned, judged (packs/core)
+    to: [lake, baseline_builder, baseline_renderer]
 ```
 
 and `github_audit`, `gha_ci` and `runner_egress` in your profile's

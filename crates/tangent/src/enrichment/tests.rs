@@ -642,14 +642,14 @@ sources:
 sinks:
   out: {{ type: file, path: {root}/out.ndjson, compression: {{ type: none }} }}
 dag:
-  - from: {{ kind: source, name: in }}
-    to: [{{ kind: plugin, name: a }}, {{ kind: plugin, name: b }}, {{ kind: plugin, name: plain }}]
-  - from: {{ kind: plugin, name: a }}
-    to: [{{ kind: sink, name: out }}]
-  - from: {{ kind: plugin, name: b }}
-    to: [{{ kind: sink, name: out }}]
-  - from: {{ kind: plugin, name: plain }}
-    to: [{{ kind: sink, name: out }}]
+  - from: in
+    to: [a, b, plain]
+  - from: a
+    to: [out]
+  - from: b
+    to: [out]
+  - from: plain
+    to: [out]
 ",
         root = root.display()
     );

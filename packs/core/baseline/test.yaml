@@ -42,7 +42,7 @@ sinks:
     in_flight_limit: 1           # one write at a time: compared line by line
 
 dag:
-  - from: { kind: source, name: story }
-    to: [{ kind: plugin, name: baseline_renderer }, { kind: plugin, name: baseline_builder }]   # a call each, in this order
-  - from: { kind: plugin, name: baseline_renderer }
-    to: [{ kind: sink, name: out }]
+  - from: story
+    to: [baseline_renderer, baseline_builder]   # a call each, in this order
+  - from: baseline_renderer
+    to: [out]

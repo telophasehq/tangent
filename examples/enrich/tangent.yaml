@@ -36,7 +36,7 @@ sinks:
       type: none
 
 dag:
-  - from: { kind: source, name: events }
-    to: [{ kind: plugin, name: enrich }]
-  - from: { kind: plugin, name: enrich }
-    to: [{ kind: sink, name: out }]
+  - from: events
+    to: [enrich]
+  - from: enrich
+    to: [out]

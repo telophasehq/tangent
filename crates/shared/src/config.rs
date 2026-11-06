@@ -33,8 +33,8 @@ pub struct Config {
     #[serde(default)]
     pub plugins: std::collections::BTreeMap<Arc<str>, plugins::PluginConfig>,
 
-    /// Inference nodes, each with its own model and prompt, addressed as
-    /// `kind: inference` in the DAG.
+    /// Inference nodes, each with its own model and prompt, named in the DAG
+    /// as any node is.
     #[serde(default)]
     pub inference: std::collections::BTreeMap<Arc<str>, inference::InferenceConfig>,
 
@@ -66,8 +66,11 @@ impl Config {
     pub fn load(path: &Path) -> Result<Loaded> {
         let read = include::read(path)?;
         if !read.map.contains_key("include") {
-            let config = serde_yaml::from_str(&read.text)
+            let config: Config = serde_yaml::from_str(&read.text)
                 .with_context(|| format!("parsing YAML {}", path.display()))?;
+            config
+                .check_names()
+                .with_context(|| format!("loading {}", path.display()))?;
             return Ok(Loaded {
                 config,
                 files: vec![path.to_path_buf()],
@@ -80,6 +83,9 @@ impl Config {
                 .map_err(|e| merged.explain(e))
                 .with_context(|| format!("loading {}", path.display()))?;
         config.dag = dedupe(std::mem::take(&mut config.dag));
+        config
+            .check_names()
+            .with_context(|| format!("loading {}", path.display()))?;
         Ok(Loaded {
             config,
             files: merged.files,
@@ -94,24 +100,77 @@ impl Config {
         self.runtime.batch_size << 10
     }
 
-    pub fn validate(&self) -> Result<()> {
-        let mut missing: Vec<String> = Vec::new();
-        let exists = |n: &NodeRef, this: &Config| -> bool {
-            match n {
-                NodeRef::Source { name } => this.sources.contains_key(name),
-                NodeRef::Plugin { name } => this.plugins.contains_key(name),
-                NodeRef::Inference { name } => this.inference.contains_key(name),
-                NodeRef::Sink { name } => this.sinks.contains_key(name),
-            }
-        };
+    /// The node a name names: whichever of `sources`, `plugins`, `inference`
+    /// and `sinks` defines it (they share no name: [`Self::check_names`]).
+    pub fn node(&self, name: &str) -> Option<NodeRef> {
+        if let Some((n, _)) = self.sources.get_key_value(name) {
+            return Some(NodeRef::Source {
+                name: Arc::clone(n),
+            });
+        }
+        if let Some((n, _)) = self.plugins.get_key_value(name) {
+            return Some(NodeRef::Plugin {
+                name: Arc::clone(n),
+            });
+        }
+        if let Some((n, _)) = self.inference.get_key_value(name) {
+            return Some(NodeRef::Inference {
+                name: Arc::clone(n),
+            });
+        }
+        self.sinks.get_key_value(name).map(|(n, _)| NodeRef::Sink {
+            name: Arc::clone(n),
+        })
+    }
 
+    /// A name is one node, so that an edge can name a node without its
+    /// kind: no source, plugin, inference node and sink share one.
+    pub fn check_names(&self) -> Result<()> {
+        let mut kinds: std::collections::BTreeMap<&str, Vec<&str>> = Default::default();
+        let maps: [(&str, Vec<&Arc<str>>); 4] = [
+            ("source", self.sources.keys().collect()),
+            ("plugin", self.plugins.keys().collect()),
+            ("inference node", self.inference.keys().collect()),
+            ("sink", self.sinks.keys().collect()),
+        ];
+        for (kind, names) in maps {
+            for n in names {
+                kinds.entry(n).or_default().push(kind);
+            }
+        }
+        let shared: Vec<String> = kinds
+            .iter()
+            .filter(|(_, k)| k.len() > 1)
+            .map(|(n, k)| format!("`{n}` is a {}", k.join(" and a ")))
+            .collect();
+        if !shared.is_empty() {
+            anyhow::bail!(
+                "a name is one node, so an edge can name it; rename one of each:\n  - {}",
+                shared.join("\n  - ")
+            );
+        }
+        Ok(())
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        self.check_names()?;
+        let mut missing: Vec<String> = Vec::new();
+        let mut backwards: Vec<String> = Vec::new();
         for e in &self.dag {
-            if !exists(&e.from, self) {
-                missing.push(format!("from {:?} does not exist", e.from));
+            match self.node(&e.from) {
+                None => missing.push(format!("from `{}` does not exist", e.from)),
+                Some(NodeRef::Sink { .. }) => {
+                    backwards.push(format!("from `{}`: a sink sends nothing on", e.from))
+                }
+                Some(_) => {}
             }
             for t in &e.to {
-                if !exists(&t, self) {
-                    missing.push(format!("to {:?} does not exist", t));
+                match self.node(t) {
+                    None => missing.push(format!("to `{t}` does not exist")),
+                    Some(NodeRef::Source { .. }) => {
+                        backwards.push(format!("to `{t}`: a source takes nothing in"))
+                    }
+                    Some(_) => {}
                 }
             }
         }
@@ -119,6 +178,12 @@ impl Config {
             anyhow::bail!(
                 "DAG references missing nodes:\n  - {}",
                 missing.join("\n  - ")
+            );
+        }
+        if !backwards.is_empty() {
+            anyhow::bail!(
+                "DAG edges that cannot be:\n  - {}",
+                backwards.join("\n  - ")
             );
         }
 
@@ -145,7 +210,7 @@ impl Config {
 /// targets with every edge from it, so an edge two files both state would
 /// otherwise deliver every record twice.
 fn dedupe(dag: Vec<Edge>) -> Vec<Edge> {
-    let mut seen: HashSet<(NodeRef, NodeRef)> = HashSet::new();
+    let mut seen: HashSet<(Arc<str>, Arc<str>)> = HashSet::new();
     dag.into_iter()
         .filter_map(|mut e| {
             let had = !e.to.is_empty();
@@ -160,14 +225,61 @@ fn dedupe(dag: Vec<Edge>) -> Vec<Edge> {
 mod tests {
     use super::*;
 
+    fn config(yaml: &str) -> Config {
+        serde_yaml::from_str(yaml).unwrap()
+    }
+
+    const LINES: &str = "sources:\n  lines: { type: tcp, bind_address: \"127.0.0.1:9\" }\n";
+
+    /// An edge names its nodes, each found in whichever map defines it.
+    #[test]
+    fn a_name_is_its_node() {
+        let cfg = config(&format!(
+            "{LINES}sinks:\n  out: {{ type: blackhole }}\ndag:\n  - from: lines\n    to: [out]\n"
+        ));
+        assert_eq!(
+            cfg.node("lines"),
+            Some(NodeRef::Source {
+                name: "lines".into()
+            })
+        );
+        assert_eq!(cfg.node("out"), Some(NodeRef::Sink { name: "out".into() }));
+        assert_eq!(cfg.node("nope"), None);
+        cfg.validate().unwrap();
+    }
+
+    /// Two kinds sharing a name would make an edge's name two nodes: an
+    /// error naming both.
+    #[test]
+    fn two_kinds_may_not_share_a_name() {
+        let cfg = config(
+            "sources:\n  out: { type: tcp, bind_address: \"127.0.0.1:9\" }\n\
+             sinks:\n  out: { type: blackhole }\ndag:\n  - from: out\n    to: [out]\n",
+        );
+        let e = format!("{:#}", cfg.validate().unwrap_err());
+        assert!(e.contains("`out` is a source and a sink"), "{e}");
+    }
+
+    /// An edge runs from a node that sends to one that takes: not out of a
+    /// sink, not into a source.
+    #[test]
+    fn no_edge_leaves_a_sink_or_enters_a_source() {
+        let cfg = config(&format!(
+            "{LINES}sinks:\n  out: {{ type: blackhole }}\ndag:\n  - from: out\n    to: [lines]\n"
+        ));
+        let e = format!("{:#}", cfg.validate().unwrap_err());
+        assert!(e.contains("from `out`: a sink sends nothing on"), "{e}");
+        assert!(e.contains("to `lines`: a source takes nothing in"), "{e}");
+    }
+
     #[test]
     fn a_file_sink_takes_ndjson_only() {
         let file = |encoding: &str| -> Config {
             serde_yaml::from_str(&format!(
                 "sources:\n  lines: {{ type: tcp, bind_address: \"127.0.0.1:9\" }}\n\
                  sinks:\n  out: {{ type: file, path: /tmp/out, encoding: {encoding} }}\n\
-                 dag:\n  - from: {{ kind: source, name: lines }}\n    \
-                 to: [{{ kind: sink, name: out }}]\n"
+                 dag:\n  - from: lines\n    \
+                 to: [out]\n"
             ))
             .unwrap()
         };

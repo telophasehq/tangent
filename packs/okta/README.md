@@ -71,10 +71,10 @@ sources:
     token: ${OKTA_API_TOKEN}
 
 dag:
-  - from: { kind: source, name: okta_audit }
-    to: [{ kind: plugin, name: okta }]
-  - from: { kind: plugin, name: okta }   # kept, learned, judged (packs/core)
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: okta_audit
+    to: [okta]
+  - from: okta   # kept, learned, judged (packs/core)
+    to: [lake, baseline_builder, baseline_renderer]
 ```
 
 and `okta` in your profile's `own_sources`, so its records are your org's.

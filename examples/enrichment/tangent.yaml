@@ -15,16 +15,8 @@ sinks:
   blackhole:
     type: blackhole
 dag:
-  - from:
-      kind: source
-      name: network_input
-    to:
-      - kind: plugin
-        name: enrichment
+  - from: network_input
+    to: [enrichment]
 
-  - from:
-      kind: plugin
-      name: enrichment
-    to:
-      - kind: sink
-        name: blackhole
+  - from: enrichment
+    to: [blackhole]

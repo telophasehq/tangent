@@ -15,16 +15,8 @@ sinks:
   blackhole:
     type: blackhole
 dag:
-  - from:
-      kind: source
-      name: network_input
-    to:
-      - kind: plugin
-        name: golang
+  - from: network_input
+    to: [golang]
 
-  - from:
-      kind: plugin
-      name: golang
-    to:
-      - kind: sink
-        name: blackhole
+  - from: golang
+    to: [blackhole]

@@ -80,10 +80,10 @@ sources:
     bind_address: 0.0.0.0:9401
 
 dag:
-  - from: { kind: source, name: events }
-    to: [{ kind: plugin, name: app }]
-  - from: { kind: plugin, name: app }   # kept, learned, judged (packs/core)
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: events
+    to: [app]
+  - from: app   # kept, learned, judged (packs/core)
+    to: [lake, baseline_builder, baseline_renderer]
 ```
 
 `org` is your customer, not you: leave these sources out of the profile's

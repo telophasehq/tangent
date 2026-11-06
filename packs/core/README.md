@@ -219,8 +219,8 @@ sinks:
     webhook_url: ${SLACK_WEBHOOK_URL}
     text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
 dag:
-  - from: { kind: plugin, name: flagged }
-    to: [{ kind: sink, name: slack }]
+  - from: flagged
+    to: [slack]
 ```
 
 In `text`, `{a.b}` is the record's field (`-` when it has none) and `{x|words y}`

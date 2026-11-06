@@ -62,10 +62,10 @@ sources:
     subject: ${GOOGLE_ADMIN_EMAIL}
 
 dag:
-  - from: { kind: source, name: workspace_audit }
-    to: [{ kind: plugin, name: google_workspace }]
-  - from: { kind: plugin, name: google_workspace }   # kept, learned, judged (packs/core)
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: workspace_audit
+    to: [google_workspace]
+  - from: google_workspace   # kept, learned, judged (packs/core)
+    to: [lake, baseline_builder, baseline_renderer]
 ```
 
 and `google_workspace` in your profile's `own_sources`.

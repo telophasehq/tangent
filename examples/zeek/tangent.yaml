@@ -17,16 +17,8 @@ sinks:
     type: blackhole
 
 dag:
-  - from:
-      kind: source
-      name: network_input
-    to:
-      - kind: plugin
-        name: zeek
+  - from: network_input
+    to: [zeek]
 
-  - from:
-      kind: plugin
-      name: zeek
-    to:
-      - kind: sink
-        name: blackhole
+  - from: zeek
+    to: [blackhole]

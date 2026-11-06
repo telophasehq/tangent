@@ -3,8 +3,8 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use tangent_shared::dag::NodeRef;
 use tangent_shared::enrichment::{TableConfig, TableKind};
 use tangent_shared::inference::InferenceConfig;
 use tangent_shared::plugins::{PluginConfig, PluginTests};
@@ -42,12 +42,12 @@ fn yaml(cfg: &Config) -> String {
     serde_yaml::to_string(cfg).unwrap()
 }
 
-fn plugin(name: &str) -> NodeRef {
-    NodeRef::Plugin { name: name.into() }
+fn plugin(name: &str) -> Arc<str> {
+    name.into()
 }
 
-fn sink(name: &str) -> NodeRef {
-    NodeRef::Sink { name: name.into() }
+fn sink(name: &str) -> Arc<str> {
+    name.into()
 }
 
 const PIPELINE: &str = "
@@ -66,10 +66,10 @@ inference:
 sinks:
   out: { type: file, path: out.ndjson }
 dag:
-  - from: { kind: source, name: gh }
-    to: [{ kind: inference, name: judge }]
-  - from: { kind: inference, name: judge }
-    to: [{ kind: sink, name: out }]
+  - from: gh
+    to: [judge]
+  - from: judge
+    to: [out]
 ";
 
 #[test]
@@ -348,10 +348,10 @@ plugins:
     data: ../../shared/enrich/data
     config: {{ fields: [_norm.ip] }}
 dag:
-  - from: {{ kind: plugin, name: {name} }}
-    to: [{{ kind: plugin, name: enrich }}]
-  - from: {{ kind: plugin, name: enrich }}
-    to: [{{ kind: sink, name: logs }}]
+  - from: {name}
+    to: [enrich]
+  - from: enrich
+    to: [logs]
 "
         )
     };
@@ -378,7 +378,7 @@ sinks:
         Some(canonical(&dir, "shared/enrich/data").as_path()),
         "a path that does not exist yet is joined all the same"
     );
-    let from_enrich: Vec<&NodeRef> = cfg
+    let from_enrich: Vec<&Arc<str>> = cfg
         .dag
         .iter()
         .filter(|e| e.from == plugin("enrich"))
@@ -507,18 +507,18 @@ fn dag_edges_add_up_and_count_once() {
             "a.yaml",
             "
 dag:
-  - from: { kind: plugin, name: facts }
-    to: [{ kind: sink, name: logs }]
+  - from: facts
+    to: [logs]
 ",
         ),
         (
             "b.yaml",
             "
 dag:
-  - from: { name: facts, kind: plugin }
-    to: [{ kind: sink, name: logs }, { kind: sink, name: debug }]
-  - from: { kind: plugin, name: facts }
-    to: [{ kind: sink, name: logs }]
+  - from: facts
+    to: [logs, debug]
+  - from: facts
+    to: [logs]
 ",
         ),
         (
@@ -531,13 +531,13 @@ sinks:
   logs: { type: file, path: logs.ndjson }
   debug: { type: file, path: debug.ndjson }
 dag:
-  - from: { kind: plugin, name: facts }
-    to: [{ kind: sink, name: alerts }]
+  - from: facts
+    to: [alerts]
 ",
         ),
     ]);
     let cfg = load(&dir, "root.yaml").unwrap().config;
-    let edges: Vec<(NodeRef, Vec<NodeRef>)> = cfg
+    let edges: Vec<(Arc<str>, Vec<Arc<str>>)> = cfg
         .dag
         .iter()
         .map(|e| (e.from.clone(), e.to.clone()))
@@ -565,8 +565,8 @@ runtime: { workers: 2, batch_age: 5 }
 plugins:
   facts: { module_type: rust, path: facts, data: profile }
 dag:
-  - from: { kind: plugin, name: facts }
-    to: [{ kind: sink, name: logs }]
+  - from: facts
+    to: [logs]
 ",
         ),
         ("a.yaml", "include: [core.yaml]\nruntime: { workers: 4 }\n"),
@@ -1127,10 +1127,10 @@ sinks:
   out: { type: file, path: out.ndjson, compression: { type: none }, in_flight_limit: 1, default: true }
   logs: { type: sqlite, path: logs.sqlite, table: logs, partitions: { org: [_norm.org] } }
 dag:
-  - from: { kind: source, name: input }
-    to: [{ kind: plugin, name: probe }]
-  - from: { kind: plugin, name: probe }
-    to: [{ kind: sink, name: out }, { kind: sink, name: logs }]
+  - from: input
+    to: [probe]
+  - from: probe
+    to: [out, logs]
 ",
     )]);
     let cfg = load(&dir, "tangent.yaml").unwrap().config;
@@ -1271,4 +1271,23 @@ fn paths_resolve_from_another_working_directory() {
         Some(PathBuf::from("profile")),
         "the root's, as written"
     );
+}
+
+/// One file's source and another's plugin may not share a name: the config
+/// that includes both fails to load, naming the name and both kinds.
+#[test]
+fn a_name_two_files_give_to_two_kinds_fails_to_load() {
+    let dir = tree(&[
+        (
+            "a.yaml",
+            "sources:\n  okta: { type: tcp, bind_address: \"127.0.0.1:9\" }\n",
+        ),
+        (
+            "b.yaml",
+            "plugins:\n  okta: { module_type: rust, path: p }\n",
+        ),
+        ("root.yaml", "include: [a.yaml, b.yaml]\n"),
+    ]);
+    let e = error(&dir, "root.yaml");
+    assert!(e.contains("`okta` is a source and a plugin"), "{e}");
 }

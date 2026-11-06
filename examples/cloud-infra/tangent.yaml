@@ -59,35 +59,35 @@ sources:
     bind_address: 0.0.0.0:9400
 
 dag:
-  - from: { kind: source, name: cloudtrail }
-    to: [{ kind: plugin, name: aws }]
-  - from: { kind: source, name: github_audit }
-    to: [{ kind: plugin, name: github }]
-  - from: { kind: source, name: okta_audit }
-    to: [{ kind: plugin, name: okta }]
-  - from: { kind: source, name: workspace_audit }
-    to: [{ kind: plugin, name: google_workspace }]
+  - from: cloudtrail
+    to: [aws]
+  - from: github_audit
+    to: [github]
+  - from: okta_audit
+    to: [okta]
+  - from: workspace_audit
+    to: [google_workspace]
   # NDJSON, each record's `source` naming its shape: each pack takes its own
   # (gha_ci and runner_egress are github's, app and agent app's), and a record
   # no pack takes is dropped, with a warning.
-  - from: { kind: source, name: events }
+  - from: events
     to:
-      - { kind: plugin, name: aws }
-      - { kind: plugin, name: github }
-      - { kind: plugin, name: okta }
-      - { kind: plugin, name: google_workspace }
-      - { kind: plugin, name: app }
+      - aws
+      - github
+      - okta
+      - google_workspace
+      - app
   # Each pack's records: kept in the lake, folded into the actor's baseline,
   # and judged (packs/core).
-  - from: { kind: plugin, name: aws }
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
-  - from: { kind: plugin, name: github }
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
-  - from: { kind: plugin, name: okta }
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
-  - from: { kind: plugin, name: google_workspace }
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
-  - from: { kind: plugin, name: app }
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
-  # - from: { kind: plugin, name: flagged }   # to Slack, with `slack` above
-  #   to: [{ kind: sink, name: slack }]
+  - from: aws
+    to: [lake, baseline_builder, baseline_renderer]
+  - from: github
+    to: [lake, baseline_builder, baseline_renderer]
+  - from: okta
+    to: [lake, baseline_builder, baseline_renderer]
+  - from: google_workspace
+    to: [lake, baseline_builder, baseline_renderer]
+  - from: app
+    to: [lake, baseline_builder, baseline_renderer]
+  # - from: flagged   # to Slack, with `slack` above
+  #   to: [slack]

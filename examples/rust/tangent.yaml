@@ -15,16 +15,8 @@ sinks:
   blackhole:
     type: blackhole
 dag:
-  - from:
-      kind: source
-      name: network_input
-    to:
-      - kind: plugin
-        name: rust
+  - from: network_input
+    to: [rust]
 
-  - from:
-      kind: plugin
-      name: rust
-    to:
-      - kind: sink
-        name: blackhole
+  - from: rust
+    to: [blackhole]

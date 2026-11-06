@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
-use tangent_shared::dag::{Edge, NodeRef};
+use tangent_shared::dag::Edge;
 use tangent_shared::plugins::PluginConfig;
 use tangent_shared::runtime::{RuntimeConfig, StateBackend, StateConfig};
 use tangent_shared::sinks::common::{CommonSinkOptions, Compression, Encoding};
@@ -129,23 +129,32 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 disable_remote_calls: !opts.enable_http,
             };
 
+            // The test's own source and sink, named apart from the plugin:
+            // a name is one node.
+            let named = |n: &str| -> Arc<str> {
+                if *name == *n {
+                    format!("test_{n}").into()
+                } else {
+                    n.into()
+                }
+            };
+            let (source, sink) = (named("input"), named("out"));
+
             let entry = Edge {
-                from: NodeRef::Source {
-                    name: "input".into(),
-                },
-                to: vec![NodeRef::Plugin { name: name.clone() }],
+                from: Arc::clone(&source),
+                to: vec![name.clone()],
             };
 
             let exit = Edge {
-                from: NodeRef::Plugin { name: name.clone() },
-                to: vec![NodeRef::Sink { name: "out".into() }],
+                from: name.clone(),
+                to: vec![Arc::clone(&sink)],
             };
 
             let mut sinks = BTreeMap::new();
-            sinks.insert(Arc::<str>::from("out"), file_sink);
+            sinks.insert(sink, file_sink);
 
             let mut sources = BTreeMap::new();
-            sources.insert(Arc::<str>::from("input"), input_source);
+            sources.insert(source, input_source);
 
             let mut tables = cfg.enrichment_tables.clone();
             tables.extend(test.enrichment_tables);

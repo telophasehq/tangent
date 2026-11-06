@@ -94,11 +94,11 @@ sinks:
       type: none
 
 dag:
-  - from: { kind: plugin, name: baseline_renderer }
-    to: [{ kind: inference, name: judge }]
-  - from: { kind: inference, name: judge }
-    to: [{ kind: plugin, name: fresh }]
-  - from: { kind: plugin, name: fresh }
-    to: [{ kind: plugin, name: flagged }, { kind: sink, name: verdicts }]
-  - from: { kind: plugin, name: flagged }
-    to: [{ kind: sink, name: alerts }]
+  - from: baseline_renderer
+    to: [judge]
+  - from: judge
+    to: [fresh]
+  - from: fresh
+    to: [flagged, verdicts]
+  - from: flagged
+    to: [alerts]

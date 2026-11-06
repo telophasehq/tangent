@@ -15,16 +15,8 @@ sinks:
   blackhole:
     type: blackhole
 dag:
-  - from:
-      kind: source
-      name: network_input
-    to:
-      - kind: plugin
-        name: python
+  - from: network_input
+    to: [python]
 
-  - from:
-      kind: plugin
-      name: python
-    to:
-      - kind: sink
-        name: blackhole
+  - from: python
+    to: [blackhole]
