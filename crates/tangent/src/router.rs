@@ -172,7 +172,7 @@ impl Router {
     /// such as a `source` value no plugin on a fan-out claims.
     pub fn unrouted(&self, from: &NodeRef, n: usize) {
         UNROUTED_TOTAL
-            .with_label_values(&[&node_label(from)])
+            .with_label_values(&[node_name(from)])
             .inc_by(n as u64);
         if !matches!(from, NodeRef::Source { .. }) {
             return;
@@ -184,8 +184,8 @@ impl Router {
             .unwrap_or(false);
         if first {
             tracing::warn!(
-                node = %node_label(from),
-                targets = ?self.outs(from),
+                node = %node_name(from),
+                targets = %names(self.outs(from)),
                 "a record from this source matched none of its targets and was dropped; \
                  tangent_unrouted_records_total counts them"
             );
@@ -272,14 +272,21 @@ impl Router {
     }
 }
 
-/// `kind:name`, for a metric's label.
-fn node_label(n: &NodeRef) -> String {
+/// A node's name, as an edge writes it, and a metric's `node` label: a name
+/// is one node, so it needs no kind beside it.
+fn node_name(n: &NodeRef) -> &str {
     match n {
-        NodeRef::Source { name } => format!("source:{name}"),
-        NodeRef::Plugin { name } => format!("plugin:{name}"),
-        NodeRef::Inference { name } => format!("inference:{name}"),
-        NodeRef::Sink { name } => format!("sink:{name}"),
+        NodeRef::Source { name }
+        | NodeRef::Plugin { name }
+        | NodeRef::Inference { name }
+        | NodeRef::Sink { name } => name,
     }
+}
+
+/// Nodes by name, as an edge's `to` writes them: `[aws, lake]`.
+fn names(nodes: &[NodeRef]) -> String {
+    let names: Vec<&str> = nodes.iter().map(node_name).collect();
+    format!("[{}]", names.join(", "))
 }
 
 #[cfg(test)]
@@ -307,19 +314,35 @@ mod tests {
         );
         let counted = |label: &str| UNROUTED_TOTAL.with_label_values(&[label]).get();
         let source = NodeRef::Source {
-            name: Arc::from("unrouted-test"),
+            name: Arc::from("unrouted-test-source"),
         };
         router.unrouted(&source, 2);
         router.unrouted(&source, 3);
-        assert_eq!(counted("source:unrouted-test"), 5);
+        assert_eq!(counted("unrouted-test-source"), 5);
         let filter = NodeRef::Plugin {
-            name: Arc::from("unrouted-test"),
+            name: Arc::from("unrouted-test-filter"),
         };
         router.unrouted(&filter, 4);
-        assert_eq!(counted("plugin:unrouted-test"), 4);
+        assert_eq!(counted("unrouted-test-filter"), 4);
         let named = router.unrouted.lock().unwrap();
         assert_eq!(named.len(), 1, "the source, once");
         assert!(named.contains(&source));
+    }
+
+    /// The warning names a source's targets as its edge does, not as Rust
+    /// debug-prints them.
+    #[test]
+    fn targets_are_named_as_an_edge_writes_them() {
+        let to = [
+            NodeRef::Plugin {
+                name: Arc::from("aws"),
+            },
+            NodeRef::Sink {
+                name: Arc::from("lake"),
+            },
+        ];
+        assert_eq!(names(&to), "[aws, lake]");
+        assert_eq!(names(&[]), "[]");
     }
 
     #[test]
