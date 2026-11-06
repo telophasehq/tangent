@@ -395,4 +395,24 @@ mod tests {
             "{shown}"
         );
     }
+
+    /// Two models wired round in a cycle: `tangent config` fails, as `run`
+    /// does, before a record goes round it.
+    #[test]
+    fn config_fails_on_a_cycle() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("tangent.yaml");
+        std::fs::write(
+            &file,
+            "sources:\n  input: { type: file, path: in.ndjson, decoding: { format: { type: ndjson } } }\n\
+             inference:\n  first: { model: m, prompt_file: p.txt }\n  \
+             second: { model: m, prompt_file: p.txt }\n\
+             sinks:\n  looped: { type: file, path: looped.ndjson }\n\
+             dag:\n  - from: input\n    to: [first]\n  - from: first\n    to: [second]\n  \
+             - from: second\n    to: [first, looped]\n",
+        )
+        .unwrap();
+        let err = format!("{:#}", show_config(&file).unwrap_err());
+        assert!(err.contains("a cycle: first -> second -> first"), "{err}");
+    }
 }

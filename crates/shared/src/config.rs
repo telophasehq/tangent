@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -157,12 +157,12 @@ impl Config {
     pub fn validate(&self) -> Result<()> {
         self.check_names()?;
         let mut missing: Vec<String> = Vec::new();
-        let mut backwards: Vec<String> = Vec::new();
+        let mut cannot: Vec<String> = Vec::new();
         for e in &self.dag {
             match self.node(&e.from) {
                 None => missing.push(format!("from `{}` does not exist", e.from)),
                 Some(NodeRef::Sink { .. }) => {
-                    backwards.push(format!("from `{}`: a sink sends nothing on", e.from))
+                    cannot.push(format!("from `{}`: a sink sends nothing on", e.from))
                 }
                 Some(_) => {}
             }
@@ -170,7 +170,7 @@ impl Config {
                 match self.node(t) {
                     None => missing.push(format!("to `{t}` does not exist")),
                     Some(NodeRef::Source { .. }) => {
-                        backwards.push(format!("to `{t}`: a source takes nothing in"))
+                        cannot.push(format!("to `{t}`: a source takes nothing in"))
                     }
                     Some(_) => {}
                 }
@@ -182,11 +182,9 @@ impl Config {
                 missing.join("\n  - ")
             );
         }
-        if !backwards.is_empty() {
-            anyhow::bail!(
-                "DAG edges that cannot be:\n  - {}",
-                backwards.join("\n  - ")
-            );
+        cannot.extend(self.cycles());
+        if !cannot.is_empty() {
+            anyhow::bail!("DAG edges that cannot be:\n  - {}", cannot.join("\n  - "));
         }
 
         // a file sink appends each write's encoding to one file, which only
@@ -205,6 +203,59 @@ impl Config {
 
         Ok(())
     }
+
+    /// Cycles among the plugins and inference nodes, each as `a -> b -> a`:
+    /// one at least wherever the edges go round. A walk sends a node's
+    /// records on along every edge until a sink, so a record on a cycle goes
+    /// round it for good, through a model each time round. No source or sink
+    /// is on one: no edge enters a source or leaves a sink.
+    fn cycles(&self) -> Vec<String> {
+        let inner = |n: &str| {
+            matches!(
+                self.node(n),
+                Some(NodeRef::Plugin { .. } | NodeRef::Inference { .. })
+            )
+        };
+        let mut outs: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for e in self.dag.iter().filter(|e| inner(&e.from)) {
+            outs.entry(&e.from)
+                .or_default()
+                .extend(e.to.iter().map(|t| &**t).filter(|t| inner(t)));
+        }
+        let mut done: HashSet<&str> = HashSet::new();
+        let mut cycles = Vec::new();
+        for node in outs.keys() {
+            visit(node, &outs, &mut Vec::new(), &mut done, &mut cycles);
+        }
+        cycles
+    }
+}
+
+/// A depth-first walk from `node`, `path` the nodes it came through: an
+/// edge back to one of them closes a cycle. A node `done` was walked from
+/// already.
+fn visit<'a>(
+    node: &'a str,
+    outs: &BTreeMap<&'a str, Vec<&'a str>>,
+    path: &mut Vec<&'a str>,
+    done: &mut HashSet<&'a str>,
+    cycles: &mut Vec<String>,
+) {
+    if done.contains(node) {
+        return;
+    }
+    if let Some(at) = path.iter().position(|p| *p == node) {
+        let mut cycle = path[at..].to_vec();
+        cycle.push(node);
+        cycles.push(format!("a cycle: {}", cycle.join(" -> ")));
+        return;
+    }
+    path.push(node);
+    for to in outs.get(node).into_iter().flatten() {
+        visit(to, outs, path, done, cycles);
+    }
+    path.pop();
+    done.insert(node);
 }
 
 /// Each edge once: a target a node already sends to is dropped from a later
@@ -292,6 +343,40 @@ mod tests {
             Some("cloudtrail/%Y/%m/%d")
         );
         assert_eq!(s3(""), None);
+    }
+
+    /// A walk sends a node's records on along every edge until a sink: one
+    /// on a cycle goes round it for good, through a model each time. An
+    /// error naming the cycle, through an ungrouped plugin, a grouped one or
+    /// a model; two edges into one node are no cycle.
+    #[test]
+    fn the_dag_has_no_cycle() {
+        let nodes = "plugins:\n  a: { module_type: rust }\n  \
+                     g: { module_type: rust, group_by: [actor] }\n\
+                     inference:\n  first: { model: m, prompt_file: p.txt }\n  \
+                     second: { model: m, prompt_file: p.txt }\n\
+                     sinks:\n  out: { type: blackhole }\n";
+        let validate = |dag: &str| {
+            config(&format!(
+                "{LINES}{nodes}dag:\n  - from: lines\n    to: [a, g, first]\n{dag}"
+            ))
+            .validate()
+        };
+        let cycle = |dag: &str| format!("{:#}", validate(dag).unwrap_err());
+
+        let e = cycle("  - from: a\n    to: [a, out]\n");
+        assert!(e.contains("a cycle: a -> a"), "{e}");
+        let e =
+            cycle("  - from: first\n    to: [second]\n  - from: second\n    to: [first, out]\n");
+        assert!(e.contains("a cycle: first -> second -> first"), "{e}");
+        let e = cycle("  - from: g\n    to: [first]\n  - from: first\n    to: [g, out]\n");
+        assert!(e.contains("a cycle: first -> g -> first"), "{e}");
+
+        validate(
+            "  - from: a\n    to: [first, second]\n  - from: first\n    to: [second]\n  \
+             - from: second\n    to: [out]\n",
+        )
+        .unwrap();
     }
 
     #[test]
