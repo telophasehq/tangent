@@ -22,6 +22,20 @@ pub async fn run_consumer(
     let aws_cfg = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let sqs_client = SQSClient::new(&aws_cfg);
     let s3_client = S3Client::new(&aws_cfg);
+    consume(name, cfg, chunks, router, shutdown, sqs_client, s3_client).await
+}
+
+/// The source's loop, on the clients it is given: a test hands it clients
+/// that talk to a local mock instead of AWS.
+async fn consume(
+    name: Arc<str>,
+    cfg: SQSConfig,
+    chunks: usize,
+    router: Arc<Router>,
+    shutdown: CancellationToken,
+    sqs_client: SQSClient,
+    s3_client: S3Client,
+) -> Result<()> {
     let qurl = Arc::new(cfg.queue_url);
     let dc = cfg.decoding.clone();
     let from = NodeRef::Source { name: name };
