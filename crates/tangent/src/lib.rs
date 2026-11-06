@@ -104,12 +104,8 @@ lazy_static::lazy_static! {
 pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     let cfg = Config::from_file(config_path)?;
     cfg.validate()?;
-    // A source with nowhere to go is read and dropped: its records are acked
-    // and a polling source's cursor moves past them.
-    for name in cfg.sources.keys() {
-        if !cfg.dag.iter().any(|e| e.from == *name && !e.to.is_empty()) {
-            tracing::warn!("source {name} has no outgoing edge; its records are dropped");
-        }
+    for warning in cfg.warnings() {
+        tracing::warn!("{warning}");
     }
 
     // Metrics are worth having, not worth dying for: a second tangent on the

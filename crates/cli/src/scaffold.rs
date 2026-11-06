@@ -41,6 +41,11 @@ pub fn scaffold(name: &str, lang: &str, setup: bool) -> Result<()> {
     // before anything is written, so an unknown --lang leaves no directory behind
     let lang = parse_lang(lang)?;
     let renamed = name.replace("-", "");
+    // the tangent.yaml below names its plugin so, and no command loads a
+    // config with a name outside the rule
+    if !tangent_shared::is_name(&renamed) {
+        bail!("`{name}` cannot name a plugin: a name is letters, digits, `_` and `-`");
+    }
     let name = renamed.as_str();
     // the tangent.yaml below names its source and sink so, and a name is one node
     if ["network_input", "blackhole"].contains(&name) {
@@ -945,7 +950,19 @@ class Mapper(wit_world.WitWorld):
 
 #[cfg(test)]
 mod tests {
-    use super::parse_lang;
+    use super::*;
+
+    /// A name a config cannot hold makes no project, whose tangent.yaml
+    /// every command would refuse at load.
+    #[test]
+    fn scaffold_refuses_a_name_a_config_cannot_hold() {
+        let e = scaffold("acme.parser", "rust", false).unwrap_err();
+        assert!(
+            e.to_string().contains("`acme.parser` cannot name a plugin"),
+            "{e}"
+        );
+        assert!(!Path::new("acme.parser").exists());
+    }
 
     #[test]
     fn parse_lang_accepts_the_help_spellings() {

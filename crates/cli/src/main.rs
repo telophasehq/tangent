@@ -257,7 +257,8 @@ async fn main() -> Result<()> {
 /// merged from. Every path that names a file is absolute; `runtime` paths
 /// are as written, relative to `path`. The DAG, each s3 sink's `key_prefix`
 /// and the required tables' files are checked after: a config that does not
-/// hold together still prints, then fails.
+/// hold together still prints, then fails. What `run` would warn of is
+/// warned of on stderr.
 fn show_config(path: &Path) -> Result<String> {
     let loaded = tangent_shared::Config::load(path)?;
     let dir = path
@@ -285,6 +286,10 @@ fn show_config(path: &Path) -> Result<String> {
         "# secrets (tokens, api_key, webhook_url, passwords) are left out: read it, don't run it\n",
     );
     out.push_str(&serde_yaml::to_string(&value)?);
+    // on stderr, so what is printed stays YAML
+    for warning in loaded.config.warnings() {
+        eprintln!("warning: {warning}");
+    }
     let checked = loaded
         .config
         .validate()
@@ -394,5 +399,25 @@ mod tests {
             Value::from("http://localhost:8080/v1"),
             "{shown}"
         );
+    }
+
+    /// Two models wired round in a cycle: `tangent config` fails, as `run`
+    /// does, before a record goes round it.
+    #[test]
+    fn config_fails_on_a_cycle() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("tangent.yaml");
+        std::fs::write(
+            &file,
+            "sources:\n  input: { type: file, path: in.ndjson, decoding: { format: { type: ndjson } } }\n\
+             inference:\n  first: { model: m, prompt_file: p.txt }\n  \
+             second: { model: m, prompt_file: p.txt }\n\
+             sinks:\n  looped: { type: file, path: looped.ndjson }\n\
+             dag:\n  - from: input\n    to: [first]\n  - from: first\n    to: [second]\n  \
+             - from: second\n    to: [first, looped]\n",
+        )
+        .unwrap();
+        let err = format!("{:#}", show_config(&file).unwrap_err());
+        assert!(err.contains("a cycle: first -> second -> first"), "{err}");
     }
 }
