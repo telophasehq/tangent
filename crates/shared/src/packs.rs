@@ -7,10 +7,12 @@
 //! packs/'s layout, so a pack's paths (`prompt_file: judge.md`, `include:
 //! [../enrich-ip/ingest.yaml]`) name what they name in the repo, and whatever
 //! reads one reads it from disk as it always has. A plugin's sources and
-//! fixtures are not built in, nor anything outside packs/: a pack's path to
+//! fixtures are not built in, so the copy's plugins name none
+//! (`without_sources`); nor is anything outside packs/, so a pack's path to
 //! one names nothing in the cache.
 
 use anyhow::{anyhow, bail, Context, Result};
+use serde_yaml::{Mapping, Value};
 use std::fs;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -113,6 +115,18 @@ fn digest(files: &[(&str, &str)]) -> u64 {
     h
 }
 
+/// A pack's YAML without its plugins' `path` and `tests`: their sources and
+/// fixtures are not built in, so the copy names none. `tangent plugin
+/// compile` then says the plugin is prebuilt, for `tangent plugin fetch`.
+pub(crate) fn without_sources(map: &mut Mapping) {
+    if let Some(Value::Mapping(plugins)) = map.get_mut("plugins") {
+        for p in plugins.values_mut().filter_map(Value::as_mapping_mut) {
+            p.remove("path");
+            p.remove("tests");
+        }
+    }
+}
+
 /// Where the files were written: [`dir`], canonical. Written once per
 /// process.
 static ROOT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
@@ -186,7 +200,6 @@ fn temp_name(path: &Path, attempt: u32) -> PathBuf {
 mod tests {
     use super::*;
     use crate::include;
-    use serde_yaml::Value;
     use std::collections::BTreeSet;
     use std::time::{Duration, SystemTime};
 
@@ -263,12 +276,7 @@ mod tests {
                 panic!("{rel}: not a map");
             };
             let dir = packs.join(rel).parent().unwrap().to_path_buf();
-            if let Some(Value::Mapping(plugins)) = map.get_mut("plugins") {
-                for p in plugins.values_mut().filter_map(Value::as_mapping_mut) {
-                    p.remove("path");
-                    p.remove("tests");
-                }
-            }
+            without_sources(&mut map);
             include::rebase(&mut map, &dir);
             let mut paths = Vec::new();
             let map = Value::Mapping(map);

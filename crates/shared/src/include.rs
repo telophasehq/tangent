@@ -19,7 +19,7 @@
 //!   anchors) and is not merged;
 //! - an entry `pack:<name>` is a pack built into tangent, read from the copy
 //!   written out under the cache ([`crate::packs`]), and a message names it
-//!   so.
+//!   so; its plugins have no `path` or `tests`, which are not built in.
 //!
 //! The result does not depend on the order of `include:`, only the order of
 //! the edges does: a file included twice is the same file to both includers,
@@ -607,6 +607,9 @@ impl Loader {
             None => read(path)?,
         };
         let mut map = scalar_text(&read.text, read.map);
+        if packs::name(path).is_some() {
+            packs::without_sources(&mut map);
+        }
         // The root's own paths are left as written: whatever reads them joins
         // them to the root's directory already, as it always has.
         if !is_root {

@@ -1359,6 +1359,30 @@ dag:
     }
 }
 
+/// A pack built in names no plugin source or fixtures, which tangent does
+/// not carry: `tangent plugin compile` says such a plugin is prebuilt, for
+/// `tangent plugin fetch`, and `tangent plugin test` has none to run. A
+/// config can still give one its source.
+#[test]
+fn a_built_in_pack_s_plugins_name_no_source() {
+    let dir = tree(&[(
+        "tangent.yaml",
+        "
+include: [pack:judge, pack:aws, pack:okta]
+plugins:
+  okta: { path: ../tangent/packs/okta }
+",
+    )]);
+    let cfg = load(&dir, "tangent.yaml").unwrap().config;
+    for name in ["baseline_builder", "baseline_renderer", "fresh", "aws"] {
+        let p = &cfg.plugins[name];
+        assert_eq!(p.path, PathBuf::new(), "{name}");
+        assert!(p.tests.is_empty(), "{name}");
+        assert!(p.prebuilt.is_some(), "{name}");
+    }
+    assert_eq!(cfg.plugins["okta"].path, Path::new("../tangent/packs/okta"));
+}
+
 /// A message names a pack built in by its name, not its cache path; a name
 /// tangent has no pack for is an error listing those it has.
 #[test]
