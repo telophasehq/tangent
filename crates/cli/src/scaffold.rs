@@ -38,6 +38,8 @@ const DOCKERFILE: &str = include_str!(concat!(
 /// toolchain and can add PATH lines to the shell profile; without it the
 /// script is only written.
 pub fn scaffold(name: &str, lang: &str, setup: bool) -> Result<()> {
+    // before anything is written, so an unknown --lang leaves no directory behind
+    let lang = parse_lang(lang)?;
     let renamed = name.replace("-", "");
     let name = renamed.as_str();
     // the tangent.yaml below names its source and sink so, and a name is one node
@@ -70,7 +72,7 @@ pub fn scaffold(name: &str, lang: &str, setup: bool) -> Result<()> {
         "go" => scaffold_go(name, &proj_dir, setup)?,
         "python" => scaffold_py(name, &proj_dir, setup)?,
         "rust" => scaffold_rust(name, &proj_dir, setup)?,
-        other => bail!("unsupported --lang {other} (options: go, python, rust)"),
+        other => unreachable!("parse_lang returned {other}"),
     }
 
     println!(
@@ -87,6 +89,17 @@ pub fn scaffold(name: &str, lang: &str, setup: bool) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// The --lang spellings `--help` shows (go|py|rust), plus `python`, as the
+/// name the rest of the scaffold matches on.
+fn parse_lang(lang: &str) -> Result<&'static str> {
+    match lang {
+        "go" => Ok("go"),
+        "py" | "python" => Ok("python"),
+        "rust" => Ok("rust"),
+        other => bail!("unsupported --lang {other} (options: go, py, rust)"),
+    }
 }
 
 pub fn write_embedded_wit(dest: &Path) -> Result<()> {
@@ -928,4 +941,25 @@ class Mapper(wit_world.WitWorld):
 "#;
 
     tpl.replace("{module}", module)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_lang;
+
+    #[test]
+    fn parse_lang_accepts_the_help_spellings() {
+        assert_eq!(parse_lang("go").unwrap(), "go");
+        assert_eq!(parse_lang("py").unwrap(), "python");
+        assert_eq!(parse_lang("python").unwrap(), "python");
+        assert_eq!(parse_lang("rust").unwrap(), "rust");
+    }
+
+    #[test]
+    fn parse_lang_rejects_unknown() {
+        for lang in ["nope", ""] {
+            let err = parse_lang(lang).unwrap_err().to_string();
+            assert!(err.contains("unsupported --lang"), "{lang}: {err}");
+        }
+    }
 }
