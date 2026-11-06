@@ -67,6 +67,19 @@ plugins:
 
 A plugin may read files too: `data: <dir>` mounts a directory, relative to the file that names it, read-only at `/data` in the guest, for reference data too big for `config`. [examples/enrich](/examples/enrich) reads MaxMind GeoLite2 and the cloud providers' ranges that way, and its `setup.sh` fetches them. Each plugin instance on each worker reads such files into its own memory; reference data that several plugins read, or that is large, belongs in an [enrichment table](#enrichment-tables), which the process loads once.
 
+A plugin can take its records a group at a time, as Vector's `reduce` groups them, without the merge:
+
+```yaml
+plugins:
+  renderer:
+    group_by: [_norm.org, _norm.actor]   # a group per value of these fields
+    max_events: 40                       # closes at 40 records,
+    expire_after_ms: 30000               # or once nothing has joined it for 30 s (the default)
+    history: 39                          # the key's latest records, sent again ahead of its next group
+```
+
+Records reaching the plugin wait in their key's group, in memory, and are acked once there. A closed group reaches the plugin whole, in one call, on workers of the plugin's own, so a slow plugin, or a model after it, never holds up what feeds it, and one group per key is out at a time. At the end of input (`--once`, a shutdown) every open group closes; a crash loses the open ones, as with Vector. With `history`, a key's latest records are kept in the state store (namespace `groups`) and go again ahead of its next group, marked `"_context": true`, so the plugin sees what came before.
+
 When a plugin's call fails (it traps or returns an error), the records it was given are logged and dropped. `drop_on_error: false` passes them on unchanged instead, as if the plugin were not there: right for a plugin that only adds to records, such as context for a model, wrong for a filter. `tangent plugin test` always drops, so a failed call fails the test.
 
 Each state call stands alone: two workers running a plugin can interleave one's read with the other's write. A plugin that reads state and writes what depends on it makes them one transaction: `state.begin()`, its reads and writes, then `state.commit()`, or `state.rollback()`. They see each other's writes and land together, or not at all, however many workers run the plugin. A plugin that keeps state per tenant puts the tenant in its keys: [examples/counter](/examples/counter) counts events per org under `count:<org>`, and marks "first time this org did X" in a transaction. No other state call runs while one is open, so begin late, after the parsing, and commit early. A second `begin`, or a remote call, inside one fails, and a call that returns with one open has it rolled back, with a warning: only what a plugin commits is kept.

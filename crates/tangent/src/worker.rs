@@ -18,6 +18,7 @@ use tokio::time::{self, Instant as TokioInstant};
 use tokio_util::sync::CancellationToken;
 use wasmtime::component::{Component, Resource};
 
+use crate::group::{Dispatch, Group};
 use crate::inference::{lines, InferenceNode};
 use crate::router::{RefCountAck, Router};
 use crate::wasm::host::JsonLogView;
@@ -121,6 +122,9 @@ fn deliver(
 pub struct Worker {
     id: usize,
     rx: mpsc::Receiver<Record>,
+    /// Whole groups for a grouped plugin, on a pool of the plugin's own: the
+    /// walk starts at the plugin. Each is counted in flight from dispatch.
+    groups: mpsc::Receiver<(Group, Done)>,
     mappers: Mappers,
     /// What the plugins were instantiated from, to instantiate one again
     /// after it traps.
@@ -163,19 +167,28 @@ impl Worker {
 
         enum Next {
             Record(Record),
+            Group(Group, Done),
+            NoMoreGroups,
             Closed,
             Tick,
         }
 
+        let mut groups_open = true;
         loop {
             let next = tokio::select! {
                 maybe = self.rx.recv() => match maybe {
                     Some(rec) => Next::Record(rec),
                     None => Next::Closed,
                 },
+                maybe = self.groups.recv(), if groups_open => match maybe {
+                    Some((g, done)) => Next::Group(g, done),
+                    None => Next::NoMoreGroups,
+                },
                 () = &mut sleeper => Next::Tick,
             };
             match next {
+                Next::Group(g, done) => self.walk_group(g, done).await?,
+                Next::NoMoreGroups => groups_open = false,
                 Next::Closed => {
                     if !batch.is_empty() {
                         let _ = self.flush_batch(&mut batch, &mut total_size).await;
@@ -219,11 +232,7 @@ impl Worker {
         Ok(())
     }
 
-    /// A batch through the DAG, a group at a time (the records that came in
-    /// from one node). Each node's records go to each of its outputs: a
-    /// plugin or a model turns them into the next node's records, a sink's
-    /// share is collected and delivered when the group's walk is done, so the
-    /// group's acks cover every delivery.
+    /// A batch through the DAG, a walk per source the records came in from.
     pub async fn flush_batch(
         &mut self,
         batch: &mut Vec<Record>,
@@ -258,111 +267,160 @@ impl Worker {
             }
         }
 
-        let router = Arc::clone(&self.router);
-        'groups: for (from, views, upstream) in entries {
-            let mut queue: VecDeque<(NodeRef, Hop)> = VecDeque::from([(from, Hop::Views(views))]);
-            let mut deliveries: Vec<Delivery> = Vec::new();
-            while let Some((node, hop)) = queue.pop_front() {
-                let outs = router.outs(&node);
-                let sinks: Vec<(Arc<str>, Option<Arc<str>>)> = outs
-                    .iter()
-                    .filter_map(|to| match to {
-                        NodeRef::Sink { name, key_prefix } => {
-                            Some((Arc::clone(name), key_prefix.clone()))
-                        }
-                        _ => None,
-                    })
-                    .collect();
-                let nodes: Vec<&NodeRef> = outs
-                    .iter()
-                    .filter(|to| matches!(to, NodeRef::Plugin { .. } | NodeRef::Inference { .. }))
-                    .collect();
-                // A sink or a model takes every record; plugins only those
-                // their probe matches, and one no target takes goes nowhere.
-                let takes_all = !sinks.is_empty()
-                    || nodes
-                        .iter()
-                        .any(|to| matches!(to, NodeRef::Inference { .. }));
-                if let Some(bad) = outs.iter().find(|to| matches!(to, NodeRef::Source { .. })) {
-                    tracing::warn!(from = ?node, to = ?bad, "a source is not an output; dropping");
-                }
-
-                // Sinks take the node's output as it is: no parse, one copy at
-                // most.
-                if nodes.is_empty() {
-                    if !sinks.is_empty() {
-                        let frame = match hop {
-                            Hop::Frames(frames) => join_frames(frames),
-                            Hop::Views(views) => frame_of(&views),
-                        };
-                        deliver(&mut deliveries, sinks, frame);
-                    }
-                    continue;
-                }
-                // A plugin or a model needs the records: parse now. The node's
-                // sinks take its output as it came.
-                let views = match hop {
-                    Hop::Views(views) => {
-                        if !sinks.is_empty() {
-                            deliver(&mut deliveries, sinks, frame_of(&views));
-                        }
-                        views
-                    }
-                    Hop::Frames(frames) => {
-                        let views = parse(&frames);
-                        if !sinks.is_empty() {
-                            deliver(&mut deliveries, sinks, join_frames(frames));
-                        }
-                        views
-                    }
-                };
-                if views.is_empty() {
-                    continue;
-                }
-                let mut taken = vec![takes_all; views.len()];
-                for to in nodes {
-                    let out = match to {
-                        NodeRef::Plugin { name } => {
-                            self.run_plugin(name, &views, &mut taken).await?
-                        }
-                        NodeRef::Inference { name } => {
-                            match run_inference(&self.inference, name, &views, &self.stop).await? {
-                                Some(out) => out,
-                                // stopped: the group goes nowhere and is not acked
-                                None => continue 'groups,
-                            }
-                        }
-                        _ => unreachable!("sinks and sources were filtered out"),
-                    };
-                    if !out.is_empty() {
-                        queue.push_back((to.clone(), Hop::Frames(out)));
-                    }
-                }
-                let missed = taken.iter().filter(|t| !**t).count();
-                if missed > 0 {
-                    router.unrouted(&node, missed);
-                }
-            }
-
-            // The group's acks cover every sink delivery.
-            if deliveries.is_empty() {
-                for a in upstream {
-                    let _ = a.ack().await;
-                }
-            } else {
-                let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(upstream, deliveries.len()));
-                for (name, key_prefix, frame) in deliveries {
-                    router
-                        .sinks()
-                        .enqueue(name, key_prefix, frame, vec![Arc::clone(&shared)])
-                        .await?;
-                }
-            }
+        for (from, views, upstream) in entries {
+            self.walk(VecDeque::from([(from, Hop::Views(views))]), upstream)
+                .await?;
         }
 
         batch.clear();
         *total_size = 0;
         Ok(())
+    }
+
+    /// A walk of the DAG from the first node in `queue`: each node's records
+    /// go to each of its outputs, a plugin or a model turning them into the
+    /// next node's records; a sink's share is collected and delivered at the
+    /// end, so `upstream` is acked once every delivery is.
+    async fn walk(
+        &mut self,
+        mut queue: VecDeque<(NodeRef, Hop)>,
+        upstream: Vec<Arc<dyn Ack>>,
+    ) -> Result<()> {
+        let router = Arc::clone(&self.router);
+        let mut deliveries: Vec<Delivery> = Vec::new();
+        while let Some((node, hop)) = queue.pop_front() {
+            let outs = router.outs(&node);
+            let sinks: Vec<(Arc<str>, Option<Arc<str>>)> = outs
+                .iter()
+                .filter_map(|to| match to {
+                    NodeRef::Sink { name, key_prefix } => {
+                        Some((Arc::clone(name), key_prefix.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            let nodes: Vec<&NodeRef> = outs
+                .iter()
+                .filter(|to| matches!(to, NodeRef::Plugin { .. } | NodeRef::Inference { .. }))
+                .collect();
+            // A sink or a model takes every record; plugins only those
+            // their probe matches, and one no target takes goes nowhere.
+            let takes_all = !sinks.is_empty()
+                || nodes
+                    .iter()
+                    .any(|to| matches!(to, NodeRef::Inference { .. }));
+            if let Some(bad) = outs.iter().find(|to| matches!(to, NodeRef::Source { .. })) {
+                tracing::warn!(from = ?node, to = ?bad, "a source is not an output; dropping");
+            }
+
+            // Sinks take the node's output as it is: no parse, one copy at
+            // most.
+            if nodes.is_empty() {
+                if !sinks.is_empty() {
+                    let frame = match hop {
+                        Hop::Frames(frames) => join_frames(frames),
+                        Hop::Views(views) => frame_of(&views),
+                    };
+                    deliver(&mut deliveries, sinks, frame);
+                }
+                continue;
+            }
+            // A plugin or a model needs the records: parse now. The node's
+            // sinks take its output as it came.
+            let views = match hop {
+                Hop::Views(views) => {
+                    if !sinks.is_empty() {
+                        deliver(&mut deliveries, sinks, frame_of(&views));
+                    }
+                    views
+                }
+                Hop::Frames(frames) => {
+                    let views = parse(&frames);
+                    if !sinks.is_empty() {
+                        deliver(&mut deliveries, sinks, join_frames(frames));
+                    }
+                    views
+                }
+            };
+            if views.is_empty() {
+                continue;
+            }
+            let mut taken = vec![takes_all; views.len()];
+            for to in nodes {
+                let out = match to {
+                    NodeRef::Plugin { name } => match router.grouper(name) {
+                        // A grouped plugin's records wait in its groups;
+                        // the walk goes on there when a group closes.
+                        Some(grouper) => {
+                            let taken_here = self.probe(name, &views, &mut taken)?;
+                            if !taken_here.is_empty() {
+                                grouper.add(taken_here).await?;
+                            }
+                            Vec::new()
+                        }
+                        None => self.run_plugin(name, &views, &mut taken).await?,
+                    },
+                    NodeRef::Inference { name } => {
+                        match run_inference(&self.inference, name, &views, &self.stop).await? {
+                            Some(out) => out,
+                            // stopped: the group goes nowhere and is not acked
+                            None => return Ok(()),
+                        }
+                    }
+                    _ => unreachable!("sinks and sources were filtered out"),
+                };
+                if !out.is_empty() {
+                    queue.push_back((to.clone(), Hop::Frames(out)));
+                }
+            }
+            let missed = taken.iter().filter(|t| !**t).count();
+            if missed > 0 {
+                router.unrouted(&node, missed);
+            }
+        }
+
+        // The group's acks cover every sink delivery.
+        if deliveries.is_empty() {
+            for a in upstream {
+                let _ = a.ack().await;
+            }
+        } else {
+            let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(upstream, deliveries.len()));
+            for (name, key_prefix, frame) in deliveries {
+                router
+                    .sinks()
+                    .enqueue(name, key_prefix, frame, vec![Arc::clone(&shared)])
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// A closed group through its plugin, on the plugin's own workers, and
+    /// on through the DAG from there.
+    async fn walk_group(&mut self, g: Group, _done: Done) -> Result<()> {
+        let mut taken = vec![false; g.records.len()];
+        let out = self.run_plugin(&g.node, &g.records, &mut taken).await?;
+        let node = NodeRef::Plugin { name: g.node };
+        let queue = if out.is_empty() {
+            VecDeque::new()
+        } else {
+            VecDeque::from([(node, Hop::Frames(out))])
+        };
+        self.walk(queue, vec![g.done]).await
+    }
+
+    /// The records plugin `name`'s probe takes, each marked in `taken`.
+    fn probe(
+        &self,
+        name: &Arc<str>,
+        views: &Views,
+        taken: &mut [bool],
+    ) -> Result<Vec<JsonLogView>> {
+        let Some(m) = self.mappers.mappers.iter().find(|m| m.cfg_name == *name) else {
+            bail!("unknown plugin {name}");
+        };
+        Ok(by_probe(&m.selectors, views, taken).0)
     }
 
     /// `views` through plugin `name`: one guest call with the records whose
@@ -526,6 +584,8 @@ async fn run_inference(
 
 pub struct WorkerPool {
     senders: Vec<mpsc::Sender<Record>>,
+    /// Each worker's queue of whole groups.
+    group_senders: Vec<mpsc::Sender<(Group, Done)>>,
     rr: AtomicUsize,
     handles: Vec<JoinHandle<()>>,
     in_flight: Arc<AtomicUsize>,
@@ -546,6 +606,7 @@ impl WorkerPool {
         stop: CancellationToken,
     ) -> anyhow::Result<Self> {
         let mut senders = Vec::with_capacity(size);
+        let mut group_senders = Vec::with_capacity(size);
         let mut handles = Vec::with_capacity(size);
         let in_flight = router.in_flight_counter();
 
@@ -553,6 +614,8 @@ impl WorkerPool {
         for (i, (engine, comps)) in engines.into_iter().zip(components).enumerate() {
             let (tx, rx) = mpsc::channel::<Record>(ch_capacity);
             senders.push(tx);
+            let (group_tx, groups) = mpsc::channel::<(Group, Done)>(16);
+            group_senders.push(group_tx);
 
             let mut mappers = Mappers::load_all(&engine, &comps).await?;
             if let Some(first) = mappers.mappers.first_mut() {
@@ -589,6 +652,7 @@ impl WorkerPool {
             let worker = Worker {
                 id: i,
                 rx,
+                groups,
                 mappers,
                 engine,
                 components: comps,
@@ -609,6 +673,7 @@ impl WorkerPool {
 
         Ok(Self {
             senders,
+            group_senders,
             rr: AtomicUsize::new(0),
             handles,
             in_flight,
@@ -650,15 +715,44 @@ impl WorkerPool {
     pub async fn join(self) {
         let WorkerPool {
             senders,
+            group_senders,
             rr: _,
             mut handles,
             in_flight: _,
         } = self;
         drop(senders);
+        drop(group_senders);
 
         for h in handles.drain(..) {
             let _ = h.await;
         }
+    }
+}
+
+/// A grouped plugin's pool takes its closed groups whole, each to one worker.
+#[async_trait]
+impl Dispatch for WorkerPool {
+    async fn dispatch(&self, group: Group) -> Result<()> {
+        let n = self.group_senders.len();
+        if n == 0 {
+            bail!("worker pool is closed");
+        }
+        // Counted until the group's walk is done with it, or the group is
+        // dropped on the way: a worker gone with groups in its queue.
+        let records = group.records.len();
+        self.in_flight.fetch_add(records, Ordering::AcqRel);
+        let mut job = (group, Done(Arc::clone(&self.in_flight), records));
+        let start = self.rr.fetch_add(1, Ordering::Relaxed) % n;
+        for i in 0..n {
+            match self.group_senders[(start + i) % n].try_send(job) {
+                Ok(()) => return Ok(()),
+                Err(TrySendError::Full(j)) | Err(TrySendError::Closed(j)) => job = j,
+            }
+        }
+        if self.group_senders[start].send(job).await.is_err() {
+            bail!("all workers unavailable");
+        }
+        Ok(())
     }
 }
 
@@ -667,6 +761,7 @@ impl WorkerPool {
     pub fn new_for_test(handles: Vec<JoinHandle<()>>) -> Self {
         Self {
             senders: Vec::new(),
+            group_senders: Vec::new(),
             rr: AtomicUsize::new(0),
             handles,
             in_flight: Arc::new(AtomicUsize::new(0)),
@@ -797,6 +892,7 @@ mod tests {
         let worker = Worker {
             id: 0,
             rx,
+            groups: mpsc::channel(1).1,
             mappers: Mappers {
                 mappers: Vec::new(),
             },
@@ -969,6 +1065,7 @@ mod tests {
         let worker = Worker {
             id: 0,
             rx,
+            groups: mpsc::channel(1).1,
             mappers: Mappers {
                 mappers: Vec::new(),
             },
@@ -1151,6 +1248,7 @@ mod tests {
         let worker = Worker {
             id: 0,
             rx,
+            groups: mpsc::channel(1).1,
             mappers: Mappers::load_all(&engine, &components).await.unwrap(),
             engine,
             components,

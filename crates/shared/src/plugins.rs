@@ -46,10 +46,35 @@ pub struct PluginConfig {
     /// not there.
     #[serde(default = "default_true")]
     pub drop_on_error: bool,
+
+    /// Records reaching the plugin wait in a group per value of these
+    /// fields, and the plugin gets a group at a time, on workers of its own:
+    /// Vector's `reduce`, without the merge. Empty: no grouping.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub group_by: Vec<String>,
+
+    /// A group closes at this many records. Unset: only time closes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_events: Option<usize>,
+
+    /// A group closes once no record has joined it for this long, by the
+    /// wall clock.
+    #[serde(default = "default_expire_after_ms")]
+    pub expire_after_ms: u64,
+
+    /// How many of a key's latest records are kept in the state store and
+    /// sent again, marked `"_context": true`, ahead of its next group.
+    #[serde(default)]
+    pub history: usize,
 }
 
 const fn default_true() -> bool {
     true
+}
+
+/// Vector's `reduce` default.
+const fn default_expire_after_ms() -> u64 {
+    30_000
 }
 
 impl Default for PluginConfig {
@@ -63,6 +88,10 @@ impl Default for PluginConfig {
             state_namespace: None,
             data: None,
             drop_on_error: true,
+            group_by: Vec::new(),
+            max_events: None,
+            expire_after_ms: default_expire_after_ms(),
+            history: 0,
         }
     }
 }

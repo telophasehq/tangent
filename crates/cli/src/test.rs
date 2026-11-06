@@ -164,6 +164,8 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 data: plugin_cfg.data.clone(),
                 // A test sees a failed call as a failure, not a pass-through.
                 drop_on_error: true,
+                // A test hands the plugin its input as it is, ungrouped.
+                ..PluginConfig::default()
             };
 
             let mut plugins = BTreeMap::new();

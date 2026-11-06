@@ -8,8 +8,14 @@ use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
 
 use crate::{
-    enrichment::Tables, router::Router, sinks::manager::SinkManager, sources, state,
-    state::StateStore, wasm::engine::WasmEngine, worker::WorkerPool,
+    enrichment::Tables,
+    group::{self, Dispatch, GroupConfig, Grouper},
+    router::Router,
+    sinks::manager::SinkManager,
+    sources, state,
+    state::StateStore,
+    wasm::engine::WasmEngine,
+    worker::WorkerPool,
 };
 
 pub struct DagRuntime {
@@ -17,6 +23,8 @@ pub struct DagRuntime {
     pool: Arc<WorkerPool>,
     sink_manager: Arc<SinkManager>,
     consumer_handles: Vec<tokio::task::JoinHandle<()>>,
+    /// Each grouped plugin's grouping task, and the pool it hands groups to.
+    groups: Vec<(Grouper, tokio::task::JoinHandle<()>, Arc<WorkerPool>)>,
     /// The enrichment tables every plugin on every worker reads, here so a
     /// test can count what holds them; the engines keep them alive.
     #[cfg(test)]
@@ -60,57 +68,17 @@ impl DagRuntime {
         // every plugin instance in them share these.
         let tables = Arc::new(Tables::load(&cfg.enrichment_tables, config_dir)?);
 
-        let mut engines: Vec<WasmEngine> = (0..workers)
-            .map(|_| {
-                WasmEngine::new(
-                    Arc::clone(&store),
-                    Arc::clone(&tables),
-                    cfg.runtime.disable_remote_calls,
-                )
-            })
-            .collect::<Result<_, _>>()?;
-        let mut components: Vec<Vec<(Arc<str>, Component)>> = Vec::with_capacity(workers);
-        for i in 0..workers {
-            components.push(Vec::<(Arc<str>, Component)>::new());
-            for (name, plugin_cfg) in &cfg.plugins {
-                let component_file = format!("{name}.cwasm");
-                let plugin_path = plugin_root
-                    .join(&component_file)
-                    .canonicalize()
-                    .with_context(|| {
-                        format!(
-                            "canonicalizing path: {}/{}",
-                            plugin_root.display(),
-                            &component_file
-                        )
-                    })?;
-
-                let data_dir = match &plugin_cfg.data {
-                    Some(dir) => Some(config_dir.join(dir).canonicalize().with_context(|| {
-                        format!(
-                            "plugin {name}: data directory {}",
-                            config_dir.join(dir).display()
-                        )
-                    })?),
-                    None => None,
-                };
-
-                components[i].push((
-                    Arc::clone(name),
-                    engines[i]
-                        .load_precompiled(
-                            Arc::clone(name),
-                            &plugin_path,
-                            plugin_cfg.config.clone(),
-                            plugin_cfg.state_namespace.as_deref(),
-                            data_dir.as_deref(),
-                            plugin_cfg.drop_on_error,
-                        )
-                        .with_context(|| format!("loading {}", &component_file))?,
-                ));
+        for (name, p) in &cfg.plugins {
+            if p.group_by.is_empty() && (p.max_events.is_some() || p.history > 0) {
+                anyhow::bail!(
+                    "plugin {name}: max_events and history group records, and it has no group_by"
+                );
+            }
+            if !p.group_by.is_empty() && p.expire_after_ms == 0 {
+                anyhow::bail!("plugin {name}: expire_after_ms must be at least 1");
             }
         }
-
+        let (engines, components) = load(&cfg, &plugin_root, config_dir, &store, &tables, workers)?;
         let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
         for e in &cfg.dag {
             outs.entry(e.from.clone()).or_default().extend(e.to.clone());
@@ -122,6 +90,8 @@ impl DagRuntime {
         let router =
             Arc::new(Router::new(outs, Arc::clone(&sink_manager)).with_sink_batch(batch_size));
 
+        // One concurrency limit per inference node, whichever pool runs it.
+        let permits = crate::inference::permits(&cfg.inference);
         // Every worker hosts every plugin and every inference node, and walks
         // the DAG for the records it is handed.
         let pool = Arc::new(
@@ -130,16 +100,56 @@ impl DagRuntime {
                 engines,
                 components,
                 &cfg.inference,
-                &crate::inference::permits(&cfg.inference),
+                &permits,
                 config_dir,
                 batch_size,
                 batch_age,
                 Arc::clone(&router),
-                stop_models,
+                stop_models.clone(),
             )
             .await?,
         );
         router.set_pool(&pool);
+
+        // A grouped plugin gets a pool of its own and a grouping task that
+        // hands it whole groups; a walk that reaches the plugin hands the
+        // task its records instead.
+        let mut groups = Vec::new();
+        let mut groupers = std::collections::HashMap::new();
+        for (name, p) in cfg.plugins.iter().filter(|(_, p)| !p.group_by.is_empty()) {
+            let (engines, components) =
+                load(&cfg, &plugin_root, config_dir, &store, &tables, workers)?;
+            let pool = Arc::new(
+                WorkerPool::new(
+                    workers,
+                    engines,
+                    components,
+                    &cfg.inference,
+                    &permits,
+                    config_dir,
+                    batch_size,
+                    batch_age,
+                    Arc::clone(&router),
+                    stop_models.clone(),
+                )
+                .await?,
+            );
+            let cfg = GroupConfig {
+                group_by: p.group_by.clone(),
+                max_events: p.max_events,
+                expire_after: Duration::from_millis(p.expire_after_ms),
+                history: p.history,
+            };
+            let (grouper, task) = group::spawn(
+                Arc::clone(name),
+                cfg,
+                Arc::clone(&pool) as Arc<dyn Dispatch>,
+                Arc::clone(&store),
+            );
+            groupers.insert(Arc::clone(name), grouper.clone());
+            groups.push((grouper, task, pool));
+        }
+        router.set_groupers(groupers);
 
         let consumer_handles = spawn_consumers(
             cfg.sources,
@@ -154,6 +164,7 @@ impl DagRuntime {
             pool,
             sink_manager,
             consumer_handles,
+            groups,
             #[cfg(test)]
             tables,
         })
@@ -165,6 +176,7 @@ impl DagRuntime {
             pool,
             sink_manager,
             consumer_handles,
+            groups,
             ..
         } = self;
 
@@ -205,15 +217,41 @@ impl DagRuntime {
                 "drain timeout exceeded. Records may be dropped."
             );
         }
+
+        // Then the groups: the end of input closes every open one. A group's
+        // walk may reach another grouped plugin, so a round per grouped
+        // plugin, each waiting for the DAG to go quiet again.
+        for _ in 0..groups.len() {
+            for (grouper, _, _) in &groups {
+                if timeout(worker_timeout, grouper.flush()).await.is_err() {
+                    tracing::warn!("closing the groups timed out; groups still open are dropped");
+                }
+            }
+            let _ = timeout(worker_timeout, async {
+                while router.in_flight() > 0 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await;
+        }
+        let mut pools = vec![pool];
+        for (grouper, task, pool) in groups {
+            drop(grouper);
+            task.abort();
+            let _ = task.await;
+            pools.push(pool);
+        }
         drop(router);
 
         tracing::info!("waiting on workers to shutdown...");
-        if let Ok(pool_owned) = Arc::try_unwrap(pool) {
-            if let Err(e) = timeout(worker_timeout, pool_owned.join()).await {
-                tracing::warn!(?e, "pool shutdown timeout exceeded. Logs may be dropped.");
+        for pool in pools {
+            if let Ok(pool_owned) = Arc::try_unwrap(pool) {
+                if let Err(e) = timeout(worker_timeout, pool_owned.join()).await {
+                    tracing::warn!(?e, "pool shutdown timeout exceeded. Logs may be dropped.");
+                }
+            } else {
+                tracing::warn!("WorkerPool still has refs; cannot consume for join()");
             }
-        } else {
-            tracing::warn!("WorkerPool still has refs; cannot consume for join()");
         }
 
         tracing::info!("waiting on sink manager to shutdown...");
@@ -233,9 +271,80 @@ impl DagRuntime {
     }
 }
 
-/// What writes state besides the plugins: the cursors of the sources that
-/// poll an API.
+/// `workers` engines, and every plugin loaded into each.
+type Loaded = (Vec<WasmEngine>, Vec<Vec<(Arc<str>, Component)>>);
+
+fn load(
+    cfg: &Config,
+    plugin_root: &Path,
+    config_dir: &Path,
+    store: &Arc<dyn StateStore>,
+    tables: &Arc<Tables>,
+    workers: usize,
+) -> Result<Loaded> {
+    let mut engines: Vec<WasmEngine> = (0..workers)
+        .map(|_| {
+            WasmEngine::new(
+                Arc::clone(store),
+                Arc::clone(tables),
+                cfg.runtime.disable_remote_calls,
+            )
+        })
+        .collect::<Result<_, _>>()?;
+    let mut components: Vec<Vec<(Arc<str>, Component)>> = Vec::with_capacity(workers);
+    for i in 0..workers {
+        components.push(Vec::<(Arc<str>, Component)>::new());
+        for (name, plugin_cfg) in &cfg.plugins {
+            let component_file = format!("{name}.cwasm");
+            let plugin_path = plugin_root
+                .join(&component_file)
+                .canonicalize()
+                .with_context(|| {
+                    format!(
+                        "canonicalizing path: {}/{}",
+                        plugin_root.display(),
+                        &component_file
+                    )
+                })?;
+
+            let data_dir = match &plugin_cfg.data {
+                Some(dir) => Some(config_dir.join(dir).canonicalize().with_context(|| {
+                    format!(
+                        "plugin {name}: data directory {}",
+                        config_dir.join(dir).display()
+                    )
+                })?),
+                None => None,
+            };
+
+            components[i].push((
+                Arc::clone(name),
+                engines[i]
+                    .load_precompiled(
+                        Arc::clone(name),
+                        &plugin_path,
+                        plugin_cfg.config.clone(),
+                        plugin_cfg.state_namespace.as_deref(),
+                        data_dir.as_deref(),
+                        plugin_cfg.drop_on_error,
+                    )
+                    .with_context(|| format!("loading {}", &component_file))?,
+            ));
+        }
+    }
+    Ok((engines, components))
+}
+
+/// What writes state besides the plugins: a grouped plugin's history, and
+/// the cursors of the sources that poll an API.
 fn state_writer(cfg: &Config) -> Option<String> {
+    if let Some((name, _)) = cfg
+        .plugins
+        .iter()
+        .find(|(_, p)| !p.group_by.is_empty() && p.history > 0)
+    {
+        return Some(format!("plugin {name}'s history"));
+    }
     cfg.sources
         .iter()
         .find_map(|(name, s)| s.keeps_cursor().then(|| format!("source {name}")))
@@ -494,6 +603,7 @@ mod tests {
             pool: worker_pool,
             sink_manager: Arc::clone(&sink_manager),
             consumer_handles: vec![],
+            groups: vec![],
             tables: Default::default(),
         };
 
@@ -537,5 +647,11 @@ mod tests {
         assert_eq!(state_writer(&cfg(logs)), None);
         let okta = format!("{logs}  okta: {{ type: okta }}\n");
         assert_eq!(state_writer(&cfg(&okta)).as_deref(), Some("source okta"));
+        let history =
+            "runtime: {}\nplugins:\n  r: { module_type: rust, group_by: [actor], history: 3 }\n";
+        assert_eq!(
+            state_writer(&cfg(history)).as_deref(),
+            Some("plugin r's history")
+        );
     }
 }
