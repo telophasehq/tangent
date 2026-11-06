@@ -70,7 +70,6 @@ include:
   - ../tangent/packs/core/ingest.yaml
   - ../tangent/packs/core/judge.yaml
   - ../tangent/packs/app/ingest.yaml
-  - ../tangent/packs/app/judge.yaml
 
 enrichment_tables:                  # your company: packs/core/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
@@ -83,13 +82,16 @@ sources:
 dag:
   - from: { kind: source, name: events }
     to: [{ kind: plugin, name: app }]
+  - from: { kind: plugin, name: app }   # kept, learned, judged (packs/core)
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
 ```
 
 `org` is your customer, not you: leave these sources out of the profile's
 `own_sources`, and each customer's actors are kept and judged apart. A name
-of yours in the audit shape wants a logfmt row of its own in the pack's
-`judge.yaml`, as `app` has there, for its times and
-the fields on every line.
+of yours in the audit shape wants a logfmt row of its own in your config,
+under `inference.judge.encoding.sources`, as `app` has in
+[core's judge.yaml](../core/judge.yaml), for its times and the fields on
+every line.
 
 One profile serves every customer for now, which is wrong in principle and
 fine for a first customer: members, keys and their networks, hosts and

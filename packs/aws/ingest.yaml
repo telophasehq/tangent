@@ -1,8 +1,8 @@
 # aws: CloudTrail into finished records, by one plugin, `aws`: normalized,
 # trimmed, its address enriched, the profile's facts added. Include it in
-# your config with its judge.yaml and packs/core's ingest.yaml and judge.yaml,
-# route a `cloudtrail` source to plugin aws, and give the config a `profile`
-# table; README.md has the lines.
+# your config with packs/core/ingest.yaml, route a `cloudtrail` source to
+# plugin aws, and plugin aws to where its records go, and give the config a
+# `profile` table; README.md has the lines.
 plugins:
   aws:
     module_type: rust
@@ -16,7 +16,3 @@ plugins:
           asn: { type: document, path: tests/addresses.yaml }
           networks: { type: cidr, path: tests/networks.csv }
           profile: { type: document, path: tests/profile.yaml }
-
-dag:
-  - from: { kind: plugin, name: aws }
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]   # core's: the lake, each actor's baseline, and the judge

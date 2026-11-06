@@ -60,7 +60,6 @@ include:
   - ../tangent/packs/core/ingest.yaml
   - ../tangent/packs/core/judge.yaml
   - ../tangent/packs/okta/ingest.yaml
-  - ../tangent/packs/okta/judge.yaml
 
 enrichment_tables:                  # your company: packs/core/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
@@ -74,6 +73,8 @@ sources:
 dag:
   - from: { kind: source, name: okta }
     to: [{ kind: plugin, name: okta }]
+  - from: { kind: plugin, name: okta }   # kept, learned, judged (packs/core)
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
 ```
 
 and `okta` in your profile's `own_sources`, so its records are your org's.

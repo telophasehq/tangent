@@ -66,7 +66,6 @@ include:
   - ../tangent/packs/core/ingest.yaml
   - ../tangent/packs/core/judge.yaml
   - ../tangent/packs/github/ingest.yaml
-  - ../tangent/packs/github/judge.yaml
 
 enrichment_tables:                  # your company: packs/core/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
@@ -85,6 +84,8 @@ dag:
     to: [{ kind: plugin, name: github }]
   - from: { kind: source, name: events }
     to: [{ kind: plugin, name: github }]
+  - from: { kind: plugin, name: github }   # kept, learned, judged (packs/core)
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
 ```
 
 and `github_audit`, `gha_ci` and `runner_egress` in your profile's

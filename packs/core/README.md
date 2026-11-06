@@ -16,7 +16,10 @@ your sources ──▶ a pack's plugin ──┬──▶ lake/, every record as
 ```
 
 One config holds all of it, in one process: the judge's groups run on
-workers of their own, so ingest never waits on the model.
+workers of their own, so ingest never waits on the model. A pack defines
+only its plugin, and your config draws its three edges, to `lake`,
+`baseline_builder` and `baseline_renderer`. Without judge.yaml, draw only
+the one to `lake`: every record kept, and no model.
 
 ## ingest.yaml
 
@@ -33,21 +36,25 @@ workers of their own, so ingest never waits on the model.
   | `networks` | `cidr` | networks.csv | its labels: `tor` and `vpn` are flags, and any other label names its hosting provider (`aws`, `gcp`, `cloudflare`, `datacenter`; the first in the file wins) |
   | `profile` | `document` | yours | everything else ([below](#the-profile)); your config names it |
 
-- **`lake`**, a sink every pack's plugin has an edge to: every record, kept, as Parquet files in
+- **`lake`**, a sink your config routes each pack's plugin to: every record, kept, as Parquet files in
   `lake/logs/<year>/<month>/<day>/<hour>/`, each record whole in `record` and
   `ts`, `source` and `_norm`'s org, actor, kind and ip as columns, for
   DataFusion or DuckDB to read. A file is sealed an hour after it opened, and
   only sealed files are there; delete old hours to trim it.
-- **`baseline_builder`**, the plugin every pack's plugin has an edge to as
-  well: it folds each record into the state store, under the namespace
-  `baseline`, and passes nothing on ([below](#baseline)).
+- **`baseline_builder`**, a plugin your config routes each pack's plugin to
+  as well: it folds each record into the state store, under the namespace
+  `baseline`, and passes nothing on ([below](#baseline)). Only
+  `baseline_renderer` reads it, so a pipeline without the judge routes
+  nothing here.
 - **The runtime**: a worker per CPU ([below](#baseline)); plugins compiled
   into `plugins/` beside the config you run; and the state store at
   `state.sqlite`, where the API sources keep their place and baseline its
   keys.
 
-No sources and no profile: your config adds them, and sends each source to
-its pack.
+No sources and no profile: your config adds them, sends each source to its
+pack, and sends each pack's plugin on to `lake`, `baseline_builder` and
+`baseline_renderer`. A plugin with no edge out keeps nothing: its records go
+nowhere.
 
 ## The record
 
@@ -133,7 +140,7 @@ would go on as nobody the org knows, in the provider's org rather than yours.
 
 ## judge.yaml
 
-- **baseline_renderer**, which every pack's plugin has an edge to as well,
+- **baseline_renderer**, which your config routes each pack's plugin to too,
   groups each actor's records (`group_by: [_norm.org, _norm.actor]`): a group
   closes at 30 records (`max_events`) or an hour after its first record
   (`max_age_ms`), however busy the actor; an hour's quiet (`expire_after_ms`)
@@ -171,7 +178,7 @@ llama-server -m GLM-4.7-Flash-Q4_K.gguf --port 8080 -np 1 -c 32768 -ngl 99 -fa o
 For a hosted one: `JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY`.
 
 The records go to the model as logfmt, a line each, each source written as
-its pack's `judge.yaml` says: about half the tokens of JSON lines, and an
+its row under `encoding.sources` says: about half the tokens of JSON lines, and an
 actor's `_baseline` written once per request. Your config can send JSON
 lines instead, where `_baseline` is on every record; give it half the
 `batch_bytes` then, so a request fits a 32k context:
@@ -308,8 +315,9 @@ A pack's plugin links [packs/shared](/packs/shared) by path:
   and `kit.write(out, stamp, record, norm)` folds the org, names the person,
   enriches the addresses, adds the facts and writes the record as one line.
 
-The pack's `ingest.yaml` gives the plugin an edge to `baseline_builder`
-beside `logs`. Baseline reads a source it knows from its own table
+The pack's `ingest.yaml` defines the plugin and its fixtures, and no edges:
+the config that includes the pack routes it to `lake`, `baseline_builder`
+and `baseline_renderer`. Baseline reads a source it knows from its own table
 ([baseline/kit/src/kinds](baseline/kit/src/kinds)); a new pack's records pass
 through it unlearned, with no `_baseline`, until the table knows their
 `source`, unless they carry an `event`, which it reads as the app pack's audit
@@ -318,10 +326,11 @@ shape.
 ## What include cannot do
 
 - **Take a stage out of, or put one into, core's chain.** Edges add up and none
-  can be removed, so `baseline_renderer -> judge` stays, and so
-  does each pack's edge to `baseline_builder`. Another plugin between them, or
-  a judge without `baseline_renderer`, means copying `judge.yaml` instead of
-  including it, or a change here that every config gets, as baseline was.
+  can be removed, so `baseline_renderer -> judge` stays. Another plugin
+  between them, or a judge without `baseline_renderer`, means copying
+  `judge.yaml` instead of including it, or a change here that every config
+  gets, as baseline was. Each pack's edges are your config's own, so where a
+  pack's records go is yours to say.
 - **Keep a batch's order.** A source routed to several packs hands each its own
   records in turn, and several workers hand an actor's records to its group as
   they finish, so a group holds them in the order they arrived, not by

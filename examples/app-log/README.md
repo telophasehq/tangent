@@ -13,8 +13,9 @@ app audit log, agent logs ──▶ app ──▶ baseline_renderer (an actor's 
 ```
 
 It is built only from [packs](/packs): `tangent.yaml` includes
-[core](/packs/core) and the [app](/packs/app) pack, ingest and judge, and adds
-the NDJSON source on `:9401` and the profile. One config, one process; the
+[core](/packs/core), its judge, and the [app](/packs/app) pack, and adds the
+NDJSON source on `:9401`, the plugin's edges to the lake, the baseline and the
+judge, and the profile. One config, one process; the
 judge reads each actor's history from the same `state.sqlite`. The
 17 cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) are the ones that live in product logs: a key
 paging through a whole dataset, an integration's token used from a host it

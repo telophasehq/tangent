@@ -51,7 +51,6 @@ include:
   - ../tangent/packs/core/ingest.yaml
   - ../tangent/packs/core/judge.yaml
   - ../tangent/packs/google_workspace/ingest.yaml
-  - ../tangent/packs/google_workspace/judge.yaml
 
 enrichment_tables:                  # your company: packs/core/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
@@ -65,6 +64,8 @@ sources:
 dag:
   - from: { kind: source, name: google_workspace }
     to: [{ kind: plugin, name: google_workspace }]
+  - from: { kind: plugin, name: google_workspace }   # kept, learned, judged (packs/core)
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
 ```
 
 and `google_workspace` in your profile's `own_sources`.

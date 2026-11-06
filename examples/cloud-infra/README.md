@@ -5,8 +5,8 @@ of its actor's recent records; a person reads what it flags. Install, point your
 logs at it, fill in one file about your company, run.
 
 It is built only from [packs](/packs): `tangent.yaml` includes
-[core](/packs/core) and five packs, and adds the sources, their edges and the
-profile. One config, one process.
+[core](/packs/core) and five packs, and adds the sources, their edges, each
+pack's edges to the lake, the baseline and the judge, and the profile. One config, one process.
 
 ```
 CloudTrail ──▶ aws ──────────────┐
@@ -118,6 +118,6 @@ The packs' fixtures were cut from eight of the cases; `make test` runs them, nee
 ## Files
 
 ```
-tangent.yaml          core and the five packs, the sources and their edges, the profile
+tangent.yaml          core and the five packs, the sources, every edge, the profile
 profile/profile.yaml  your company (edit this)
 ```

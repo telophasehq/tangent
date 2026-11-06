@@ -5,7 +5,6 @@ include:
   - ../../packs/core/ingest.yaml              # the runtime, the tables, the lake, each actor's baseline
   - ../../packs/core/judge.yaml               # the judge: each actor's records a group at a time
   - ../../packs/app/ingest.yaml               # plugin app: app, agent
-  - ../../packs/app/judge.yaml                # and its rows for the judge
 
 enrichment_tables:
   profile: { type: document, path: profile/profile.yaml, required: true }   # a typo here stops it
@@ -18,3 +17,7 @@ sources:
 dag:
   - from: { kind: source, name: events }
     to: [{ kind: plugin, name: app }]
+  # app's records: kept in the lake, folded into the actor's baseline, and
+  # judged (packs/core).
+  - from: { kind: plugin, name: app }
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
