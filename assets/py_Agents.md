@@ -189,11 +189,11 @@ if lst is not None:
 
 **Do NOT:**
 
-* Pretty‑print or add extra whitespace unless your tests expect it.
+* Pretty‑print (`indent=`): each record must stay on one line, or the output does not parse.
 * Manually craft JSON strings.
 * Return `str` (must be `bytes`).
 
-> The test compares parsed JSON, not text: whitespace, separators and key order in the output do not matter.
+> The test compares parsed JSON, not text: spaces, separators and key order within a record do not matter.
 
 ---
 
