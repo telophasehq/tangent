@@ -93,7 +93,11 @@ fn a_root_without_include_loads_as_before() {
     assert_eq!(gh.org.as_deref(), Some("12345"), "an all-digit org");
     let judge = &cfg.inference["judge"];
     assert_eq!(judge.model, "", "an empty `model:` is the empty string");
-    assert_eq!(judge.url, "", "an unset ${{VAR}} is empty, as before");
+    assert_eq!(
+        judge.url.as_deref(),
+        Some(""),
+        "an unset ${{VAR}} is empty, as before"
+    );
     assert_eq!(
         judge.prompt_file,
         PathBuf::from("judge.md"),
@@ -130,7 +134,7 @@ fn merged_text_keeps_the_scalars_lenient() {
         judge.model, "4",
         "a number where a string goes, as in a file"
     );
-    assert_eq!(judge.url, "8080");
+    assert_eq!(judge.url.as_deref(), Some("8080"));
     assert_eq!(judge.temperature, Some(1.0));
 }
 
@@ -154,7 +158,7 @@ fn a_scalar_reads_as_its_file_wrote_it() {
             let cfg = load(&dir, name).unwrap().config;
             let judge = &cfg.inference["judge"];
             assert_eq!(judge.model, written, "{name}");
-            assert_eq!(judge.url, written, "{name}");
+            assert_eq!(judge.url.as_deref(), Some(written), "{name}");
             assert_eq!(
                 judge.temperature,
                 Some(1.5),
@@ -492,7 +496,11 @@ inference:
     ]);
     let cfg = load(&dir, "root.yaml").unwrap().config;
     let judge = &cfg.inference["judge"];
-    assert_eq!(judge.url, "http://localhost:8080/v1", "the field's default");
+    assert_eq!(
+        judge.url.as_deref(),
+        Some("http://localhost:8080/v1"),
+        "the field's default"
+    );
     assert_eq!(
         judge.temperature,
         Some(0.5),
@@ -742,7 +750,11 @@ inference:
         cfg.inference["judge"].model, "glm-4.7-flash",
         "empty is unset"
     );
-    assert_eq!(cfg.inference["judge"].url, "packs", "a set variable wins");
+    assert_eq!(
+        cfg.inference["judge"].url.as_deref(),
+        Some("packs"),
+        "a set variable wins"
+    );
 }
 
 #[test]

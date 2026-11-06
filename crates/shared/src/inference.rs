@@ -20,9 +20,15 @@ pub struct InferenceConfig {
     #[serde(default)]
     pub backend: Backend,
 
-    /// Base URL of the chat completions API (`openai` backend).
-    #[serde(default = "default_url")]
-    pub url: String,
+    /// Base URL of the chat completions API (`openai` backend);
+    /// [`DEFAULT_URL`] when unset. The `bedrock` backend reads none, so it
+    /// gets no default.
+    #[serde(
+        default,
+        deserialize_with = "some_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub url: Option<String>,
 
     /// Bearer token for the `openai` backend, e.g. "${OPENAI_API_KEY}".
     #[serde(default, skip_serializing)]
@@ -126,9 +132,25 @@ pub struct AwsConfig {
     pub profile: Option<String>,
 }
 
-fn default_url() -> String {
-    "http://localhost:8080/v1".into()
+/// Where an `openai` node that names no `url` sends its requests.
+pub const DEFAULT_URL: &str = "http://localhost:8080/v1";
+
+impl InferenceConfig {
+    /// Gives an `openai` node without a `url` the default, as the config
+    /// shows it. A `bedrock` node keeps what it was given.
+    pub fn default_url(&mut self) {
+        if self.backend == Backend::Openai && self.url.is_none() {
+            self.url = Some(DEFAULT_URL.into());
+        }
+    }
 }
+
+/// A `url:` written but left empty is the empty string, as it was when
+/// `url` was a `String`; only a `url` not written at all is unset.
+fn some_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
+}
+
 const fn default_concurrency() -> usize {
     1
 }

@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tangent_compact as compact;
-use tangent_shared::inference::{Backend, Encoding, InferenceConfig};
+use tangent_shared::inference::{Backend, Encoding, InferenceConfig, DEFAULT_URL};
 use tokio::sync::Semaphore;
 
 pub struct InferenceNode {
@@ -56,7 +56,12 @@ fn model(cfg: &InferenceConfig) -> Result<DynModel<Completion>> {
             // Local servers accept any key; a hosted one needs the real thing.
             let key = cfg.api_key.as_ref().map_or("none", |k| k.expose_secret());
             OpenAIConfig::new(key)
-                .with_base_url(cfg.url.trim_end_matches('/'))
+                .with_base_url(
+                    cfg.url
+                        .as_deref()
+                        .unwrap_or(DEFAULT_URL)
+                        .trim_end_matches('/'),
+                )
                 .with_route(Route::Chat)
                 .client()
                 .chat(&cfg.model)
@@ -703,7 +708,7 @@ pub(crate) mod stub {
         );
         tangent_shared::inference::InferenceConfig {
             backend: tangent_shared::inference::Backend::Openai,
-            url: url.to_string(),
+            url: Some(url.to_string()),
             api_key: None,
             model: "stub".into(),
             aws: Default::default(),
