@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use serde_json::Value;
 use tangent_shared::sinks::slack::SlackConfig;
 
 use crate::sinks::manager::{Sink, SinkWrite};
-use crate::{SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL};
+use crate::{SINK_BYTES_TOTAL, SINK_OBJECTS_TOTAL, SINK_RECORDS_REJECTED_TOTAL};
 
 pub struct SlackSink {
     client: reqwest::Client,
@@ -22,6 +23,8 @@ pub struct SlackSink {
     /// twice. Two writes of one payload at once share an entry: a line is
     /// then at worst posted twice, never skipped.
     failed_at: Mutex<HashMap<Bytes, usize>>,
+    /// A refusal has been logged; later ones are only counted.
+    warned: AtomicBool,
 }
 
 impl SlackSink {
@@ -40,13 +43,14 @@ impl SlackSink {
             url: cfg.webhook_url.clone(),
             text: cfg.text.clone(),
             failed_at: Mutex::default(),
+            warned: AtomicBool::new(false),
         }))
     }
 
     /// Ok once Slack has the message, or has refused it: posting it again
     /// would be refused again. Err when another try can succeed: a 429, after
     /// the wait its `retry-after` asks for, a 5xx, a timeout or no connection.
-    async fn post(&self, text: &str) -> Result<()> {
+    async fn post(&self, sink: &str, text: &str) -> Result<()> {
         let body =
             serde_json::json!({ "text": text, "unfurl_links": false, "unfurl_media": false });
         let r = self
@@ -75,7 +79,14 @@ impl SlackSink {
         if status.is_server_error() {
             bail!("slack post failed: {status}");
         }
-        tracing::warn!("slack post failed: {status}");
+        SINK_RECORDS_REJECTED_TOTAL.with_label_values(&[sink]).inc();
+        if !self.warned.swap(true, Ordering::Relaxed) {
+            tracing::warn!(
+                sink,
+                "slack refused a post with {status} and it was dropped; later refusals \
+                 are only counted, in tangent_sink_records_rejected_total"
+            );
+        }
         Ok(())
     }
 }
@@ -164,7 +175,7 @@ impl Sink for SlackSink {
                     continue;
                 }
             };
-            if let Err(e) = self.post(&render(&self.text, &v)).await {
+            if let Err(e) = self.post(&req.sink_name, &render(&self.text, &v)).await {
                 self.failed_at.lock().insert(payload.clone(), i);
                 return Err(e);
             }
@@ -177,6 +188,8 @@ impl Sink for SlackSink {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::atomic::AtomicUsize;
+    use tracing_subscriber::layer::SubscriberExt;
 
     #[test]
     fn renders_escaped() {
@@ -324,9 +337,10 @@ mod tests {
         }
     }
 
-    /// Writes `payload` to a slack sink through a sink manager, as a node's
-    /// edge does; the post count at its ack, if it was acked.
-    async fn send(url: &str, posts: &Posts, payload: &str) -> Option<usize> {
+    /// Writes `payload` to a slack sink named `name` through a sink manager,
+    /// as a node's edge does: the post count at its ack, if it was acked, and
+    /// the warnings logged.
+    async fn send(name: &str, url: &str, posts: &Posts, payload: &str) -> (Option<usize>, usize) {
         // the stub is http, which `new` refuses; a short timeout keeps a hung post quick
         let sink = Arc::new(SlackSink {
             client: reqwest::Client::builder()
@@ -336,20 +350,40 @@ mod tests {
             url: url.into(),
             text: "{who}".into(),
             failed_at: Mutex::default(),
+            warned: AtomicBool::new(false),
         });
-        let name: Arc<str> = Arc::from("alerts");
+        let name: Arc<str> = Arc::from(name);
         let manager = crate::sinks::manager::SinkManager::for_test(
             vec![(Arc::clone(&name), sink as Arc<dyn Sink>)],
             1,
         );
         let ack = Arc::new(AckedAt(Arc::clone(posts), Default::default()));
+        // a #[tokio::test] runs every task on the test's thread, so this sees them all
+        let warnings = Arc::new(AtomicUsize::new(0));
+        let _log = tracing::subscriber::set_default(
+            tracing_subscriber::registry().with(Warnings(Arc::clone(&warnings))),
+        );
         manager
             .enqueue(name, bytes::BytesMut::from(payload), vec![ack.clone()])
             .await
             .unwrap();
         manager.join().await.unwrap();
         let acked_at = ack.1.lock().unwrap().take();
-        acked_at
+        (acked_at, warnings.load(Ordering::SeqCst))
+    }
+
+    struct Warnings(Arc<AtomicUsize>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Warnings {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            if *event.metadata().level() == tracing::Level::WARN {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
     }
 
     fn seen(posts: &Posts) -> Vec<(String, u16)> {
@@ -367,7 +401,13 @@ mod tests {
             Reply::Status(503),
         ])
         .await;
-        let acked_at = send(&url, &posts, "{\"who\":\"a\"}\n{\"who\":\"b\"}\n").await;
+        let (acked_at, _) = send(
+            "retried",
+            &url,
+            &posts,
+            "{\"who\":\"a\"}\n{\"who\":\"b\"}\n",
+        )
+        .await;
         let s = |t: &str, s| (t.to_string(), s);
         // `a` went out first time and is not posted again; the write is acked
         // after `b`'s 200, the sixth post
@@ -389,6 +429,29 @@ mod tests {
         assert!(
             posts[4].2 - posts[3].2 >= Duration::from_secs(1),
             "the post after a 429 waits its retry-after"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_post_is_dropped_counted_and_acked() {
+        let refused = || {
+            crate::SINK_RECORDS_REJECTED_TOTAL
+                .with_label_values(&["refused"])
+                .get()
+        };
+        let (url, posts) = webhook(vec![Reply::Status(400), Reply::Status(404)]).await;
+        let (acked_at, warnings) = send(
+            "refused",
+            &url,
+            &posts,
+            "{\"who\":\"a\"}\n{\"who\":\"b\"}\n{\"who\":\"c\"}\n",
+        )
+        .await;
+        let s = |t: &str, s| (t.to_string(), s);
+        // neither refusal is posted again, both are counted, the first logged
+        assert_eq!(
+            (seen(&posts), acked_at, refused(), warnings),
+            (vec![s("a", 400), s("b", 404), s("c", 200)], Some(3), 2, 1)
         );
     }
 }

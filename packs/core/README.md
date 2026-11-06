@@ -235,8 +235,8 @@ the first of them it has, so a record the model could not judge says why. A
 field's value is escaped: a log line cannot mention anyone, link or start a
 line in the message. A post that can work later (a 429, after its
 `retry-after`, a 5xx, a timeout) is tried again, and its record is acked
-only once Slack has it; one Slack refuses (another 4xx) is logged and
-dropped.
+only once Slack has it; one Slack refuses (another 4xx) is dropped and
+counted in `tangent_sink_records_rejected_total`, and the first is logged.
 
 ## baseline
 

@@ -85,6 +85,12 @@ lazy_static::lazy_static! {
         &["fate"]
     ).unwrap();
 
+    pub static ref SINK_RECORDS_REJECTED_TOTAL: IntCounterVec = register_int_counter_vec!(
+        "tangent_sink_records_rejected_total",
+        "Records a sink's destination refused for good (Slack: a 4xx other than 429): dropped, not retried",
+        &["sink"]
+    ).unwrap();
+
     pub static ref INFLIGHT: IntGauge =
         register_int_gauge!("tangent_inflight", "Batches enqueued but not yet persisted").unwrap();
 
