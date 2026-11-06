@@ -9,14 +9,18 @@ run inside Tangent.
 |---|---|---|---|
 | tcp → blackhole | `483.35 MB/s` | `399.54 MB/s` | `76.91 MB/s` |
 
-_Measured in November 2025 on a dedicated 16-core AMD machine, with
-`tangent run` and `tangent bench` pinned to separate cores._ To run one
-yourself (`examples/golang` and `examples/python` the same way):
+_Measured in November 2025, on tangent as of v0.1.9 (before `group_by`,
+transactions and the one-config pipeline; not re-run since), on a dedicated
+16-core AMD machine, with `tangent run` and `tangent bench` pinned to
+separate cores._ To run one yourself (`examples/golang` and
+`examples/python` the same way):
 
 ```sh
 tangent plugin compile --config examples/rust/tangent.yaml
 tangent run --config examples/rust/tangent.yaml &
+until nc -z 127.0.0.1 9000; do sleep 0.2; done   # until its tcp source listens
 tangent bench --config examples/rust/tangent.yaml --seconds 20 --connections 16 --payload examples/rust/tests/bench.json --synthesize
+kill %1
 ```
 
 `tangent bench` sends the payload to the config's source, a `tcp` or
