@@ -7,7 +7,6 @@ use crate::sources::github_audit::GithubAuditConfig;
 use crate::sources::github_webhook::GithubWebhookConfig;
 use crate::sources::google_workspace::GoogleWorkspaceConfig;
 use crate::sources::msk::MSKConfig;
-use crate::sources::npm_registry::NpmRegistryConfig;
 use crate::sources::okta::OktaConfig;
 use crate::sources::socket::SocketConfig;
 use crate::sources::sqlite::SqliteConfig;
@@ -29,8 +28,6 @@ pub enum SourceConfig {
     SQS(SQSConfig),
     #[serde(rename = "github_webhook")]
     GithubWebhook(GithubWebhookConfig),
-    #[serde(rename = "npm_registry")]
-    NPMRegistry(NpmRegistryConfig),
     /// The audit logs a company reads about itself, polled from their APIs
     /// with nothing in between.
     #[serde(rename = "cloudtrail")]
@@ -60,7 +57,6 @@ impl SourceConfig {
             | SourceConfig::Tcp(_)
             | SourceConfig::SQS(_)
             | SourceConfig::GithubWebhook(_)
-            | SourceConfig::NPMRegistry(_)
             | SourceConfig::Cloudtrail(_)
             | SourceConfig::Sqlite(_) => false,
         }

@@ -439,17 +439,6 @@ fn spawn_consumers(
                     }
                 }));
             }
-            (name, SourceConfig::NPMRegistry(np)) => {
-                let router = router.clone();
-                handles.push(tokio::spawn(async move {
-                    if let Err(e) =
-                        sources::npm_registry::run_consumer(name, np, router, shutdown.clone())
-                            .await
-                    {
-                        tracing::error!("NPM Registry consumer error: {e}");
-                    }
-                }));
-            }
             (name, SourceConfig::Cloudtrail(ct)) => {
                 let router = router.clone();
                 handles.push(tokio::spawn(async move {

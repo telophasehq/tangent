@@ -5,7 +5,6 @@ pub mod github_audit;
 pub mod github_webhook;
 pub mod google_workspace;
 pub mod msk;
-pub mod npm_registry;
 pub mod okta;
 pub mod socket;
 pub mod sqlite;

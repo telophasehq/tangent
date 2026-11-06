@@ -192,7 +192,6 @@ pub async fn run_one_payload(
                             )
                             .await
                         }
-                        SourceConfig::NPMRegistry(_) => undriven(name, "npm_registry"),
                         SourceConfig::GithubWebhook(_) => undriven(name, "github_webhook"),
                         SourceConfig::File(_) => undriven(name, "file"),
                         SourceConfig::Sqlite(_) => undriven(name, "sqlite"),
@@ -280,7 +279,6 @@ mod tests {
     async fn undriven_sources_are_errors_not_panics() {
         let sources = [
             json!({"type": "github_webhook", "path": "/webhook", "token": ""}),
-            json!({"type": "npm_registry", "packages": ["left-pad"]}),
             json!({"type": "file", "path": "in.ndjson",
                    "decoding": {"format": {"type": "ndjson"}}}),
             json!({"type": "sqlite", "path": "q.sqlite", "table": "t", "partition": "p",
