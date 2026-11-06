@@ -1,6 +1,5 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Utc};
 use std::fs::File;
 use std::io::ErrorKind;
@@ -38,7 +37,7 @@ impl PathTemplate {
         }
         let rest = (!rest.is_empty()).then(|| rest.join("/"));
         if let Some(r) = &rest {
-            if StrftimeItems::new(r).any(|i| matches!(i, Item::Error)) {
+            if !strftime_renders(r) {
                 anyhow::bail!("path {path:?}: {r:?} is not a strftime template");
             }
         }
@@ -56,6 +55,18 @@ impl PathTemplate {
             .as_ref()
             .map(|r| Arc::from(now.format(r).to_string()))
     }
+}
+
+/// Whether chrono can write `template` for a UTC time: a rolling_file
+/// sink's `path` and an s3 sink's `key_prefix` are checked with it at load.
+/// chrono's strftime parser takes a few specifiers it can only read
+/// (`%#z`), so parsing is not enough: writing one fails, and
+/// `format(..).to_string()` panics on the first write routed through it.
+/// Whether a UTC time writes does not depend on which time it is, so one
+/// trial render covers every write.
+pub(crate) fn strftime_renders(template: &str) -> bool {
+    use std::fmt::Write as _;
+    write!(String::new(), "{}", Utc::now().format(template)).is_ok()
 }
 
 /// The far side of a WAL for a local directory: each sealed file, in the
@@ -349,5 +360,7 @@ mod tests {
         assert_eq!(fixed.route(at), None);
         assert!(PathTemplate::parse("lake/%Y/../x").is_err());
         assert!(PathTemplate::parse("lake/%Q").is_err());
+        // chrono parses `%#z` but cannot write it
+        assert!(PathTemplate::parse("lake/%#z").is_err());
     }
 }

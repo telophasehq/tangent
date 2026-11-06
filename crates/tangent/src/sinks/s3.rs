@@ -4,7 +4,6 @@ use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_sdk_s3::Client;
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::byte_stream::ByteStream;
-use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -14,6 +13,7 @@ use tangent_shared::sinks::s3::S3Config;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
+use crate::sinks::rolling_file;
 use crate::sinks::wal::{compressed_whole, WALSink};
 
 pub struct S3Sink {
@@ -237,7 +237,7 @@ pub struct KeyPrefix(String);
 
 impl KeyPrefix {
     pub fn parse(template: &str) -> Result<Self> {
-        if StrftimeItems::new(template).any(|i| matches!(i, Item::Error)) {
+        if !rolling_file::strftime_renders(template) {
             bail!("key_prefix {template:?} is not a strftime template (`%%` is a `%`)");
         }
         if template.starts_with('/') || template.split('/').any(|s| s == "..") {
@@ -311,7 +311,15 @@ mod tests {
 
     #[test]
     fn a_key_prefix_is_a_strftime_path_in_the_bucket() {
-        for bad in ["logs/%Q", "logs/100%", "/logs/%Y", "logs/../%Y", ".."] {
+        // `%#z` is one chrono parses but cannot write
+        for bad in [
+            "logs/%Q",
+            "logs/100%",
+            "logs/%#z",
+            "/logs/%Y",
+            "logs/../%Y",
+            "..",
+        ] {
             assert!(KeyPrefix::parse(bad).is_err(), "{bad}");
         }
         let sinks = |prefix: &str| -> BTreeMap<Arc<str>, SinkConfig> {
