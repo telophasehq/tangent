@@ -31,13 +31,19 @@ make PLUGINS=compile
 `PLUGINS=compile` builds the plugins here, and installs the Rust WASM
 toolchain first; leave it out once a release carries them (v0.1.9 does not).
 The first run also fetches GeoLite2 and the cloud ranges into
-`../enrich/data` ([examples/enrich](/examples/enrich)). For a hosted model
-instead of a local one, `JUDGE_URL`, `JUDGE_MODEL` and `JUDGE_API_KEY` (two
-requests, well under a cent).
+`../enrich/data` ([examples/enrich](/examples/enrich)).
+
+The model's weights, `GLM-4.7-Flash-Q4_K_M.gguf`, are 18.3 GB, and
+llama-server keeps them in memory, so it wants a GPU or an Apple silicon
+machine with more than that to spare. For a hosted model instead, set
+`JUDGE_URL`, `JUDGE_MODEL` and `JUDGE_API_KEY` and run
+`make PLUGINS=compile CONFIG=hosted.yaml`: [hosted.yaml](hosted.yaml) leaves
+out the local model's sampling settings, which a hosted model may refuse
+(two requests, well under a cent).
 
 It prints what `alerts.ndjson` holds. With GLM-4.7-Flash on llama-server,
-five runs on 2026-11-06 gave the same two verdicts: dave's promotion passed,
-and carol's export was flagged with
+on a Mac Studio (M4 Max, 36 GB), five runs on 2026-11-06 gave the same two
+verdicts: dave's promotion passed, and carol's export was flagged with
 
 ```json
 {"flag": true, "why": "The actor is using a Telegram Messenger IP address (91.108.4.12) for an org export, which is unusual for this human user and organization."}
@@ -58,8 +64,11 @@ links   ip 91.108.4.12 new for this actor, no other actor used it before
 
 The why names the address and the export but not the promotion six minutes
 before, which `auth` puts on her record and which the case wants checked
-first. This model has not been measured on the corpus; the measured one is
-Claude Haiku 5.5 ([tangent-eval's RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)).
+first. Both kinds are on acme's `watch` list, so both records carry
+`_facts.watch` and a note saying so; that is a note the model reads, and it
+still passed the promotion. This model has not been measured on the corpus;
+the measured one is Claude Haiku 5.5
+([tangent-eval's RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)).
 
 `make clean` removes what a run wrote.
 
@@ -77,3 +86,4 @@ tangent-eval's fictional company. From
 | `profile/profile.yaml` | tangent-eval's `profile/profile.yaml` (MPL-2.0, as tangent-eval is) |
 | `learn.yaml` | step 1: the history into `state.sqlite`, no model |
 | `tangent.yaml` | step 2: the two records, judged |
+| `hosted.yaml` | step 2 on a hosted model (`make CONFIG=hosted.yaml`) |
