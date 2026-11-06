@@ -1,6 +1,6 @@
 module enrichment
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102180530-cda85d226be0
@@ -23,8 +23,9 @@ require (
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	github.com/urfave/cli/v3 v3.3.3 // indirect
 	go.bytecodealliance.org v0.7.0 // indirect
-	golang.org/x/mod v0.29.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
 )
 
 tool go.bytecodealliance.org/cmd/wit-bindgen-go
