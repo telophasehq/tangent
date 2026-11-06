@@ -3,8 +3,8 @@
 # records judged a group at a time on workers of their own, so ingest never
 # waits on the model. One config, one process.
 #
-#   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
-#   make test       the packs' fixtures; no model needed
+#   make setup      the enrichment data (GeoLite2, cloud ranges, Tor exits)
+#   make test       the packs' plugins, then their fixtures; no model needed
 #   make run        reads CloudTrail, GitHub, Okta and Workspace for the credentials you
 #                   export (see the Makefile), NDJSON on :9400 for the rest, and judges them
 #
@@ -28,7 +28,7 @@ enrichment_tables:
 #     encoding:
 #       type: ndjson
 
-# What flagged keeps, to Slack too, with its edge at the end of `dag` (README.md):
+# What flagged keeps, to Slack too, with its edge at the end of `dag` (packs/core/README.md#slack):
 # sinks:
 #   slack:
 #     type: slack

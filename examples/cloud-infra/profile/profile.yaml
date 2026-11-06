@@ -2,8 +2,10 @@
 # about you that no log carries: who your people are, where they are, where
 # your services run, which hosts your systems talk to, which assets matter.
 #
-# The values below describe the fictional company in tangent-eval's cases, so `make test`
-# passes out of the box. Replace them with yours before `make run`.
+# The values below describe the fictional company in tangent-eval's cases, so
+# their records, and the packs' fixtures, read as that company's out of the box.
+# (`make test` reads each pack's own tests/profile.yaml, not this file.) Replace
+# them with yours before `make run`.
 
 org: acme                        # the org every one of your own infrastructure logs is folded into
 own_sources: [cloudtrail, github_audit, okta, google_workspace, gha_ci, runner_egress]
