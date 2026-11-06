@@ -2,7 +2,7 @@
   <img src="https://github.com/user-attachments/assets/7da02584-0a4e-4e41-af6d-61cb081029c4" alt="Tangent logo" height=170>
 </p>
 <h1 align="center">Tangent</h1>
-<p align="center"><em>A model reads every audit log line beside what its actor did before, and flags what a person should look at. For a 50-person company's AWS, Okta, GitHub and Google Workspace logs: about $3–27 a day on Claude Haiku 5.5, or free on your own machine.</em></p>
+<p align="center"><em>Tangent streams logs from your infrastructure, identity and app to an LLM that flags suspicious behavior. It costs about $1–5 a day for a 10-person startup on Claude Haiku 5.5 (app logs priced by traffic), or nothing with a local model.</em></p>
 
 <p align="center">
   <a href="https://github.com/EthanBlackburn/tangent/actions">
@@ -25,8 +25,8 @@ each record with a pass, or a flag and its reason. A pack for macOS laptops,
 through eslogger, is in review
 ([#85](https://github.com/EthanBlackburn/tangent/pull/85)).
 
-- **Cost.** About $3–27 a day for those four sources at a 50-person company,
-  on Claude Haiku 5.5; a person costs about a cent a day in each source that
+- **Cost.** About $1–5 a day for those four sources at a 10-person startup,
+  and $3–27 at 50 people, on Claude Haiku 5.5; a person costs about a cent a day in each source that
   sees them. Your product's log is optional and priced by its traffic:
   $17–170 a day at 0.6M–6M lines. These are estimates, and may be low
   ([What it costs](#what-it-costs)). A local model, the default, costs only
@@ -166,7 +166,11 @@ each active about eight hours a day:
 | [github](packs/github) | 1k–10k events, ~0.3 KB | 5k–14k logs | $0.09–0.26 |
 
 AWS, Okta, GitHub and Google Workspace together come to $3.10–27 a day. A
-person costs about a cent a day or less in each source that sees them. The app row is optional, and priced by traffic: send
+person costs about a cent a day or less in each source that sees them, so
+at 10 people Okta, GitHub and Google Workspace come to $0.10–0.26. aws
+grows with services more than people: if a 10-person startup's trail has a
+fifth of the events above (10k–100k a day), it is $0.52–5.20, about $1–5 a
+day in all. The app row is optional, and priced by traffic: send
 your product's audit log, not its request log, since that row is the one
 that grows past a hundred dollars. It gets expensive where
 the volume is machines: a trail that also logs data events (S3 objects,

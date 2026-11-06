@@ -59,7 +59,10 @@ Rough ranges for a company of 50 people, each active about eight hours a day
 | [github](../packs/github) | engineers: 20–200 events each, pushes, reviews and Actions runs | ~0.3 KB | 1k–10k events, 0.3–3 MB | 5k–14k logs (ten for each person-hour) | $0.09–0.26 |
 
 A person costs about a cent a day or less in each source that sees them,
-however little they do. Send your product's audit log, not its request log:
+however little they do. At 10 people, Okta, GitHub and Google Workspace come to
+$0.10–0.26 a day; aws grows with services more than people, and if a
+10-person startup's trail writes a fifth of the events above (10k–100k a
+day), it adds $0.52–5.20, about $1–5 a day in all. Send your product's audit log, not its request log:
 the app row is traffic, and it is the one that grows past a hundred dollars.
 A trail that also logs data events (S3 objects, Lambda invocations) can have
 ten to a hundred times aws's events. AWS VPC Flow Logs have no pack: a
