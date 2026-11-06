@@ -515,14 +515,34 @@ mod tests {
     }
 
     /// `tangent run` stops at a key_prefix that is not a strftime template,
-    /// naming the sink, before any sink starts.
+    /// naming the sink, before any sink starts: a sink named before it has
+    /// not made its WAL, so none recovers or sends what it finds there.
     #[tokio::test]
     async fn a_key_prefix_not_strftime_stops_the_sinks_at_load() {
-        let cfg = serde_yaml::from_str("type: s3\nbucket_name: b\nkey_prefix: logs/%Q\n").unwrap();
-        let Err(e) = SinkManager::new(&BTreeMap::from([(Arc::from("archive"), cfg)])).await else {
+        let root = std::env::temp_dir().join(format!("tangent-badprefix-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let s3 = |wal: &str, extra: &str| -> SinkConfig {
+            let wal = root.join(wal);
+            let yaml = format!(
+                "type: s3\nbucket_name: b\nwal_path: {}\n{extra}",
+                wal.display()
+            );
+            serde_yaml::from_str(&yaml).unwrap()
+        };
+        // 'a' sorts first, so it would be built first
+        let cfgs: BTreeMap<Arc<str>, SinkConfig> = BTreeMap::from([
+            (Arc::from("a"), s3("a-wal", "")),
+            (
+                Arc::from("archive"),
+                s3("archive-wal", "key_prefix: logs/%Q\n"),
+            ),
+        ]);
+        let Err(e) = SinkManager::new(&cfgs).await else {
             panic!("a bad key_prefix loaded");
         };
         assert!(format!("{e:#}").contains("sink 'archive'"), "{e:#}");
+        assert!(!root.join("a-wal").exists(), "sink 'a' made its WAL");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     fn s3(wal: &str) -> SinkConfig {
