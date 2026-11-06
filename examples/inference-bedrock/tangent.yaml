@@ -33,7 +33,7 @@ plugins:
     path: ../inference-local/flagged
 
 sinks:
-  flagged:
+  flagged_out:
     type: file
     path: flagged.ndjson
     compression:
@@ -45,4 +45,4 @@ dag:
   - from: { kind: inference, name: judge }
     to: [{ kind: plugin, name: flagged }]
   - from: { kind: plugin, name: flagged }
-    to: [{ kind: sink, name: flagged }]
+    to: [{ kind: sink, name: flagged_out }]

@@ -279,12 +279,12 @@ enrichment_tables:
 
 sources:
   cloudtrail: { type: cloudtrail, region: "${AWS_REGION}", queue_url: "${CLOUDTRAIL_QUEUE_URL}" }
-  okta: { type: okta, org_url: "${OKTA_ORG_URL}", token: "${OKTA_API_TOKEN}" }
+  okta_audit: { type: okta, org_url: "${OKTA_ORG_URL}", token: "${OKTA_API_TOKEN}" }
 
 dag:
   - from: { kind: source, name: cloudtrail }
     to: [{ kind: plugin, name: aws }]
-  - from: { kind: source, name: okta }
+  - from: { kind: source, name: okta_audit }
     to: [{ kind: plugin, name: okta }]
   - from: { kind: plugin, name: aws }     # kept, learned, judged
     to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
