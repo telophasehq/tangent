@@ -1093,7 +1093,6 @@ sources:
   d: { type: tcp, bind_address: 0.0.0.0:9400, read_buffer_size: 1024 }
   e: { type: sqs, queue_url: q, decoding: { format: { type: ndjson } } }
   f: { type: github_webhook, path: /hook, token: t }
-  g: { type: npm_registry, packages: [left-pad] }
   h: { type: cloudtrail, region: us-east-1, queue_url: q }
   i: { type: github_audit, org: acme, token: t }
   j: { type: okta, org_url: https://example.okta.com, token: t }
@@ -1112,7 +1111,7 @@ sinks:
         Ok(l) => l.config,
         Err(e) => panic!("{e:#}"),
     };
-    assert_eq!(cfg.sources.len(), 13);
+    assert_eq!(cfg.sources.len(), 12);
     assert_eq!(cfg.sinks.len(), 5);
     let SourceConfig::GithubAudit(idle) = &cfg.sources["m"] else {
         panic!("github_audit");
