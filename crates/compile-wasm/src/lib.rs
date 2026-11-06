@@ -133,7 +133,7 @@ fn ensure_cargo_component() -> Result<()> {
     match status {
         Ok(s) if s.success() => Ok(()),
         _ => bail!(
-            "`cargo component` not found. Install via `cargo install cargo-component` and ensure wasm32-wasi target is installed with `rustup target add wasm32-wasi`."
+            "`cargo component` not found. Install via `cargo install cargo-component` and ensure the wasm32-wasip2 target is installed with `rustup target add wasm32-wasip2`."
         ),
     }
 }
