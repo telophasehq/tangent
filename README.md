@@ -179,7 +179,7 @@ sinks:
         _norm: { org: string, actor: string }
 ```
 
-An `s3` sink goes through the same WAL and puts each sealed file in `bucket_name` as one object, named as a `rolling_file` sink's files are. Its `key_prefix` is what each object's key starts with, before a `/` and the name: a strftime template rendered in UTC when a write reaches the sink, as a `rolling_file` sink's `path` is, so `logs/cloudtrail/%Y/%m/%d` puts each day's objects under a prefix of their own (`%%` is a `%`). It is a path in the bucket: `tangent run` and `tangent config` refuse one that is not a strftime template, starts with `/`, or has an empty (`//`), `.` or `..` segment. Without it, objects go to the bucket's root:
+An `s3` sink goes through the same WAL and puts each sealed file in `bucket_name` as one object, named as a `rolling_file` sink's files are. Its `key_prefix` is what each object's key starts with, before a `/` and the name: a strftime template rendered in UTC when a write reaches the sink, as a `rolling_file` sink's `path` is, so `logs/cloudtrail/%Y/%m/%d` puts each day's objects under a prefix of their own (`%%` is a `%`). It is a path in the bucket, and strftime is all that is rendered: `tangent run` and `tangent config` refuse one that is not a strftime template, holds a `{{ field }}`, starts with `/`, or has an empty (`//`), `.` or `..` segment. Without it, objects go to the bucket's root:
 
 ```yaml
 sinks:

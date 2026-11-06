@@ -239,6 +239,11 @@ pub struct KeyPrefix(String);
 
 impl KeyPrefix {
     pub fn parse(template: &str) -> Result<Self> {
+        // a `{{ field }}` template is not rendered: its braces would go
+        // into every key
+        if template.contains("{{") {
+            bail!("key_prefix {template:?}: strftime only; a `{{{{ field }}}}` template is not rendered");
+        }
         if !rolling_file::strftime_renders(template) {
             bail!("key_prefix {template:?} is not a strftime template (`%%` is a `%`)");
         }
@@ -336,6 +341,8 @@ mod tests {
         for good in ["", "logs/%Y/", "logs/%Y//", "logs/.%Y/x..y"] {
             assert!(KeyPrefix::parse(good).is_ok(), "{good}");
         }
+        let braces = KeyPrefix::parse("logs/{{ source_type }}/%F/").unwrap_err();
+        assert!(braces.to_string().contains("strftime only"), "{braces}");
         let sinks = |prefix: &str| -> BTreeMap<Arc<str>, SinkConfig> {
             let yaml = format!("type: s3\nbucket_name: b\nkey_prefix: \"{prefix}\"\n");
             BTreeMap::from([(Arc::from("archive"), serde_yaml::from_str(&yaml).unwrap())])
