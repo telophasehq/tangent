@@ -187,7 +187,7 @@ pub async fn run_one_payload(
                                 connections,
                                 pd,
                                 max_bytes,
-                                seconds,
+                                total_seconds,
                                 synthesize_payload,
                             )
                             .await
