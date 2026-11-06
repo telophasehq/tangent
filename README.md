@@ -216,7 +216,7 @@ make run PLUGINS=compile       # export the sources' credentials first (the Make
 ```
 
 Each source wakes up when its credential is set; anything else comes in as
-NDJSON on `:9400`. Alerts land in `alerts.ndjson`, every verdict in
+NDJSON on `127.0.0.1:9400`. Alerts land in `alerts.ndjson`, every verdict in
 `verdicts.ndjson`, every record in the Parquet lake, and on Slack if you add
 the sink ([packs/core](packs/core/README.md#slack)).
 [examples/app-log](examples/app-log) is the same for a product's logs, one
@@ -336,18 +336,22 @@ they came after the measured runs and are not measured yet.
   ([judge.yaml](packs/core/judge.yaml)). The enrichment tables are files on
   the machine, the lake is a directory of Parquet files, and state is one
   SQLite file.
-- **A hosted model is your choice**: Bedrock in your own AWS account (the
-  measured setup), or any OpenAI-compatible endpoint. `fields` limits what
+- **A hosted model is your choice**: Bedrock in your own AWS account (where
+  Haiku 5.5 was measured), or any OpenAI-compatible endpoint. `fields` limits what
   it is shown ([docs/inference.md](docs/inference.md#settings)).
 - **Packs drop credentials before anything is kept or judged**: issued
   credentials, session tokens and secret keys in CloudTrail
   ([trim.rs](packs/aws/src/trim.rs)), and URL signatures in every source.
 - **What uses the network**: the sources polling their providers' APIs; the
   model, if hosted; Slack, if you add it; `examples/enrich/setup.sh`
-  downloading GeoLite2 and the cloud ranges; `tangent plugin fetch`. Two
-  listeners: metrics on `0.0.0.0:9184`, and cloud-infra's NDJSON source on
-  `0.0.0.0:9400`, which takes records from anyone who can reach it; bind it
-  to `127.0.0.1` or firewall it.
+  downloading the cloud ranges and GeoLite2, from MaxMind with
+  `MAXMIND_LICENSE_KEY` and otherwise from a public mirror of it (P3TERX's,
+  on GitHub); `tangent plugin fetch`. Two kinds of listener: the examples'
+  NDJSON sources, on `127.0.0.1:9400` (cloud-infra) and `127.0.0.1:9401`
+  (app-log), this machine only, since nothing authenticates a record and one
+  sent there is judged and learned from like any other; and metrics (counts
+  and sizes, never records), which the runtime serves on `0.0.0.0:9184` with
+  no setting to change it yet, so firewall that port.
 - **Plugins run in a WASM sandbox**: no filesystem but a read-only `/data`,
   no sockets. Two things it does not hold back yet: a plugin sees the
   process's environment, secrets included, and it can make HTTP calls to any
