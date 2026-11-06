@@ -267,6 +267,7 @@ __pycache__/
 **/.test.yaml
 **/plugins/
 state.sqlite*
+json_generated.go
 "#;
 
 const PYTHON_REQUIREMENTS: &str = r#""#;
