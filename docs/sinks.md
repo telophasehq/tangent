@@ -95,14 +95,35 @@ the machine going down before the file is sealed.
 
 ## s3
 
-The same WAL as `rolling_file`, each sealed file uploaded as one object,
-named `<ULID>.<encoding>` (`.ndjson.zst` for zstd NDJSON) at the bucket's
-root. Credentials come from the AWS SDK's default chain.
+The same WAL as `rolling_file`, each sealed file put in `bucket_name` as one
+object, named as a `rolling_file` sink's files are, `<ULID>.<encoding>`
+(`.ndjson.zst` for zstd NDJSON). Credentials come from the AWS SDK's default
+chain.
+
+- `key_prefix` is what each object's key starts with, before a `/` and the
+  name: a strftime template rendered in UTC when a write reaches the sink, as
+  a `rolling_file` sink's `path` is, so `logs/cloudtrail/%Y/%m/%d` puts each
+  day's objects under a prefix of their own (`%%` is a `%`). Without it,
+  objects go to the bucket's root.
+- It is a path in the bucket, and strftime is all that is rendered:
+  `tangent run` and `tangent config` refuse one that is not a strftime
+  template, holds a `{{ field }}`, starts with `/`, or has an
+  empty (`//`), `.` or `..` segment.
+
+```yaml
+sinks:
+  archive:
+    type: s3
+    bucket_name: acme-logs
+    key_prefix: logs/cloudtrail/%Y/%m/%d   # logs/cloudtrail/2026/11/06/<ULID>.ndjson.zst
+    wal_path: /var/lib/tangent/wal
+```
 
 | key | default |
 |---|---|
 | `bucket_name` | |
 | `region` | the SDK's |
+| `key_prefix` | none: objects go to the bucket's root |
 | `wal_path` | `/tmp/wal` |
 | `max_file_age_seconds` | `60` |
 
