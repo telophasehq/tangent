@@ -104,8 +104,13 @@ install_tinygo() {
     exit 1
   fi
 
+  # TINYGOROOT names this link, not a version, so an upgrade only repoints it: the
+  # profile line, and every shell that already exported it, stay right.
+  local current="${HOME}/.local/opt/tinygo/current"
+  ln -sfn "$INSTALL_ROOT" "$current"
+
   mkdir -p "${HOME}/.local/bin"
-  ln -sf "${INSTALL_ROOT}/bin/tinygo" "${HOME}/.local/bin/tinygo"
+  ln -sf "${current}/bin/tinygo" "${HOME}/.local/bin/tinygo"
 
   if ! echo ":$PATH:" | grep -q ":${HOME}/.local/bin:"; then
     export PATH="${HOME}/.local/bin:${PATH}"
@@ -114,7 +119,7 @@ install_tinygo() {
   local profile_snippet='
 # TinyGo (installed by Tangent setup)
 export PATH="$HOME/.local/bin:$PATH"
-export TINYGOROOT="$HOME/.local/opt/tinygo/'"$version"'"
+export TINYGOROOT="$HOME/.local/opt/tinygo/current"
 '
   for f in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
     [[ -f "$f" ]] || continue
@@ -126,7 +131,7 @@ export TINYGOROOT="$HOME/.local/opt/tinygo/'"$version"'"
   export TINYGOROOT="$INSTALL_ROOT"
 
   persist_path_userbin
-  persist_tinygoroot "$version"
+  persist_tinygoroot
 
   if [[ -n "${ZSH_VERSION:-}" && -f "$HOME/.zshrc" ]]; then
   echo "Sourcing ~/.zshrc so PATH and TINYGOROOT take effect..."
@@ -149,15 +154,24 @@ fi
   rm -rf "$tmpdir"
 }
 
+# Appends `line` to each profile that lacks it. A second argument, an extended
+# regex, first deletes the lines it matches: the ones `line` replaces.
 persist_export_line() {
-  local line="$1"
+  local line="$1" stale="${2:-}"
   local profiles=(
     "${HOME}/.zshrc" "${HOME}/.zprofile"
     "${HOME}/.bashrc" "${HOME}/.bash_profile"
     "${HOME}/.profile"
   )
+  local tmp
   for f in "${profiles[@]}"; do
     [[ -f "$f" ]] || continue
+    if [[ -n "$stale" ]] && grep -Eq "$stale" "$f"; then
+      tmp="$(mktemp)"
+      # cat >, not mv: a profile that is a symlink stays one
+      sed -E "\\#${stale}#d" "$f" > "$tmp" && cat "$tmp" > "$f"
+      rm -f "$tmp"
+    fi
     if ! grep -Fqx "$line" "$f"; then
       printf '\n%s\n' "$line" >> "$f"
     fi
@@ -169,8 +183,9 @@ persist_path_userbin() {
 }
 
 persist_tinygoroot() {
-  local ver="$1"
-  persist_export_line "export TINYGOROOT=\"\$HOME/.local/opt/tinygo/${ver}\""
+  # replaces a line an earlier setup.sh wrote naming one version, which an upgrade left stale
+  persist_export_line 'export TINYGOROOT="$HOME/.local/opt/tinygo/current"' \
+    '^export TINYGOROOT="\$HOME/\.local/opt/tinygo/[0-9][^"]*"$'
 }
 
 print_versions() {
