@@ -1,9 +1,9 @@
-//! Per-tenant counters with no tenant handling in the plugin.
+//! Per-org counters in plugin state, right however many workers run it.
 //!
-//! The config partitions the stream by `org_id`, so the runtime hands this
-//! plugin one org's records at a time and scopes every `state` call to that
-//! org. `count` is therefore "events from this org" and `seen:<event>` is
-//! "has this org done this before", with no org anywhere in the keys.
+//! The org is part of every key: `count:<org>` is "events from this org" and
+//! `seen:<org>:<event>` is "has this org done this before". The count is one
+//! `incr`, atomic on its own; "seen before?" reads a key and writes it back,
+//! so the two go in one transaction, or two workers could both see "first".
 
 use serde::Serialize;
 
@@ -38,6 +38,27 @@ fn string_from_scalar(s: Scalar) -> Option<String> {
     }
 }
 
+/// Whether `key` is new, marking it seen: a read and the write that depends
+/// on it, in one transaction.
+fn first_time(key: &str) -> Result<bool, String> {
+    state::begin()?;
+    let first = match state::get(key) {
+        Ok(v) => v.is_none(),
+        Err(e) => {
+            state::rollback();
+            return Err(e);
+        }
+    };
+    if first {
+        if let Err(e) = state::set(key, &Scalar::Boolean(true), None) {
+            state::rollback();
+            return Err(e);
+        }
+    }
+    state::commit()?;
+    Ok(first)
+}
+
 impl Guest for Component {
     fn metadata() -> Meta {
         Meta {
@@ -58,16 +79,17 @@ impl Guest for Component {
         let mut buf = Vec::new();
 
         for lv in input {
-            let org_id = lv.get("org_id").and_then(string_from_scalar).unwrap_or_default();
-            let event = lv.get("event").and_then(string_from_scalar).unwrap_or_default();
+            let org_id = lv
+                .get("org_id")
+                .and_then(string_from_scalar)
+                .unwrap_or_default();
+            let event = lv
+                .get("event")
+                .and_then(string_from_scalar)
+                .unwrap_or_default();
 
-            let n = state::incr("count", 1, None)?;
-
-            let seen_key = format!("seen:{event}");
-            let first = state::get(&seen_key)?.is_none();
-            if first {
-                state::set(&seen_key, &Scalar::Boolean(true), None)?;
-            }
+            let n = state::incr(&format!("count:{org_id}"), 1, None)?;
+            let first = first_time(&format!("seen:{org_id}:{event}"))?;
 
             let out = Out {
                 org_id,

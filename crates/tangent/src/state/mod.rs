@@ -1,13 +1,12 @@
 //! Keyed state shared by everything in a pipeline: plugins (through the WIT
 //! `state` interface) and the runtime's own stateful nodes. Entries live in
 //! a namespace (`plugins`, shared by every plugin unless one is given a
-//! `state_namespace`; a runtime node's name otherwise), within a partition
-//! of the stream (empty when unpartitioned), under a key.
+//! `state_namespace`; a runtime node's name otherwise) under a key.
 //!
 //! The store is an async trait so backends can be local or networked:
 //! `sqlite` is durable on one host and queryable from outside the process
 //! (`tangent state ...`), `lru` is in-process and bounded by `max_entries`, and a
-//! distributed backend (DynamoDB: `ns#partition` as the hash key, `key` as
+//! distributed backend (DynamoDB: `ns` as the hash key, `key` as
 //! the range key, `incr` as an atomic ADD, TTL as the item TTL) fits the same
 //! interface.
 //!
@@ -46,7 +45,6 @@ pub enum StateValue {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Entry {
     pub ns: String,
-    pub partition: String,
     pub key: String,
     pub value: StateValue,
     /// None: never expires.
@@ -54,11 +52,10 @@ pub struct Entry {
     pub updated_at_ms: u64,
 }
 
-/// How many keys a (namespace, partition) holds.
+/// How many keys a namespace holds.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Count {
     pub ns: String,
-    pub partition: String,
     pub keys: u64,
 }
 
@@ -69,9 +66,9 @@ pub trait StateStore: Send + Sync {
 
     // A call on one key or key range is a transaction of that one call.
 
-    async fn get(&self, ns: &str, partition: &str, key: &str) -> Result<Option<StateValue>> {
+    async fn get(&self, ns: &str, key: &str) -> Result<Option<StateValue>> {
         let mut t = self.begin().await?;
-        let v = t.get(ns, partition, key).await?;
+        let v = t.get(ns, key).await?;
         t.commit().await?;
         Ok(v)
     }
@@ -80,65 +77,44 @@ pub trait StateStore: Send + Sync {
     async fn set(
         &self,
         ns: &str,
-        partition: &str,
         key: &str,
         value: &StateValue,
         ttl_ms: Option<u64>,
     ) -> Result<()> {
         let mut t = self.begin().await?;
-        t.set(ns, partition, key, value, ttl_ms).await?;
+        t.set(ns, key, value, ttl_ms).await?;
         t.commit().await
     }
 
-    async fn del(&self, ns: &str, partition: &str, key: &str) -> Result<bool> {
+    async fn del(&self, ns: &str, key: &str) -> Result<bool> {
         let mut t = self.begin().await?;
-        let gone = t.del(ns, partition, key).await?;
+        let gone = t.del(ns, key).await?;
         t.commit().await?;
         Ok(gone)
     }
 
     /// Add `by` to an integer entry (missing counts as 0); returns the new value.
-    async fn incr(
-        &self,
-        ns: &str,
-        partition: &str,
-        key: &str,
-        by: i64,
-        ttl_ms: Option<u64>,
-    ) -> Result<i64> {
+    async fn incr(&self, ns: &str, key: &str, by: i64, ttl_ms: Option<u64>) -> Result<i64> {
         let mut t = self.begin().await?;
-        let n = t.incr(ns, partition, key, by, ttl_ms).await?;
+        let n = t.incr(ns, key, by, ttl_ms).await?;
         t.commit().await?;
         Ok(n)
     }
 
-    /// Live entries of one (namespace, partition) with `from <= key < to`, in
+    /// Live entries of one namespace with `from <= key < to`, in
     /// key order, at most `limit`: the slice a plugin reads a scope's history
     /// with when keys start with their time.
-    async fn range(
-        &self,
-        ns: &str,
-        partition: &str,
-        from: &str,
-        to: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>> {
+    async fn range(&self, ns: &str, from: &str, to: &str, limit: usize) -> Result<Vec<Entry>> {
         let mut t = self.begin().await?;
-        let rows = t.range(ns, partition, from, to, limit).await?;
+        let rows = t.range(ns, from, to, limit).await?;
         t.commit().await?;
         Ok(rows)
     }
 
-    /// Live entries, filtered by namespace, partition and key prefix when given.
-    async fn scan(
-        &self,
-        ns: Option<&str>,
-        partition: Option<&str>,
-        key_prefix: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>>;
+    /// Live entries, filtered by namespace and key prefix when given.
+    async fn scan(&self, ns: Option<&str>, key_prefix: &str, limit: usize) -> Result<Vec<Entry>>;
 
-    /// Key counts per (namespace, partition), filtered by namespace when given.
+    /// Key counts per namespace, filtered by namespace when given.
     async fn counts(&self, ns: Option<&str>) -> Result<Vec<Count>>;
 
     /// Drop expired entries; returns how many.
@@ -153,36 +129,21 @@ pub trait StateStore: Send + Sync {
 /// runs while it is open.
 #[async_trait]
 pub trait Txn: Send {
-    async fn get(&mut self, ns: &str, partition: &str, key: &str) -> Result<Option<StateValue>>;
+    async fn get(&mut self, ns: &str, key: &str) -> Result<Option<StateValue>>;
 
     async fn set(
         &mut self,
         ns: &str,
-        partition: &str,
         key: &str,
         value: &StateValue,
         ttl_ms: Option<u64>,
     ) -> Result<()>;
 
-    async fn del(&mut self, ns: &str, partition: &str, key: &str) -> Result<bool>;
+    async fn del(&mut self, ns: &str, key: &str) -> Result<bool>;
 
-    async fn incr(
-        &mut self,
-        ns: &str,
-        partition: &str,
-        key: &str,
-        by: i64,
-        ttl_ms: Option<u64>,
-    ) -> Result<i64>;
+    async fn incr(&mut self, ns: &str, key: &str, by: i64, ttl_ms: Option<u64>) -> Result<i64>;
 
-    async fn range(
-        &mut self,
-        ns: &str,
-        partition: &str,
-        from: &str,
-        to: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>>;
+    async fn range(&mut self, ns: &str, from: &str, to: &str, limit: usize) -> Result<Vec<Entry>>;
 
     async fn commit(self: Box<Self>) -> Result<()>;
 }
@@ -302,105 +263,98 @@ pub(crate) mod conformance {
 
     pub async fn run(store: &dyn StateStore) {
         let v = StateValue::Str("hello".into());
-        store.set("ns", "", "k", &v, None).await.unwrap();
-        assert_eq!(store.get("ns", "", "k").await.unwrap(), Some(v.clone()));
-        assert_eq!(store.get("ns", "", "missing").await.unwrap(), None);
+        store.set("ns", "k", &v, None).await.unwrap();
+        assert_eq!(store.get("ns", "k").await.unwrap(), Some(v.clone()));
+        assert_eq!(store.get("ns", "missing").await.unwrap(), None);
         assert_eq!(
-            store.get("other", "", "k").await.unwrap(),
+            store.get("other", "k").await.unwrap(),
             None,
             "namespaces are separate"
         );
         assert_eq!(
-            store.get("ns", "p1", "k").await.unwrap(),
+            store.get("ns1", "k").await.unwrap(),
             None,
-            "partitions are separate"
+            "namespaces are separate, ns1 too"
         );
 
         store
-            .set("ns", "p1", "k", &StateValue::Int(1), None)
+            .set("ns1", "k", &StateValue::Int(1), None)
             .await
             .unwrap();
         assert_eq!(
-            store.get("ns", "p1", "k").await.unwrap(),
+            store.get("ns1", "k").await.unwrap(),
             Some(StateValue::Int(1))
         );
-        assert_eq!(store.get("ns", "", "k").await.unwrap(), Some(v.clone()));
+        assert_eq!(store.get("ns", "k").await.unwrap(), Some(v.clone()));
 
-        assert_eq!(store.incr("ns", "p1", "n", 5, None).await.unwrap(), 5);
-        assert_eq!(store.incr("ns", "p1", "n", -2, None).await.unwrap(), 3);
+        assert_eq!(store.incr("ns1", "n", 5, None).await.unwrap(), 5);
+        assert_eq!(store.incr("ns1", "n", -2, None).await.unwrap(), 3);
         assert_eq!(
-            store.get("ns", "p1", "n").await.unwrap(),
+            store.get("ns1", "n").await.unwrap(),
             Some(StateValue::Int(3))
         );
         assert!(
-            store.incr("ns", "", "k", 1, None).await.is_err(),
+            store.incr("ns", "k", 1, None).await.is_err(),
             "incr on a string fails"
         );
 
         let json = StateValue::Json(serde_json::json!({"a": [1, 2], "b": "c"}));
-        store.set("ns", "", "j", &json, Some(0)).await.unwrap();
-        assert_eq!(store.get("ns", "", "j").await.unwrap(), Some(json));
+        store.set("ns", "j", &json, Some(0)).await.unwrap();
+        assert_eq!(store.get("ns", "j").await.unwrap(), Some(json));
         store
-            .set("ns", "", "bytes", &StateValue::Bytes(vec![0, 255, 7]), None)
+            .set("ns", "bytes", &StateValue::Bytes(vec![0, 255, 7]), None)
             .await
             .unwrap();
         assert_eq!(
-            store.get("ns", "", "bytes").await.unwrap(),
+            store.get("ns", "bytes").await.unwrap(),
             Some(StateValue::Bytes(vec![0, 255, 7]))
         );
         store
-            .set("ns", "", "f", &StateValue::Float(1.5), None)
+            .set("ns", "f", &StateValue::Float(1.5), None)
             .await
             .unwrap();
         store
-            .set("ns", "", "t", &StateValue::Bool(true), None)
+            .set("ns", "t", &StateValue::Bool(true), None)
             .await
             .unwrap();
 
         // Expiry: a 1ms TTL is gone by the time we look.
         store
-            .set("ns", "", "short", &StateValue::Int(9), Some(1))
+            .set("ns", "short", &StateValue::Int(9), Some(1))
             .await
             .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        assert_eq!(store.get("ns", "", "short").await.unwrap(), None);
+        assert_eq!(store.get("ns", "short").await.unwrap(), None);
         assert!(store.purge_expired().await.unwrap() <= 1);
 
-        let all = store.scan(None, None, "", 100).await.unwrap();
+        let all = store.scan(None, "", 100).await.unwrap();
         assert_eq!(all.len(), 7, "{all:?}");
-        let p1 = store.scan(Some("ns"), Some("p1"), "", 100).await.unwrap();
+        let p1 = store.scan(Some("ns1"), "", 100).await.unwrap();
         assert_eq!(p1.len(), 2);
-        let ks = store.scan(Some("ns"), Some(""), "k", 100).await.unwrap();
+        let ks = store.scan(Some("ns"), "k", 100).await.unwrap();
         assert_eq!(ks.len(), 1);
         assert_eq!(ks[0].key, "k");
-        assert_eq!(
-            store.scan(None, None, "", 3).await.unwrap().len(),
-            3,
-            "limit"
-        );
-        let never = store.scan(Some("ns"), Some(""), "j", 10).await.unwrap();
+        assert_eq!(store.scan(None, "", 3).await.unwrap().len(), 3, "limit");
+        let never = store.scan(Some("ns"), "j", 10).await.unwrap();
         assert_eq!(never[0].expires_at_ms, None);
 
-        // A range is a slice of one partition, from inclusive to exclusive, in
+        // A range is a slice of one namespace, from inclusive to exclusive, in
         // key order, however the keys were written.
         for (i, k) in ["ev:0003", "ev:0001", "ev:0004", "ev:0002"]
             .iter()
             .enumerate()
         {
             store
-                .set("ns", "p2", k, &StateValue::Int(i as i64), None)
+                .set("ns2", k, &StateValue::Int(i as i64), None)
                 .await
                 .unwrap();
         }
-        let mid = store
-            .range("ns", "p2", "ev:0002", "ev:0004", 10)
-            .await
-            .unwrap();
+        let mid = store.range("ns2", "ev:0002", "ev:0004", 10).await.unwrap();
         assert_eq!(
             mid.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(),
             ["ev:0002", "ev:0003"]
         );
-        let first_two = store.range("ns", "p2", "ev:", "ev:~", 2).await.unwrap();
+        let first_two = store.range("ns2", "ev:", "ev:~", 2).await.unwrap();
         assert_eq!(
             first_two.iter().map(|e| e.key.as_str()).collect::<Vec<_>>(),
             ["ev:0001", "ev:0002"],
@@ -408,63 +362,61 @@ pub(crate) mod conformance {
         );
         assert!(
             store
-                .range("ns", "", "ev:", "ev:~", 10)
+                .range("ns", "ev:", "ev:~", 10)
                 .await
                 .unwrap()
                 .is_empty(),
-            "a range stays inside its partition"
+            "a range stays inside its namespace"
         );
 
         let mut counts = store.counts(None).await.unwrap();
-        counts.sort_by(|a, b| (&a.ns, &a.partition).cmp(&(&b.ns, &b.partition)));
+        counts.sort_by(|a, b| a.ns.cmp(&b.ns));
         assert_eq!(counts.len(), 3);
-        assert_eq!((counts[0].partition.as_str(), counts[0].keys), ("", 5));
-        assert_eq!((counts[1].partition.as_str(), counts[1].keys), ("p1", 2));
-        assert_eq!((counts[2].partition.as_str(), counts[2].keys), ("p2", 4));
+        assert_eq!((counts[0].ns.as_str(), counts[0].keys), ("ns", 5));
+        assert_eq!((counts[1].ns.as_str(), counts[1].keys), ("ns1", 2));
+        assert_eq!((counts[2].ns.as_str(), counts[2].keys), ("ns2", 4));
 
-        assert!(store.del("ns", "p1", "n").await.unwrap());
-        assert!(!store.del("ns", "p1", "n").await.unwrap());
+        assert!(store.del("ns1", "n").await.unwrap());
+        assert!(!store.del("ns1", "n").await.unwrap());
         store.reset().await.unwrap();
-        assert!(store.scan(None, None, "", 10).await.unwrap().is_empty());
+        assert!(store.scan(None, "", 10).await.unwrap().is_empty());
     }
 
     /// A transaction's writes are its own until `commit`, gone if it is
     /// dropped, and many at once lose no read-then-write.
     pub async fn transactions(store: Arc<dyn StateStore>) {
         store
-            .set("ns", "", "kept", &StateValue::Int(1), None)
+            .set("ns", "kept", &StateValue::Int(1), None)
             .await
             .unwrap();
         let mut tx = store.begin().await.unwrap();
-        tx.set("ns", "", "a", &StateValue::Int(1), None)
-            .await
-            .unwrap();
-        assert_eq!(tx.incr("ns", "", "n", 2, None).await.unwrap(), 2);
-        assert!(tx.del("ns", "", "kept").await.unwrap());
+        tx.set("ns", "a", &StateValue::Int(1), None).await.unwrap();
+        assert_eq!(tx.incr("ns", "n", 2, None).await.unwrap(), 2);
+        assert!(tx.del("ns", "kept").await.unwrap());
         assert_eq!(
-            tx.get("ns", "", "a").await.unwrap(),
+            tx.get("ns", "a").await.unwrap(),
             Some(StateValue::Int(1)),
             "its own writes"
         );
-        assert_eq!(tx.get("ns", "", "kept").await.unwrap(), None);
+        assert_eq!(tx.get("ns", "kept").await.unwrap(), None);
         drop(tx);
-        assert_eq!(store.get("ns", "", "a").await.unwrap(), None, "undone");
-        assert_eq!(store.get("ns", "", "n").await.unwrap(), None);
+        assert_eq!(store.get("ns", "a").await.unwrap(), None, "undone");
+        assert_eq!(store.get("ns", "n").await.unwrap(), None);
         assert_eq!(
-            store.get("ns", "", "kept").await.unwrap(),
+            store.get("ns", "kept").await.unwrap(),
             Some(StateValue::Int(1)),
             "a delete undone"
         );
 
         let mut tx = store.begin().await.unwrap();
-        tx.set("ns", "p", "ev:2", &StateValue::Int(2), None)
+        tx.set("p", "ev:2", &StateValue::Int(2), None)
             .await
             .unwrap();
-        tx.set("ns", "p", "ev:1", &StateValue::Int(1), None)
+        tx.set("p", "ev:1", &StateValue::Int(1), None)
             .await
             .unwrap();
         let keys: Vec<String> = tx
-            .range("ns", "p", "ev:", "ev:~", 10)
+            .range("p", "ev:", "ev:~", 10)
             .await
             .unwrap()
             .into_iter()
@@ -474,7 +426,7 @@ pub(crate) mod conformance {
         // Another call waits for the transaction to end.
         let other = {
             let store = Arc::clone(&store);
-            tokio::spawn(async move { store.get("ns", "p", "ev:1").await.unwrap() })
+            tokio::spawn(async move { store.get("p", "ev:1").await.unwrap() })
         };
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         assert!(!other.is_finished(), "a call waits on an open transaction");
@@ -488,12 +440,12 @@ pub(crate) mod conformance {
                 tokio::spawn(async move {
                     for _ in 0..25 {
                         let mut tx = store.begin().await.unwrap();
-                        let n = match tx.get("ns", "", "count").await.unwrap() {
+                        let n = match tx.get("ns", "count").await.unwrap() {
                             Some(StateValue::Int(n)) => n,
                             _ => 0,
                         };
                         tokio::task::yield_now().await;
-                        tx.set("ns", "", "count", &StateValue::Int(n + 1), None)
+                        tx.set("ns", "count", &StateValue::Int(n + 1), None)
                             .await
                             .unwrap();
                         tx.commit().await.unwrap();
@@ -505,7 +457,7 @@ pub(crate) mod conformance {
             t.await.unwrap();
         }
         assert_eq!(
-            store.get("ns", "", "count").await.unwrap(),
+            store.get("ns", "count").await.unwrap(),
             Some(StateValue::Int(200))
         );
     }

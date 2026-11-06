@@ -52,10 +52,10 @@ jobs:
         run: make test
         working-directory: rustplugin
 
-      # A stateful plugin under runtime.partition: state is scoped per org.
-      - name: Run make test (examples/partition)
+      # A stateful plugin: per-org keys, and a transaction for a read and its write.
+      - name: Run make test (examples/counter)
         run: make test
-        working-directory: examples/partition
+        working-directory: examples/counter
 
       # A plugin reading reference files from its data directory (plugins.<name>.data).
       - name: Run make test (examples/enrich)

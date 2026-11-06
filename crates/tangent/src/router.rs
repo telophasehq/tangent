@@ -12,7 +12,7 @@ use tokio::sync::OnceCell;
 use crate::{
     inference::lines,
     sinks::manager::SinkManager,
-    worker::{Ack, Payload, Record, WorkerPool},
+    worker::{Ack, Record, WorkerPool},
     CONSUMER_BYTES_TOTAL, CONSUMER_OBJECTS_TOTAL, UNROUTED_TOTAL,
 };
 
@@ -220,7 +220,7 @@ impl Router {
             let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(acks, records.len()));
             for record in records {
                 pool.dispatch(Record {
-                    payload: Payload::Raw(record),
+                    payload: record,
                     ack: Some(Arc::clone(&shared)),
                     from: from.clone(),
                 })

@@ -134,25 +134,10 @@ impl DagRuntime {
                 batch_size,
                 batch_age,
                 Arc::clone(&router),
-                cfg.runtime.partition.clone(),
-                Arc::clone(&store),
                 stop_models,
             )
             .await?,
         );
-        if let Some(p) = &cfg.runtime.partition {
-            if let Some(ttl) = p.retain_ms {
-                let cap = cfg.runtime.state.max_ttl_ms;
-                if cap != 0 && ttl > cap {
-                    tracing::warn!(
-                        retain_ms = ttl,
-                        max_ttl_ms = cap,
-                        "partition.retain_ms is longer than runtime.state.max_ttl_ms; retained records will expire sooner"
-                    );
-                }
-            }
-        }
-
         router.set_pool(&pool);
 
         let consumer_handles = spawn_consumers(
@@ -247,17 +232,9 @@ impl DagRuntime {
     }
 }
 
-/// What writes state besides the plugins: kept records, and the cursors of the
-/// sources that poll an API.
+/// What writes state besides the plugins: the cursors of the sources that
+/// poll an API.
 fn state_writer(cfg: &Config) -> Option<String> {
-    if cfg
-        .runtime
-        .partition
-        .as_ref()
-        .is_some_and(|p| p.retain_ms.is_some())
-    {
-        return Some("partition.retain_ms".into());
-    }
     cfg.sources
         .iter()
         .find_map(|(name, s)| s.keeps_cursor().then(|| format!("source {name}")))
@@ -551,7 +528,7 @@ mod tests {
     }
 
     /// A read-only pipeline whose runtime writes state is refused: a
-    /// polling source keeps its cursor there, and kept records live there.
+    /// polling source keeps its cursor there.
     #[test]
     fn what_writes_state_besides_the_plugins() {
         let cfg = |yaml: &str| -> Config { serde_yaml::from_str(yaml).unwrap() };
@@ -559,10 +536,5 @@ mod tests {
         assert_eq!(state_writer(&cfg(logs)), None);
         let okta = format!("{logs}  okta: {{ type: okta }}\n");
         assert_eq!(state_writer(&cfg(&okta)).as_deref(), Some("source okta"));
-        let kept = "runtime:\n  partition: { key: [org], retain_ms: 1000 }\n";
-        assert_eq!(
-            state_writer(&cfg(kept)).as_deref(),
-            Some("partition.retain_ms")
-        );
     }
 }

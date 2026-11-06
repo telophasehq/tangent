@@ -62,7 +62,8 @@ interface enrichment {
 
 
 /// Keyed state in the pipeline's state store, shared by every worker and
-/// scoped by the runtime to the partition of the records being processed.
+/// every record: a plugin that keeps state per tenant puts the tenant in its
+/// keys, such as `count:<org>`.
 /// A write's ttl-ms: none takes the pipeline's default, 0 never expires.
 interface state {
   use log.{scalar};

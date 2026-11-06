@@ -44,7 +44,7 @@ Tangent ships with everything you need to develop, test, and benchmark your own 
 
 3. **Shareable and secure** – Data transformations are easy to write and _share_. Publish and discover open-source plugins in the [Tangent Plugins library](https://github.com/EthanBlackburn/tangent-plugins). Each plugin runs in its own lightweight sandbox.
 
-## State and partitioning
+## State
 Plugins keep state through the `state` interface: `state.Get`, `state.Set`, `state.Incr`, `state.Del`, and `state.Scan` for a key range, each write with an optional TTL. That state lives in the runtime's **state store**, configured under `runtime.state`:
 
 ```yaml
@@ -55,13 +55,9 @@ runtime:
     default_ttl_ms: 600000 # 0 = never expire
     max_ttl_ms: 3600000    # cap on any TTL; 0 = no cap
     max_entries: 100000    # lru only: evict the least recently used past this
-  partition:
-    key: [org_id]          # fields that identify a record's partition
-    timestamp_key: ts      # the record's own time (RFC 3339 or epoch); arrival time without it
-    retain_ms: 432000000   # 5d: keep every record under its partition, keyed by its time
 ```
 
-Entries are keyed by `(namespace, partition, key)`. Plugins share one namespace, `plugins`, so what one plugin writes the next can read; a read, and a write that depends on it, go in a transaction when several workers run the plugin (below). Give a plugin a `state_namespace` of its own when it must not share, such as two instances of one plugin with different configs:
+Entries are keyed by namespace and key. Plugins share one namespace, `plugins`, so what one plugin writes the next can read; a read, and a write that depends on it, go in a transaction when several workers run the plugin (below). Give a plugin a `state_namespace` of its own when it must not share, such as two instances of one plugin with different configs:
 
 ```yaml
 plugins:
@@ -73,22 +69,18 @@ A plugin may read files too: `data: <dir>` mounts a directory, relative to the f
 
 When a plugin's call fails (it traps or returns an error), the records it was given are logged and dropped. `drop_on_error: false` passes them on unchanged instead, as if the plugin were not there: right for a plugin that only adds to records, such as context for a model, wrong for a filter. `tangent plugin test` always drops, so a failed call fails the test.
 
-With `runtime.partition` set, a partition's records all go to one worker, which hands them to a plugin one partition at a time with its state calls scoped to that partition, so "first time this tenant did X" is a `state.Get` away with no change to the plugin and no race between workers. Without it, everything is in the empty partition. [examples/partition](/examples/partition) counts events per org with a single `count` key.
-
-Each state call stands alone: two workers running a plugin can interleave one's read with the other's write. A plugin that reads state and writes what depends on it makes them one transaction: `state.begin()`, its reads and writes, then `state.commit()`, or `state.rollback()`. They see each other's writes and land together, or not at all, however many workers run the plugin. No other state call runs while one is open, so begin late, after the parsing, and commit early. A second `begin`, or a remote call, inside one fails, and a call that returns with one open has it rolled back, with a warning: only what a plugin commits is kept.
-
-With `retain_ms` as well, the runtime keeps every partitioned record in the store, in the plugins' namespace, as `ev:<epoch ms, 13 digits>:<seq>` with that TTL, so a partition's history is a key range: `state.Scan("ev:<from>", "ev:<to>", limit)` returns the last hour in order, however it arrived, and nothing is ever read back to be rewritten. The store is the partition's log; the TTL is its retention. A record is stored once, where it enters its partition, whether the key was on it at the source or a plugin added it. What a record means in the light of that history is a plugin's decision, and the hour of context it attaches for a model is one `Scan`. Each backend answers a range its own way: SQLite walks the primary-key index, a DynamoDB backend would query the sort key.
+Each state call stands alone: two workers running a plugin can interleave one's read with the other's write. A plugin that reads state and writes what depends on it makes them one transaction: `state.begin()`, its reads and writes, then `state.commit()`, or `state.rollback()`. They see each other's writes and land together, or not at all, however many workers run the plugin. A plugin that keeps state per tenant puts the tenant in its keys: [examples/counter](/examples/counter) counts events per org under `count:<org>`, and marks "first time this org did X" in a transaction. No other state call runs while one is open, so begin late, after the parsing, and commit early. A second `begin`, or a remote call, inside one fails, and a call that returns with one open has it rolled back, with a warning: only what a plugin commits is kept.
 
 The store is readable while the pipeline runs:
 
 ```bash
-tangent state --config tangent.yaml ls                          # keys per namespace and partition
-tangent state --config tangent.yaml get seen --partition acme   # one entry (--ns defaults to the only namespace)
+tangent state --config tangent.yaml ls                          # keys per namespace
+tangent state --config tangent.yaml get count:acme              # one entry (--ns defaults to the only namespace)
 tangent state --config tangent.yaml scan --prefix user: --limit 50
-tangent state --config tangent.yaml sql "select partition, count(*) from state group by 1"   # sqlite backend only
+tangent state --config tangent.yaml sql "select ns, count(*) from state group by 1"   # sqlite backend only
 ```
 
-Another pipeline can read it too: `read_only: true` under `runtime.state` opens the same SQLite file without the lock and creates nothing, so one pipeline learns while another reads what it learned. The file must exist and hold the writer's table, so the writer starts first. Its writes fail, and an expired entry reads as missing; a pipeline whose runtime writes state (`partition.retain_ms`, a source that polls an API) is refused.
+Another pipeline can read it too: `read_only: true` under `runtime.state` opens the same SQLite file without the lock and creates nothing, so one pipeline learns while another reads what it learned. The file must exist and hold the writer's table, so the writer starts first. Its writes fail, and an expired entry reads as missing; a pipeline whose runtime writes state (a source that polls an API) is refused.
 
 ## Enrichment tables
 Reference data every plugin can read, loaded once for the process: an IP database, a list of networks, a company profile. Each table has a name, a `type` and a `path`, relative to the file that names it:
@@ -199,7 +191,7 @@ A request holds the records the node is handed, or with `group_by: [_norm.actor]
 
 `encoding: {type: logfmt, keep: [...], sources: {<source>: {principal, time, keep, ids}}}` writes the records as logfmt lines in about half the tokens of JSON, and the text decodes back to the records: a principal's records are grouped, the fields they share written once above their rows, the `keep` fields on every row, a day's timestamps as times of day; `sidecar: true` swaps a source's `ids` for references the model never sees. Each pack's `judge.yaml` has its sources' rows, e.g. [packs/aws/judge.yaml](/packs/aws/judge.yaml).
 
-Inference nodes run inside the workers, in DAG order with the plugins: a worker hands a model the records that reached the node, waits for the replies, and carries them on, so a partition's records stay in order and nothing else moves while the model thinks. `concurrency` bounds requests in flight per worker (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold; `retries` (2) tries again, backing off, when a request got no reply at all. `temperature` is sent only when set. A signal (SIGINT or SIGTERM) ends the calls under way rather than wait out `timeout_ms` and `retries`: records waiting on one go to no sink and are not acked, so a `sqlite` source sends them again at its next start. Another signal, a second or more after the first, exits at once. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
+Inference nodes run inside the workers, in DAG order with the plugins: a worker hands a model the records that reached the node, waits for the replies, and carries them on, so a batch's records stay in order and nothing else moves while the model thinks. `concurrency` bounds requests in flight per worker (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold; `retries` (2) tries again, backing off, when a request got no reply at all. `temperature` is sent only when set. A signal (SIGINT or SIGTERM) ends the calls under way rather than wait out `timeout_ms` and `retries`: records waiting on one go to no sink and are not acked, so a `sqlite` source sends them again at its next start. Another signal, a second or more after the first, exits at once. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
 
 ## Including files
 A config can span several files. `include:` lists files merged into the one that names it, each path relative to that file:
@@ -252,7 +244,7 @@ A pack is a directory: the plugin (`Cargo.toml`, `src/`, Rust compiled to WASM),
 
 No pack loads IP data itself. Core's `ingest.yaml` names it as enrichment tables (GeoLite2 Country and ASN, and `networks.csv`, the cloud, datacenter, VPN and Tor ranges in one file), the runtime loads each once when the pipeline starts, and every pack's plugin, on every worker, reads that one copy: five packs load GeoLite2 once. [examples/enrich/setup.sh](/examples/enrich/setup.sh) fetches the files. Your profile is a table too, `profile`, which your config names.
 
-The judge also sees each actor's history, which one window of its records cannot show. Core's baseline folds every finished record into ingest's state store (`baseline_builder`), and in the judge puts the same `_baseline` on each of an actor's records (`baseline_renderer`): who it is and, for a role, who assumed it; how long it has been seen; what it does for the first time (an API, a resource, a client, a network, an OAuth app); its volume and hours against its own 28 days; its person's sign-ins and credential changes in every source over three days (the profile's `people` says which names are one person); and addresses it shares with other actors. Only what happened before the actor's first record counts, and it is facts, not verdicts ([packs/core](/packs/core#baseline)). The judge writes records as logfmt, `_baseline` once per request, about 5% more tokens than without it; JSON lines (`encoding: {type: ndjson}`) repeat it on every record, at three times logfmt's tokens ([packs/core](/packs/core#judgeyaml) has the numbers). Baseline keeps one writer: ingest runs one worker and no `runtime.partition`, since more workers lose its counts and a partition files its keys where the judge does not read them.
+The judge also sees each actor's history, which one window of its records cannot show. Core's baseline folds every finished record into ingest's state store (`baseline_builder`), and in the judge puts the same `_baseline` on each of an actor's records (`baseline_renderer`): who it is and, for a role, who assumed it; how long it has been seen; what it does for the first time (an API, a resource, a client, a network, an OAuth app); its volume and hours against its own 28 days; its person's sign-ins and credential changes in every source over three days (the profile's `people` says which names are one person); and addresses it shares with other actors. Only what happened before the actor's first record counts, and it is facts, not verdicts ([packs/core](/packs/core#baseline)). The judge writes records as logfmt, `_baseline` once per request, about 5% more tokens than without it; JSON lines (`encoding: {type: ndjson}`) repeat it on every record, at three times logfmt's tokens ([packs/core](/packs/core#judgeyaml) has the numbers). Baseline's folds are one state transaction per batch, so ingest runs as many workers as it likes.
 
 ### Using packs
 Packs need a tangent newer than 0.1.9, the latest release as this is written: `include:` and `enrichment_tables` are newer, and that release stops at ``missing field `runtime` ``. Until the next release, build one from the checkout (`cargo install --path ../tangent/crates/cli --locked`) and `tangent plugin compile` the packs where the lines below fetch them: their prebuilt plugins are released with tangent, from the next release on.

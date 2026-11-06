@@ -19,7 +19,7 @@ use tokio::sync::OwnedMutexGuard;
 
 use super::{expires_at, now_ms, Count, Entry, StateStore, StateValue, Txn};
 
-type Key = (String, String, String);
+type Key = (String, String);
 
 #[derive(Clone)]
 struct Slot {
@@ -50,8 +50,8 @@ impl LruStore {
     }
 }
 
-fn key(ns: &str, partition: &str, key: &str) -> Key {
-    (ns.to_string(), partition.to_string(), key.to_string())
+fn key(ns: &str, key: &str) -> Key {
+    (ns.to_string(), key.to_string())
 }
 
 fn live(slot: &Slot, now: u64) -> bool {
@@ -70,13 +70,7 @@ impl StateStore for LruStore {
         }))
     }
 
-    async fn scan(
-        &self,
-        ns: Option<&str>,
-        partition: Option<&str>,
-        key_prefix: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>> {
+    async fn scan(&self, ns: Option<&str>, key_prefix: &str, limit: usize) -> Result<Vec<Entry>> {
         let now = now_ms();
         let _turn = self.turn.lock().await;
         // Looking is not using: iteration leaves the recency order alone.
@@ -84,22 +78,18 @@ impl StateStore for LruStore {
             .entries
             .lock()
             .iter()
-            .filter(|((n, p, k), s)| {
-                live(s, now)
-                    && ns.is_none_or(|x| x == n)
-                    && partition.is_none_or(|x| x == p)
-                    && k.starts_with(key_prefix)
+            .filter(|((n, k), s)| {
+                live(s, now) && ns.is_none_or(|x| x == n) && k.starts_with(key_prefix)
             })
-            .map(|((n, p, k), s)| Entry {
+            .map(|((n, k), s)| Entry {
                 ns: n.clone(),
-                partition: p.clone(),
                 key: k.clone(),
                 value: s.value.clone(),
                 expires_at_ms: s.expires_at_ms,
                 updated_at_ms: s.updated_at_ms,
             })
             .collect();
-        out.sort_by(|a, b| (&a.ns, &a.partition, &a.key).cmp(&(&b.ns, &b.partition, &b.key)));
+        out.sort_by(|a, b| (&a.ns, &a.key).cmp(&(&b.ns, &b.key)));
         out.truncate(limit);
         Ok(out)
     }
@@ -107,19 +97,15 @@ impl StateStore for LruStore {
     async fn counts(&self, ns: Option<&str>) -> Result<Vec<Count>> {
         let now = now_ms();
         let _turn = self.turn.lock().await;
-        let mut acc: BTreeMap<(String, String), u64> = BTreeMap::new();
-        for ((n, p, _), s) in self.entries.lock().iter() {
+        let mut acc: BTreeMap<String, u64> = BTreeMap::new();
+        for ((n, _), s) in self.entries.lock().iter() {
             if live(s, now) && ns.is_none_or(|x| x == n) {
-                *acc.entry((n.clone(), p.clone())).or_default() += 1;
+                *acc.entry(n.clone()).or_default() += 1;
             }
         }
         Ok(acc
             .into_iter()
-            .map(|((ns, partition), keys)| Count {
-                ns,
-                partition,
-                keys,
-            })
+            .map(|(ns, keys)| Count { ns, keys })
             .collect())
     }
 
@@ -167,9 +153,9 @@ impl LruTxn {
 
 #[async_trait]
 impl Txn for LruTxn {
-    async fn get(&mut self, ns: &str, partition: &str, k: &str) -> Result<Option<StateValue>> {
+    async fn get(&mut self, ns: &str, k: &str) -> Result<Option<StateValue>> {
         let now = now_ms();
-        let k = key(ns, partition, k);
+        let k = key(ns, k);
         let mut entries = self.entries.lock();
         // A read is a use: the entry moves to the front.
         match entries.get(&k) {
@@ -186,7 +172,6 @@ impl Txn for LruTxn {
     async fn set(
         &mut self,
         ns: &str,
-        partition: &str,
         k: &str,
         value: &StateValue,
         ttl_ms: Option<u64>,
@@ -197,29 +182,22 @@ impl Txn for LruTxn {
             expires_at_ms: expires_at(&self.cfg, ttl_ms, now),
             updated_at_ms: now,
         };
-        self.put(key(ns, partition, k), slot);
+        self.put(key(ns, k), slot);
         Ok(())
     }
 
-    async fn del(&mut self, ns: &str, partition: &str, k: &str) -> Result<bool> {
+    async fn del(&mut self, ns: &str, k: &str) -> Result<bool> {
         let now = now_ms();
-        let k = key(ns, partition, k);
+        let k = key(ns, k);
         let gone = self.entries.lock().pop(&k);
         let live = gone.as_ref().is_some_and(|s| live(s, now));
         self.undo.push((k, gone));
         Ok(live)
     }
 
-    async fn incr(
-        &mut self,
-        ns: &str,
-        partition: &str,
-        k: &str,
-        by: i64,
-        ttl_ms: Option<u64>,
-    ) -> Result<i64> {
+    async fn incr(&mut self, ns: &str, k: &str, by: i64, ttl_ms: Option<u64>) -> Result<i64> {
         let now = now_ms();
-        let k = key(ns, partition, k);
+        let k = key(ns, k);
         let current = match self.entries.lock().peek(&k) {
             Some(s) if live(s, now) => match &s.value {
                 StateValue::Int(i) => *i,
@@ -237,25 +215,15 @@ impl Txn for LruTxn {
         Ok(next)
     }
 
-    async fn range(
-        &mut self,
-        ns: &str,
-        partition: &str,
-        from: &str,
-        to: &str,
-        limit: usize,
-    ) -> Result<Vec<Entry>> {
+    async fn range(&mut self, ns: &str, from: &str, to: &str, limit: usize) -> Result<Vec<Entry>> {
         let now = now_ms();
         let mut out: Vec<Entry> = self
             .entries
             .lock()
             .iter()
-            .filter(|((n, p, k), s)| {
-                live(s, now) && n == ns && p == partition && k.as_str() >= from && k.as_str() < to
-            })
-            .map(|((n, p, k), s)| Entry {
+            .filter(|((n, k), s)| live(s, now) && n == ns && k.as_str() >= from && k.as_str() < to)
+            .map(|((n, k), s)| Entry {
                 ns: n.clone(),
-                partition: p.clone(),
                 key: k.clone(),
                 value: s.value.clone(),
                 expires_at_ms: s.expires_at_ms,
@@ -316,21 +284,21 @@ mod tests {
         })
         .unwrap();
         let one = StateValue::Int(1);
-        store.set("ns", "", "a", &one, None).await.unwrap();
+        store.set("ns", "a", &one, None).await.unwrap();
         store
-            .set("ns", "", "b", &StateValue::Int(2), None)
+            .set("ns", "b", &StateValue::Int(2), None)
             .await
             .unwrap();
         // Reading `a` leaves `b` as the least recently used.
-        assert_eq!(store.get("ns", "", "a").await.unwrap(), Some(one.clone()));
+        assert_eq!(store.get("ns", "a").await.unwrap(), Some(one.clone()));
         store
-            .set("ns", "", "c", &StateValue::Int(3), None)
+            .set("ns", "c", &StateValue::Int(3), None)
             .await
             .unwrap();
-        assert_eq!(store.get("ns", "", "b").await.unwrap(), None, "evicted");
-        assert_eq!(store.get("ns", "", "a").await.unwrap(), Some(one));
+        assert_eq!(store.get("ns", "b").await.unwrap(), None, "evicted");
+        assert_eq!(store.get("ns", "a").await.unwrap(), Some(one));
         assert_eq!(
-            store.get("ns", "", "c").await.unwrap(),
+            store.get("ns", "c").await.unwrap(),
             Some(StateValue::Int(3))
         );
         assert_eq!(store.counts(None).await.unwrap()[0].keys, 2);

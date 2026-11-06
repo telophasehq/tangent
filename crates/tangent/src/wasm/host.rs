@@ -46,9 +46,6 @@ pub struct HostEngine {
     /// Namespace of this plugin's state: the one every plugin shares, unless
     /// the plugin was given a `state_namespace` of its own.
     ns: Arc<str>,
-    /// Partition of the records the guest is processing right now; the
-    /// worker sets it before each call. Scopes the guest's state.
-    pub partition: Arc<str>,
     /// The transaction the guest began and has not ended.
     txn: Option<Box<dyn Txn>>,
     plugin_cfg: Arc<HashMap<String, JSONValue>>,
@@ -73,7 +70,6 @@ impl HostEngine {
             http_client: Client::new(),
             state,
             ns,
-            partition: Arc::from(""),
             txn: None,
             plugin_cfg: config,
             tables,
@@ -246,15 +242,15 @@ impl tangent::logs::enrichment::Host for HostEngine {
     }
 }
 
-/// The guest's state: the plugins' namespace of the state store, scoped to
-/// the partition of the records being processed. Each call stands alone,
+/// The guest's state: the plugins' namespace of the state store, shared by
+/// every record (a plugin keys per tenant itself). Each call stands alone,
 /// unless the guest began a transaction: then they go through it until it
 /// commits or rolls back.
 impl tangent::logs::state::Host for HostEngine {
     async fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
         let got = match self.txn.as_mut() {
-            Some(t) => t.get(&self.ns, &self.partition, &key).await,
-            None => self.state.get(&self.ns, &self.partition, &key).await,
+            Some(t) => t.get(&self.ns, &key).await,
+            None => self.state.get(&self.ns, &key).await,
         };
         got.map(|v| v.map(Scalar::from)).map_err(|e| e.to_string())
     }
@@ -262,32 +258,24 @@ impl tangent::logs::state::Host for HostEngine {
     async fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
         let value = value.into();
         match self.txn.as_mut() {
-            Some(t) => t.set(&self.ns, &self.partition, &key, &value, ttl_ms).await,
-            None => {
-                self.state
-                    .set(&self.ns, &self.partition, &key, &value, ttl_ms)
-                    .await
-            }
+            Some(t) => t.set(&self.ns, &key, &value, ttl_ms).await,
+            None => self.state.set(&self.ns, &key, &value, ttl_ms).await,
         }
         .map_err(|e| e.to_string())
     }
 
     async fn del(&mut self, key: String) -> Result<bool, String> {
         match self.txn.as_mut() {
-            Some(t) => t.del(&self.ns, &self.partition, &key).await,
-            None => self.state.del(&self.ns, &self.partition, &key).await,
+            Some(t) => t.del(&self.ns, &key).await,
+            None => self.state.del(&self.ns, &key).await,
         }
         .map_err(|e| e.to_string())
     }
 
     async fn incr(&mut self, key: String, by: i64, ttl_ms: Option<u64>) -> Result<i64, String> {
         match self.txn.as_mut() {
-            Some(t) => t.incr(&self.ns, &self.partition, &key, by, ttl_ms).await,
-            None => {
-                self.state
-                    .incr(&self.ns, &self.partition, &key, by, ttl_ms)
-                    .await
-            }
+            Some(t) => t.incr(&self.ns, &key, by, ttl_ms).await,
+            None => self.state.incr(&self.ns, &key, by, ttl_ms).await,
         }
         .map_err(|e| e.to_string())
     }
@@ -300,12 +288,8 @@ impl tangent::logs::state::Host for HostEngine {
     ) -> Result<Vec<(String, Scalar)>, String> {
         let limit = limit as usize;
         match self.txn.as_mut() {
-            Some(t) => t.range(&self.ns, &self.partition, &from, &to, limit).await,
-            None => {
-                self.state
-                    .range(&self.ns, &self.partition, &from, &to, limit)
-                    .await
-            }
+            Some(t) => t.range(&self.ns, &from, &to, limit).await,
+            None => self.state.range(&self.ns, &from, &to, limit).await,
         }
         .map(|entries| {
             entries
@@ -533,7 +517,7 @@ mod tests {
         let store = Arc::clone(store);
         tokio::time::timeout(
             std::time::Duration::from_millis(50),
-            tokio::spawn(async move { store.get("baseline", "", "x").await.unwrap() }),
+            tokio::spawn(async move { store.get("baseline", "x").await.unwrap() }),
         )
         .await
         .is_ok()
@@ -571,7 +555,7 @@ mod tests {
             w.await.unwrap();
         }
         assert_eq!(
-            store.get("baseline", "", "count").await.unwrap(),
+            store.get("baseline", "count").await.unwrap(),
             Some(StateValue::Int(200))
         );
     }
@@ -585,7 +569,7 @@ mod tests {
         g.set("a".into(), Scalar::Int(1), None).await.unwrap();
         assert!(free(&store).await);
         assert_eq!(
-            store.get("baseline", "", "a").await.unwrap(),
+            store.get("baseline", "a").await.unwrap(),
             Some(StateValue::Int(1))
         );
         assert!(!g.end_call());
@@ -601,14 +585,14 @@ mod tests {
         g.begin().await.unwrap();
         g.set("a".into(), Scalar::Int(1), None).await.unwrap();
         g.rollback();
-        assert_eq!(store.get("baseline", "", "a").await.unwrap(), None);
+        assert_eq!(store.get("baseline", "a").await.unwrap(), None);
 
         g.begin().await.unwrap();
         g.set("b".into(), Scalar::Int(2), None).await.unwrap();
         assert!(!free(&store).await, "an open transaction holds the store");
         assert!(g.end_call(), "left open");
         assert!(free(&store).await);
-        assert_eq!(store.get("baseline", "", "b").await.unwrap(), None);
+        assert_eq!(store.get("baseline", "b").await.unwrap(), None);
     }
 
     /// Inside a transaction a second `begin` and a remote call fail, and a

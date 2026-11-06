@@ -119,14 +119,13 @@ pub async fn run(opts: TestOptions) -> Result<()> {
                 workers: 1,
                 // Fresh in-process state per test: starts empty, touches no
                 // file, and never contends with a running pipeline's SQLite
-                // store. TTLs and the partition key come from the config so
-                // a stateful plugin is tested the way it runs.
+                // store. TTLs come from the config so a stateful plugin is
+                // tested the way it runs.
                 state: StateConfig {
                     backend: StateBackend::Lru,
                     read_only: false,
                     ..cfg.runtime.state.clone()
                 },
-                partition: cfg.runtime.partition.clone(),
                 disable_remote_calls: !opts.enable_http,
             };
 

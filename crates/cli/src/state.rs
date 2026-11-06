@@ -13,7 +13,7 @@ use tangent_shared::Config;
 
 #[derive(Subcommand, Debug)]
 pub enum StateCommands {
-    /// Key counts per namespace and partition
+    /// Key counts per namespace
     Ls {
         #[arg(long)]
         ns: Option<String>,
@@ -25,16 +25,11 @@ pub enum StateCommands {
         /// Defaults to the pipeline's only namespace.
         #[arg(long)]
         ns: Option<String>,
-        /// Partition; empty for an unpartitioned stream
-        #[arg(long, default_value = "")]
-        partition: String,
     },
     /// Live entries by key prefix, one JSON object per line
     Scan {
         #[arg(long)]
         ns: Option<String>,
-        #[arg(long)]
-        partition: Option<String>,
         #[arg(long, default_value = "")]
         prefix: String,
         #[arg(long, default_value_t = 100)]
@@ -76,39 +71,26 @@ pub async fn run(config: &PathBuf, cmd: StateCommands) -> Result<()> {
             if counts.is_empty() {
                 eprintln!("(no live entries)");
             }
-            println!("{:<24} {:<40} {:>8}", "namespace", "partition", "keys");
+            println!("{:<24} {:>8}", "namespace", "keys");
             for c in counts {
-                let partition = if c.partition.is_empty() {
-                    "-"
-                } else {
-                    &c.partition
-                };
-                println!("{:<24} {:<40} {:>8}", c.ns, partition, c.keys);
+                println!("{:<24} {:>8}", c.ns, c.keys);
             }
         }
-        StateCommands::Get { key, ns, partition } => {
+        StateCommands::Get { key, ns } => {
             let ns = match ns {
                 Some(ns) => ns,
                 None => only_namespace(&cfg)?,
             };
-            match store.get(&ns, &partition, &key).await? {
+            match store.get(&ns, &key).await? {
                 Some(v) => println!("{}", serde_json::to_string(&v)?),
                 None => {
-                    eprintln!("not found: ns={ns} partition={partition:?} key={key}");
+                    eprintln!("not found: ns={ns} key={key}");
                     std::process::exit(1);
                 }
             }
         }
-        StateCommands::Scan {
-            ns,
-            partition,
-            prefix,
-            limit,
-        } => {
-            for e in store
-                .scan(ns.as_deref(), partition.as_deref(), &prefix, limit)
-                .await?
-            {
+        StateCommands::Scan { ns, prefix, limit } => {
+            for e in store.scan(ns.as_deref(), &prefix, limit).await? {
                 println!("{}", serde_json::to_string(&e)?);
             }
         }
