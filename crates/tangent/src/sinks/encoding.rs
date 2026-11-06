@@ -69,7 +69,10 @@ pub fn ndjson_to_avro(raw: &[u8], avro_schema_json: &str, comp: &Compression) ->
 }
 
 /// [`ndjson_to_avro`] from a reader to a writer, a line in memory at a time
-/// (and a block, in the Avro writer).
+/// (and a block, in the Avro writer). Each line is resolved against the
+/// schema, so a JSON object is a record's fields as well as a map's
+/// entries: a field the record does not name is skipped, and one it names
+/// that the line lacks takes the field's default.
 pub fn write_avro<R: BufRead, W: Write>(
     input: R,
     out: W,
@@ -84,9 +87,33 @@ pub fn write_avro<R: BufRead, W: Write>(
             continue;
         }
         let value: serde_json::Value = serde_json::from_slice(&line)?;
-        writer.append_ser(value)?;
+        // a JSON object is an Avro map until it is resolved, and a record
+        // schema cannot encode a map
+        let value = avro_value(value).resolve(&schema)?;
+        writer.append(value)?;
     }
     Ok(writer.into_inner()?)
+}
+
+/// A line's JSON as an Avro value to resolve, as `Value::from` makes it (an
+/// object a map, a whole number an int or a long), except a whole number
+/// past the largest long: that is a double, which a double field takes and
+/// a long field refuses, where `Value::from` wraps it to a negative long.
+fn avro_value(json: serde_json::Value) -> apache_avro::types::Value {
+    use apache_avro::types::Value;
+    match json {
+        serde_json::Value::Number(n) => match (n.as_i64(), n.as_u64()) {
+            (None, Some(u)) => Value::Double(u as f64),
+            _ => Value::from(serde_json::Value::Number(n)),
+        },
+        serde_json::Value::Array(items) => {
+            Value::Array(items.into_iter().map(avro_value).collect())
+        }
+        serde_json::Value::Object(items) => {
+            Value::Map(items.into_iter().map(|(k, v)| (k, avro_value(v))).collect())
+        }
+        json => Value::from(json),
+    }
 }
 
 /// Lines in one Arrow batch, and the bytes they may come to: past either,
@@ -623,7 +650,7 @@ mod tests {
         let json = ndjson_to_json_array(ndjson.as_bytes()).unwrap();
         assert_eq!(&json[..], br#"[{"n":1,"m":"x"},{"n":2,"m":"y"}]"#);
 
-        // append_ser makes a JSON object an Avro map, so a map schema
+        // a map schema takes a JSON object as its entries
         let schema = r#"{"type":"map","values":"string"}"#;
         let ndjson = "{\"n\":\"1\"}\n\n{\"n\":\"2\",\"m\":\"y\"}\n";
         let avro =
@@ -633,6 +660,60 @@ mod tests {
             .map(Result::unwrap)
             .collect();
         assert_eq!(read.len(), 2);
+    }
+
+    #[test]
+    fn avro_takes_a_json_object_as_a_record() {
+        use apache_avro::types::Value;
+        // a field the schema does not name (extra) is skipped, one the line
+        // lacks (org) takes its default, and a union field takes the branch
+        // its value fits
+        let schema = r#"{"type":"record","name":"event","fields":[
+            {"name":"message","type":"string"},
+            {"name":"n","type":"long"},
+            {"name":"actor","type":["null","string"]},
+            {"name":"org","type":"string","default":"none"}]}"#;
+        let ndjson = concat!(
+            "{\"message\":\"hello\",\"n\":1,\"actor\":\"alice\",\"org\":\"acme\",\"extra\":true}\n",
+            "{\"message\":\"bye\",\"n\":2,\"actor\":null}\n",
+        );
+        let comp = Compression::Deflate { level: 3 };
+        let avro = ndjson_to_avro(ndjson.as_bytes(), schema, &comp).unwrap();
+        let read: Vec<Value> = apache_avro::Reader::new(&avro[..])
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        let s = |s: &str| Value::String(s.to_string());
+        let record = |message, n, actor, org| {
+            Value::Record(vec![
+                ("message".to_string(), s(message)),
+                ("n".to_string(), Value::Long(n)),
+                ("actor".to_string(), actor),
+                ("org".to_string(), s(org)),
+            ])
+        };
+        assert_eq!(
+            read,
+            vec![
+                record("hello", 1, Value::Union(1, Box::new(s("alice"))), "acme"),
+                record("bye", 2, Value::Union(0, Box::new(Value::Null)), "none"),
+            ]
+        );
+    }
+
+    #[test]
+    fn avro_does_not_wrap_a_number_past_the_largest_long() {
+        use apache_avro::types::Value;
+        // a double field takes it; as a long it would be -1
+        let schema = r#"{"type":"map","values":"double"}"#;
+        let ndjson = b"{\"n\":18446744073709551615}\n";
+        let avro = ndjson_to_avro(ndjson, schema, &Compression::None).unwrap();
+        let read: Vec<Value> = apache_avro::Reader::new(&avro[..])
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        let n = Value::Double(u64::MAX as f64);
+        assert_eq!(read, vec![Value::Map([("n".to_string(), n)].into())]);
     }
 
     #[test]
