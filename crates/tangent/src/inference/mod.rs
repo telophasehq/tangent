@@ -21,6 +21,7 @@ use rig_core::providers::openai::{OpenAIConfig, Route};
 use rig_core::{schemars, DynModel};
 use secrecy::ExposeSecret;
 use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -35,8 +36,9 @@ pub struct InferenceNode {
     /// The shape the backend is asked to enforce, from `schema_file`.
     schema: Option<schemars::Schema>,
     model: DynModel<Completion>,
-    /// `concurrency` permits: requests in flight from this worker.
-    sem: Semaphore,
+    /// `concurrency` permits: requests in flight to this node, shared by
+    /// every worker's copy of it.
+    sem: Arc<Semaphore>,
 }
 
 fn resolve(config_dir: &Path, file: &Path) -> PathBuf {
@@ -96,7 +98,7 @@ impl InferenceNode {
             None => None,
         };
         let model = model(&cfg)?;
-        let sem = Semaphore::new(cfg.concurrency.max(1));
+        let sem = Arc::new(Semaphore::new(cfg.concurrency.max(1)));
         tracing::info!(
             node = %name,
             backend = ?cfg.backend,
@@ -116,6 +118,13 @@ impl InferenceNode {
     /// Every record through the model, a request per value of `group_by`
     /// split at `batch_bytes` (and `budget_tokens`), each under one of the node's permits; the
     /// annotated records, in the order given.
+    /// The node, its requests in flight counted against `sem` with every
+    /// other copy given the same one.
+    pub fn sharing(mut self, sem: Arc<Semaphore>) -> Self {
+        self.sem = sem;
+        self
+    }
+
     pub async fn annotate_all(&self, records: Vec<Value>) -> Vec<Value> {
         let n = records.len();
         let mut groups: Vec<(String, Vec<(usize, Value)>)> = Vec::new();
@@ -504,6 +513,20 @@ fn head(s: &str, n: usize) -> String {
 }
 
 /// Dot-path lookup into a JSON value: "a.b.c", "events.0.name".
+/// One `concurrency` limit per inference node, for every worker that runs a
+/// copy of it to share: the model sees at most that many requests from the
+/// node, however many workers there are.
+pub fn permits(cfgs: &BTreeMap<Arc<str>, InferenceConfig>) -> BTreeMap<Arc<str>, Arc<Semaphore>> {
+    cfgs.iter()
+        .map(|(name, cfg)| {
+            (
+                Arc::clone(name),
+                Arc::new(Semaphore::new(cfg.concurrency.max(1))),
+            )
+        })
+        .collect()
+}
+
 pub fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
     if let Some(direct) = v.get(path) {
         return Some(direct);
@@ -893,6 +916,40 @@ mod tests {
             .await;
         assert!(outs.iter().all(|o| o["judge"]["flag"] == true), "{outs:?}");
         assert_eq!(seen.lock().await.len(), 3, "the whole, then two halves");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Two workers' copies of a node with `concurrency: 1` send one request
+    /// at a time between them, not one each.
+    #[tokio::test]
+    async fn copies_of_a_node_share_its_concurrency() {
+        let (url, taken) = stub::silent().await;
+        let dir = stub::dir("shared-permits");
+        let mut cfg = stub::config(&url);
+        cfg.concurrency = 1;
+        let permits = permits(&BTreeMap::from([(Arc::from("judge"), cfg.clone())]));
+        let copies: Vec<_> = (0..2)
+            .map(|_| {
+                InferenceNode::new(Arc::from("judge"), cfg.clone(), &dir)
+                    .unwrap()
+                    .sharing(Arc::clone(&permits["judge"]))
+            })
+            .collect();
+        let calls: Vec<_> = copies
+            .into_iter()
+            .map(|node| {
+                tokio::spawn(async move { node.annotate_all(vec![json!({"id": 1})]).await })
+            })
+            .collect();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(
+            taken.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "one request between the two copies"
+        );
+        for c in calls {
+            c.abort();
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 

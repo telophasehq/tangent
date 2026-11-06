@@ -1191,6 +1191,10 @@ fn every_path_field_is_rebased() {
         state_namespace: _,
         data: _, // PATHS
         drop_on_error: _,
+        group_by: _,
+        max_events: _,
+        expire_after_ms: _,
+        history: _,
     } = PluginConfig::default();
     let PluginTests {
         input: _,             // PATHS

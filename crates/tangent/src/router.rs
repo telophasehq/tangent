@@ -10,6 +10,7 @@ use tangent_shared::dag::NodeRef;
 use tokio::sync::OnceCell;
 
 use crate::{
+    group::Grouper,
     inference::lines,
     sinks::manager::SinkManager,
     worker::{Ack, Record, WorkerPool},
@@ -93,6 +94,8 @@ impl Ack for RefCountAck {
 pub struct Router {
     outs: HashMap<NodeRef, Vec<NodeRef>>,
     pool: OnceCell<Weak<WorkerPool>>,
+    /// Each grouped plugin's grouping task, by plugin.
+    groupers: OnceCell<std::collections::HashMap<Arc<str>, Grouper>>,
     sink_manager: Arc<SinkManager>,
     /// Records handed to a worker and not yet through their walk of the DAG.
     /// Zero means the DAG is quiet.
@@ -108,6 +111,7 @@ impl Router {
         Self {
             outs,
             pool: OnceCell::new(),
+            groupers: OnceCell::new(),
             sink_manager,
             in_flight: Arc::new(AtomicUsize::new(0)),
             unrouted: Mutex::new(HashSet::default()),
@@ -136,6 +140,15 @@ impl Router {
 
     pub fn set_pool(&self, pool: &Arc<WorkerPool>) {
         let _ = self.pool.set(Arc::downgrade(pool));
+    }
+
+    pub fn set_groupers(&self, groupers: std::collections::HashMap<Arc<str>, Grouper>) {
+        let _ = self.groupers.set(groupers);
+    }
+
+    /// The grouping task of plugin `name`, if it groups.
+    pub fn grouper(&self, name: &str) -> Option<Grouper> {
+        self.groupers.get()?.get(name).cloned()
     }
     #[inline]
     fn pool(&self) -> Option<Arc<WorkerPool>> {

@@ -15,6 +15,7 @@ use crate::dag::DagRuntime;
 
 pub mod dag;
 pub mod enrichment;
+pub mod group;
 pub mod inference;
 pub mod record;
 pub mod router;

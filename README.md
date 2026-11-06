@@ -67,6 +67,19 @@ plugins:
 
 A plugin may read files too: `data: <dir>` mounts a directory, relative to the file that names it, read-only at `/data` in the guest, for reference data too big for `config`. [examples/enrich](/examples/enrich) reads MaxMind GeoLite2 and the cloud providers' ranges that way, and its `setup.sh` fetches them. Each plugin instance on each worker reads such files into its own memory; reference data that several plugins read, or that is large, belongs in an [enrichment table](#enrichment-tables), which the process loads once.
 
+A plugin can take its records a group at a time, as Vector's `reduce` groups them, without the merge:
+
+```yaml
+plugins:
+  renderer:
+    group_by: [_norm.org, _norm.actor]   # a group per value of these fields
+    max_events: 40                       # closes at 40 records,
+    expire_after_ms: 30000               # or once nothing has joined it for 30 s (the default)
+    history: 39                          # the key's latest records, sent again ahead of its next group
+```
+
+Records reaching the plugin wait in their key's group, in memory, and are acked once there. A closed group reaches the plugin whole, in one call, on workers of the plugin's own, so a slow plugin, or a model after it, never holds up what feeds it, and one group per key is out at a time. At the end of input (`--once`, a shutdown) every open group closes; a crash loses the open ones, as with Vector. With `history`, a key's latest records are kept in the state store (namespace `groups`) and go again ahead of its next group, marked `"_context": true`, so the plugin sees what came before.
+
 When a plugin's call fails (it traps or returns an error), the records it was given are logged and dropped. `drop_on_error: false` passes them on unchanged instead, as if the plugin were not there: right for a plugin that only adds to records, such as context for a model, wrong for a filter. `tangent plugin test` always drops, so a failed call fails the test.
 
 Each state call stands alone: two workers running a plugin can interleave one's read with the other's write. A plugin that reads state and writes what depends on it makes them one transaction: `state.begin()`, its reads and writes, then `state.commit()`, or `state.rollback()`. They see each other's writes and land together, or not at all, however many workers run the plugin. A plugin that keeps state per tenant puts the tenant in its keys: [examples/counter](/examples/counter) counts events per org under `count:<org>`, and marks "first time this org did X" in a transaction. No other state call runs while one is open, so begin late, after the parsing, and commit early. A second `begin`, or a remote call, inside one fails, and a call that returns with one open has it rolled back, with a warning: only what a plugin commits is kept.
@@ -191,7 +204,7 @@ A request holds the records the node is handed, or with `group_by: [_norm.actor]
 
 `encoding: {type: logfmt, keep: [...], sources: {<source>: {principal, time, keep, ids}}}` writes the records as logfmt lines in about half the tokens of JSON, and the text decodes back to the records: a principal's records are grouped, the fields they share written once above their rows, the `keep` fields on every row, a day's timestamps as times of day; `sidecar: true` swaps a source's `ids` for references the model never sees. Each pack's `judge.yaml` has its sources' rows, e.g. [packs/aws/judge.yaml](/packs/aws/judge.yaml).
 
-Inference nodes run inside the workers, in DAG order with the plugins: a worker hands a model the records that reached the node, waits for the replies, and carries them on, so a batch's records stay in order and nothing else moves while the model thinks. `concurrency` bounds requests in flight per worker (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold; `retries` (2) tries again, backing off, when a request got no reply at all. `temperature` is sent only when set. A signal (SIGINT or SIGTERM) ends the calls under way rather than wait out `timeout_ms` and `retries`: records waiting on one go to no sink and are not acked, so a `sqlite` source sends them again at its next start. Another signal, a second or more after the first, exits at once. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
+Inference nodes run inside the workers, in DAG order with the plugins: a worker hands a model the records that reached the node, waits for the replies, and carries them on, so a batch's records stay in order and nothing else moves while the model thinks. `concurrency` bounds requests in flight to the node, every worker's together (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold; `retries` (2) tries again, backing off, when a request got no reply at all. `temperature` is sent only when set. A signal (SIGINT or SIGTERM) ends the calls under way rather than wait out `timeout_ms` and `retries`: records waiting on one go to no sink and are not acked, so a `sqlite` source sends them again at its next start. Another signal, a second or more after the first, exits at once. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
 
 ## Including files
 A config can span several files. `include:` lists files merged into the one that names it, each path relative to that file:
