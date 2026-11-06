@@ -108,7 +108,7 @@ pub async fn run_consumer(
                             (a, b) => a.or(b),
                         };
                     }
-                    poller.finish(newest, end).await;
+                    poller.finish(newest, Some(end)).await;
                     Ok::<usize, anyhow::Error>(total)
                 }
                 .await;
@@ -198,7 +198,7 @@ async fn poll(
     end: DateTime<Utc>,
 ) -> Result<(usize, Option<DateTime<Utc>>)> {
     let mut newest: Option<DateTime<Utc>> = None;
-    let mut out: Vec<(DateTime<Utc>, Value)> = Vec::new();
+    let mut out: Vec<(DateTime<Utc>, String, Value)> = Vec::new();
     let mut page_token: Option<String> = None;
     loop {
         let mut req = client
@@ -234,11 +234,11 @@ async fn poll(
                 item["id"]["uniqueQualifier"].as_str().unwrap_or(""),
                 t.timestamp_millis()
             );
-            if !poller.first_sight(&id).await {
+            if poller.seen(&id).await {
                 continue;
             }
             newest = Some(newest.map_or(t, |n| n.max(t)));
-            out.push((t, item.clone()));
+            out.push((t, id, item.clone()));
         }
         page_token = v["nextPageToken"].as_str().map(str::to_string);
         if page_token.is_none() || out.len() >= 10_000 {
@@ -247,4 +247,54 @@ async fn poll(
     }
     let n = poller.emit(SOURCE, out).await?;
     Ok((n, newest))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use axum::{extract::Query, http::StatusCode, response::IntoResponse, Json};
+    use serde_json::json;
+
+    use super::*;
+    use crate::sources::poll::testing::{serve, Keeper};
+
+    #[tokio::test]
+    async fn a_429_on_page_two_leaves_page_one_to_the_next_poll() {
+        let page_one = json!({
+            "items": [
+                {"id": {"time": "2026-11-06T12:00:00.000Z", "uniqueQualifier": "a"}},
+                {"id": {"time": "2026-11-06T12:00:01.000Z", "uniqueQualifier": "b"}},
+            ],
+            "nextPageToken": "2",
+        });
+        // the second page answers 429 the first time and is empty after
+        let throttled = Arc::new(AtomicBool::new(false));
+        let base = serve(|_| {
+            axum::Router::new().fallback(move |Query(q): Query<HashMap<String, String>>| {
+                let resp = if !q.contains_key("pageToken") {
+                    Json(page_one.clone()).into_response()
+                } else if throttled.swap(true, Ordering::SeqCst) {
+                    Json(json!({})).into_response()
+                } else {
+                    StatusCode::TOO_MANY_REQUESTS.into_response()
+                };
+                async move { resp }
+            })
+        })
+        .await;
+        let cfg: GoogleWorkspaceConfig = serde_json::from_value(json!({"api": base})).unwrap();
+        let client = reqwest::Client::new();
+        let keeper = Keeper::new("google_workspace");
+        let (start, end) = (Utc::now() - Duration::hours(1), Utc::now());
+        let poll_login = || poll(&client, "t", "login", &cfg, &keeper.poller, start, end);
+        let err = poll_login().await.unwrap_err();
+        assert!(err.to_string().contains("429"), "{err:#}");
+        let (n, _) = poll_login().await.unwrap();
+        assert_eq!(n, 2, "page one, on the next poll");
+        let (n, _) = poll_login().await.unwrap();
+        assert_eq!(n, 0, "and only once");
+        assert_eq!(keeper.sent("/id/uniqueQualifier").await, ["a", "b"]);
+    }
 }

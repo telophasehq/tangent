@@ -73,7 +73,8 @@ async fn poll(
     let start = poller.start(&cfg.since).await;
     let end = Utc::now();
     let mut newest: Option<DateTime<Utc>> = None;
-    let mut out: Vec<(DateTime<Utc>, Value)> = Vec::new();
+    let mut out: Vec<(DateTime<Utc>, String, Value)> = Vec::new();
+    let mut capped = false;
     let mut url = Some(format!(
         "{}/api/v1/logs?since={}&sortOrder=ASCENDING&limit=1000",
         org_url.trim_end_matches('/'),
@@ -116,17 +117,81 @@ async fn poll(
                     v["eventType"].as_str().unwrap_or("")
                 ),
             };
-            if !poller.first_sight(&id).await {
+            if poller.seen(&id).await {
                 continue;
             }
             newest = Some(newest.map_or(t, |n| n.max(t)));
-            out.push((t, v));
+            out.push((t, id, v));
         }
         if out.len() >= 10_000 {
+            capped = true;
             break;
         }
     }
     let n = poller.emit(SOURCE, out).await?;
-    poller.finish(newest, end).await;
+    poller.finish(newest, (!capped).then_some(end)).await;
     Ok(n)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::sources::poll::testing::{oldest_first, throttled_on_page_two, Keeper};
+
+    #[tokio::test]
+    async fn the_page_cap_leaves_the_rest_to_the_next_poll() {
+        let t0 = DateTime::from_timestamp(Utc::now().timestamp() - 2 * 86_400, 0).unwrap();
+        let events = (0..10_500)
+            .map(|i| {
+                let t = t0 + Duration::seconds(i);
+                let v = json!({
+                    "uuid": format!("e{i}"),
+                    "published": t.to_rfc3339(),
+                    "eventType": "user.session.start",
+                });
+                (t, v)
+            })
+            .collect();
+        let base = oldest_first(events, |q| q["since"].parse().unwrap()).await;
+        let cfg: OktaConfig = serde_json::from_value(json!({"since": "7d"})).unwrap();
+        let client = reqwest::Client::new();
+        let keeper = Keeper::new("okta");
+        let n = poll(&client, &cfg, &base, "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 10_000, "up to the cap");
+        let n = poll(&client, &cfg, &base, "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 500, "the rest, on the next poll");
+        let all: Vec<String> = (0..10_500).map(|i| format!("e{i}")).collect();
+        assert_eq!(keeper.sent("/uuid").await, all);
+    }
+
+    #[tokio::test]
+    async fn a_429_on_page_two_leaves_page_one_to_the_next_poll() {
+        let base = throttled_on_page_two(json!([
+            {"uuid": "a", "published": "2026-11-06T12:00:00.000Z", "eventType": "user.session.start"},
+            {"uuid": "b", "published": "2026-11-06T12:00:01.000Z", "eventType": "user.session.start"},
+        ]))
+        .await;
+        let cfg: OktaConfig = serde_json::from_value(json!({})).unwrap();
+        let client = reqwest::Client::new();
+        let keeper = Keeper::new("okta");
+        let err = poll(&client, &cfg, &base, "t", &keeper.poller)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("429"), "{err:#}");
+        let n = poll(&client, &cfg, &base, "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 2, "page one, on the next poll");
+        let n = poll(&client, &cfg, &base, "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 0, "and only once");
+        assert_eq!(keeper.sent("/uuid").await, ["a", "b"]);
+    }
 }

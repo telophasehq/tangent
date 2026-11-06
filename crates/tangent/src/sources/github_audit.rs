@@ -74,7 +74,8 @@ async fn poll(
     let start = poller.start(&cfg.since).await;
     let end = Utc::now();
     let mut newest: Option<DateTime<Utc>> = None;
-    let mut out: Vec<(DateTime<Utc>, Value)> = Vec::new();
+    let mut out: Vec<(DateTime<Utc>, String, Value)> = Vec::new();
+    let mut capped = false;
     let mut url = Some(format!(
         "{}/orgs/{}/audit-log?phrase={}&include={}&order=asc&per_page=100",
         cfg.api.trim_end_matches('/'),
@@ -122,17 +123,88 @@ async fn poll(
                     v["actor"].as_str().unwrap_or("")
                 ),
             };
-            if !poller.first_sight(&id).await {
+            if poller.seen(&id).await {
                 continue;
             }
             newest = Some(newest.map_or(t, |n| n.max(t)));
-            out.push((t, v));
+            out.push((t, id, v));
         }
         if out.len() >= 5_000 {
+            capped = true;
             break;
         }
     }
     let n = poller.emit(SOURCE, out).await?;
-    poller.finish(newest, end).await;
+    poller.finish(newest, (!capped).then_some(end)).await;
     Ok(n)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::sources::poll::testing::{oldest_first, throttled_on_page_two, Keeper};
+
+    #[tokio::test]
+    async fn the_page_cap_leaves_the_rest_to_the_next_poll() {
+        let t0 = DateTime::from_timestamp(Utc::now().timestamp() - 2 * 86_400, 0).unwrap();
+        let events = (0..5_500)
+            .map(|i| {
+                let t = t0 + Duration::seconds(i);
+                let v = json!({
+                    "_document_id": format!("e{i}"),
+                    "@timestamp": t.timestamp_millis(),
+                    "action": "repo.create",
+                });
+                (t, v)
+            })
+            .collect();
+        let base = oldest_first(events, |q| {
+            q["phrase"]
+                .trim_start_matches("created:>=")
+                .parse()
+                .unwrap()
+        })
+        .await;
+        let cfg: GithubAuditConfig =
+            serde_json::from_value(json!({"api": base, "since": "7d"})).unwrap();
+        let client = reqwest::Client::new();
+        let keeper = Keeper::new("github_audit");
+        let n = poll(&client, &cfg, "acme", "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 5_000, "up to the cap");
+        let n = poll(&client, &cfg, "acme", "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 500, "the rest, on the next poll");
+        let all: Vec<String> = (0..5_500).map(|i| format!("e{i}")).collect();
+        assert_eq!(keeper.sent("/_document_id").await, all);
+    }
+
+    #[tokio::test]
+    async fn a_429_on_page_two_leaves_page_one_to_the_next_poll() {
+        let base = throttled_on_page_two(json!([
+            {"_document_id": "a", "@timestamp": 1_793_106_000_000u64, "action": "repo.create"},
+            {"_document_id": "b", "@timestamp": 1_793_106_001_000u64, "action": "repo.create"},
+        ]))
+        .await;
+        let cfg: GithubAuditConfig = serde_json::from_value(json!({"api": base})).unwrap();
+        let client = reqwest::Client::new();
+        let keeper = Keeper::new("github_audit");
+        let err = poll(&client, &cfg, "acme", "t", &keeper.poller)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("429"), "{err:#}");
+        let n = poll(&client, &cfg, "acme", "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 2, "page one, on the next poll");
+        let n = poll(&client, &cfg, "acme", "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 0, "and only once");
+        assert_eq!(keeper.sent("/_document_id").await, ["a", "b"]);
+    }
 }
