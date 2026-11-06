@@ -356,7 +356,7 @@ A month is thirty times as much. The count matters more than the size. A log rea
 
 Two things the count must include:
 
-- People. A request is one actor's logs: up to thirty new ones, and its latest ten already judged again (`_context`), which the model answers too. A busy actor, a service role or an app server, fills one with new logs. A quiet one, a person, goes once it has been quiet an hour. Count a person as their logs plus ten for each stretch of activity.
+- People. A request is one actor's logs: up to thirty new ones, and its latest ten already judged again (`_context`), which the model answers too. A busy actor, a service role or an app server, fills one with new logs. A quiet one, a person, goes an hour after its first new log. Count a person as their logs plus ten for each hour they are active.
 - Throughput. At 2–10 s a Haiku 5.5 request, core's `concurrency: 4` keeps up with 35k–170k requests a day, 1.4M–6.8M logs; raise `inference.judge.concurrency` past that.
 
 #### Per provider

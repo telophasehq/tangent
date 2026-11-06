@@ -135,8 +135,9 @@ would go on as nobody the org knows, in the provider's org rather than yours.
 
 - **baseline_renderer**, which every pack's plugin has an edge to as well,
   groups each actor's records (`group_by: [_norm.org, _norm.actor]`): a group
-  closes at 30 records (`max_events`) or once the actor has been quiet an hour
-  (`expire_after_ms`), and reaches the renderer whole, on workers of its own,
+  closes at 30 records (`max_events`) or an hour after its first record
+  (`max_age_ms`), however busy the actor; an hour's quiet (`expire_after_ms`)
+  closes it no sooner. It reaches the renderer whole, on workers of its own,
   with the actor's latest ten records again ahead of it, marked `_context`
   (`history: 10`): forty records a request, which `batch_bytes` is sized for.
   Groups wait in memory; the end of input closes every open one. The renderer

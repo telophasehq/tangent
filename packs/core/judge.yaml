@@ -14,7 +14,8 @@ plugins:
     # own, so ingest never waits on the model (README.md#baseline).
     group_by: [_norm.org, _norm.actor]
     max_events: 30               # with the ten below, the forty `batch_bytes` fits in one request
-    expire_after_ms: 3600000     # or once the actor has been quiet an hour
+    max_age_ms: 3600000          # or an hour after its first record, however busy the actor
+    expire_after_ms: 3600000     # an hour's quiet too, not the 30 s default: fuller groups, fewer requests
     history: 10                  # the actor's latest ten records again, as `_context`
   fresh:
     module_type: rust

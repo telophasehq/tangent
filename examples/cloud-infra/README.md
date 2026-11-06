@@ -41,7 +41,7 @@ NDJSON on :9400 ──▶ each pack ───┼──▶ baseline_builder ─�
   each person's sign-ins and credential changes in every source (`people` in
   the profile says which names are one person).
 - **baseline_renderer** gets each actor's records a group at a time: thirty,
-  or fewer once the actor has been quiet an hour, with its latest ten again
+  or fewer an hour after the first of them, with its latest ten again
   ahead of them, marked `_context`. Groups wait in memory and run on workers
   of their own, so nothing waits on the model; one group per actor is judged
   at a time, and stopping the process closes every open group first. It puts
