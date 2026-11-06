@@ -1,8 +1,13 @@
 # judge: a model reads each actor's records a group at a time, with what
 # baseline_builder knew of the actor before them, and writes a verdict per
 # new one; a person reads the ones it flagged. Include it in your config with
-# enrich, behavior-baseline and the packs', and route each pack's plugin to
-# baseline_renderer.
+# the packs', and route each pack's plugin to baseline_builder and
+# baseline_renderer. It brings enrich and behavior-baseline: a config that
+# includes them too gets the same files, read once.
+include:
+  - ../enrich/ingest.yaml
+  - ../behavior-baseline/ingest.yaml
+
 plugins:
   # behavior-baseline's renderer, its records grouped for the model. Your
   # config routes each pack's plugin to it. An actor's records wait in a

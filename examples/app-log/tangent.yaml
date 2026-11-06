@@ -2,9 +2,7 @@
 # actor's records judged a group at a time. The customer's tenant id is the
 # org, so each customer's actors are their own. One config, one process.
 include:
-  - ../../packs/enrich/ingest.yaml            # the tables, the lake
-  - ../../packs/behavior-baseline/ingest.yaml # each actor's baseline, in state.sqlite
-  - ../../packs/judge/ingest.yaml             # the judge: each actor's records a group at a time
+  - ../../packs/judge/ingest.yaml             # the judge, and the enrich and behavior-baseline packs it includes
   - ../../packs/app/ingest.yaml               # plugin app: app, agent
 
 enrichment_tables:
