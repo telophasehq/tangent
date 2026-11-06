@@ -10,7 +10,8 @@
 #
 # Edit profile/profile.yaml first: it is everything the model knows about you.
 include:
-  - ../../packs/enrich/ingest.yaml            # the runtime, the tables, the lake, each actor's baseline
+  - ../../packs/enrich/ingest.yaml            # the tables, the lake
+  - ../../packs/behavior-baseline/ingest.yaml # each actor's baseline, in state.sqlite
   - ../../packs/judge/ingest.yaml             # the judge: each actor's records a group at a time
   - ../../packs/aws/ingest.yaml               # plugin aws: cloudtrail
   - ../../packs/github/ingest.yaml            # plugin github: github_audit, gha_ci, runner_egress

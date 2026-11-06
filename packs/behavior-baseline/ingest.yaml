@@ -1,0 +1,26 @@
+# behavior-baseline: what each actor did before, from the state store, on its
+# records. baseline_builder folds every record into state.sqlite: what each
+# actor did, from where and with what. baseline_renderer puts on each of an
+# actor's records `_baseline`, what state knew of the actor before the first
+# of them. Include it in your config and route each pack's plugin to both;
+# the renderer's records go on to the judge, or to a sink of yours without a
+# model (README.md).
+runtime:
+  state:                         # baseline's keys never expire
+    backend: sqlite
+    path: state.sqlite
+    default_ttl_ms: 0
+    max_ttl_ms: 0
+
+plugins:
+  baseline_builder:              # folds every record into state; emits nothing
+    module_type: rust
+    path: builder
+    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
+    state_namespace: baseline
+  baseline_renderer:             # the same `_baseline` on each of an actor's records
+    module_type: rust
+    path: renderer
+    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
+    state_namespace: baseline
+    drop_on_error: false         # no `_baseline` rather than no record
