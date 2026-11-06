@@ -1,10 +1,8 @@
-use ahash::AHasher;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use rand::{rng, Rng};
 use std::collections::{BTreeMap, HashMap};
-use std::hash::Hasher;
 use std::path::{Component, Path, PathBuf};
 use std::{sync::Arc, time::Duration};
 use tangent_shared::sinks::common::{SinkConfig, SinkKind};
@@ -45,7 +43,7 @@ pub struct SinkItem {
     pub req: SinkWrite,
 }
 
-struct Shard {
+struct Queue {
     tx: mpsc::Sender<SinkItem>,
     handle: JoinHandle<()>,
 }
@@ -68,8 +66,8 @@ enum SinkEntry {
 }
 
 pub struct SinkManager {
-    shards: Vec<Shard>,
-    sinks: Arc<HashMap<Arc<str>, SinkEntry>>,
+    queues: HashMap<Arc<str>, Queue>,
+    sinks: HashMap<Arc<str>, SinkEntry>,
 }
 
 impl SinkManager {
@@ -81,8 +79,6 @@ impl SinkManager {
                 .with_context(|| format!("sink '{name}'"))?;
         }
         let mut sinks: HashMap<Arc<str>, SinkEntry> = HashMap::with_capacity(cfgs.len());
-
-        let total_inflight: usize = cfgs.values().map(|c| c.common.in_flight_limit).sum();
 
         for (name, cfg) in cfgs {
             match &cfg.kind {
@@ -159,20 +155,24 @@ impl SinkManager {
             }
         }
 
-        Ok(Self::from_entries(sinks, total_inflight))
+        Ok(Self::from_entries(sinks, |name| {
+            cfgs[name].common.in_flight_limit
+        }))
     }
 
-    fn from_entries(sinks: HashMap<Arc<str>, SinkEntry>, total_inflight: usize) -> Self {
-        let num_shards = 4usize;
-        let mut shards = Vec::with_capacity(num_shards);
+    /// A queue for each sink, and its own `in_flight_limit` of writes at a
+    /// time. A write holds its slot while it is retried, so a sink that is
+    /// down holds only its own slots and queue, not another sink's.
+    fn from_entries(
+        sinks: HashMap<Arc<str>, SinkEntry>,
+        in_flight_limit: impl Fn(&str) -> usize,
+    ) -> Self {
+        let mut queues = HashMap::with_capacity(sinks.len());
 
-        let sem = Arc::new(Semaphore::new(total_inflight.max(1)));
-        let sinks = Arc::new(sinks);
-
-        for _ in 0..num_shards {
+        for (name, entry) in &sinks {
             let (tx, mut rx) = mpsc::channel::<SinkItem>(4096);
-            let sinks_map = Arc::clone(&sinks);
-            let sem = sem.clone();
+            let entry = entry.clone();
+            let sem = Arc::new(Semaphore::new(in_flight_limit(name).max(1)));
 
             let handle = tokio::spawn(async move {
                 let mut js = JoinSet::new();
@@ -183,16 +183,7 @@ impl SinkManager {
 
                             let sink_name = item.req.sink_name.clone();
 
-                            let entry = match sinks_map.get(&sink_name) {
-                                Some(e) => e,
-                                None => {
-                                    tracing::warn!("no sink named '{sink_name}'; dropping item");
-                                    for a in item.acks.drain(..) { let _ = a.ack().await; }
-                                    continue;
-                                }
-                            };
-
-                            if let SinkEntry::Wal { bucket, path, key_prefix, .. } = entry {
+                            if let SinkEntry::Wal { bucket, path, key_prefix, .. } = &entry {
                                 let now = chrono::Utc::now();
                                 let prefix = path
                                     .as_ref()
@@ -206,7 +197,7 @@ impl SinkManager {
                                 item.req.s3 = None;
                             }
 
-                            let sink: Arc<dyn Sink> = match entry {
+                            let sink: Arc<dyn Sink> = match &entry {
                                 SinkEntry::Wal { sink, .. } => sink.clone(),
                                 SinkEntry::Other { sink } => sink.clone(),
                             };
@@ -261,19 +252,19 @@ impl SinkManager {
                 while js.join_next().await.is_some() {}
             });
 
-            shards.push(Shard { tx, handle });
+            queues.insert(Arc::clone(name), Queue { tx, handle });
         }
 
-        Self { shards, sinks }
+        Self { queues, sinks }
     }
 
     #[cfg(test)]
-    pub(crate) fn for_test(sinks: Vec<(Arc<str>, Arc<dyn Sink>)>, total_inflight: usize) -> Self {
+    pub(crate) fn for_test(sinks: Vec<(Arc<str>, Arc<dyn Sink>)>, in_flight_limit: usize) -> Self {
         let entries = sinks
             .into_iter()
             .map(|(name, sink)| (name, SinkEntry::Other { sink }))
             .collect();
-        Self::from_entries(entries, total_inflight)
+        Self::from_entries(entries, |_| in_flight_limit)
     }
 
     pub async fn enqueue(
@@ -282,44 +273,38 @@ impl SinkManager {
         payload: BytesMut,
         acks: Vec<Arc<dyn Ack>>,
     ) -> Result<()> {
-        let shard_ix = {
-            let mut h = AHasher::default();
-            h.write(sink_name.as_bytes());
-            (h.finish() as usize) % self.shards.len()
-        };
-
-        if !self.sinks.contains_key(&sink_name) {
+        let Some(queue) = self.queues.get(&sink_name) else {
             tracing::warn!("unknown sink '{}'; dropping item", sink_name);
             anyhow::bail!("unknown sink: {sink_name}");
-        }
+        };
 
         let sink_item = SinkItem {
             acks,
             req: SinkWrite {
-                sink_name: Arc::<str>::from(sink_name),
+                sink_name: Arc::clone(&sink_name),
                 payload: payload,
-                s3: None, // filled in the shard
+                s3: None, // filled in the sink's queue
             },
         };
 
-        self.shards[shard_ix]
+        queue
             .tx
             .send(sink_item)
             .await
             .map(|()| {
                 INFLIGHT.inc();
             })
-            .map_err(|e| anyhow::anyhow!("send to shard {shard_ix} failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("send to sink '{sink_name}' failed: {e}"))
     }
 
     /// Drain and flush everything.
     pub async fn join(self) -> Result<()> {
-        let Self { shards, sinks, .. } = self;
+        let Self { queues, sinks, .. } = self;
 
-        for sh in shards.into_iter() {
-            drop(sh.tx);
-            if let Err(e) = sh.handle.await {
-                tracing::warn!("shard join error: {e}");
+        for (nm, q) in queues {
+            drop(q.tx);
+            if let Err(e) = q.handle.await {
+                tracing::warn!("sink '{nm}' queue join error: {e}");
             }
         }
 
@@ -497,7 +482,7 @@ mod tests {
             path: None,
             key_prefix: Some(Arc::new(s3::KeyPrefix::parse("logs/%Y/%m/%d").unwrap())),
         };
-        let manager = SinkManager::from_entries(HashMap::from([(name.clone(), entry)]), 1);
+        let manager = SinkManager::from_entries(HashMap::from([(name.clone(), entry)]), |_| 1);
         let day = || chrono::Utc::now().format("logs/%Y/%m/%d").to_string();
         let before = day();
         manager
@@ -542,6 +527,79 @@ mod tests {
         assert!(format!("{e:#}").contains("sink 'archive'"), "{e:#}");
         assert!(!root.join("a-wal").exists(), "sink 'a' made its WAL");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Fails every write until `up` is set, as a sink whose destination is
+    /// down does.
+    #[derive(Default)]
+    struct DownSink {
+        up: std::sync::atomic::AtomicBool,
+        tries: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl Sink for DownSink {
+        async fn write(&self, _: SinkWrite) -> Result<()> {
+            self.tries.fetch_add(1, Ordering::SeqCst);
+            if self.up.load(Ordering::SeqCst) {
+                Ok(())
+            } else {
+                anyhow::bail!("down")
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_sink_that_is_down_does_not_stop_the_others() {
+        let (alerts, lake): (Arc<str>, Arc<str>) = (Arc::from("alerts"), Arc::from("lake"));
+        let down = Arc::new(DownSink::default());
+        let recorder = RecordingSink::new();
+        let manager = SinkManager::for_test(
+            vec![
+                (alerts.clone(), down.clone() as Arc<dyn Sink>),
+                (lake.clone(), recorder.clone() as Arc<dyn Sink>),
+            ],
+            1,
+        );
+        let ack = Arc::new(TestAck::default());
+        // one write holds alerts' write slot while it is retried, the next waits for it
+        for _ in 0..2 {
+            manager
+                .enqueue(
+                    alerts.clone(),
+                    BytesMut::from("{\"a\":1}\n"),
+                    vec![ack.clone() as Arc<dyn Ack>],
+                )
+                .await
+                .unwrap();
+        }
+        // alerts is down, and being retried, when the lake gets a write
+        while down.tries.load(Ordering::SeqCst) == 0 {
+            sleep(Duration::from_millis(10)).await;
+        }
+        manager
+            .enqueue(
+                lake.clone(),
+                BytesMut::from("{\"l\":1}\n"),
+                vec![ack.clone() as Arc<dyn Ack>],
+            )
+            .await
+            .unwrap();
+        let lake_written = tokio::time::timeout(Duration::from_secs(2), async {
+            while recorder.writes.lock().await.is_empty() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(
+            lake_written.is_ok(),
+            "lake had no write while alerts was down"
+        );
+        assert_eq!(ack.count(), 1, "only the lake's write is acked");
+
+        down.up.store(true, Ordering::SeqCst);
+        manager.join().await.unwrap();
+        assert_eq!(ack.count(), 3, "alerts' writes are acked once it is up");
     }
 
     fn s3(wal: &str) -> SinkConfig {
