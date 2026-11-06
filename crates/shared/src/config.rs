@@ -204,6 +204,35 @@ impl Config {
         Ok(())
     }
 
+    /// What loads and runs but likely is not meant, for the caller to print
+    /// (this crate does not log): a plugin, inference node or sink no edge
+    /// reaches never runs, and a source no edge leaves is read and dropped,
+    /// its records acked and a polling source's cursor moved past them. A
+    /// plugin no edge leaves is fine: it may only write state.
+    pub fn warnings(&self) -> Vec<String> {
+        let mut warnings = Vec::new();
+        for name in self.sources.keys() {
+            if !self.dag.iter().any(|e| e.from == *name && !e.to.is_empty()) {
+                warnings.push(format!(
+                    "source {name}: no edge leaves it; its records are read and dropped"
+                ));
+            }
+        }
+        let fed: [(&str, Vec<&Arc<str>>); 3] = [
+            ("plugin", self.plugins.keys().collect()),
+            ("inference node", self.inference.keys().collect()),
+            ("sink", self.sinks.keys().collect()),
+        ];
+        for (kind, names) in fed {
+            for name in names {
+                if !self.dag.iter().any(|e| e.to.contains(name)) {
+                    warnings.push(format!("{kind} {name}: no edge reaches it; it never runs"));
+                }
+            }
+        }
+        warnings
+    }
+
     /// Cycles among the plugins and inference nodes, each as `a -> b -> a`:
     /// one at least wherever the edges go round. A walk sends a node's
     /// records on along every edge until a sink, so a record on a cycle goes
@@ -377,6 +406,30 @@ mod tests {
              - from: second\n    to: [out]\n",
         )
         .unwrap();
+    }
+
+    /// A node no edge reaches never runs, and a source no edge leaves is
+    /// read and dropped: each loads, with a warning naming it. A plugin no
+    /// edge leaves is fine: it may only write state.
+    #[test]
+    fn a_node_no_edge_reaches_is_a_warning() {
+        let cfg = config(&format!(
+            "{LINES}  idle: {{ type: tcp, bind_address: \"127.0.0.1:9\" }}\n\
+             plugins:\n  builder: {{ module_type: rust }}\n  stray: {{ module_type: rust }}\n\
+             inference:\n  lonely: {{ model: m, prompt_file: p.txt }}\n\
+             sinks:\n  out: {{ type: blackhole }}\n  never: {{ type: blackhole }}\n\
+             dag:\n  - from: lines\n    to: [builder, out]\n"
+        ));
+        cfg.validate().unwrap();
+        assert_eq!(
+            cfg.warnings(),
+            [
+                "source idle: no edge leaves it; its records are read and dropped",
+                "plugin stray: no edge reaches it; it never runs",
+                "inference node lonely: no edge reaches it; it never runs",
+                "sink never: no edge reaches it; it never runs",
+            ]
+        );
     }
 
     #[test]

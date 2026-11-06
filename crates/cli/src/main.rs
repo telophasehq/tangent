@@ -257,7 +257,8 @@ async fn main() -> Result<()> {
 /// merged from. Every path that names a file is absolute; `runtime` paths
 /// are as written, relative to `path`. The DAG, each s3 sink's `key_prefix`
 /// and the required tables' files are checked after: a config that does not
-/// hold together still prints, then fails.
+/// hold together still prints, then fails. What `run` would warn of is
+/// warned of on stderr.
 fn show_config(path: &Path) -> Result<String> {
     let loaded = tangent_shared::Config::load(path)?;
     let dir = path
@@ -285,6 +286,10 @@ fn show_config(path: &Path) -> Result<String> {
         "# secrets (tokens, api_key, webhook_url, passwords) are left out: read it, don't run it\n",
     );
     out.push_str(&serde_yaml::to_string(&value)?);
+    // on stderr, so what is printed stays YAML
+    for warning in loaded.config.warnings() {
+        eprintln!("warning: {warning}");
+    }
     let checked = loaded
         .config
         .validate()
