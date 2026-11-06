@@ -202,14 +202,6 @@ pub async fn run(opts: TestOptions) -> Result<()> {
             let produced = read_ndjson(&out_file).context("reading produced NDJSON")?;
             let expected = read_json(&expected)?;
 
-            if produced.is_array() != expected.is_array() {
-                warn!("❌ test failed: output differs from expected\n");
-                bail!(
-                    "output is array: {}, expected is array: {}",
-                    produced.is_array(),
-                    expected.is_array()
-                );
-            }
             let diffs = diff_lines(&expected, &produced);
 
             if diffs.is_empty() {
@@ -227,6 +219,12 @@ fn read_json(path: &Path) -> Result<Value> {
     let data = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let v: Value = serde_json::from_str(&data)
         .with_context(|| format!("parse JSON array from {}", path.display()))?;
+    // One record may be written bare; it compares as a list of one, as the
+    // output does.
+    let v = match v {
+        Value::Array(_) => v,
+        one => Value::Array(vec![one]),
+    };
     Ok(stabilize(v))
 }
 
@@ -245,12 +243,9 @@ fn read_ndjson(path: &Path) -> Result<Value> {
         anyhow::bail!("expected output file empty: {}", path.display())
     }
 
-    if out.len() > 1 {
-        let combined_out = Value::Array(out);
-        return Ok(stabilize(combined_out));
-    }
-
-    Ok(stabilize(out[0].clone()))
+    // A list even of one record, so a one-record fixture's expected list
+    // matches it.
+    Ok(stabilize(Value::Array(out)))
 }
 
 fn stabilize(v: Value) -> Value {
@@ -358,6 +353,29 @@ fn normalize_embedded_json(v: &mut Value) {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::io::Write;
+
+    fn file(text: &str) -> tempfile::NamedTempFile {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(text.as_bytes()).unwrap();
+        f
+    }
+
+    #[test]
+    fn one_record_matches_a_list_of_one_or_a_bare_object() {
+        let produced = read_ndjson(file("{\"b\":1,\"a\":2}\n").path()).unwrap();
+        for text in ["[{\"a\":2,\"b\":1}]", "{\"a\":2,\"b\":1}"] {
+            let expected = read_json(file(text).path()).unwrap();
+            assert_eq!(diff_lines(&expected, &produced), "", "expected {text}");
+        }
+    }
+
+    #[test]
+    fn a_bare_object_is_one_record_not_two() {
+        let produced = read_ndjson(file("{\"a\":1}\n{\"a\":1}\n").path()).unwrap();
+        let expected = read_json(file("{\"a\":1}").path()).unwrap();
+        assert_ne!(diff_lines(&expected, &produced), "");
+    }
 
     #[test]
     fn embedded_json_compares_regardless_of_key_order() {
