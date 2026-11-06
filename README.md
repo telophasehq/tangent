@@ -97,9 +97,9 @@ facts and flag nothing.
 **What the model can't do.** It answers, and takes no action. Nothing it
 writes reaches state or `_baseline`, which the pipeline computes from what
 came before. A request holds one actor's records (an AI agent's run log is
-grouped by organization, beside that organization's other runs). Text in a record that
-speaks to the reviewer is, by its brief, a reason to flag; whether a model
-obeys such text anyway has not been measured
+grouped by organization, beside that organization's other runs). Text in a
+record that speaks to the reviewer is, by its brief, a reason to flag;
+whether a model obeys such text anyway has not been measured
 ([What a log line can't make it do](#what-a-log-line-cant-make-it-do)).
 
 **Before you believe it**
@@ -282,7 +282,8 @@ your sources ──▶ a pack's plugin ──┬──▶ lake/, every record as
    hours, its person's sign-ins and credential changes over 72 hours in every
    source, and addresses it shares with other actors. Only history from
    before the group counts ([packs/core](packs/core/README.md#baseline)).
-4. The judge sends one actor's group per request, as logfmt, with
+4. The judge sends one actor's group per request (an agent's run log, its
+   organization's), as logfmt, with
    [judge.md](packs/core/judge.md) as the brief and
    [judge.schema.json](packs/core/judge.schema.json) as the reply's shape:
    200 tokens a record, 4 requests at once, 90 s before a request fails
@@ -291,7 +292,7 @@ your sources ──▶ a pack's plugin ──┬──▶ lake/, every record as
    flags and the errors and writes them to `alerts.ndjson`; every verdict
    goes to `verdicts.ndjson`.
 
-The model flags, a person reads.
+The model flags; a person, or a larger model, reads what it flagged.
 
 ## What a log line can't make it do
 
@@ -506,8 +507,8 @@ before it starts. One process runs it all.
 - **State**: SQLite or an in-memory LRU, with TTLs, transactions, and
   `tangent state` to read it while it runs ([docs/state.md](docs/state.md)).
 - **Enrichment tables**: MaxMind DBs, CIDR lists and YAML documents, loaded
-  once per process and shared by every plugin, a lookup a search in memory
-  ([docs/enrichment-tables.md](docs/enrichment-tables.md)).
+  once per process and shared by every plugin, so a lookup reads memory, not
+  a file ([docs/enrichment-tables.md](docs/enrichment-tables.md)).
 - **One config from many files**: `include:`, `${VAR:-default}`, and
   `tangent config` to print the merged result with secrets left out
   ([docs/configuration.md](docs/configuration.md)).
