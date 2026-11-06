@@ -260,9 +260,9 @@ fn run_go_download(cwd: &Path) -> Result<()> {
         .with_context(|| format!("failed to spawn go get in {}", cwd.display()))?;
 
     if !tool_out.status.success() {
-        let mut msg = String::from_utf8_lossy(&out.stderr).to_string();
+        let mut msg = String::from_utf8_lossy(&tool_out.stderr).to_string();
         if msg.trim().is_empty() {
-            msg = String::from_utf8_lossy(&out.stdout).to_string();
+            msg = String::from_utf8_lossy(&tool_out.stdout).to_string();
         }
         bail!("go get failed:\n{}", msg);
     }
