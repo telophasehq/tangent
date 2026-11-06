@@ -1,7 +1,7 @@
 # google_workspace, judge: how the judge writes Workspace's records as logfmt,
 # the encoding packs/core/judge.yaml sets: the fields naming the principal and
-# the time, and those the model sees on every line. Include it in a judge
-# config with packs/core/judge.yaml.
+# the time, and those the model sees on every line. Include it in your
+# config beside its ingest.yaml.
 inference:
   judge:
     encoding:

@@ -44,12 +44,14 @@ would go through `Norm::address`.
 
 ## Use it
 
-In your ingest config, beside [core](../core):
+In your config, beside [core](../core):
 
 ```yaml
 include:
   - ../tangent/packs/core/ingest.yaml
+  - ../tangent/packs/core/judge.yaml
   - ../tangent/packs/google_workspace/ingest.yaml
+  - ../tangent/packs/google_workspace/judge.yaml
 
 enrichment_tables:                  # your company: packs/core/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
@@ -65,8 +67,7 @@ dag:
     to: [{ kind: plugin, name: google_workspace }]
 ```
 
-and `google_workspace` in your profile's `own_sources`. In your judge config,
-`../tangent/packs/google_workspace/judge.yaml`.
+and `google_workspace` in your profile's `own_sources`.
 
 `GOOGLE_APPLICATION_CREDENTIALS` is a service account key file with
 domain-wide delegation for the scope

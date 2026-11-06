@@ -63,12 +63,14 @@ agent's `destination` when it is an address rather than a host.
 
 ## Use it
 
-In your ingest config, beside [core](../core):
+In your config, beside [core](../core):
 
 ```yaml
 include:
   - ../tangent/packs/core/ingest.yaml
+  - ../tangent/packs/core/judge.yaml
   - ../tangent/packs/app/ingest.yaml
+  - ../tangent/packs/app/judge.yaml
 
 enrichment_tables:                  # your company: packs/core/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
@@ -84,9 +86,9 @@ dag:
 ```
 
 `org` is your customer, not you: leave these sources out of the profile's
-`own_sources`, and each customer's actors are kept and judged apart. In your
-judge config, `../tangent/packs/app/judge.yaml`; a name of yours in the audit
-shape wants a logfmt row of its own, as `app` has there, for its times and
+`own_sources`, and each customer's actors are kept and judged apart. A name
+of yours in the audit shape wants a logfmt row of its own in the pack's
+`judge.yaml`, as `app` has there, for its times and
 the fields on every line.
 
 One profile serves every customer for now, which is wrong in principle and

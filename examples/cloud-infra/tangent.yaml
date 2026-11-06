@@ -1,23 +1,44 @@
-# cloud-infra, ingest: your own infrastructure's logs, every record kept in
-# logs.sqlite by org and by actor, and folded into each actor's history in
-# state.sqlite. judge.yaml reads both back; nothing here waits on a model.
+# cloud-infra: your own infrastructure's logs, each record folded into its
+# actor's history in state.sqlite and kept in the lake, and each actor's
+# records judged a group at a time on workers of their own, so ingest never
+# waits on the model. One config, one process.
 #
 #   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
 #   make test       the packs' fixtures; no model needed
-#   make run        ingest and the judge: reads CloudTrail, GitHub, Okta and Workspace for the
-#                   credentials you export (see the Makefile); NDJSON on :9400 for the rest
+#   make run        reads CloudTrail, GitHub, Okta and Workspace for the credentials you
+#                   export (see the Makefile), NDJSON on :9400 for the rest, and judges them
 #
 # Edit profile/profile.yaml first: it is everything the model knows about you.
 include:
-  - ../../packs/core/ingest.yaml              # the tables, logs.sqlite, the runtime
+  - ../../packs/core/ingest.yaml              # the runtime, the tables, the lake, each actor's baseline
+  - ../../packs/core/judge.yaml               # the judge: each actor's records a group at a time
   - ../../packs/aws/ingest.yaml               # plugin aws: cloudtrail
+  - ../../packs/aws/judge.yaml                # and its rows for the judge
   - ../../packs/github/ingest.yaml            # plugin github: github_audit, gha_ci, runner_egress
+  - ../../packs/github/judge.yaml
   - ../../packs/okta/ingest.yaml              # plugin okta: okta
+  - ../../packs/okta/judge.yaml
   - ../../packs/google_workspace/ingest.yaml  # plugin google_workspace: google_workspace
+  - ../../packs/google_workspace/judge.yaml
   - ../../packs/app/ingest.yaml               # plugin app: app, agent
+  - ../../packs/app/judge.yaml
 
 enrichment_tables:
   profile: { type: document, path: profile/profile.yaml, required: true }   # a typo here stops it
+
+# JSON lines instead, at three times the tokens (packs/core/README.md):
+# inference:
+#   judge:
+#     batch_bytes: 48000
+#     encoding:
+#       type: ndjson
+
+# What flagged keeps, to Slack too, with its edge at the end of `dag` (README.md):
+# sinks:
+#   slack:
+#     type: slack
+#     webhook_url: ${SLACK_WEBHOOK_URL}
+#     text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
 
 sources:
   cloudtrail:
@@ -61,3 +82,5 @@ dag:
       - { kind: plugin, name: okta }
       - { kind: plugin, name: google_workspace }
       - { kind: plugin, name: app }
+  # - from: { kind: plugin, name: flagged }   # to Slack, with `slack` above
+  #   to: [{ kind: sink, name: slack }]

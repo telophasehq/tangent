@@ -3,19 +3,19 @@
 Your product's logs, judged per customer. The same pipeline as
 [cloud-infra](../cloud-infra), with a different org: an application's audit
 log and an AI agent's logs carry a customer's tenant id, and that is the org.
-Each customer's actors are kept and judged apart, forty records at a time.
+Each customer's actors are kept and judged apart, a group of records at a time.
 
 ```
-app audit log, agent logs ──▶ app ──▶ logs.sqlite ──▶ actors ──▶ baseline_renderer ──▶ judge ──▶ alerts.ndjson
-                               │                                          ▲
-                               └──▶ baseline_builder ──▶ state.sqlite ────┘
+app audit log, agent logs ──▶ app ──▶ baseline_renderer (an actor's records, grouped) ──▶ judge ──▶ alerts.ndjson
+                               │                ▲
+                               └──▶ baseline_builder ──▶ state.sqlite
                         (org = the customer's tenant id)
 ```
 
-It is built only from [packs](/packs): `ingest.yaml` includes
-[core](/packs/core) and the [app](/packs/app) pack and adds the NDJSON source
-on `:9401` and the profile; `judge.yaml` includes core's judge, which reads
-each actor's history from ingest's `state.sqlite`, and app's logfmt row. The
+It is built only from [packs](/packs): `tangent.yaml` includes
+[core](/packs/core) and the [app](/packs/app) pack, ingest and judge, and adds
+the NDJSON source on `:9401` and the profile. One config, one process; the
+judge reads each actor's history from the same `state.sqlite`. The
 17 cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) are the ones that live in product logs: a key
 paging through a whole dataset, an integration's token used from a host it
 never used, a role change followed by an export, an agent's plan reading a

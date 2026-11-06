@@ -1,9 +1,9 @@
 # github: GitHub's audit log, CI job logs and runner egress into finished
 # records, by one plugin, `github`: normalized, trimmed, enriched, the
-# profile's facts added. Include it in an ingest config with
-# packs/core/ingest.yaml, route a `github_audit` source (and NDJSON with
-# `source: gha_ci` or `runner_egress`) to plugin github, and give the config a
-# `profile` table; README.md has the lines.
+# profile's facts added. Include it in your config with its judge.yaml and
+# packs/core's ingest.yaml and judge.yaml, route a `github_audit` source (and
+# NDJSON with `source: gha_ci` or `runner_egress`) to plugin github, and give
+# the config a `profile` table; README.md has the lines.
 plugins:
   github:
     module_type: rust
@@ -20,4 +20,4 @@ plugins:
 
 dag:
   - from: { kind: plugin, name: github }
-    to: [{ kind: sink, name: logs }, { kind: sink, name: lake }, { kind: plugin, name: baseline_builder }]   # packs/core/ingest.yaml's: the judge's queue, the lake, each actor's baseline
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]   # core's: the lake, each actor's baseline, and the judge

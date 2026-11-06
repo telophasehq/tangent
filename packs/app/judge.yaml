@@ -2,8 +2,8 @@
 # encoding packs/core/judge.yaml sets: the fields naming the principal and the
 # time, and those the model sees on every line. The agent's records have no
 # row; they go without principal groups. A name of yours under `sources` or
-# `extra_sources` wants a row of its own, as `app` has. Include it in a judge
-# config with packs/core/judge.yaml.
+# `extra_sources` wants a row of its own, as `app` has. Include it in your
+# config beside its ingest.yaml.
 inference:
   judge:
     encoding:

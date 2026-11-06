@@ -86,6 +86,6 @@ jobs:
 
       - name: Merge and check the examples' configs
         run: |
-          for c in examples/cloud-infra/ingest.yaml examples/cloud-infra/judge.yaml examples/app-log/ingest.yaml examples/app-log/judge.yaml; do
+          for c in examples/cloud-infra/tangent.yaml examples/app-log/tangent.yaml; do
             tangent config --config "$c" > /dev/null
           done

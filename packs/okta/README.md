@@ -53,12 +53,14 @@ came through, read before the trim drops them.
 
 ## Use it
 
-In your ingest config, beside [core](../core):
+In your config, beside [core](../core):
 
 ```yaml
 include:
   - ../tangent/packs/core/ingest.yaml
+  - ../tangent/packs/core/judge.yaml
   - ../tangent/packs/okta/ingest.yaml
+  - ../tangent/packs/okta/judge.yaml
 
 enrichment_tables:                  # your company: packs/core/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
@@ -75,7 +77,6 @@ dag:
 ```
 
 and `okta` in your profile's `own_sources`, so its records are your org's.
-In your judge config, `../tangent/packs/okta/judge.yaml`.
 
 `OKTA_API_TOKEN` comes from Security → API → Tokens, made by a read-only
 administrator. The source keeps its place in the runtime's state store, so a

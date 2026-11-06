@@ -64,12 +64,14 @@ Tor and VPN, and whether it is one of yours (`_facts.ip`). Next, through
 
 ## Use it
 
-In your ingest config, beside [core](../core):
+In your config, beside [core](../core):
 
 ```yaml
 include:
   - ../tangent/packs/core/ingest.yaml
+  - ../tangent/packs/core/judge.yaml
   - ../tangent/packs/aws/ingest.yaml
+  - ../tangent/packs/aws/judge.yaml
 
 enrichment_tables:                  # your company: packs/core/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
@@ -88,8 +90,8 @@ dag:
 ```
 
 and `cloudtrail` in your profile's `own_sources`, so every account is your
-org. In your judge config, `../tangent/packs/aws/judge.yaml`: its row says
-how the judge writes CloudTrail records as logfmt.
+org. The pack's `judge.yaml`, included above, says how the judge writes
+CloudTrail records as logfmt.
 
 ### Credentials
 
