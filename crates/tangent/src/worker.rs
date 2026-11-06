@@ -94,24 +94,20 @@ fn join_frames(mut frames: Frames) -> BytesMut {
     joined
 }
 
-/// A frame for a sink: its name, key prefix, and the bytes.
-type Delivery = (Arc<str>, Option<Arc<str>>, BytesMut);
+/// A frame for a sink: its name and the bytes.
+type Delivery = (Arc<str>, BytesMut);
 
 /// One frame to each of `sinks`: the last takes it, the others a copy.
-fn deliver(
-    deliveries: &mut Vec<Delivery>,
-    sinks: Vec<(Arc<str>, Option<Arc<str>>)>,
-    frame: BytesMut,
-) {
+fn deliver(deliveries: &mut Vec<Delivery>, sinks: Vec<Arc<str>>, frame: BytesMut) {
     let mut frame = Some(frame);
     let last = sinks.len().saturating_sub(1);
-    for (i, (name, key_prefix)) in sinks.into_iter().enumerate() {
+    for (i, name) in sinks.into_iter().enumerate() {
         let f = if i == last {
             frame.take().expect("frame")
         } else {
             frame.as_ref().expect("frame").clone()
         };
-        deliveries.push((name, key_prefix, f));
+        deliveries.push((name, f));
     }
 }
 
@@ -290,12 +286,10 @@ impl Worker {
         let mut deliveries: Vec<Delivery> = Vec::new();
         while let Some((node, hop)) = queue.pop_front() {
             let outs = router.outs(&node);
-            let sinks: Vec<(Arc<str>, Option<Arc<str>>)> = outs
+            let sinks: Vec<Arc<str>> = outs
                 .iter()
                 .filter_map(|to| match to {
-                    NodeRef::Sink { name, key_prefix } => {
-                        Some((Arc::clone(name), key_prefix.clone()))
-                    }
+                    NodeRef::Sink { name } => Some(Arc::clone(name)),
                     _ => None,
                 })
                 .collect();
@@ -386,10 +380,10 @@ impl Worker {
             }
         } else {
             let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(upstream, deliveries.len()));
-            for (name, key_prefix, frame) in deliveries {
+            for (name, frame) in deliveries {
                 router
                     .sinks()
-                    .enqueue(name, key_prefix, frame, vec![Arc::clone(&shared)])
+                    .enqueue(name, frame, vec![Arc::clone(&shared)])
                     .await?;
             }
         }
@@ -874,10 +868,7 @@ mod tests {
             NodeRef::Inference {
                 name: judge.clone(),
             },
-            vec![NodeRef::Sink {
-                name: sink_name,
-                key_prefix: None,
-            }],
+            vec![NodeRef::Sink { name: sink_name }],
         );
         let router = Arc::new(Router::new(outs, Arc::clone(&sink_manager)));
         let in_flight = router.in_flight_counter();
@@ -1025,7 +1016,6 @@ mod tests {
         let sink_name: Arc<str> = Arc::from("out");
         let to_sink = NodeRef::Sink {
             name: sink_name.clone(),
-            key_prefix: None,
         };
         let sink = Arc::new(RecordingSink::default());
         let sink_manager = Arc::new(SinkManager::for_test(
@@ -1224,7 +1214,6 @@ mod tests {
         let sink_name: Arc<str> = Arc::from("out");
         let to_sink = NodeRef::Sink {
             name: sink_name.clone(),
-            key_prefix: None,
         };
         let sink = Arc::new(RecordingSink::default());
         let sink_manager = Arc::new(SinkManager::for_test(

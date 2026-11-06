@@ -1,5 +1,5 @@
-//! Grouping in front of a plugin, as Vector's `reduce` groups, without the
-//! merge: records reaching the plugin wait in a group per value of its
+//! Grouping in front of a plugin: records reaching the plugin wait in a
+//! group per value of its
 //! `group_by` fields, and the plugin gets a group at a time. One task per
 //! grouped plugin owns its groups, so the workers that hand it records share
 //! nothing.
@@ -14,7 +14,7 @@
 //! next group.
 //!
 //! Groups live in memory: records are acked once they are in one, and a
-//! crash loses the groups still open, as with Vector's `reduce`.
+//! crash loses the groups still open.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;

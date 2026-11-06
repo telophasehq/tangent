@@ -23,16 +23,8 @@ sinks:
     compression:
       type: none
 dag:
-  - from:
-      kind: source
-      name: network_input
-    to:
-      - kind: plugin
-        name: counter
+  - from: network_input
+    to: [counter]
 
-  - from:
-      kind: plugin
-      name: counter
-    to:
-      - kind: sink
-        name: out
+  - from: counter
+    to: [out]

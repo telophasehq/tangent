@@ -261,14 +261,9 @@ impl Router {
         let shared: Arc<dyn Ack> = Arc::new(RefCountAck::new(acks, deliveries));
         for frame in frames.drain(..) {
             for to in &sinks {
-                if let NodeRef::Sink { name, key_prefix } = to {
+                if let NodeRef::Sink { name } = to {
                     self.sink_manager
-                        .enqueue(
-                            name.clone(),
-                            key_prefix.clone(),
-                            frame.clone(),
-                            vec![Arc::clone(&shared)],
-                        )
+                        .enqueue(name.clone(), frame.clone(), vec![Arc::clone(&shared)])
                         .await?;
                 }
             }
@@ -283,7 +278,7 @@ fn node_label(n: &NodeRef) -> String {
         NodeRef::Source { name } => format!("source:{name}"),
         NodeRef::Plugin { name } => format!("plugin:{name}"),
         NodeRef::Inference { name } => format!("inference:{name}"),
-        NodeRef::Sink { name, .. } => format!("sink:{name}"),
+        NodeRef::Sink { name } => format!("sink:{name}"),
     }
 }
 
@@ -393,7 +388,6 @@ mod tests {
             source.clone(),
             vec![NodeRef::Sink {
                 name: Arc::from("logs"),
-                key_prefix: None,
             }],
         );
         let router = Router::new(outs, Arc::clone(&manager)).with_sink_batch(1024);

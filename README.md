@@ -67,7 +67,7 @@ plugins:
 
 A plugin may read files too: `data: <dir>` mounts a directory, relative to the file that names it, read-only at `/data` in the guest, for reference data too big for `config`. [examples/enrich](/examples/enrich) reads MaxMind GeoLite2 and the cloud providers' ranges that way, and its `setup.sh` fetches them. Each plugin instance on each worker reads such files into its own memory; reference data that several plugins read, or that is large, belongs in an [enrichment table](#enrichment-tables), which the process loads once.
 
-A plugin can take its records a group at a time, as Vector's `reduce` groups them, without the merge:
+A plugin can take its records a group at a time:
 
 ```yaml
 plugins:
@@ -79,7 +79,7 @@ plugins:
     history: 39                          # the key's latest records, sent again ahead of its next group
 ```
 
-Records reaching the plugin wait in their key's group, in memory, and are acked once there. A closed group reaches the plugin whole, in one call, on workers of the plugin's own, so a slow plugin, or a model after it, never holds up what feeds it, and one group per key is out at a time. At the end of input (`--once`, a shutdown) every open group closes; a crash loses the open ones, as with Vector. With `history`, a key's latest records are kept in the state store (namespace `groups`) and go again ahead of its next group, marked `"_context": true`, so the plugin sees what came before.
+Records reaching the plugin wait in their key's group, in memory, and are acked once there. A closed group reaches the plugin whole, in one call, on workers of the plugin's own, so a slow plugin, or a model after it, never holds up what feeds it, and one group per key is out at a time. At the end of input (`--once`, a shutdown) every open group closes; a crash loses the open ones. With `history`, a key's latest records are kept in the state store (namespace `groups`) and go again ahead of its next group, marked `"_context": true`, so the plugin sees what came before.
 
 When a plugin's call fails (it traps or returns an error), the records it was given are logged and dropped. `drop_on_error: false` passes them on unchanged instead, as if the plugin were not there: right for a plugin that only adds to records, such as context for a model, wrong for a filter. `tangent plugin test` always drops, so a failed call fails the test.
 
@@ -159,7 +159,7 @@ sources:
 
 A partition value's records not yet sent go oldest first, `batch_size` to a batch, one batch of a value at a time. Fewer wait until the oldest is `timeout_secs` older than the newest record stored, so a replay of old logs goes as live ones do, or until nothing new has been stored for `timeout_secs`; then they go topped up to `batch_size` with the value's latest records already sent, which carry `"_context": true`. A batch's new records get the time it is through the DAG in `emitted`, NULL until then, and the value's next batch goes then; a restart sends again what was not. The table is a queue: once a batch is through the DAG, the same transaction deletes the value's sent records past its latest `batch_size` - 1, the most a top-up uses, so it holds what is not sent yet and what tops up each value's next batch. Keep the full history elsewhere, in a `rolling_file` sink. A record that arrives after its value's later ones were sent is topped up with what is left.
 
-A `file` sink appends every write to one file at `path`, which only NDJSON survives, so it takes no other encoding. A `rolling_file` sink keeps records as whole files for a query engine (DataFusion, DuckDB, Spark) to read, starting a new file each time the WAL an `s3` sink uses seals one: a write is acked once it is in the WAL under `wal_path`, a WAL file is sealed at `object_max_bytes` of records or `max_file_age_seconds` after it was opened, and each sealed file becomes one file in the directory, in the sink's `encoding`, synced and renamed into place (copied under a hidden temporary name first if the WAL is on another filesystem), so a reader listing the directory sees whole files only. `path` may hold strftime specifiers, rendered in UTC when a write reaches the sink, so `lake/logs/%Y/%m/%d/%H` puts each hour's files in a directory of their own, which a query engine can skip by path; a file holds records written in that hour, whatever times they carry. A file is named as an `s3` object is, `<ULID>.parquet` (`.ndjson.zst` for zstd NDJSON), and the ULIDs sort by time; an edge's `key_prefix` is a directory below the rendered one. Parquet has the columns its `schema` names, in order, each a name and a type: `string`, `int` (64 bits), `float` (a double), `bool`, `timestamp` (milliseconds in UTC, read from RFC 3339 text in any zone), or a map of columns, a struct, for a nested object; every column may be null. `record_column` keeps each record beside the columns, its line without the line break, for the fields the schema leaves out. A record the schema cannot read (a type it does not give the field, a time arrow cannot parse) does not fail its file: it is kept in `record_column` with its typed columns null, or, without a record column or if it is not JSON, dropped; `tangent_sink_records_unfit_total{fate="kept"|"dropped"}` counts them:
+A `file` sink appends every write to one file at `path`, which only NDJSON survives, so it takes no other encoding. A `rolling_file` sink keeps records as whole files for a query engine (DataFusion, DuckDB, Spark) to read, starting a new file each time the WAL an `s3` sink uses seals one: a write is acked once it is in the WAL under `wal_path`, a WAL file is sealed at `object_max_bytes` of records or `max_file_age_seconds` after it was opened, and each sealed file becomes one file in the directory, in the sink's `encoding`, synced and renamed into place (copied under a hidden temporary name first if the WAL is on another filesystem), so a reader listing the directory sees whole files only. `path` may hold strftime specifiers, rendered in UTC when a write reaches the sink, so `lake/logs/%Y/%m/%d/%H` puts each hour's files in a directory of their own, which a query engine can skip by path; a file holds records written in that hour, whatever times they carry. A file is named as an `s3` object is, `<ULID>.parquet` (`.ndjson.zst` for zstd NDJSON), and the ULIDs sort by time. Parquet has the columns its `schema` names, in order, each a name and a type: `string`, `int` (64 bits), `float` (a double), `bool`, `timestamp` (milliseconds in UTC, read from RFC 3339 text in any zone), or a map of columns, a struct, for a nested object; every column may be null. `record_column` keeps each record beside the columns, its line without the line break, for the fields the schema leaves out. A record the schema cannot read (a type it does not give the field, a time arrow cannot parse) does not fail its file: it is kept in `record_column` with its typed columns null, or, without a record column or if it is not JSON, dropped; `tangent_sink_records_unfit_total{fate="kept"|"dropped"}` counts them:
 
 ```yaml
 sinks:
@@ -179,12 +179,23 @@ sinks:
         _norm: { org: string, actor: string }
 ```
 
+An `s3` sink goes through the same WAL and puts each sealed file in `bucket_name` as one object, named as a `rolling_file` sink's files are. Its `key_prefix` is what each object's key starts with, before a `/` and the name: a strftime template rendered in UTC when a write reaches the sink, as a `rolling_file` sink's `path` is, so `logs/cloudtrail/%Y/%m/%d` puts each day's objects under a prefix of their own (`%%` is a `%`). It is a path in the bucket, and strftime is all that is rendered: `tangent run` and `tangent config` refuse one that is not a strftime template, holds a `{{ field }}`, starts with `/`, or has an empty (`//`), `.` or `..` segment. Without it, objects go to the bucket's root:
+
+```yaml
+sinks:
+  archive:
+    type: s3
+    bucket_name: acme-logs
+    key_prefix: logs/cloudtrail/%Y/%m/%d   # logs/cloudtrail/2026/11/06/<ULID>.ndjson.zst
+    wal_path: /var/lib/tangent/wal
+```
+
 A write is acked once it is in the open WAL file; that file is synced only when it is sealed. What was acked survives tangent stopping without its flush (killed, crashed, out of time at shutdown): the next start seals and sends the files left open, cut back to their last whole line. It does not survive the machine going down before the file is sealed.
 
 `tangent_sink_bytes_total` counts a file's bytes when it is in place, and `tangent_sink_bytes_uncompressed_total` the records' NDJSON bytes it holds; a write acked into the WAL counts only once its file is sealed and written.
 
 ## Inference
-An `inference` node asks a model about each record. Nodes are configured under `inference:`, each with its own model and prompt, and sit in the DAG as `kind: inference`:
+An `inference` node asks a model about each record. Nodes are configured under `inference:`, each with its own model and prompt, and sit in the DAG by name, as every node does:
 
 ```yaml
 inference:
@@ -233,7 +244,7 @@ Unknown keys aside, a config without `include:` reads as it always has.
 
 `tangent config --config FILE` prints the merged config, every default filled in, after the files it came from. Secret fields (tokens, `api_key`, `webhook_url`, passwords) are left out, so it is for reading, not for running.
 
-`tangent run` checks the DAG before it starts: an edge to a node no file defines is an error. It warns about a source with no edge out, and names once a source whose records none of its targets take, as when no included plugin's probe claims a record's `source`; `tangent_unrouted_records_total` counts every record dropped that way, per node.
+An edge names its nodes and nothing else, `from: cloudtrail` and `to: [aws, lake]`: a name is one node, so no source, plugin, inference node and sink share one, and a config where two do fails to load, naming both. `tangent run` checks the DAG before it starts: an edge to a node no file defines is an error, and so is one out of a sink or into a source. It warns about a source with no edge out, and names once a source whose records none of its targets take, as when no included plugin's probe claims a record's `source`; `tangent_unrouted_records_total` counts every record dropped that way, per node.
 
 ## Packs
 A pack is what tangent knows about one provider's logs, and it is one plugin, named after the provider. Tangent's own sources read the logs (`cloudtrail`, `github_audit`, `okta` and `google_workspace` read the providers' APIs; `tcp` takes anything else as NDJSON with a `source` field), and the pack's plugin turns each raw record into a finished one:
@@ -279,17 +290,17 @@ enrichment_tables:
 
 sources:
   cloudtrail: { type: cloudtrail, region: "${AWS_REGION}", queue_url: "${CLOUDTRAIL_QUEUE_URL}" }
-  okta: { type: okta, org_url: "${OKTA_ORG_URL}", token: "${OKTA_API_TOKEN}" }
+  okta_audit: { type: okta, org_url: "${OKTA_ORG_URL}", token: "${OKTA_API_TOKEN}" }
 
 dag:
-  - from: { kind: source, name: cloudtrail }
-    to: [{ kind: plugin, name: aws }]
-  - from: { kind: source, name: okta }
-    to: [{ kind: plugin, name: okta }]
-  - from: { kind: plugin, name: aws }     # kept, learned, judged
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
-  - from: { kind: plugin, name: okta }
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: cloudtrail
+    to: [aws]
+  - from: okta_audit
+    to: [okta]
+  - from: aws     # kept, learned, judged
+    to: [lake, baseline_builder, baseline_renderer]
+  - from: okta
+    to: [lake, baseline_builder, baseline_renderer]
 ```
 
 ```yaml

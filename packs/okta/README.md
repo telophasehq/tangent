@@ -65,16 +65,16 @@ enrichment_tables:                  # your company: packs/core/README.md#the-pro
   profile: { type: document, path: profile/profile.yaml, required: true }
 
 sources:
-  okta:
+  okta_audit:
     type: okta
     org_url: ${OKTA_ORG_URL}          # https://example.okta.com
     token: ${OKTA_API_TOKEN}
 
 dag:
-  - from: { kind: source, name: okta }
-    to: [{ kind: plugin, name: okta }]
-  - from: { kind: plugin, name: okta }   # kept, learned, judged (packs/core)
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: okta_audit
+    to: [okta]
+  - from: okta   # kept, learned, judged (packs/core)
+    to: [lake, baseline_builder, baseline_renderer]
 ```
 
 and `okta` in your profile's `own_sources`, so its records are your org's.

@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{net::SocketAddr, path::PathBuf};
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -9,7 +9,7 @@ use prometheus::{
     HistogramVec, IntCounter, IntCounterVec, IntGauge,
 };
 
-use tangent_shared::{dag::NodeRef, Config};
+use tangent_shared::Config;
 
 use crate::dag::DagRuntime;
 
@@ -107,10 +107,7 @@ pub async fn run(config_path: &PathBuf, opts: RuntimeOptions) -> Result<()> {
     // A source with nowhere to go is read and dropped: its records are acked
     // and a polling source's cursor moves past them.
     for name in cfg.sources.keys() {
-        let from = NodeRef::Source {
-            name: Arc::clone(name),
-        };
-        if !cfg.dag.iter().any(|e| e.from == from && !e.to.is_empty()) {
+        if !cfg.dag.iter().any(|e| e.from == *name && !e.to.is_empty()) {
             tracing::warn!("source {name} has no outgoing edge; its records are dropped");
         }
     }

@@ -85,8 +85,13 @@ impl DagRuntime {
         }
         let (engines, components) = load(&cfg, &plugin_root, config_dir, &store, &tables, workers)?;
         let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
+        // `validate` has checked every name, so each resolves
         for e in &cfg.dag {
-            outs.entry(e.from.clone()).or_default().extend(e.to.clone());
+            let Some(from) = cfg.node(&e.from) else {
+                continue;
+            };
+            let to = e.to.iter().filter_map(|t| cfg.node(t));
+            outs.entry(from).or_default().extend(to);
         }
 
         let batch_size = cfg.batch_size_kb();
@@ -618,7 +623,6 @@ mod tests {
         sink_manager
             .enqueue(
                 sink_name.clone(),
-                None,
                 BytesMut::from("{\"msg\":\"block\"}\n"),
                 vec![ack_dyn],
             )

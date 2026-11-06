@@ -17,16 +17,8 @@ sinks:
   blackhole:
     type: blackhole
 dag:
-  - from:
-      kind: source
-      name: github
-    to:
-      - kind: plugin
-        name: githubwebhooks
+  - from: github
+    to: [githubwebhooks]
 
-  - from:
-      kind: plugin
-      name: githubwebhooks
-    to:
-      - kind: sink
-        name: blackhole
+  - from: githubwebhooks
+    to: [blackhole]

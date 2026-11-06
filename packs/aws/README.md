@@ -84,10 +84,10 @@ sources:
     bucket_role: ${CLOUDTRAIL_BUCKET_ROLE}  # an organization trail's log archive role; unset otherwise
 
 dag:
-  - from: { kind: source, name: cloudtrail }
-    to: [{ kind: plugin, name: aws }]
-  - from: { kind: plugin, name: aws }   # kept, learned, judged (packs/core)
-    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: cloudtrail
+    to: [aws]
+  - from: aws   # kept, learned, judged (packs/core)
+    to: [lake, baseline_builder, baseline_renderer]
 ```
 
 and `cloudtrail` in your profile's `own_sources`, so every account is your

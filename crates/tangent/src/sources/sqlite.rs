@@ -409,7 +409,6 @@ mod tests {
             from,
             vec![NodeRef::Sink {
                 name: Arc::from("out"),
-                key_prefix: None,
             }],
         );
         let sinks = vec![(Arc::from("out"), Arc::clone(sink) as Arc<dyn Sink>)];
