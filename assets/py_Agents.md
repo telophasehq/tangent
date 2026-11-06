@@ -28,7 +28,7 @@
 3. **Narrow probes:** Subscribe only to records you can transform; avoid doing selection inside `process_logs` if the probe can express it.
 4. **NDJSON out:** Encode **one line per emitted record**; return a single `bytes` buffer containing all lines.
 5. **WASM‑safe performance:** Use a local `bytearray` buffer, minimize allocations, avoid reflection/`__dict__` walks and large intermediates.
-6. **Tests drive correctness:** Provide `tests/input.json` and `tests/expected.json` (NDJSON). Keep them small and representative.
+6. **Tests drive correctness:** Provide `tests/input.json` and `tests/expected.json` (JSON, see [Tests & fixtures](#tests--fixtures)). Keep them small and representative.
 7. **No surprises:** No global mutable state (beyond module constants). No prints/logging from the mapper.
 
 ---
@@ -54,7 +54,7 @@ class Mapper(wit_world.WitWorld):
 * **`probe()`**: return a list of `mapper.Selector` with predicates in `any` / `all` / `none`. Use `mapper.Pred_Eq((path, log.Scalar_*))`.
 * **`process_logs()`**: accept `List[log.Logview]`, return **`bytes`** (NDJSON for the entire batch).
 
-> The runtime wires these methods via WIT; do **not** rename or change signatures. Raising an exception inside `process_logs` is treated as a **batch failure**.
+> The runtime wires these methods via WIT; do **not** rename or change signatures. `raise Err("why")` inside `process_logs` fails the batch (see [Error handling policy](#error-handling-policy)).
 
 **Required imports used in this repo:**
 
@@ -189,11 +189,11 @@ if lst is not None:
 
 **Do NOT:**
 
-* Pretty‑print or add extra whitespace unless your tests expect it.
+* Pretty‑print (`indent=`): each record must stay on one line, or the output does not parse.
 * Manually craft JSON strings.
 * Return `str` (must be `bytes`).
 
-> If you need stricter textual stability in tests, you may set `json.dumps(..., separators=(',', ':'))` and mirror that in `tests/expected.json`.
+> The test compares parsed JSON, not text: spaces, separators and key order within a record do not matter.
 
 ---
 
@@ -201,7 +201,8 @@ if lst is not None:
 
 **Default (strict):** If any unrecoverable transform/encode issue occurs:
 
-* **Raise** a `RuntimeError` (or a plain `Exception`) to signal **batch failure** to the runtime.
+* `raise Err("why")`, with `from componentize_py_types import Err`. The runtime logs `guest error` with the message and drops the batch (`drop_on_error`, on by default; `false` passes its records on unchanged).
+* Any other exception (a `RuntimeError`, a `KeyError` from a bug) **traps** the plugin: the runtime logs the Python traceback and `plugin trapped; reinstantiating it`, drops the batch and starts a fresh instance, which is slow. Catch what you expect and turn it into `Err`.
 * Do **not** emit partial output for that batch.
 
 **Dropping records:** If a record is not applicable (should not be emitted), simply **do nothing** for that record (no line added). This should be rare if your probe is narrow.
@@ -213,26 +214,27 @@ if lst is not None:
 Each mapper directory **must** include:
 
 ```
-tests/input.json     # NDJSON input
-tests/expected.json  # NDJSON expected output (one line per emitted record)
+tests/input.json     # JSON array of input records
+tests/expected.json  # JSON of the output: an array of the emitted records (an object if just one)
 ```
 
 **Rules:**
 
-* Both files are **NDJSON** (one JSON object per line).
-* The order of lines in `expected.json` matches the emission order.
+* `input.json` is a **JSON array** of input records.
+* `expected.json` is the plugin's output as JSON: an **array** of the emitted records in emission order, or a single **object** when the plugin emits one record. It is not NDJSON: a file with a record per line fails to parse.
+* `tangent plugin test --config tangent.yaml` writes what the plugin produced to `test_out.ndjson` and compares it with the expected as parsed JSON: key order and whitespace do not matter, types do (`0` is not `0.0`).
 * Include at least:
 
   * One fully‑populated record.
   * One record with missing optional fields (assert defaults/omissions).
   * One record filtered out by the probe (absent in expected).
-* Keep total lines small (3–8).
+* Keep them small (3–8 records).
 
-**Make targets used by CI:**
+**Make targets:**
 
-* `make build` — compiles to `.wasm`.
-* `make test` — runs the fixture comparison.
-* `make run` — runs locally against fixtures.
+* `make build` — `./setup.sh`, then `tangent plugin compile`: the plugin lands in `plugins/<name>.cwasm`.
+* `make test` — builds, then runs the fixture comparison.
+* `make run` — builds, then `tangent run`, the pipeline in `tangent.yaml`: it listens on tcp 0.0.0.0:9000 and does not read the fixtures.
 
 > Tests must pass without external resources or environment tweaks.
 
@@ -271,8 +273,8 @@ tests/expected.json  # NDJSON expected output (one line per emitted record)
 * [ ] Reads fields via `lv.get` / `lv.get_list` and accesses `.value` safely.
 * [ ] No I/O, no network, no randomness, no threads/async.
 * [ ] `tests/input.json` and `tests/expected.json` present, small, and pass.
-* [ ] `make build`, `make test`, and (optionally) `make run` succeed locally.
-* [ ] No prints/logging from the mapper; exceptions only for batch‑fatal errors.
+* [ ] `make test` passes.
+* [ ] No prints/logging from the mapper; `raise Err(...)` only for batch‑fatal errors.
 
 ---
 
@@ -283,6 +285,3 @@ tests/expected.json  # NDJSON expected output (one line per emitted record)
 * ❌ Huge dynamic dicts or reflection‑like patterns (`__dict__` walks) in the hot path.
 * ❌ Broad probes with heavy in‑function filtering.
 * ❌ Returning `str` instead of `bytes`.
-
-> Ensure `tests/input.json` and `tests/expected.json` reflect your exact textual encoding (whitespace, newline). If you switch to minified JSON (`separators=(',', ':')`), update the expected file accordingly.
-
