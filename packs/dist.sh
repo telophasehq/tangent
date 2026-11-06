@@ -18,24 +18,23 @@ OUT=target/packs
 CARGO_COMPONENT_VERSION=0.21.1
 
 # Each plugin as the configs name it, and its source. The configs with a
-# `prebuilt:` are the ingest.yaml of each pack, and core's ingest.yaml and
-# judge.yaml.
+# `prebuilt:` are the ingest.yaml of each pack.
 PLUGINS=(
   "aws packs/aws"
   "github packs/github"
   "okta packs/okta"
   "google_workspace packs/google_workspace"
   "app packs/app"
-  "baseline_builder packs/core/baseline/builder"
-  "baseline_renderer packs/core/baseline/renderer"
-  "fresh packs/core/fresh"
+  "baseline_builder packs/behavior-baseline/builder"
+  "baseline_renderer packs/behavior-baseline/renderer"
+  "fresh packs/judge/fresh"
   "flagged examples/inference-local/flagged"
 )
 
 # The plugins the configs mark prebuilt: the key two lines above each
 # `prebuilt:` at a plugin's indent.
 prebuilt_in_configs() {
-  for f in packs/*/ingest.yaml packs/core/judge.yaml; do
+  for f in packs/*/ingest.yaml; do
     awk '/^  [a-z_]+:/ { name=$1; sub(":", "", name) } /^    prebuilt:/ { print name }' "$f"
   done | sort -u
 }

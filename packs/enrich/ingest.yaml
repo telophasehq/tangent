@@ -28,7 +28,7 @@ enrichment_tables:
 plugins:
   baseline_builder:              # folds every record into state; emits nothing
     module_type: rust
-    path: baseline/builder
+    path: ../behavior-baseline/builder
     prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
     state_namespace: baseline
 

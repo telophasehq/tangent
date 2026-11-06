@@ -10,8 +10,8 @@
 #
 # Edit profile/profile.yaml first: it is everything the model knows about you.
 include:
-  - ../../packs/core/ingest.yaml              # the runtime, the tables, the lake, each actor's baseline
-  - ../../packs/core/judge.yaml               # the judge: each actor's records a group at a time
+  - ../../packs/enrich/ingest.yaml            # the runtime, the tables, the lake, each actor's baseline
+  - ../../packs/judge/ingest.yaml             # the judge: each actor's records a group at a time
   - ../../packs/aws/ingest.yaml               # plugin aws: cloudtrail
   - ../../packs/github/ingest.yaml            # plugin github: github_audit, gha_ci, runner_egress
   - ../../packs/okta/ingest.yaml              # plugin okta: okta

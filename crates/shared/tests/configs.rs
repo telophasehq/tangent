@@ -108,12 +108,13 @@ fn pipelines_validate_with_and_without_the_judge() {
     }
 
     // Every pack, as packs/Makefile finds them: a directory with an
-    // ingest.yaml, core aside. Its plugins are the ones its file defines.
+    // ingest.yaml and its plugin's Cargo.toml, so not enrich, behavior-baseline
+    // or judge. Its plugins are the ones its file defines.
     let mut files: Vec<PathBuf> = fs::read_dir(repo.join("packs"))
         .unwrap()
         .flatten()
         .map(|e| e.path().join("ingest.yaml"))
-        .filter(|f| f.is_file() && !f.starts_with(repo.join("packs/core")))
+        .filter(|f| f.is_file() && f.with_file_name("Cargo.toml").is_file())
         .collect();
     files.sort();
     let mut plugins: Vec<String> = Vec::new();
@@ -133,7 +134,7 @@ fn pipelines_validate_with_and_without_the_judge() {
 
     let mut yaml = format!(
         "include:\n  - {}\n",
-        repo.join("packs/core/ingest.yaml").display()
+        repo.join("packs/enrich/ingest.yaml").display()
     );
     for f in &files {
         yaml += &format!("  - {}\n", f.display());

@@ -6,7 +6,7 @@
 plugins:
   baseline_renderer:             # the same `_baseline` on each of an actor's records
     module_type: rust
-    path: baseline/renderer
+    path: ../behavior-baseline/renderer
     prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
     state_namespace: baseline
     drop_on_error: false         # no `_baseline` rather than no verdict
