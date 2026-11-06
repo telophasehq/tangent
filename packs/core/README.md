@@ -37,13 +37,15 @@ the one to `lake`: every record kept, and no model.
   | `profile` | `document` | yours | everything else ([below](#the-profile)); your config names it |
 
 - **`lake`**, a sink your config routes each pack's plugin to: every record, kept, as Parquet files in
-  `lake/logs/<year>/<month>/<day>/<hour>/`, each record whole in `record` and
+  `lake/logs/<year>/<month>/<day>/<hour>/`, the hour of the record's own `ts`
+  in UTC, whenever it arrives, a replay's too, each record whole in `record` and
   `ts`, `source` and `_norm`'s org, actor, kind and ip as columns, for
   DataFusion or DuckDB to read. Kind and ip are empty when the log already
   holds them ([below](#the-record)), which is nearly always, so a query
   reads them from `record` (CloudTrail's `eventName`, Okta's
   `client.ipAddress`). A file is sealed an hour after it opened, and
-  only sealed files are there; delete old hours to trim it.
+  only sealed files are there; a record that arrives after its hour's file
+  was sealed adds another file to that hour. Delete old hours to trim it.
 - **`baseline_builder`**, a plugin your config routes each pack's plugin to
   as well: it folds each record into the state store, under the namespace
   `baseline`, and passes nothing on ([below](#baseline)). Only

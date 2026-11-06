@@ -259,22 +259,26 @@ pub fn key_prefix(template: &str) -> Result<Template> {
     Ok(parsed)
 }
 
-/// Each s3 sink's `key_prefix` is one [`key_prefix`] takes, and its
-/// `timestamp_field` one [`FieldPath::parse`] takes, or the error names the
-/// sink: checked when `tangent run` and `tangent config` load a config.
+/// Each s3 sink's `key_prefix` is one [`key_prefix`] takes, and each s3 and
+/// rolling_file sink's `timestamp_field` one [`FieldPath::parse`] takes, or
+/// the error names the sink: checked when `tangent run` and `tangent config`
+/// load a config.
 pub fn check_sinks(sinks: &BTreeMap<Arc<str>, SinkConfig>) -> Result<()> {
     for (name, cfg) in sinks {
-        let SinkKind::S3(S3Config {
-            key_prefix: prefix,
-            timestamp_field: field,
-            ..
-        }) = &cfg.kind
-        else {
-            continue;
+        let field = match &cfg.kind {
+            SinkKind::S3(S3Config {
+                key_prefix: prefix,
+                timestamp_field: field,
+                ..
+            }) => {
+                if let Some(p) = prefix {
+                    key_prefix(p).with_context(|| format!("sink '{name}'"))?;
+                }
+                field
+            }
+            SinkKind::RollingFile(c) => &c.timestamp_field,
+            _ => continue,
         };
-        if let Some(p) = prefix {
-            key_prefix(p).with_context(|| format!("sink '{name}'"))?;
-        }
         FieldPath::parse(field).with_context(|| format!("sink '{name}'"))?;
     }
     Ok(())
@@ -374,6 +378,16 @@ mod tests {
             let e = check_sinks(&sinks(&format!("timestamp_field: {bad}\n"))).unwrap_err();
             assert!(e.to_string().contains("sink 'archive'"), "{e}");
         }
+        // a rolling_file sink's too
+        let lake = |field: &str| -> BTreeMap<Arc<str>, SinkConfig> {
+            let yaml = format!(
+                "type: rolling_file\npath: lake/%Y\nwal_path: wal\ntimestamp_field: {field}\n"
+            );
+            BTreeMap::from([(Arc::from("lake"), serde_yaml::from_str(&yaml).unwrap())])
+        };
+        assert!(check_sinks(&lake("event.time")).is_ok());
+        let e = check_sinks(&lake("event..time")).unwrap_err();
+        assert!(e.to_string().contains("sink 'lake'"), "{e}");
     }
 
     #[test]
