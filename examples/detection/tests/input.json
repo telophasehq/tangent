@@ -12,6 +12,13 @@
     }
   },
   {
+    "msg": "another service's log",
+    "msg.level": "info",
+    "source": {
+      "name": "otherservice"
+    }
+  },
+  {
     "msg": "my log",
     "msg.level": "info",
     "seen": 5,
@@ -19,6 +26,13 @@
     "tags": [
       "tag1"
     ],
+    "source": {
+      "name": "myservice"
+    }
+  },
+  {
+    "msg": "my log, again",
+    "msg.level": "warn",
     "source": {
       "name": "myservice"
     }
