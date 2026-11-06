@@ -1,9 +1,9 @@
 # google_workspace: Google Workspace's activity into finished records, by one
 # plugin, `google_workspace`: normalized, trimmed, its address enriched, the
-# profile's facts added. Include it in an ingest config with
-# packs/core/ingest.yaml, route a `google_workspace` source to plugin
-# google_workspace, and give the config a `profile` table; README.md has the
-# lines.
+# profile's facts added. Include it in your config with packs/core/ingest.yaml,
+# route a `google_workspace` source to plugin google_workspace, and the plugin
+# to where its records go, and give the config a `profile` table; README.md
+# has the lines.
 plugins:
   google_workspace:
     module_type: rust
@@ -17,7 +17,3 @@ plugins:
           asn: { type: document, path: tests/addresses.yaml }
           networks: { type: cidr, path: tests/networks.csv }
           profile: { type: document, path: tests/profile.yaml }
-
-dag:
-  - from: { kind: plugin, name: google_workspace }
-    to: [{ kind: sink, name: logs }, { kind: sink, name: lake }, { kind: plugin, name: baseline_builder }]   # packs/core/ingest.yaml's: the judge's queue, the lake, each actor's baseline

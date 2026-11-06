@@ -4,20 +4,23 @@ Your own infrastructure's logs, every record read by a model with the rest
 of its actor's recent records; a person reads what it flags. Install, point your
 logs at it, fill in one file about your company, run.
 
-It is built only from [packs](/packs): `ingest.yaml` and `judge.yaml` include
-[core](/packs/core) and five packs, and add the sources, their edges and the
-profile.
+It is built only from [packs](/packs): `tangent.yaml` includes
+[core](/packs/core) and five packs, and adds the sources, their edges, each
+pack's edges to the lake, the baseline and the judge, and the profile. One config, one process.
 
 ```
 CloudTrail ──▶ aws ──────────────┐
 GitHub audit log ──▶ github ─────┤
-Okta ──▶ okta ───────────────────┼──▶ logs.sqlite, the judge's queue   (ingest.yaml)
+Okta ──▶ okta ───────────────────┼──▶ lake/, every record as Parquet
 Google Workspace ──▶ google_workspace
-NDJSON on :9400 ──▶ each pack ───┼──▶ lake/, every record as Parquet
-                                 └──▶ baseline_builder ──▶ state.sqlite
-
-logs.sqlite ──▶ actors ──▶ baseline_renderer ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson  (judge.yaml)
-state.sqlite ─────────────────┘                             └──▶ verdicts.ndjson
+NDJSON on :9400 ──▶ each pack ───┼──▶ baseline_builder ──▶ state.sqlite
+                                 │                              │
+                                 └──▶ baseline_renderer ◀───────┘
+                                      an actor's records, a group at a time
+                                           │
+                                           ▼
+                                         judge ──▶ fresh ──┬──▶ flagged ──▶ alerts.ndjson
+                                                           └──▶ verdicts.ndjson
 ```
 
 - **The packs** ([aws](/packs/aws), [github](/packs/github), [okta](/packs/okta),
@@ -31,29 +34,22 @@ state.sqlite ─────────────────┘             
   it in `_facts`: whether the actor is AWS itself, a member, a service, a key
   or nobody known; whether the address, destination and target are usual; which
   kinds you watch. Every record goes on.
-- **logs** keeps each record in `logs.sqlite`, at its `ts`, with two
-  partitions, the org and the org and actor, until it is judged: the judge's
-  queue, which keeps each actor's latest 39 judged records for context.
 - **lake** keeps every record, as Parquet files a directory an hour under
   `lake/`, for DataFusion or DuckDB; delete old hours to trim it.
 - **baseline_builder** folds every record into `state.sqlite` too: when each
   actor first did each thing, from where and with what, how much an hour, and
   each person's sign-ins and credential changes in every source (`people` in
-  the profile says which names are one person). That ends ingest, one
-  process; the judge is another, so nothing in ingest waits on a model.
-- **actors** reads `logs.sqlite` back forty records of one actor at a time,
-  oldest first. A quiet actor's go once the oldest is an hour older than the
-  newest record stored, or once nothing new has been stored for an hour,
-  topped up to forty with the actor's latest records already judged, marked
-  `_context`. A record that arrives late waits with the actor's others. Rows
-  are marked once their verdicts are written, and only then do the actor's
-  next go; a restart sends again what the judge had not finished.
-- **baseline_renderer**, in the judge, reads that state without its lock
-  and puts the same `_baseline` on each of an actor's records: what was known
-  of the actor before its first record, facts, not verdicts
+  the profile says which names are one person).
+- **baseline_renderer** gets each actor's records a group at a time: thirty,
+  or fewer an hour after the first of them, with its latest ten again
+  ahead of them, marked `_context`. Groups wait in memory and run on workers
+  of their own, so nothing waits on the model; one group per actor is judged
+  at a time, and stopping the process closes every open group first. It puts
+  the same `_baseline` on each of an actor's records: what was known of the
+  actor before its first record, facts, not verdicts
   ([packs/core](/packs/core#baseline) has what is in it).
-- **judge** reads an actor's records together, as **actors** sends them and
-  never two actors in one request, and writes a verdict per record: a pass is
+- **judge** reads an actor's records together, never two actors in one
+  request, and writes a verdict per record: a pass is
   the flag alone, a flag says why. **fresh** drops the `_context` records,
   judged before; **flagged** keeps the verdicts a person should see.
   [packs/core](/packs/core#judgeyaml) has the model's settings and Slack.
@@ -64,7 +60,7 @@ state.sqlite ─────────────────┘             
 make setup          # GeoLite2, cloud ranges, Tor exits into examples/enrich/data
 $EDITOR profile/profile.yaml
 make test           # the packs' plugins from the release, then every pack's fixtures; no model needed
-make run            # ingest, then the judge once ingest's state.sqlite is there; listens on :9400 for NDJSON records
+make run            # one process: the sources, the packs and the judge; listens on :9400 for NDJSON records
 ```
 
 Nothing is compiled: `make test` and `make run` take the packs' plugins
@@ -106,7 +102,7 @@ pack takes goes no further, with a warning.
 ## The profile
 
 [profile/profile.yaml](profile/profile.yaml) is every fact about your company
-that no log carries, the `profile` table `ingest.yaml` names; the model reads
+that no log carries, the `profile` table `tangent.yaml` names; the model reads
 it as `_facts`. [packs/core](/packs/core#the-profile) lists the keys. It ships
 filled in for the fictional company the cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases)
 describe.
@@ -115,14 +111,13 @@ describe.
 
 34 of the sequences in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) are this example's, as the real sources write them, 28 that should flag and 6 that must not. Half follow disclosed compromises of 2025 and 2026 ([evals/cases/README.md](/evals/cases/README.md) has the table and sources): TeamPCP's Trivy and LiteLLM, the axios hijack, nx/s1ngularity, Shai-Hulud's second wave, tj-actions/changed-files, Railway's environment-variable breach, Vercel via Context.ai. The rest are the classics: root login, CloudTrail stopped, a bucket made public, MFA off, impossible travel, a Gmail forwarding rule, a branch protection removed.
 
-This shape, an actor's latest forty records, is not measured yet. The two before it, over the cases of both examples and 38 days of synthetic ordinary traffic: a judge reading every record in batches with each org's history as context (Claude Haiku 4.5) flagged 38 to 39 of the 40 positives, 1 of 11 negatives and 13 of 16,199 ordinary records; a rulebook gate in front of a local 30B judge, 38 of 40 and 2 of 11.
+This shape, an actor's records thirty at a time with ten before them, is not measured yet. The two before it, over the cases of both examples and 38 days of synthetic ordinary traffic: a judge reading every record in batches with each org's history as context (Claude Haiku 4.5) flagged 38 to 39 of the 40 positives, 1 of 11 negatives and 13 of 16,199 ordinary records; a rulebook gate in front of a local 30B judge, 38 of 40 and 2 of 11.
 
 The packs' fixtures were cut from eight of the cases; `make test` runs them, needs no model, and runs in CI.
 
 ## Files
 
 ```
-ingest.yaml           core and the five packs, the sources and their edges, the profile
-judge.yaml            core's judge and the packs' logfmt rows
+tangent.yaml          core and the five packs, the sources, every edge, the profile
 profile/profile.yaml  your company (edit this)
 ```

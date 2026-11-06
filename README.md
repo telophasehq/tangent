@@ -203,7 +203,7 @@ The reply is read as JSON and nothing else, and the backend is asked to make it 
 
 A request holds the records the node is handed, or with `group_by: [_norm.actor]` those of one value of these fields, and is split past `batch_bytes` (32 KiB of JSON) and, with logfmt, past `budget_tokens` (90k). A `sqlite` source hands over a partition value's records `batch_size` at a time, so with `group_by` on the partition's fields a request is one of its batches. A schema is wrapped around each answer, `max_tokens` is per record, and a reply that cannot be read is asked again in halves.
 
-`encoding: {type: logfmt, keep: [...], sources: {<source>: {principal, time, keep, ids}}}` writes the records as logfmt lines in about half the tokens of JSON, and the text decodes back to the records: a principal's records are grouped, the fields they share written once above their rows, the `keep` fields on every row, a day's timestamps as times of day; `sidecar: true` swaps a source's `ids` for references the model never sees. Each pack's `judge.yaml` has its sources' rows, e.g. [packs/aws/judge.yaml](/packs/aws/judge.yaml).
+`encoding: {type: logfmt, keep: [...], sources: {<source>: {principal, time, keep, ids}}}` writes the records as logfmt lines in about half the tokens of JSON, and the text decodes back to the records: a principal's records are grouped, the fields they share written once above their rows, the `keep` fields on every row, a day's timestamps as times of day; `sidecar: true` swaps a source's `ids` for references the model never sees. Core's judge has a row for each pack's sources ([packs/core/judge.yaml](/packs/core/judge.yaml)).
 
 Inference nodes run inside the workers, in DAG order with the plugins: a worker hands a model the records that reached the node, waits for the replies, and carries them on, so a batch's records stay in order and nothing else moves while the model thinks. `concurrency` bounds requests in flight to the node, every worker's together (1 for a laptop GPU, 8 or more for a hosted model); `timeout_ms` (30 s) frees a slot a hung request would otherwise hold; `retries` (2) tries again, backing off, when a request got no reply at all. `temperature` is sent only when set. A signal (SIGINT or SIGTERM) ends the calls under way rather than wait out `timeout_ms` and `retries`: records waiting on one go to no sink and are not acked, so a `sqlite` source sends them again at its next start. Another signal, a second or more after the first, exits at once. See [examples/inference-local](/examples/inference-local) and [examples/inference-bedrock](/examples/inference-bedrock).
 
@@ -213,6 +213,7 @@ A config can span several files. `include:` lists files merged into the one that
 ```yaml
 include:
   - packs/core/ingest.yaml
+  - packs/core/judge.yaml
   - packs/app/ingest.yaml
 plugins:
   app: { config: { extra_sources: [billing] } }   # one setting of a plugin an included file defines
@@ -252,23 +253,24 @@ A pack is what tangent knows about one provider's logs, and it is one plugin, na
 | [app](/packs/app) | `app`, `agent`, and names you list | NDJSON from your product: its audit log, an AI agent's run log | the customer's tenant as the org |
 | [macos](/packs/macos) | | planned: Endpoint Security events from laptops | |
 
-A pack is a directory: the plugin (`Cargo.toml`, `src/`, Rust compiled to WASM), its fixtures (`tests/`), `ingest.yaml` (the plugin, its fixtures, and its edge to `logs` and `baseline_builder`), `judge.yaml` (how the judge writes the provider's records as logfmt), and a README saying what it reads, writes, drops and enriches, with the lines to paste.
+A pack is a directory: the plugin (`Cargo.toml`, `src/`, Rust compiled to WASM), its fixtures (`tests/`), `ingest.yaml` (the plugin and its fixtures; your config says where its records go), and a README saying what it reads, writes, drops and enriches, with the lines to paste.
 
-[packs/core](/packs/core) is not a provider but what every pack needs: the enrichment tables, the `logs` sink and `baseline_builder` (`ingest.yaml`), and `baseline_renderer` and the judge (`judge.yaml`). The packs' shared code is in [packs/shared](/packs/shared): `normkit` (`_norm` and the scrubs), `enrichkit` (an address from the tables), `identitykit` (which names are one person) and `factskit` (the profile's facts), Rust libraries each plugin links.
+[packs/core](/packs/core) is not a provider but what every pack needs: the runtime, the enrichment tables, the lake and `baseline_builder` (`ingest.yaml`), and `baseline_renderer`, which groups each actor's records, and the judge, with a row for each pack's sources (`judge.yaml`). The packs' shared code is in [packs/shared](/packs/shared): `normkit` (`_norm` and the scrubs), `enrichkit` (an address from the tables), `identitykit` (which names are one person) and `factskit` (the profile's facts), Rust libraries each plugin links.
 
 No pack loads IP data itself. Core's `ingest.yaml` names it as enrichment tables (GeoLite2 Country and ASN, and `networks.csv`, the cloud, datacenter, VPN and Tor ranges in one file), the runtime loads each once when the pipeline starts, and every pack's plugin, on every worker, reads that one copy: five packs load GeoLite2 once. [examples/enrich/setup.sh](/examples/enrich/setup.sh) fetches the files. Your profile is a table too, `profile`, which your config names.
 
-The judge also sees each actor's history, which one window of its records cannot show. Core's baseline folds every finished record into ingest's state store (`baseline_builder`), and in the judge puts the same `_baseline` on each of an actor's records (`baseline_renderer`): who it is and, for a role, who assumed it; how long it has been seen; what it does for the first time (an API, a resource, a client, a network, an OAuth app); its volume and hours against its own 28 days; its person's sign-ins and credential changes in every source over three days (the profile's `people` says which names are one person); and addresses it shares with other actors. Only what happened before the actor's first record counts, and it is facts, not verdicts ([packs/core](/packs/core#baseline)). The judge writes records as logfmt, `_baseline` once per request, about 5% more tokens than without it; JSON lines (`encoding: {type: ndjson}`) repeat it on every record, at three times logfmt's tokens ([packs/core](/packs/core#judgeyaml) has the numbers). Baseline's folds are one state transaction per batch, so ingest runs as many workers as it likes.
+The judge also sees each actor's history, which one window of its records cannot show. Core's baseline folds every finished record into the state store (`baseline_builder`), and in the judge puts the same `_baseline` on each of an actor's records (`baseline_renderer`): who it is and, for a role, who assumed it; how long it has been seen; what it does for the first time (an API, a resource, a client, a network, an OAuth app); its volume and hours against its own 28 days; its person's sign-ins and credential changes in every source over three days (the profile's `people` says which names are one person); and addresses it shares with other actors. Only what happened before the actor's first record counts, and it is facts, not verdicts ([packs/core](/packs/core#baseline)). The judge writes records as logfmt, `_baseline` once per request, about 5% more tokens than without it; JSON lines (`encoding: {type: ndjson}`) repeat it on every record, at three times logfmt's tokens ([packs/core](/packs/core#judgeyaml) has the numbers). Baseline's folds are one state transaction per batch, so ingest runs as many workers as it likes.
 
 ### Using packs
 Packs need a tangent newer than 0.1.9, the latest release as this is written: `include:` and `enrichment_tables` are newer, and that release stops at ``missing field `runtime` ``. Until the next release, build one from the checkout (`cargo install --path ../tangent/crates/cli --locked`) and `tangent plugin compile` the packs where the lines below fetch them: their prebuilt plugins are released with tangent, from the next release on.
 
-Ingest and the judge are two processes over one `logs.sqlite`, so there are two configs, each including core and the packs you want. Your ingest config also names your sources, sends each to its pack, and points the `profile` table at your company. To watch AWS and Okta from a directory beside your tangent checkout:
+A pipeline is one config: core's `ingest.yaml` and `judge.yaml`, and the `ingest.yaml` of each pack you want. It names your sources, sends each to its pack and each pack's records on to the lake, `baseline_builder` and the judge (`baseline_renderer`), and points the `profile` table at your company. Leave out `judge.yaml` and the edges to those two and it keeps finished records in the lake, with no model. Each actor's records wait in a group for the judge (`baseline_renderer`'s `group_by`), and the judge runs on workers of its own, so ingest never waits on the model. To watch AWS and Okta from a directory beside your tangent checkout:
 
 ```yaml
-# ingest.yaml
+# tangent.yaml
 include:
   - ../tangent/packs/core/ingest.yaml
+  - ../tangent/packs/core/judge.yaml
   - ../tangent/packs/aws/ingest.yaml
   - ../tangent/packs/okta/ingest.yaml
 
@@ -284,14 +286,10 @@ dag:
     to: [{ kind: plugin, name: aws }]
   - from: { kind: source, name: okta }
     to: [{ kind: plugin, name: okta }]
-```
-
-```yaml
-# judge.yaml
-include:
-  - ../tangent/packs/core/judge.yaml
-  - ../tangent/packs/aws/judge.yaml
-  - ../tangent/packs/okta/judge.yaml
+  - from: { kind: plugin, name: aws }     # kept, learned, judged
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: { kind: plugin, name: okta }
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
 ```
 
 ```yaml
@@ -308,19 +306,16 @@ watch: [StopLogging, user.mfa.factor.deactivate]
 ```bash
 brew install gh                                   # once: it checks each prebuilt plugin's attestation; no login
 ../tangent/examples/enrich/setup.sh data          # once: GeoLite2, cloud ranges, Tor exits
-tangent plugin fetch --config ingest.yaml && tangent plugin fetch --config judge.yaml   # the packs' plugins, prebuilt and attested
-tangent plugin test --config ingest.yaml          # the aws and okta fixtures
-tangent run --config ingest.yaml & i=$!            # first: it writes state.sqlite
-(while kill -0 $i && [ ! -s state.sqlite ]; do sleep 1; done; sleep 1; kill -0 $i) && tangent run --config judge.yaml
+tangent plugin fetch --config tangent.yaml        # the packs' plugins, prebuilt and attested
+tangent plugin test --config tangent.yaml         # the aws and okta fixtures
+tangent run --config tangent.yaml
 ```
-
-Ingest starts first: the judge reads its `state.sqlite`, each actor's history, read-only, and refuses to start before the file is there. The second line waits for the file, and starts the judge only while ingest is still running.
 
 `tangent plugin compile` in place of `fetch` builds the packs here, from source, for a pack you are changing: it needs the Rust WASM toolchain, which `../tangent/examples/enrich/setup.sh` (without `data`) installs.
 
 The judge is any OpenAI-compatible model: `JUDGE_URL` (a local model on `:8080` by default), `JUDGE_MODEL` (`glm-4.7-flash`), `JUDGE_API_KEY`. Each pack's README has its source's block and credentials, and [packs/core](/packs/core) the profile's keys and the judge's settings.
 
-A `tcp` source can feed several packs: route it to each, and each takes only its own `source` values. A record whose `source` no included pack takes goes no further, and `tangent run` says so. To keep records in your own shape, send them as `source: app`, or list their name under `plugins.app.config.extra_sources`: baseline learns them as it does `app`'s, and the judge's logfmt wants a row for the name, as [packs/app/judge.yaml](/packs/app/judge.yaml) has for `app`, for its times and the fields on every line.
+A `tcp` source can feed several packs: route it to each, and each takes only its own `source` values. A record whose `source` no included pack takes goes no further, and `tangent run` says so. To keep records in your own shape, send them as `source: app`, or list their name under `plugins.app.config.extra_sources`: baseline learns them as it does `app`'s, and the judge's logfmt wants a row for the name in your config, under `inference.judge.encoding.sources`, as [core's judge.yaml](/packs/core/judge.yaml) has for `app`, for its times and the fields on every line.
 
 [examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, whose cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) it is measured against; [examples/app-log](/examples/app-log) is the app pack, one org per customer.
 
@@ -335,7 +330,7 @@ plugins:
     prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }
 ```
 
-`tangent plugin fetch --config ingest.yaml` downloads each `prebuilt` plugin from `repo`'s release of this tangent's version (`release:` names another; `asset:` another file name; `host:` a GitHub Enterprise host) and precompiles it into `runtime.plugins_path`, where `tangent plugin compile` puts it and `tangent run` reads it. A plugin with `prebuilt` and no `path` is fetched only.
+`tangent plugin fetch --config tangent.yaml` downloads each `prebuilt` plugin from `repo`'s release of this tangent's version (`release:` names another; `asset:` another file name; `host:` a GitHub Enterprise host) and precompiles it into `runtime.plugins_path`, where `tangent plugin compile` puts it and `tangent run` reads it. A plugin with `prebuilt` and no `path` is fetched only.
 
 A prebuilt plugin is code off the network that reads every record, so before one is kept its build is checked: the release workflow attests each component, on its own, with [GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations) ([.github/workflows/attest-packs.yml](/.github/workflows/attest-packs.yml)), a Sigstore signature naming the component's file name and digest, the repository, the workflow and the commit that built it, with the attestation bundle uploaded beside the component as `<asset>.sigstore.json`. `fetch` has `gh attestation verify`, GitHub's own verifier, check it: signed for `repo` from the release's tag (`--source-ref refs/tags/<release>`), by `workflow` when named; and then that the statement names the file as the asset asked for, not only by its digest, so one attested component of a release cannot be served under another's name. With the bundle on the release nothing asks GitHub's API, so `gh` need not be logged in; a release without the bundle falls back to the API, which needs `gh auth login`. A plugin that does not verify is not kept, and there is no flag to skip the check. `sha256:` pins the component's digest as well, for a lockfile's certainty. The command `fetch` ran is printed, to run again by hand:
 
@@ -363,7 +358,7 @@ A month is thirty times as much. The count matters more than the size. A log rea
 
 Two things the count must include:
 
-- People. A request is one actor's latest forty logs. A busy actor, a service role or an app server, fills one with new logs. A quiet one, a person, goes an hour after its oldest new log, topped up to forty with logs already judged (`_context`), which the model answers too. Count a person as at least forty logs for each hour they are active.
+- People. A request is one actor's logs: up to thirty new ones, and its latest ten already judged again (`_context`), which the model answers too. A busy actor, a service role or an app server, fills one with new logs. A quiet one, a person, goes an hour after its first new log. Count a person as their logs plus ten for each hour they are active.
 - Throughput. At 2–10 s a Haiku 5.5 request, core's `concurrency: 4` keeps up with 35k–170k requests a day, 1.4M–6.8M logs; raise `inference.judge.concurrency` past that.
 
 #### Per provider
@@ -379,14 +374,14 @@ Rough ranges for a company of 50 people, each active about eight hours a day, pr
 
 A person costs about a cent a day or less in each source that sees them, however little they do. A trail that also logs data events (S3 objects, Lambda invocations) can have ten to a hundred times aws's events. AWS VPC Flow Logs have no pack: a startup writes 5M–30M flow records a day of about 0.1 KB, $80–500 a day by the rule and more than one judge keeps up with, so a pack for them would roll flows up before the judge.
 
-Core keeps every finished log once in its lake, Parquet files in a directory an hour, about 20 bytes a log on a day of CloudTrail, which deleting old hours trims; `logs.sqlite` is the judge's queue, what it has not judged and what tops up each actor's next batch, so it stays small; baseline's `state.sqlite` grows with actors, their active hours, role sessions and sign-ins, not with logs. A local model, the default, costs only the machine it runs on.
+Core keeps every finished log once in its lake, Parquet files in a directory an hour, about 20 bytes a log on a day of CloudTrail, which deleting old hours trims; the judge's groups wait in memory; `state.sqlite` grows with actors, their active hours, role sessions and sign-ins, and each actor's ten latest records the judge saw, not with logs. A local model, the default, costs only the machine it runs on.
 
-These are estimates. Log sizes are measured on samples (CloudTrail on 20k events, the others on tens to hundreds), tokens with Claude Haiku 4.5's count scaled to 5.5's, and the volumes are typical of startups, not yours: a day of your own ingest in `logs.sqlite` says what yours are.
+These are estimates. Log sizes are measured on samples (CloudTrail on 20k events, the others on tens to hundreds), tokens with Claude Haiku 4.5's count scaled to 5.5's, and the volumes are typical of startups, not yours: a day of your own logs in the lake says what yours are.
 
 ### Writing a pack
 1. Copy [packs/okta](/packs/okta), the smallest, to a directory beside it under `packs/`, and rename its package and plugin; a name may not contain `-`. Its `Cargo.toml` finds `normkit` and `factskit` at `../shared/`; a copy kept elsewhere points them at `<checkout>/packs/shared/...`. Its `probe()` takes your `source` values and nothing else: a value belongs to one pack. `process_logs` fills a `normkit::Norm`, trims the record, and hands both to `factskit`, which enriches the address, adds the profile's facts and writes the record ([packs/core](/packs/core) has the contract).
-2. `ingest.yaml`: the plugin, named after the pack, with its fixtures under `tests:` and the tables they were written against (`tests/profile.yaml`, and `tests/addresses.yaml` and `tests/networks.csv` for the addresses), and an edge from it to `logs` and `baseline_builder`. Baseline learns a `source` only once [its table](/packs/core/baseline/kit/src/kinds/mod.rs) knows it.
-3. `judge.yaml`: under `inference.judge.encoding.sources.<source>`, the fields naming the principal and the time, and those the model should see on every line. Your pack's own `_facts` keys go in its sources' `keep` too: core's `keep` is every pack's, and a list set in two files is a conflict, not a merge.
+2. `ingest.yaml`: the plugin, named after the pack, with its fixtures under `tests:` and the tables they were written against (`tests/profile.yaml`, and `tests/addresses.yaml` and `tests/networks.csv` for the addresses). No `dag`: the config that includes the pack routes it. Baseline learns a `source` only once [its table](/packs/core/baseline/kit/src/kinds/mod.rs) knows it.
+3. A row for each of its sources in [core's judge.yaml](/packs/core/judge.yaml), under `inference.judge.encoding.sources.<source>`: the fields naming the principal and the time, and those the model should see on every line. Your pack's own `_facts` keys go in its sources' `keep` too: core's top-level `keep` is every pack's.
 4. `tests/input.json` from synthetic records, two or more, with the tables they read: the company they describe, and what you want their addresses to be (`203.0.113.9` a Tor exit, say). `make -C packs fixtures-<name>` writes `tests/expected.json` from the plugin's output; read it before committing. `make -C packs test` runs every pack's fixtures on its own.
 5. So the release ships it prebuilt: `prebuilt:` on the plugin in `ingest.yaml`, as the other packs have it, and the plugin in [packs/dist.sh](/packs/dist.sh)'s list and [dist-workspace.toml](/dist-workspace.toml)'s `extra-artifacts`. `packs/dist.sh check` (CI runs it) says when the list and the configs disagree; `make -C packs dist` builds what the release would.
 

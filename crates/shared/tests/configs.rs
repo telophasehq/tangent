@@ -1,5 +1,7 @@
 //! Every config in the repo loads: alone, or through a config that includes
-//! it (a pack's judge.yaml, say, is only a few rows of another's judge).
+//! it (a pack's ingest.yaml, say, is a plugin whose tables core gives). And
+//! the pipelines pass the checks `tangent run` makes before it starts: with
+//! the judge, as the examples run, and without it.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -85,4 +87,70 @@ fn every_config_in_the_repo_loads() {
         failed.join("\n")
     );
     eprintln!("{} configs load", found.len());
+}
+
+/// Every edge's nodes exist, which `tangent run` checks before it starts and
+/// loading does not: in the examples, and in a pipeline of every pack in
+/// packs/ without the judge, so no pack names a node of the judge's.
+#[test]
+fn pipelines_validate_with_and_without_the_judge() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    for example in [
+        "examples/cloud-infra/tangent.yaml",
+        "examples/app-log/tangent.yaml",
+    ] {
+        let cfg = Config::load(&repo.join(example)).unwrap().config;
+        cfg.validate()
+            .unwrap_or_else(|e| panic!("{example}: {e:#}"));
+    }
+
+    // Every pack, as packs/Makefile finds them: a directory with an
+    // ingest.yaml, core aside. Its plugins are the ones its file defines.
+    let mut files: Vec<PathBuf> = fs::read_dir(repo.join("packs"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.path().join("ingest.yaml"))
+        .filter(|f| f.is_file() && !f.starts_with(repo.join("packs/core")))
+        .collect();
+    files.sort();
+    let mut plugins: Vec<String> = Vec::new();
+    for f in &files {
+        let pack: Value = serde_yaml::from_str(&fs::read_to_string(f).unwrap()).unwrap();
+        let Some(Value::Mapping(defined)) = pack.get("plugins") else {
+            panic!("{} defines no plugin", f.display());
+        };
+        plugins.extend(defined.keys().filter_map(Value::as_str).map(String::from));
+    }
+    assert!(
+        ["app", "aws", "github", "google_workspace", "okta"]
+            .iter()
+            .all(|p| plugins.iter().any(|q| q == p)),
+        "found the packs: {plugins:?}"
+    );
+
+    let mut yaml = format!(
+        "include:\n  - {}\n",
+        repo.join("packs/core/ingest.yaml").display()
+    );
+    for f in &files {
+        yaml += &format!("  - {}\n", f.display());
+    }
+    yaml += "sources:\n  events: { type: tcp, bind_address: 127.0.0.1:0 }\ndag:\n";
+    for p in &plugins {
+        yaml += &format!(
+            "  - from: {{ kind: source, name: events }}\n    to: [{{ kind: plugin, name: {p} }}]\n"
+        );
+        yaml += &format!(
+            "  - from: {{ kind: plugin, name: {p} }}\n    to: [{{ kind: sink, name: lake }}]\n"
+        );
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tangent.yaml");
+    fs::write(&path, yaml).unwrap();
+    let cfg = Config::load(&path).unwrap().config;
+    cfg.validate()
+        .unwrap_or_else(|e| panic!("the packs without the judge: {e:#}"));
 }

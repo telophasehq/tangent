@@ -30,25 +30,16 @@ setup:
 	./setup.sh
 
 fetch: setup
-	$(TANGENT) plugin fetch --config ingest.yaml
-	$(TANGENT) plugin fetch --config judge.yaml
+	$(TANGENT) plugin fetch --config tangent.yaml
 
 compile: setup
 	./setup.sh toolchain
-	$(TANGENT) plugin compile --config ingest.yaml
-	$(TANGENT) plugin compile --config judge.yaml
+	$(TANGENT) plugin compile --config tangent.yaml
 
 test: $(PLUGINS)
-	$(TANGENT) plugin test --config ingest.yaml
+	$(TANGENT) plugin test --config tangent.yaml
 
-# Two processes over one logs.sqlite, so ingest never waits on the model. The
-# judge reads ingest's state.sqlite, each actor's history, and refuses to start
-# without it, so ingest starts first; the judge waits for the file, and does not
-# start once ingest has exited (a config error, say).
 run: $(PLUGINS)
-	$(TANGENT) run --config ingest.yaml & i=$$!; \
-	while kill -0 $$i 2>/dev/null && [ ! -s state.sqlite ]; do sleep 1; done; sleep 1; \
-	kill -0 $$i 2>/dev/null || { echo "ingest exited; not starting the judge" >&2; exit 1; }; \
-	$(TANGENT) run --config judge.yaml
+	$(TANGENT) run --config tangent.yaml
 
 .PHONY: setup fetch compile test run

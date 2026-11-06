@@ -1,0 +1,23 @@
+# app-log: the product's logs, each actor's history in state.sqlite, and each
+# actor's records judged a group at a time. The customer's tenant id is the
+# org, so each customer's actors are their own. One config, one process.
+include:
+  - ../../packs/core/ingest.yaml              # the runtime, the tables, the lake, each actor's baseline
+  - ../../packs/core/judge.yaml               # the judge: each actor's records a group at a time
+  - ../../packs/app/ingest.yaml               # plugin app: app, agent
+
+enrichment_tables:
+  profile: { type: document, path: profile/profile.yaml, required: true }   # a typo here stops it
+
+sources:
+  events:
+    type: tcp
+    bind_address: 0.0.0.0:9401
+
+dag:
+  - from: { kind: source, name: events }
+    to: [{ kind: plugin, name: app }]
+  # app's records: kept in the lake, folded into the actor's baseline, and
+  # judged (packs/core).
+  - from: { kind: plugin, name: app }
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]

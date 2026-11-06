@@ -4,14 +4,22 @@ Not a provider: what every pack needs, and the judge. Every config includes
 it, beside the packs it uses.
 
 ```
-your sources ──▶ a pack's plugin ──┬──▶ logs.sqlite, the judge's queue                        (ingest.yaml)
-                   reads the       ├──▶ lake/, every record as Parquet
-                                   └──▶ baseline_builder ──▶ state.sqlite
-                   tables geo, asn, networks and profile
-
-logs.sqlite ──▶ actors ──▶ baseline_renderer ──▶ judge ──▶ fresh ──▶ flagged ──▶ alerts.ndjson (judge.yaml)
-state.sqlite ─────────────────┘                             └──▶ verdicts.ndjson
+your sources ──▶ a pack's plugin ──┬──▶ lake/, every record as Parquet                      (ingest.yaml)
+                   reads the       ├──▶ baseline_builder ──▶ state.sqlite
+                   tables geo,     │                              │
+                   asn, networks   └──▶ baseline_renderer ◀───────┘                         (judge.yaml)
+                   and profile          an actor's records, a group at a time
+                                             │
+                                             ▼
+                                           judge ──▶ fresh ──┬──▶ flagged ──▶ alerts.ndjson
+                                                             └──▶ verdicts.ndjson
 ```
+
+One config holds all of it, in one process: the judge's groups run on
+workers of their own, so ingest never waits on the model. A pack defines
+only its plugin, and your config draws its three edges, to `lake`,
+`baseline_builder` and `baseline_renderer`. Without judge.yaml, draw only
+the one to `lake`: every record kept, and no model.
 
 ## ingest.yaml
 
@@ -28,25 +36,25 @@ state.sqlite ─────────────────┘             
   | `networks` | `cidr` | networks.csv | its labels: `tor` and `vpn` are flags, and any other label names its hosting provider (`aws`, `gcp`, `cloudflare`, `datacenter`; the first in the file wins) |
   | `profile` | `document` | yours | everything else ([below](#the-profile)); your config names it |
 
-- **`logs`**, a sink every pack's plugin has an edge to: `logs.sqlite`, each
-  record once, at its `ts`, with two partitions, the org and the org and actor.
-  It is the judge's queue: once an actor's records are judged, judge.yaml's
-  `actors` deletes them, all but the 39 that can top up the actor's next batch.
-- **`lake`**, the other: every record, kept, as Parquet files in
+- **`lake`**, a sink your config routes each pack's plugin to: every record, kept, as Parquet files in
   `lake/logs/<year>/<month>/<day>/<hour>/`, each record whole in `record` and
   `ts`, `source` and `_norm`'s org, actor, kind and ip as columns, for
   DataFusion or DuckDB to read. A file is sealed an hour after it opened, and
   only sealed files are there; delete old hours to trim it.
-- **`baseline_builder`**, the plugin every pack's plugin has an edge to as
-  well: it folds each record into the state store, under the namespace
-  `baseline`, and passes nothing on ([below](#baseline)).
+- **`baseline_builder`**, a plugin your config routes each pack's plugin to
+  as well: it folds each record into the state store, under the namespace
+  `baseline`, and passes nothing on ([below](#baseline)). Only
+  `baseline_renderer` reads it, so a pipeline without the judge routes
+  nothing here.
 - **The runtime**: a worker per CPU ([below](#baseline)); plugins compiled
   into `plugins/` beside the config you run; and the state store at
   `state.sqlite`, where the API sources keep their place and baseline its
   keys.
 
-No sources and no profile: your config adds them, and sends each source to
-its pack.
+No sources and no profile: your config adds them, sends each source to its
+pack, and sends each pack's plugin on to `lake`, `baseline_builder` and
+`baseline_renderer`. A plugin with no edge out keeps nothing: its records go
+nowhere.
 
 ## The record
 
@@ -60,8 +68,9 @@ What a pack's plugin writes, the same for every provider (`factskit::Finished`):
 | `_facts` | yes, an object | what the profile and the tables say (below) |
 | the rest | no | the provider's fields the pack kept, as the pack trimmed them |
 
-A sink can rely on `ts`, `source` and `_norm` and nothing else: the queue
-orders by `ts` and partitions by `_norm`'s org and actor. A raw record's own
+A sink can rely on `ts`, `source` and `_norm` and nothing else: the lake
+keeps `ts` and `_norm` as columns, and the judge groups by `_norm`'s org and
+actor. A raw record's own
 `_norm`, `_facts`, `_ip`, `_context` and `_baseline` (and a key naming a field
 under one, such as `_facts.notes`) are dropped first, so a log line cannot
 speak for the pipeline.
@@ -102,9 +111,8 @@ A pack adds what only its provider's log says: `aws` adds `root` and
 ## The profile
 
 Every fact about your company that no log carries, as the `profile` table: a
-YAML file your ingest config names. The judge config needs none: who is who is
-resolved in ingest, and reaches the judge on the records (`_norm.person`) and
-in the state store.
+YAML file your config names. Who is who is resolved as records come in, and
+reaches the judge on the records (`_norm.person`) and in the state store.
 
 ```yaml
 enrichment_tables:
@@ -132,18 +140,17 @@ would go on as nobody the org knows, in the provider's org rather than yours.
 
 ## judge.yaml
 
-- **actors** reads `logs.sqlite` back forty records of one actor at a time,
-  oldest first, topped up with the actor's latest records already judged,
-  marked `_context`. Once a batch is through, the actor's judged records but
-  its latest 39 (`batch_size` - 1, the most a top-up uses) are deleted, so
-  the queue holds what is not judged and what tops up each actor's next
-  batch.
-- **baseline_renderer** reads ingest's `state.sqlite` and puts the same
-  `_baseline` on each of an actor's records ([below](#baseline)). The state
-  is opened `read_only`, without ingest's lock, so ingest starts first: the
-  judge refuses a file that is not there yet.
-  `drop_on_error: false`: when the renderer fails, the records go to the
-  model without `_baseline` rather than not at all.
+- **baseline_renderer**, which your config routes each pack's plugin to too,
+  groups each actor's records (`group_by: [_norm.org, _norm.actor]`): a group
+  closes at 30 records (`max_events`) or an hour after its first record
+  (`max_age_ms`), however busy the actor; an hour's quiet (`expire_after_ms`)
+  closes it no sooner. It reaches the renderer whole, on workers of its own,
+  with the actor's latest ten records again ahead of it, marked `_context`
+  (`history: 10`): forty records a request, which `batch_bytes` is sized for.
+  Groups wait in memory; the end of input closes every open one. The renderer
+  reads `state.sqlite` and puts the same `_baseline` on each of an actor's
+  records ([below](#baseline)). `drop_on_error: false`: when it fails, the
+  records go to the model without `_baseline` rather than not at all.
 - **judge** reads an actor's records together and writes a verdict per record,
   with [judge.md](judge.md) as its brief and
   [judge.schema.json](judge.schema.json) as the verdict's shape.
@@ -171,8 +178,8 @@ llama-server -m GLM-4.7-Flash-Q4_K.gguf --port 8080 -np 1 -c 32768 -ngl 99 -fa o
 For a hosted one: `JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY`.
 
 The records go to the model as logfmt, a line each, each source written as
-its pack's `judge.yaml` says: about half the tokens of JSON lines, and an
-actor's `_baseline` written once per request. Your judge config can send JSON
+its row under `encoding.sources` says: about half the tokens of JSON lines, and an
+actor's `_baseline` written once per request. Your config can send JSON
 lines instead, where `_baseline` is on every record; give it half the
 `batch_bytes` then, so a request fits a 32k context:
 
@@ -202,7 +209,7 @@ the default model has not been measured with either.
 ### Slack
 
 What **flagged** keeps can go to a channel too: add a `slack` sink and its
-edge to your judge config, and export `SLACK_WEBHOOK_URL`, an incoming
+edge to your config, and export `SLACK_WEBHOOK_URL`, an incoming
 webhook's URL.
 
 ```yaml
@@ -281,16 +288,11 @@ share; JSON lines repeat it on every record ([the cost](#judgeyaml)).
   and the builder files each person with what they did: the actors they were
   seen as, their sign-ins and credential changes, the role sessions they
   assumed. The renderer reads persons off the records and out of state and
-  resolves no one, so the judge config names no profile.
+  resolves no one.
 - **Any number of workers**: baseline's keys carry the org, and the builder
   reads an hour's counts, adds to them and writes them back, as it does
   first-seen times and role sessions, all in one state transaction per batch,
   so no worker's update lands inside another's.
-- **Read-only state**: the judge opens ingest's `state.sqlite` with
-  `runtime.state.read_only: true`, without the lock, creating nothing, and
-  its writes fail. Start ingest first: the judge refuses a state file that is
-  not there yet. The examples' `make run` waits for it, and starts no judge
-  once ingest has exited.
 - **Fail-open**: in the judge, `drop_on_error: false`: when a call fails, the
   records go on without `_baseline`.
 
@@ -313,8 +315,9 @@ A pack's plugin links [packs/shared](/packs/shared) by path:
   and `kit.write(out, stamp, record, norm)` folds the org, names the person,
   enriches the addresses, adds the facts and writes the record as one line.
 
-The pack's `ingest.yaml` gives the plugin an edge to `baseline_builder`
-beside `logs`. Baseline reads a source it knows from its own table
+The pack's `ingest.yaml` defines the plugin and its fixtures, and no edges:
+the config that includes the pack routes it to `lake`, `baseline_builder`
+and `baseline_renderer`. Baseline reads a source it knows from its own table
 ([baseline/kit/src/kinds](baseline/kit/src/kinds)); a new pack's records pass
 through it unlearned, with no `_baseline`, until the table knows their
 `source`, unless they carry an `event`, which it reads as the app pack's audit
@@ -323,11 +326,12 @@ shape.
 ## What include cannot do
 
 - **Take a stage out of, or put one into, core's chain.** Edges add up and none
-  can be removed, so `actors -> baseline_renderer -> judge` stays, and so
-  does each pack's edge to `baseline_builder`. Another plugin between them, or
-  a judge without `baseline_renderer`, means copying `judge.yaml` instead of
-  including it, or a change here that every config gets, as baseline was.
+  can be removed, so `baseline_renderer -> judge` stays. Another plugin
+  between them, or a judge without `baseline_renderer`, means copying
+  `judge.yaml` instead of including it, or a change here that every config
+  gets, as baseline was. Each pack's edges are your config's own, so where a
+  pack's records go is yours to say.
 - **Keep a batch's order.** A source routed to several packs hands each its own
-  records in turn, so within a batch every `cloudtrail` record reaches
-  `logs.sqlite` before every `okta` one. `actors` reads back by time, so only
-  records with the same `ts` can change places, and no verdict moves.
+  records in turn, and several workers hand an actor's records to its group as
+  they finish, so a group holds them in the order they arrived, not by
+  `ts`.

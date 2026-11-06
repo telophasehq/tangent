@@ -1,0 +1,93 @@
+# cloud-infra: your own infrastructure's logs, each record folded into its
+# actor's history in state.sqlite and kept in the lake, and each actor's
+# records judged a group at a time on workers of their own, so ingest never
+# waits on the model. One config, one process.
+#
+#   make setup      toolchain and the enrichment data (GeoLite2, cloud ranges, Tor exits)
+#   make test       the packs' fixtures; no model needed
+#   make run        reads CloudTrail, GitHub, Okta and Workspace for the credentials you
+#                   export (see the Makefile), NDJSON on :9400 for the rest, and judges them
+#
+# Edit profile/profile.yaml first: it is everything the model knows about you.
+include:
+  - ../../packs/core/ingest.yaml              # the runtime, the tables, the lake, each actor's baseline
+  - ../../packs/core/judge.yaml               # the judge: each actor's records a group at a time
+  - ../../packs/aws/ingest.yaml               # plugin aws: cloudtrail
+  - ../../packs/github/ingest.yaml            # plugin github: github_audit, gha_ci, runner_egress
+  - ../../packs/okta/ingest.yaml              # plugin okta: okta
+  - ../../packs/google_workspace/ingest.yaml  # plugin google_workspace: google_workspace
+  - ../../packs/app/ingest.yaml               # plugin app: app, agent
+
+enrichment_tables:
+  profile: { type: document, path: profile/profile.yaml, required: true }   # a typo here stops it
+
+# JSON lines instead, at three times the tokens (packs/core/README.md):
+# inference:
+#   judge:
+#     batch_bytes: 48000
+#     encoding:
+#       type: ndjson
+
+# What flagged keeps, to Slack too, with its edge at the end of `dag` (README.md):
+# sinks:
+#   slack:
+#     type: slack
+#     webhook_url: ${SLACK_WEBHOOK_URL}
+#     text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
+
+sources:
+  cloudtrail:
+    type: cloudtrail
+    region: ${AWS_REGION}
+    profile: ${AWS_PROFILE}
+    queue_url: ${CLOUDTRAIL_QUEUE_URL}
+    bucket_role: ${CLOUDTRAIL_BUCKET_ROLE}
+  github_audit:
+    type: github_audit
+    org: ${GITHUB_ORG}
+    token: ${GITHUB_TOKEN}
+  okta:
+    type: okta
+    org_url: ${OKTA_ORG_URL}
+    token: ${OKTA_API_TOKEN}
+  google_workspace:
+    type: google_workspace
+    credentials_file: ${GOOGLE_APPLICATION_CREDENTIALS}
+    subject: ${GOOGLE_ADMIN_EMAIL}
+  events:
+    type: tcp
+    bind_address: 0.0.0.0:9400
+
+dag:
+  - from: { kind: source, name: cloudtrail }
+    to: [{ kind: plugin, name: aws }]
+  - from: { kind: source, name: github_audit }
+    to: [{ kind: plugin, name: github }]
+  - from: { kind: source, name: okta }
+    to: [{ kind: plugin, name: okta }]
+  - from: { kind: source, name: google_workspace }
+    to: [{ kind: plugin, name: google_workspace }]
+  # NDJSON, each record's `source` naming its shape: each pack takes its own
+  # (gha_ci and runner_egress are github's, app and agent app's), and a record
+  # no pack takes is dropped, with a warning.
+  - from: { kind: source, name: events }
+    to:
+      - { kind: plugin, name: aws }
+      - { kind: plugin, name: github }
+      - { kind: plugin, name: okta }
+      - { kind: plugin, name: google_workspace }
+      - { kind: plugin, name: app }
+  # Each pack's records: kept in the lake, folded into the actor's baseline,
+  # and judged (packs/core).
+  - from: { kind: plugin, name: aws }
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: { kind: plugin, name: github }
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: { kind: plugin, name: okta }
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: { kind: plugin, name: google_workspace }
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  - from: { kind: plugin, name: app }
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
+  # - from: { kind: plugin, name: flagged }   # to Slack, with `slack` above
+  #   to: [{ kind: sink, name: slack }]

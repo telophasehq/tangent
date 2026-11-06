@@ -59,11 +59,12 @@ talked to.
 
 ## Use it
 
-In your ingest config, beside [core](../core):
+In your config, beside [core](../core):
 
 ```yaml
 include:
   - ../tangent/packs/core/ingest.yaml
+  - ../tangent/packs/core/judge.yaml
   - ../tangent/packs/github/ingest.yaml
 
 enrichment_tables:                  # your company: packs/core/README.md#the-profile
@@ -83,10 +84,12 @@ dag:
     to: [{ kind: plugin, name: github }]
   - from: { kind: source, name: events }
     to: [{ kind: plugin, name: github }]
+  - from: { kind: plugin, name: github }   # kept, learned, judged (packs/core)
+    to: [{ kind: sink, name: lake }, { kind: plugin, name: baseline_builder }, { kind: plugin, name: baseline_renderer }]
 ```
 
 and `github_audit`, `gha_ci` and `runner_egress` in your profile's
-`own_sources`. In your judge config, `../tangent/packs/github/judge.yaml`.
+`own_sources`.
 
 The audit log API is a GitHub Enterprise Cloud feature; the token needs
 `read:audit_log`. The source keeps its place in the runtime's state store, so

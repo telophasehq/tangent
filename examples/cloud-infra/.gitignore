@@ -1,6 +1,5 @@
 plugins/
 state.sqlite*
-logs.sqlite*
 alerts.ndjson
 verdicts.ndjson
 test_out.ndjson
