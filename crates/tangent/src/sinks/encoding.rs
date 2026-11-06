@@ -81,11 +81,12 @@ pub fn ndjson_to_avro(raw: &[u8], avro_schema_json: &str, comp: &Compression) ->
 }
 
 /// [`ndjson_to_avro`] from a reader to a writer, a line in memory at a time
-/// (and a block, in the Avro writer). A line the schema does not take (not
-/// JSON, a value Avro has no type for, a value not of the schema) does not
-/// fail the file: it is dropped, counted in
-/// `tangent_sink_records_unfit_total{fate="dropped"}`, and the lines dropped
-/// are returned.
+/// (and a block, in the Avro writer). Each line is resolved against the
+/// schema, an object to a record and a value to its union branch, before it
+/// is written. A line the schema does not take (not JSON, a value Avro has
+/// no type for, a value not of the schema) does not fail the file: it is
+/// dropped, counted in `tangent_sink_records_unfit_total{fate="dropped"}`,
+/// and the lines dropped are returned.
 pub fn write_avro<R: BufRead, W: Write>(
     input: R,
     out: W,
@@ -100,20 +101,17 @@ pub fn write_avro<R: BufRead, W: Write>(
         if line.is_empty() {
             continue;
         }
-        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&line) else {
+        // the line's errors come before the writer has any of it: the
+        // writer's are the file's, and fail it
+        let Some(value) = serde_json::from_slice::<serde_json::Value>(&line)
+            .ok()
+            .and_then(|v| apache_avro::to_value(v).ok())
+            .and_then(|v| v.resolve(&schema).ok())
+        else {
             dropped += 1;
             continue;
         };
-        match writer.append_ser(value) {
-            Ok(_) => {}
-            // the line's own, found before any of it is written: the
-            // writer's other errors are the file's, and fail it
-            Err(
-                apache_avro::Error::SerializeValue(_)
-                | apache_avro::Error::ValidationWithReason { .. },
-            ) => dropped += 1,
-            Err(e) => return Err(e.into()),
-        }
+        writer.append(value)?;
     }
     if dropped > 0 {
         SINK_RECORDS_UNFIT_TOTAL
@@ -658,7 +656,6 @@ mod tests {
         let json = ndjson_to_json_array(ndjson.as_bytes()).unwrap();
         assert_eq!(&json[..], br#"[{"n":1,"m":"x"},{"n":2,"m":"y"}]"#);
 
-        // append_ser makes a JSON object an Avro map, so a map schema
         let schema = r#"{"type":"map","values":"string"}"#;
         let ndjson = "{\"n\":\"1\"}\n\n{\"n\":\"2\",\"m\":\"y\"}\n";
         let avro =
@@ -702,6 +699,43 @@ mod tests {
         assert_eq!(read.len(), 2);
         assert_eq!(read[0]["n"], "1");
         assert_eq!((read[1]["n"].as_str(), read[1]["m"].as_str()), ("3", "y"));
+    }
+
+    #[test]
+    fn avro_takes_an_object_as_a_record_and_a_value_as_its_union_branch() {
+        use apache_avro::types::Value as A;
+        let record = r#"{"type":"record","name":"r","fields":[
+            {"name":"n","type":"string"},
+            {"name":"m","type":["null","long"],"default":null}]}"#;
+        let ndjson = [
+            r#"{"n":"good"}"#,
+            r#"{"n":2}"#, // not of the schema
+            r#"{"n":"x","m":3,"extra":true}"#,
+        ]
+        .map(|l| format!("{l}\n"))
+        .concat();
+        let comp = Compression::None;
+        let (out, dropped) = write_avro(ndjson.as_bytes(), Vec::new(), record, &comp).unwrap();
+        assert_eq!(dropped, 1);
+        let read: Vec<A> = apache_avro::Reader::new(&out[..])
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        let rec =
+            |n: &str, m: A| A::Record(vec![("n".into(), A::String(n.into())), ("m".into(), m)]);
+        assert_eq!(
+            read,
+            [
+                rec("good", A::Union(0, Box::new(A::Null))),
+                rec("x", A::Union(1, Box::new(A::Long(3))))
+            ]
+        );
+
+        let union = r#"{"type":"map","values":["null","string"]}"#;
+        let ndjson = "{\"a\":\"x\",\"b\":null}\n";
+        let (out, dropped) = write_avro(ndjson.as_bytes(), Vec::new(), union, &comp).unwrap();
+        assert_eq!(dropped, 0);
+        assert_eq!(apache_avro::Reader::new(&out[..]).unwrap().count(), 1);
     }
 
     #[test]
