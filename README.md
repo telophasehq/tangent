@@ -21,7 +21,9 @@ Tangent is one open-source process. It reads your AWS CloudTrail, Okta,
 GitHub and Google Workspace logs, and your product's audit log if you send
 it. It keeps each actor's history in its own state, and sends each actor's
 new records to a model with that history written on them. The model answers
-each record with a pass, or a flag and its reason.
+each record with a pass, or a flag and its reason. A pack for macOS laptops,
+through eslogger, is in review
+([#85](https://github.com/EthanBlackburn/tangent/pull/85)).
 
 - **Cost.** About $3–27 a day for those four sources at a 50-person company,
   on Claude Haiku 5.5; a person costs about a cent a day in each source that
