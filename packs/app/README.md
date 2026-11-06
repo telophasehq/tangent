@@ -77,7 +77,7 @@ enrichment_tables:                  # your company: packs/core/README.md#the-pro
 sources:
   events:
     type: tcp
-    bind_address: 0.0.0.0:9401
+    bind_address: 127.0.0.1:9401     # this machine only: nothing authenticates a record
 
 dag:
   - from: events

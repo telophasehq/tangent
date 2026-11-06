@@ -73,18 +73,21 @@ Nothing is compiled: `make test` and `make run` take the packs' plugins
 prebuilt. `tangent plugin fetch` downloads each from the tangent release of
 this tangent's version and has `gh attestation verify` check, before it is
 kept, that this repository's release workflow built it from that tag
-([Prebuilt plugins](/README.md#prebuilt-plugins)); it needs `gh`, not a
+([Prebuilt plugins](/docs/prebuilt-plugins.md)); it needs `gh`, not a
 login.
 
 Until the release after 0.1.9 there are none to fetch (`make test` stops at
 "v0.1.9 has no app.component.wasm"), and the packs need a tangent built from
-the checkout anyway ([Using packs](/README.md#using-packs)). Build the plugins
+the checkout anyway ([Using packs](/packs#using-packs)). Build the plugins
 here instead, as for a pack you are changing: `make test PLUGINS=compile`, then
 `make run PLUGINS=compile`, or `export PLUGINS=compile` once. It installs the
 Rust WASM toolchain first (`./setup.sh toolchain`).
 
 The judge defaults to a local model on `:8080`
-([packs/core](/packs/core#judgeyaml) says how to serve it). For a hosted one:
+([packs/core](/packs/core#judgeyaml) says how to serve it). For a hosted one,
+include `../../packs/core/judge-hosted.yaml` in `tangent.yaml` in place of
+`judge.yaml`, which leaves out the local model's sampling settings that a
+hosted model may refuse, and set the model:
 
 ```bash
 JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY make run
@@ -128,12 +131,17 @@ credential needs.
 | `okta_audit` | [okta](/packs/okta#use-it) | the System Log |
 | `workspace_audit` | [google_workspace](/packs/google_workspace#use-it) | login, token, drive and admin activity |
 
-Anything else is one JSON line per record on `:9400`, with a `source` field
-naming its shape and a `ts`: `gha_ci` and `runner_egress` for the
-[github](/packs/github) pack, `app` and `agent` for [app](/packs/app), or the
-`source` the four above give their records: `cloudtrail`, `github_audit`,
-`okta`, `google_workspace`. Every pack sees the stream and takes its own; a
-record no pack takes goes no further, with a warning.
+Anything else is one JSON line per record on `127.0.0.1:9400`, with a
+`source` field naming its shape and a `ts`: `gha_ci` and `runner_egress` for
+the [github](/packs/github) pack, `app` and `agent` for [app](/packs/app), or
+the `source` the four above give their records: `cloudtrail`,
+`github_audit`, `okta`, `google_workspace`. Every pack sees the stream and
+takes its own; a record no pack takes goes no further, with a warning. The
+listener takes only this machine's records: nothing authenticates one, and a
+record sent there is judged and folded into its actor's history like any
+other, so one from anyone who can reach it could make an address look
+familiar before it is used. To take records from other hosts, set
+`sources.events.bind_address` to `0.0.0.0:9400` behind a firewall.
 
 ## The profile
 

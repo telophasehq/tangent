@@ -1,0 +1,21 @@
+# demo, step 1: acme's ordinary product audit log before the case, 10,132
+# records over seven months, folded into state.sqlite by core's baseline.
+# No model: this is the history the judge reads in step 2 (tangent.yaml).
+include:
+  - ../../packs/core/ingest.yaml
+  - ../../packs/app/ingest.yaml
+
+enrichment_tables:
+  profile: { type: document, path: profile/profile.yaml, required: true }   # acme, tangent-eval's company
+
+runtime:
+  disable_remote_calls: true
+
+sources:
+  history: { type: file, path: history.ndjson.zst, decoding: { format: { type: ndjson } } }
+
+dag:
+  - from: history
+    to: [app]
+  - from: app
+    to: [baseline_builder]

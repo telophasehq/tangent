@@ -1,7 +1,9 @@
 TANGENT ?= tangent
 
 # The judge: any OpenAI-compatible endpoint, a local model on :8080 by default
-# (packs/core/judge.yaml has the defaults). A hosted one:
+# (packs/core/judge.yaml has the defaults). A hosted one: include
+# ../../packs/core/judge-hosted.yaml in tangent.yaml in place of judge.yaml
+# (no local sampling settings, which a hosted model may refuse), then
 #   JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY make run
 
 # The packs' plugins, one of two ways. `fetch`: prebuilt, from the tangent

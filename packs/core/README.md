@@ -135,7 +135,7 @@ enrichment_tables:
 | `about` | who an actor is, when its name does not say | `about`, in place of the "nobody it knows" note |
 | `hosts` | hosts your systems talk to (`*.suffix` allowed) | `dest_known` |
 | `sensitive` | buckets, repos, tables | `sensitive_target` |
-| `watch` | kinds a person wants seen every time | `watch` |
+| `watch` | kinds the model should weigh every time it sees one | `watch`, and the note "… is a kind the org watches every time", which the model reads; a watched record still reaches `alerts.ndjson` only when the judge flags it |
 
 `required: true` makes a mistyped path an error that stops `tangent run`;
 without it the table would answer nothing, with one warning, and every record
@@ -182,7 +182,29 @@ model about one reply in five came back unreadable):
 llama-server -m GLM-4.7-Flash-Q4_K.gguf --port 8080 -np 1 -c 32768 -ngl 99 -fa on --jinja --temp 0.7 --top-p 0.95
 ```
 
-For a hosted one: `JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY`.
+`judge.yaml` also sends that model's sampling settings (`temperature: 0.7`,
+`top_p` and `chat_template_kwargs`), which a hosted model may refuse: Claude
+Haiku 5.5 refuses `temperature` and `top_p`, and `chat_template_kwargs` is
+llama.cpp's. For a hosted one, include
+[judge-hosted.yaml](judge-hosted.yaml) in place of `judge.yaml`: the same
+judge without them. With an OpenAI-compatible endpoint that is
+`JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY`;
+for Claude Haiku 5.5 on Bedrock, your config sets the rest:
+
+```yaml
+include: [packs/core/judge-hosted.yaml]
+inference:
+  judge:
+    backend: bedrock
+    model: us.anthropic.claude-haiku-5-5
+    aws: { region: us-west-2 }               # and `profile`; the SDK's chain when unset
+    max_tokens: 400                          # per record
+    extra: { thinking: { type: disabled } }  # no thinking: the reply is the answer
+```
+
+These are the settings tangent-eval's
+[harness/maincfg.py](https://github.com/EthanBlackburn/tangent-eval/blob/main/harness/maincfg.py)
+runs Haiku 5.5 with.
 
 The records go to the model as logfmt, a line each, each source written as
 its row under `encoding.sources` says: about half the tokens of JSON lines, and an

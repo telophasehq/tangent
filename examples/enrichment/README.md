@@ -28,7 +28,7 @@ gets the responses back. Records with the same address share a lookup.
 
 For lookups that never leave the machine, see [examples/enrich](/examples/enrich)
 (GeoLite2 and the cloud providers' ranges, read from disk) and the runtime's
-[enrichment tables](/README.md#enrichment-tables).
+[enrichment tables](/docs/enrichment-tables.md).
 
 ## Setup
 

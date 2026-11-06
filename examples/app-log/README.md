@@ -23,8 +23,9 @@ app audit log, agent logs: NDJSON on :9401
 
 It is built only from [packs](/packs): `tangent.yaml` includes
 [core](/packs/core), its judge, and the [app](/packs/app) pack, and adds the
-NDJSON source on `:9401`, the plugin's edges to the lake, the baseline and the
-judge, and the profile. One config, one process; the
+NDJSON source on `127.0.0.1:9401` (this machine only, since nothing
+authenticates a record), the plugin's edges to the lake, the baseline and
+the judge, and the profile. One config, one process; the
 judge reads each actor's history from the same `state.sqlite`. The
 18 cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases)
 written only in product logs, `app` and `agent` lines, are this example's, 13
@@ -49,14 +50,18 @@ make run            # one process: the source, the app pack and the judge; liste
 As in cloud-infra, `make test` and `make run` take the packs' plugins
 prebuilt from the tangent release of this tangent's version, checked
 against GitHub's attestation of their build (it needs `gh`, not a login).
-To build them here instead, for a pack you are changing or a tangent built
-from a checkout: `make test PLUGINS=compile` and `make run PLUGINS=compile`,
+Until the release after 0.1.9 there are none to fetch, and the packs need a
+tangent built from the checkout anyway, so build them here, as for a pack
+you are changing: `make test PLUGINS=compile` and `make run PLUGINS=compile`,
 which install the Rust WASM toolchain first.
 
 The judge defaults to a local model on `:8080`
 ([packs/core](/packs/core#judgeyaml) says how to serve it); `JUDGE_URL`,
 `JUDGE_MODEL` and `JUDGE_API_KEY` point it at any OpenAI-compatible one (the
-Makefile has a hosted example).
+Makefile has a hosted example). For a hosted one, include
+`../../packs/core/judge-hosted.yaml` in `tangent.yaml` in place of
+`judge.yaml`, which leaves out the local model's sampling settings that a
+hosted model may refuse.
 
 ## Try it
 
