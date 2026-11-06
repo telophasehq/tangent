@@ -281,6 +281,11 @@ __pycache__/
 **/plugins/
 state.sqlite*
 json_generated.go
+# written by `tangent plugin compile`: cargo component's bindings, which
+# src/lib.rs does not use (wit_bindgen::generate! makes its own), and the
+# venv a Python plugin is built in
+src/bindings.rs
+.venv/
 "#;
 
 const PYTHON_REQUIREMENTS: &str = r#""#;
