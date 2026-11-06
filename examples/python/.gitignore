@@ -1,9 +1,18 @@
-
 target/
 *.wasm
 .DS_Store
 __pycache__/
 *.pyc
-**/test_out.json
-**/.test.yaml
 **/plugins/
+# made by `tangent plugin compile`, `test` and `run`
+.venv/
+.tangent/
+test_out.ndjson
+.test.yaml
+state.sqlite*
+# made by `componentize-py ... bindings .` (README: Editor bindings)
+wit_world/
+componentize_py_types.py
+componentize_py_runtime.pyi
+componentize_py_async_support/
+poll_loop.py

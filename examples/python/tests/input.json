@@ -12,15 +12,15 @@
     }
   },
   {
-    "msg": "my log",
-    "msg.level": "info",
-    "seen": 5,
-    "duration": 6.3,
-    "tags": [
-      "tag1"
-    ],
+    "msg": "no level, count, duration or tags",
     "source": {
       "name": "myservice"
+    }
+  },
+  {
+    "msg": "another service's log: the probe does not match it",
+    "source": {
+      "name": "otherservice"
     }
   }
 ]

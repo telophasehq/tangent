@@ -16,8 +16,7 @@
 * [Style & structure](#style--structure)
 * [PR checklist (Definition of Done)](#pr-checklist-definition-of-done)
 * [Anti‑patterns](#anti-patterns)
-* [Minimal template (fill‑in skeleton)](#minimal-template-fill-in-skeleton)
-* [Reference example](#reference-example)
+* [Reference example](mapper.py)
 
 ---
 
@@ -29,7 +28,7 @@
 4. **Narrow probes:** Subscribe only to records you can transform; avoid doing selection inside `process_logs` if the probe can express it.
 5. **NDJSON out:** Encode **one line per emitted record**; return a single `bytes` buffer containing all lines.
 6. **WASM‑safe performance:** Use a local `bytearray` buffer, minimize allocations, avoid reflection/`__dict__` walks and large intermediates.
-7. **Tests drive correctness:** Provide `tests/input.json` and `tests/expected.json` (NDJSON). Keep them small and representative.
+7. **Tests drive correctness:** Provide `tests/input.json` and `tests/expected.json` (JSON, see [Tests & fixtures](#tests--fixtures)). Keep them small and representative.
 8. **No surprises:** No global mutable state (beyond module constants). No prints/logging from the mapper.
 
 ---
@@ -55,7 +54,7 @@ class Mapper(wit_world.WitWorld):
 * **`probe()`**: return a list of `mapper.Selector` with predicates in `any` / `all` / `none`. Use `mapper.Pred_Eq((path, log.Scalar_*))`.
 * **`process_logs()`**: accept `List[log.Logview]`, return **`bytes`** (NDJSON for the entire batch).
 
-> The runtime wires these methods via WIT; do **not** rename or change signatures. Raising an exception inside `process_logs` is treated as a **batch failure**.
+> The runtime wires these methods via WIT; do **not** rename or change signatures. `raise Err("why")` inside `process_logs` fails the batch (see [Error handling policy](#error-handling-policy)).
 
 **Required imports used in this repo:**
 
@@ -108,7 +107,7 @@ Drop conditions: if source.name != "myservice", record is not encoded (handled b
 
 ## Probe design (subscribe narrowly)
 
-Use `mapper.Pred_Eq` with `log.Scalar_*` constructors to target only the logs you can handle.
+Use `mapper.Pred_Eq` with `log.Scalar_*` constructors to target only the logs you can handle. The other predicates: `Pred_Has(path)`, `Pred_Prefix((path, prefix))`, `Pred_In((path, [log.Scalar_*, ...]))`, `Pred_Gt((path, 1.5))` (a float; the field is a number above it) and `Pred_Regex((path, pattern))`. A selector matches when all of `all`, at least one of `any` (if not empty) and none of `none` hold; a record goes to the plugin when any of its selectors match.
 
 **Pattern:**
 
@@ -162,11 +161,13 @@ def process_logs(self, logs: List[log.Logview]) -> bytes:
 
 Use the `Logview` helpers:
 
-* `lv.len("path")` → returns the size of the list or string or `None`.
-* `lv.get("path")` → returns a scalar wrapper or `None`. Access the Python value via `.value`.
-* `lv.get_list("path")` → returns `List[scalar]` or `None`. Each item exposes `.value`.
-* `lv.get_map("path")` → returns `List[Tuple[str, Scalar]]` or `None`. Each item exposes `.value`.
-* `lv.keys("path")` → returns `List[str]` or `None`.
+* `lv.has("path")` → `True` when the path is present.
+* `lv.get("path")` → a scalar wrapper (`log.Scalar_Str`, `_Int`, `_Float`, `_Boolean`, `_Bytes`) or `None` (missing, or an object/array). Access the Python value via `.value`.
+* `lv.len("path")` → the length of the list or string at the path, or `None`.
+* `lv.get_list("path")` → `List[Scalar]` or `None`. Each item exposes `.value`; non-scalar items are skipped.
+* `lv.get_map("path")` → `List[Tuple[str, Scalar]]` or `None`: the object's scalar members as `(key, scalar)` pairs.
+* `lv.keys("path")` → the object's keys as `List[str]`; empty when the path is missing or not an object.
+* `lv.log()` → the whole record as a JSON `str`.
 
 **Patterns:**
 
@@ -192,11 +193,9 @@ if lst is not None:
 
 **Do NOT:**
 
-* Pretty‑print or add extra whitespace unless your tests expect it.
+* Pretty‑print (`indent=`): a record is one line, and a newline inside it splits it in two.
 * Manually craft JSON strings.
 * Return `str` (must be `bytes`).
-
-> If you need stricter textual stability in tests, you may set `json.dumps(..., separators=(',', ':'))` and mirror that in `tests/expected.json`.
 
 ---
 
@@ -204,7 +203,8 @@ if lst is not None:
 
 **Default (strict):** If any unrecoverable transform/encode issue occurs:
 
-* **Raise** a `RuntimeError` (or a plain `Exception`) to signal **batch failure** to the runtime.
+* `raise Err("why")`, with `from componentize_py_types import Err`. The runtime logs `guest error ... error="why"` and drops the batch (`drop_on_error`, on by default).
+* Any other exception (a `RuntimeError`, a `KeyError` from a bug) **traps** the plugin: the runtime logs the Python traceback and `plugin trapped; reinstantiating it`, drops the batch and starts a fresh instance, which is slow. Catch what you expect and turn it into `Err`.
 * Do **not** emit partial output for that batch.
 
 **Dropping records:** If a record is not applicable (should not be emitted), simply **do nothing** for that record (no line added). This should be rare if your probe is narrow.
@@ -216,26 +216,27 @@ if lst is not None:
 Each mapper directory **must** include:
 
 ```
-tests/input.json     # NDJSON input
-tests/expected.json  # NDJSON expected output (one line per emitted record)
+tests/input.json     # JSON array of input records
+tests/expected.json  # JSON of the output: an array of the emitted records (an object if just one)
 ```
 
 **Rules:**
 
-* Both files are **NDJSON** (one JSON object per line).
-* The order of lines in `expected.json` matches the emission order.
+* `input.json` is a **JSON array** of input records.
+* `expected.json` is the plugin's output as JSON: an **array** of the emitted records in emission order, or a single **object** when the plugin emits one record.
+* They are compared as parsed JSON: key order and whitespace do not matter, types do (`0` is not `0.0`). What the plugin produced is left in `test_out.ndjson`.
 * Include at least:
 
   * One fully‑populated record.
   * One record with missing optional fields (assert defaults/omissions).
   * One record filtered out by the probe (absent in expected).
-* Keep total lines small (3–8).
+* Keep them small (3–8 records).
 
-**Make targets used by CI:**
+**Make targets:**
 
-* `make build` — compiles to `.wasm`.
-* `make test` — runs the fixture comparison.
-* `make run` — runs locally against fixtures.
+* `make build` — compiles `plugins/<name>.cwasm`.
+* `make test` — builds, then runs the fixture comparison.
+* `make run` — builds, then runs the pipeline in `tangent.yaml`.
 
 > Tests must pass without external resources or environment tweaks.
 
@@ -288,6 +289,4 @@ tests/expected.json  # NDJSON expected output (one line per emitted record)
 * ❌ Huge dynamic dicts or reflection‑like patterns (`__dict__` walks) in the hot path.
 * ❌ Broad probes with heavy in‑function filtering.
 * ❌ Returning `str` instead of `bytes`.
-
-> Ensure `tests/input.json` and `tests/expected.json` reflect your exact textual encoding (whitespace, newline). If you switch to minified JSON (`separators=(',', ':')`), update the expected file accordingly.
 
