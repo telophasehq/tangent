@@ -258,7 +258,14 @@ where they always are.
   ([stratus/README.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/stratus/README.md#not-citable-yet)).
 - **Some of it is not measured at all:** the free local model, the default,
   and the 4 prompt-injection attacks and 1 look-alike that tangent-eval
-  added after the runs.
+  added after the runs (it holds 49 and 17 now).
+
+**Run it yourself:** `make` in tangent-eval runs the corpus on Haiku 5.5 on
+Bedrock, about $1; `make JUDGE=local` runs it on a local model, free and
+well over an hour. Both run the tangent that tangent-eval's `tangent.ref`
+pins (ad0407c, before the one-config pipeline). That is neither this tree
+nor the build these numbers came from, and the cases have changed since;
+nothing has been measured that way yet, so expect different numbers.
 
 ## What it costs
 
@@ -567,56 +574,6 @@ they came after the measured runs and are not measured yet.
   it from the release's tag, with no flag to skip the check
   ([docs/prebuilt-plugins.md](docs/prebuilt-plugins.md)). An attestation
   proves who built a plugin, not what it can reach.
-
-## How well it works, and where it loses
-
-[tangent-eval](https://github.com/EthanBlackburn/tangent-eval) is the
-corpus: 66 cases of ours (49 that should flag, 17 that must not) in 10
-categories, from cloud, identity, GitHub and supply chain to AI agents and
-prompt injection, and 140 made from Datadog's 35 recorded Stratus Red Team
-techniques, each spliced in twice with a harmless control for each. Every
-case sits inside 13 months of a fictional company's ordinary traffic,
-207,886 records, so the judge sees it against the history of the people and
-systems involved. 90 synthetic laptop cases arrive with the macOS pack
-([#85](https://github.com/EthanBlackburn/tangent/pull/85)) and are not
-public yet.
-
-What has been measured: Claude Haiku 5.5 on Bedrock, four runs on
-2026-10-31 and 11-01, two without a history header and two with one,
-through an earlier harness and plugin set (one cloud-infra pack, its history
-header `_hist`) on a differently placed stream
-([RESULTS.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/RESULTS.md)).
-The 201 cases were 61 of ours (the 4 injection cases and 1 look-alike came
-after) and the 140 Stratus ones:
-
-| | without the header | with it |
-|---|---|---|
-| our 45 attacks caught | 45/45, 45/45 | 45/45, 45/45 |
-| ordinary records flagged, of 6,587 | 1.9%, 2.0% | 0.8%, 0.9% |
-| run-to-run agreement, per record | 98.2% | 99.3% |
-| cost per run | about $0.98 | about $1.02 |
-
-Where it loses: of our 16 must-not-flag cases, the ones written to look
-alarming and be fine, it flagged 10 or 11 in every run. And what these
-numbers cannot say:
-
-- None was measured on the per-provider packs, `_baseline` or the one-config
-  judge; this layout has not been run yet.
-- They are in-sample: the brief and the profile were revised on these cases.
-- The Stratus numbers are withdrawn: the splice could be told from acme's
-  traffic by things that had nothing to do with the attack, and in every run
-  the controls were flagged about as often as the attacks. The tells are
-  fixed and not yet re-measured
-  ([stratus/README.md](https://github.com/EthanBlackburn/tangent-eval/blob/main/stratus/README.md#not-citable-yet)).
-- The local default model has never been measured, nor the 4 injection cases
-  or the newest look-alike.
-- Nothing here estimates alerts a day for a real company: only the hours
-  around cases are judged, and acme has nine people.
-
-To run it: `make` in tangent-eval (Haiku 5.5 on Bedrock, about $1), or
-`make JUDGE=local`, free and well over an hour. Both run the tangent that
-tangent-eval's `tangent.ref` pins (ad0407c, before the one-config pipeline),
-not this tree.
 
 ## Not done yet
 
