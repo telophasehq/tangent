@@ -5,9 +5,17 @@
 //! long as Google says its events can take to show up (`lateness`): four
 //! hours for `token`, three for `calendar`, `groups` and
 //! `groups_enterprise`, an hour for most.
-//! State keys (namespace `sources`): `<source>:<application>:cursor`, and
+//! State keys (namespace `sources`): `<source>:<application>:cursor`,
 //! `<source>:<application>:seen:<uniqueQualifier>:<ms>` for an event sent,
-//! kept three times the application's lateness.
+//! kept three times the application's lateness, and
+//! `<source>:<application>:gap` while a capped poll's older events wait.
+//!
+//! The Reports API serves newest first, so a poll that stops at its cap
+//! (10,000 new events) has read the newest of its span and left the
+//! oldest. The cursor moves on as usual, and what was left, from the
+//! poll's start to its oldest event read, is kept as the application's
+//! gap: the application's next polls read the gap, a cap's worth at a
+//! time, before they go on from the cursor.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -20,8 +28,8 @@ use tangent_shared::sources::google_workspace::GoogleWorkspaceConfig;
 use tokio_util::sync::CancellationToken;
 
 use crate::router::Router;
-use crate::sources::poll::{idle, opt, parse_time, Poller};
-use crate::state::StateStore;
+use crate::sources::poll::{idle, opt, parse_time, Poller, SOURCES_NS};
+use crate::state::{StateStore, StateValue};
 
 const SOURCE: &str = "google_workspace";
 const SCOPE: &str = "https://www.googleapis.com/auth/admin.reports.audit.readonly";
@@ -199,51 +207,101 @@ async fn fetch_token(
     })
 }
 
-/// A poller for each application, with a cursor, seen ids and lateness of
-/// its own.
+/// One application: its poller, with a cursor, seen ids and lateness of
+/// its own, and the store its gap is kept in.
+struct App {
+    name: String,
+    poller: Poller,
+    store: Arc<dyn StateStore>,
+}
+
+/// Times an application's events were not read between, oldest first.
+type Gap = (DateTime<Utc>, DateTime<Utc>);
+
+impl App {
+    fn gap_key(&self) -> String {
+        format!("{}:gap", self.poller.name)
+    }
+
+    /// What a capped poll left unread, if anything.
+    async fn gap(&self) -> Option<Gap> {
+        let Ok(Some(StateValue::Str(s))) = self.store.get(SOURCES_NS, &self.gap_key()).await else {
+            return None;
+        };
+        let (from, to) = s.split_once('/')?;
+        Some((from.parse().ok()?, to.parse().ok()?))
+    }
+
+    async fn set_gap(&self, gap: Option<Gap>) {
+        let key = self.gap_key();
+        let saved = match gap {
+            Some((from, to)) => {
+                let v = StateValue::Str(format!("{}/{}", from.to_rfc3339(), to.to_rfc3339()));
+                self.store.set(SOURCES_NS, &key, &v, Some(0)).await
+            }
+            None => self.store.del(SOURCES_NS, &key).await.map(drop),
+        };
+        if let Err(e) = saved {
+            tracing::warn!(source = %self.poller.name, "saving gap: {e}");
+        }
+    }
+}
+
+/// Each application's poller.
 fn pollers(
     name: &Arc<str>,
     cfg: &GoogleWorkspaceConfig,
     store: &Arc<dyn StateStore>,
     router: &Arc<Router>,
-) -> Vec<(String, Poller)> {
+) -> Vec<App> {
     cfg.applications
         .iter()
-        .map(|app| {
-            let poller = Poller::part(
+        .map(|app| App {
+            name: app.clone(),
+            poller: Poller::part(
                 Arc::clone(name),
                 app,
                 Arc::clone(store),
                 Arc::clone(router),
                 lateness(app),
-            );
-            (app.clone(), poller)
+            ),
+            store: Arc::clone(store),
         })
         .collect()
 }
 
 /// Every application once, each from its own cursor less its own
-/// lateness, the cursor then moving on its own: how many new events were
-/// forwarded. An application that fails (a 429 on its pages, say) leaves
-/// its cursor where it was and does not keep the ones after it from being
-/// read; the failures come back together once all were tried.
+/// lateness, the cursor then moving on its own (or, while it has one,
+/// its gap): how many new events were forwarded. An application that
+/// fails (a 429 on its pages, say) leaves its cursor where it was and
+/// does not keep the ones after it from being read; the failures come
+/// back together once all were tried.
 async fn poll_all(
     client: &reqwest::Client,
     access: &str,
     cfg: &GoogleWorkspaceConfig,
-    apps: &[(String, Poller)],
+    apps: &[App],
 ) -> Result<usize> {
     let mut total = 0;
     let mut failed = Vec::new();
-    for (app, poller) in apps {
-        let start = poller.start(&cfg.since).await;
+    for app in apps {
+        let gap = app.gap().await;
         let end = Utc::now();
-        match poll(client, access, app, cfg, poller, start, end).await {
-            Ok((n, newest)) => {
-                poller.finish(newest, Some(end)).await;
-                total += n;
+        let (start, until) = match gap {
+            Some((from, to)) => (from, Some(to)),
+            None => (app.poller.start(&cfg.since).await, None),
+        };
+        match poll(client, access, &app.name, cfg, &app.poller, start, until).await {
+            Ok(read) => {
+                if gap.is_none() {
+                    app.poller.finish(read.newest, Some(end)).await;
+                }
+                if gap.is_some() || read.unread_to.is_some() {
+                    app.set_gap(read.unread_to.map(|to| (start, to))).await;
+                }
+                total += read.sent;
             }
-            Err(e) => failed.push(format!("application {app}: {e:#}")),
+            Err(e) => failed.push(format!("application {}: {e:#}", app.name)),
         }
     }
     if !failed.is_empty() {
@@ -252,8 +310,19 @@ async fn poll_all(
     Ok(total)
 }
 
-/// One application's activity from `start` on: how many new events were
-/// forwarded, and the newest event's time.
+/// What one poll of an application did.
+#[derive(Debug)]
+struct Read {
+    /// New events forwarded.
+    sent: usize,
+    /// The newest new event's time.
+    newest: Option<DateTime<Utc>>,
+    /// When the poll stopped at its cap with pages left: up to when the
+    /// events it asked for were not reached.
+    unread_to: Option<DateTime<Utc>>,
+}
+
+/// One application's activity from `start` on, to `until` if given.
 async fn poll(
     client: &reqwest::Client,
     access: &str,
@@ -261,9 +330,11 @@ async fn poll(
     cfg: &GoogleWorkspaceConfig,
     poller: &Poller,
     start: DateTime<Utc>,
-    end: DateTime<Utc>,
-) -> Result<(usize, Option<DateTime<Utc>>)> {
+    until: Option<DateTime<Utc>>,
+) -> Result<Read> {
+    let now = Utc::now();
     let mut newest: Option<DateTime<Utc>> = None;
+    let mut oldest: Option<DateTime<Utc>> = None;
     let mut out: Vec<(DateTime<Utc>, String, Value)> = Vec::new();
     let mut page_token: Option<String> = None;
     loop {
@@ -280,6 +351,12 @@ async fn poll(
                 ),
                 ("maxResults", "1000".to_string()),
             ]);
+        if let Some(t) = until {
+            req = req.query(&[(
+                "endTime",
+                t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            )]);
+        }
         if let Some(t) = &page_token {
             req = req.query(&[("pageToken", t)]);
         }
@@ -294,7 +371,8 @@ async fn poll(
         }
         let v: Value = resp.json().await.context("activities body")?;
         for item in v["items"].as_array().into_iter().flatten() {
-            let t = parse_time(&item["id"]["time"]).unwrap_or(end);
+            let t = parse_time(&item["id"]["time"]).unwrap_or(now);
+            oldest = Some(oldest.map_or(t, |o| o.min(t)));
             let id = format!(
                 "{}:{}",
                 item["id"]["uniqueQualifier"].as_str().unwrap_or(""),
@@ -311,8 +389,16 @@ async fn poll(
             break;
         }
     }
-    let n = poller.emit(SOURCE, out).await?;
-    Ok((n, newest))
+    let sent = poller.emit(SOURCE, out).await?;
+    // a second past the oldest event read, so that one's neighbours on the
+    // next page (`endTime` is to the second) are not missed; the seen ids
+    // drop the ones read already
+    let unread_to = page_token.and(oldest).map(|o| o + Duration::seconds(1));
+    Ok(Read {
+        sent,
+        newest,
+        unread_to,
+    })
 }
 
 #[cfg(test)]
@@ -337,10 +423,11 @@ mod tests {
     /// Events the API holds: (application, uniqueQualifier, time). A test
     /// adds to them between polls, as Google does when an event shows up
     /// late.
-    type Events = Arc<Mutex<Vec<(&'static str, &'static str, DateTime<Utc>)>>>;
+    type Events = Arc<Mutex<Vec<(&'static str, String, DateTime<Utc>)>>>;
 
     /// A Reports API serving each application's events from the request's
-    /// `startTime` on, newest first, in one page.
+    /// `startTime` on (to its `endTime`, if any), newest first, in pages of
+    /// `maxResults`.
     async fn reports(events: Events) -> String {
         reports_throttling(events, &[]).await
     }
@@ -361,22 +448,32 @@ mod tests {
                         return std::future::ready(resp);
                     }
                     let start: DateTime<Utc> = q["startTime"].parse().unwrap();
+                    let end: Option<DateTime<Utc>> = q.get("endTime").map(|t| t.parse().unwrap());
+                    let max: usize = q["maxResults"].parse().unwrap();
+                    let skip: usize = q.get("pageToken").map_or(0, |t| t.parse().unwrap());
                     let mut items: Vec<_> = events
                         .lock()
                         .unwrap()
                         .iter()
-                        .filter(|(a, _, t)| *a == app && *t >= start)
-                        .map(|&(_, uq, t)| (t, uq))
+                        .filter(|(a, _, t)| *a == app && *t >= start && end.is_none_or(|e| *t <= e))
+                        .map(|(_, uq, t)| (*t, uq.clone()))
                         .collect();
                     items.sort_by_key(|&(t, _)| std::cmp::Reverse(t));
+                    let more = items.len() > skip + max;
                     let items: Vec<Value> = items
                         .into_iter()
+                        .skip(skip)
+                        .take(max)
                         .map(|(t, uq)| {
                             let time = t.to_rfc3339_opts(SecondsFormat::Millis, true);
                             json!({"id": {"time": time, "uniqueQualifier": uq}})
                         })
                         .collect();
-                    std::future::ready(Json(json!({ "items": items })).into_response())
+                    let mut body = json!({ "items": items });
+                    if more {
+                        body["nextPageToken"] = json!((skip + max).to_string());
+                    }
+                    std::future::ready(Json(body).into_response())
                 },
             )
         })
@@ -390,7 +487,7 @@ mod tests {
         api: &str,
         applications: &[&str],
         since: &str,
-    ) -> (GoogleWorkspaceConfig, Vec<(String, Poller)>) {
+    ) -> (GoogleWorkspaceConfig, Vec<App>) {
         let cfg: GoogleWorkspaceConfig = serde_json::from_value(
             json!({"api": api, "applications": applications, "since": since}),
         )
@@ -405,8 +502,8 @@ mod tests {
         let now = Utc::now().trunc_subsecs(0);
         let (login, token) = (now - Duration::minutes(1), now - Duration::minutes(10));
         let events: Events = Arc::new(Mutex::new(vec![
-            ("login", "l1", login),
-            ("token", "t1", token),
+            ("login", "l1".into(), login),
+            ("token", "t1".into(), token),
         ]));
         let api = reports(Arc::clone(&events)).await;
         let keeper = Keeper::new("google_workspace");
@@ -415,14 +512,14 @@ mod tests {
         let poll_both = || poll_all(&client, "t", &cfg, &apps);
 
         assert_eq!(poll_both().await.unwrap(), 2);
-        assert_eq!(apps[0].1.cursor().await, Some(login));
-        assert_eq!(apps[1].1.cursor().await, Some(token), "not login's");
+        assert_eq!(apps[0].poller.cursor().await, Some(login));
+        assert_eq!(apps[1].poller.cursor().await, Some(token), "not login's");
 
         // only login has something new: only its cursor moves
-        events.lock().unwrap().push(("login", "l2", now));
+        events.lock().unwrap().push(("login", "l2".into(), now));
         assert_eq!(poll_both().await.unwrap(), 1);
-        assert_eq!(apps[0].1.cursor().await, Some(now));
-        assert_eq!(apps[1].1.cursor().await, Some(token));
+        assert_eq!(apps[0].poller.cursor().await, Some(now));
+        assert_eq!(apps[1].poller.cursor().await, Some(token));
 
         let (store, _) = keeper.parts();
         let t1 = format!(
@@ -441,9 +538,9 @@ mod tests {
         let now = Utc::now().trunc_subsecs(0);
         let drive = now - Duration::minutes(3);
         let events: Events = Arc::new(Mutex::new(vec![
-            ("login", "l1", now - Duration::minutes(1)),
-            ("token", "t1", now - Duration::minutes(2)),
-            ("drive", "d1", drive),
+            ("login", "l1".into(), now - Duration::minutes(1)),
+            ("token", "t1".into(), now - Duration::minutes(2)),
+            ("drive", "d1".into(), drive),
         ]));
         // token answers 429, as when its pages run into the quota
         let api = reports_throttling(events, &["token"]).await;
@@ -453,8 +550,8 @@ mod tests {
 
         let err = poll_all(&client, "t", &cfg, &apps).await.unwrap_err();
         assert!(format!("{err:#}").contains("application token"), "{err:#}");
-        assert_eq!(apps[1].1.cursor().await, None, "token's stays");
-        assert_eq!(apps[2].1.cursor().await, Some(drive), "drive was read");
+        assert_eq!(apps[1].poller.cursor().await, None, "token's stays");
+        assert_eq!(apps[2].poller.cursor().await, Some(drive), "drive was read");
         drop(apps);
         assert_eq!(keeper.sent("/id/uniqueQualifier").await, ["l1", "d1"]);
     }
@@ -464,7 +561,7 @@ mod tests {
         let now = Utc::now().trunc_subsecs(0);
         let events: Events = Arc::new(Mutex::new(vec![(
             "token",
-            "on-time",
+            "on-time".into(),
             now - Duration::minutes(1),
         )]));
         let api = reports(Arc::clone(&events)).await;
@@ -479,7 +576,7 @@ mod tests {
         events
             .lock()
             .unwrap()
-            .push(("token", "late", now - Duration::hours(2)));
+            .push(("token", "late".into(), now - Duration::hours(2)));
         assert_eq!(poll_token().await.unwrap(), 1, "inside token's lookback");
         assert_eq!(poll_token().await.unwrap(), 0, "and sent once");
         drop(apps);
@@ -494,7 +591,7 @@ mod tests {
         // three hours ago: past an hour, inside token's lookback, so every
         // poll reads it again
         let then = Utc::now().trunc_subsecs(0) - Duration::hours(3);
-        let events: Events = Arc::new(Mutex::new(vec![("token", "t1", then)]));
+        let events: Events = Arc::new(Mutex::new(vec![("token", "t1".into(), then)]));
         let api = reports(events).await;
         let keeper = Keeper::new("google_workspace");
         let (cfg, apps) = workspace(&keeper, &api, &["token"], "6h");
@@ -502,11 +599,41 @@ mod tests {
 
         assert_eq!(poll_all(&client, "t", &cfg, &apps).await.unwrap(), 1);
         for _ in 0..2 {
-            assert!(apps[0].1.start(&cfg.since).await <= then, "read again");
+            assert!(apps[0].poller.start(&cfg.since).await <= then, "read again");
             assert_eq!(poll_all(&client, "t", &cfg, &apps).await.unwrap(), 0);
         }
         drop(apps);
         assert_eq!(keeper.sent("/id/uniqueQualifier").await, ["t1"]);
+    }
+
+    #[tokio::test]
+    async fn a_poll_that_stops_at_its_cap_leaves_the_older_events_to_the_next() {
+        // more new drive events than a poll's cap, as after two days
+        // stopped; the API serves them newest first
+        let t0 = Utc::now().trunc_subsecs(0) - Duration::days(2);
+        let ids: Vec<String> = (0..10_500).map(|i| format!("e{i:05}")).collect();
+        let events: Events = Arc::new(Mutex::new(
+            (0..10_500)
+                .map(|i| ("drive", ids[i].clone(), t0 + Duration::seconds(i as i64)))
+                .collect(),
+        ));
+        let api = reports(events).await;
+        let keeper = Keeper::new("google_workspace");
+        let (cfg, apps) = workspace(&keeper, &api, &["drive"], "7d");
+        let client = reqwest::Client::new();
+        let poll_drive = || poll_all(&client, "t", &cfg, &apps);
+
+        assert_eq!(poll_drive().await.unwrap(), 10_000, "the newest");
+        let (store, _) = keeper.parts();
+        let gap = store.get(SOURCES_NS, "google_workspace:drive:gap").await;
+        assert!(matches!(gap, Ok(Some(_))), "{gap:?}");
+        assert_eq!(poll_drive().await.unwrap(), 500, "the rest, next");
+        assert_eq!(apps[0].gap().await, None, "the gap is read");
+        assert_eq!(poll_drive().await.unwrap(), 0, "and none again");
+        drop((apps, store));
+        let mut sent = keeper.sent("/id/uniqueQualifier").await;
+        sent.sort();
+        assert_eq!(sent, ids, "each once");
     }
 
     #[tokio::test]
@@ -536,14 +663,14 @@ mod tests {
         let cfg: GoogleWorkspaceConfig = serde_json::from_value(json!({"api": base})).unwrap();
         let client = reqwest::Client::new();
         let keeper = Keeper::new("google_workspace");
-        let (start, end) = (Utc::now() - Duration::hours(1), Utc::now());
-        let poll_login = || poll(&client, "t", "login", &cfg, &keeper.poller, start, end);
+        let start = Utc::now() - Duration::hours(1);
+        let poll_login = || poll(&client, "t", "login", &cfg, &keeper.poller, start, None);
         let err = poll_login().await.unwrap_err();
         assert!(err.to_string().contains("429"), "{err:#}");
-        let (n, _) = poll_login().await.unwrap();
-        assert_eq!(n, 2, "page one, on the next poll");
-        let (n, _) = poll_login().await.unwrap();
-        assert_eq!(n, 0, "and only once");
+        let read = poll_login().await.unwrap();
+        assert_eq!(read.sent, 2, "page one, on the next poll");
+        let read = poll_login().await.unwrap();
+        assert_eq!(read.sent, 0, "and only once");
         assert_eq!(keeper.sent("/id/uniqueQualifier").await, ["a", "b"]);
     }
 }
