@@ -2,10 +2,10 @@
 # baseline_builder knew of the actor before them, and writes a verdict per
 # new one; a person reads the ones it flagged. Include it in your config with
 # the packs', and route each pack's plugin to baseline_builder and
-# baseline_renderer. It brings enrich and behavior-baseline: a config that
+# baseline_renderer. It brings enrich-ip and behavior-baseline: a config that
 # includes them too gets the same files, read once.
 include:
-  - ../enrich/ingest.yaml
+  - ../enrich-ip/ingest.yaml
   - ../behavior-baseline/ingest.yaml
 
 plugins:
@@ -61,7 +61,7 @@ inference:
       # goes without principal groups: a plugin of your own wants a row for
       # each of its sources in your config.
       sources:
-        cloudtrail:                # aws
+        cloudtrail:                # cloudtrail
           principal: [_norm.actor, userIdentity.arn]
           time: [eventTime, ts]
           keep: [eventName, requestParameters, responseElements, errorCode, errorMessage, userIdentity.mfaAuthenticated, additionalEventData.MFAUsed, _facts.root, _facts.world_open]

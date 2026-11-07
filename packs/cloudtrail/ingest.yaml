@@ -1,10 +1,10 @@
-# aws: CloudTrail into finished records, by one plugin, `aws`: normalized,
-# trimmed, its address enriched, the profile's facts added. Include it in
-# your config with packs/enrich/ingest.yaml, route a `cloudtrail` source to
-# plugin aws, and plugin aws to where its records go, and give the config a
-# `profile` table; README.md has the lines.
+# cloudtrail: CloudTrail into finished records, by one plugin, `cloudtrail`:
+# normalized, trimmed, its address enriched, the profile's facts added.
+# Include it in your config with packs/enrich-ip/ingest.yaml, route a
+# `cloudtrail` source to plugin cloudtrail, and plugin cloudtrail to where its
+# records go, and give the config a `profile` table; README.md has the lines.
 plugins:
-  aws:
+  cloudtrail:
     module_type: rust
     path: .
     prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)

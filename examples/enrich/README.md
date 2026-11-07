@@ -24,8 +24,9 @@ exit", "one of ours" instead of a bare number.
 `./setup.sh` puts the files under `data/`, which `tangent.yaml` hands to the
 plugin read-only as `/data` (`plugins.enrich.data`). `./setup.sh data` refreshes
 them; MaxMind publishes on Tuesdays and Fridays. The packs read the same
-files from here: [enrich's ingest.yaml](/packs/enrich/ingest.yaml) names them as
-its enrichment tables, so run `./setup.sh data` once before a pack's pipeline.
+files from here: [enrich-ip's ingest.yaml](/packs/enrich-ip/ingest.yaml) names
+them as its enrichment tables, so run `./setup.sh data` once before a pack's
+pipeline.
 
 | file | source | terms |
 |---|---|---|

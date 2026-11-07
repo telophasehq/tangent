@@ -1,13 +1,13 @@
-# aws
+# cloudtrail
 
-CloudTrail into finished records, by one plugin, `aws`. It takes the records
-whose `source` is `cloudtrail`: what tangent's `cloudtrail` source reads from
-a trail's files (every event, data events included, every account and region
-of an organization trail), or the same records sent as NDJSON.
+CloudTrail into finished records, by one plugin, `cloudtrail`. It takes the
+records whose `source` is `cloudtrail`: what tangent's `cloudtrail` source
+reads from a trail's files (every event, data events included, every account
+and region of an organization trail), or the same records sent as NDJSON.
 
 ## What it writes
 
-`_norm` ([enrich](../enrich#the-record) has the contract):
+`_norm` ([the record](../README.md#the-record) has the contract):
 
 | field | from |
 |---|---|
@@ -65,15 +65,15 @@ Tor and VPN, and whether it is one of yours (`_facts.ip`). Next, through
 
 ## Use it
 
-In your config, beside [judge](../judge), which brings enrich and
+In your config, beside [judge](../judge), which brings enrich-ip and
 behavior-baseline:
 
 ```yaml
 include:
   - ../tangent/packs/judge/ingest.yaml
-  - ../tangent/packs/aws/ingest.yaml
+  - ../tangent/packs/cloudtrail/ingest.yaml
 
-enrichment_tables:                  # your company: packs/enrich/README.md#the-profile
+enrichment_tables:                  # your company: packs/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
 
 sinks:
@@ -92,7 +92,7 @@ sinks:
         _norm: { org: string, actor: string, kind: string, ip: string }
 
 sources:
-  cloudtrail:
+  aws_audit:
     type: cloudtrail
     region: ${AWS_REGION}                   # the queue's; the SDK's default chain when unset
     profile: ${AWS_PROFILE}
@@ -100,9 +100,9 @@ sources:
     bucket_role: ${CLOUDTRAIL_BUCKET_ROLE}  # an organization trail's log archive role; unset otherwise
 
 dag:
-  - from: cloudtrail
-    to: [aws]
-  - from: aws   # kept, learned, judged
+  - from: aws_audit
+    to: [cloudtrail]
+  - from: cloudtrail   # kept, learned, judged
     to: [lake, baseline_builder, baseline_renderer]
 ```
 
@@ -167,8 +167,8 @@ the company; [addresses.yaml](tests/addresses.yaml), GeoLite2's answers for
 their addresses; [networks.csv](tests/networks.csv), those addresses' labels.
 
 ```bash
-make -C packs test-aws          # compile, then the fixtures
-make -C packs fixtures-aws      # expected.json again, after a change; read the diff
+make -C packs test-cloudtrail       # compile, then the fixtures
+make -C packs fixtures-cloudtrail   # expected.json again, after a change; read the diff
 ```
 
 Cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) with CloudTrail

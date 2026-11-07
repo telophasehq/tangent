@@ -5,13 +5,13 @@ of its actor's recent records; a person reads what it flags. Install, point your
 logs at it, fill in one file about your company, run.
 
 It is built only from [packs](/packs): `tangent.yaml` includes
-[judge](/packs/judge), which brings [enrich](/packs/enrich) and
+[judge](/packs/judge), which brings [enrich-ip](/packs/enrich-ip) and
 [behavior-baseline](/packs/behavior-baseline), and four packs, and adds the
 sources, the lake, their edges, each pack's edges to the lake, the baseline
 and the judge, and the profile. One config, one process.
 
 ```
-CloudTrail ──▶ aws ────────────────────┐
+CloudTrail ──▶ cloudtrail ─────────────┐
 GitHub audit log ──▶ github ───────────┤
 Okta ──▶ okta ─────────────────────────┼──▶ lake/, every record as Parquet
 Google Workspace ──▶ google_workspace ─┤
@@ -25,10 +25,10 @@ NDJSON on :9400 ──▶ each pack ─────────┼──▶ base
                                                                  └──▶ verdicts.ndjson
 ```
 
-- **The packs** ([aws](/packs/aws), [github](/packs/github), [okta](/packs/okta),
-  [google_workspace](/packs/google_workspace)) each turn their provider's
-  records into finished ones with one plugin: every source's shape into one,
-  `_norm.{actor, person, org, kind, ip, country, dest, target}`;
+- **The packs** ([cloudtrail](/packs/cloudtrail), [github](/packs/github),
+  [okta](/packs/okta), [google_workspace](/packs/google_workspace)) each turn
+  their provider's records into finished ones with one plugin: every source's
+  shape into one, `_norm.{actor, person, org, kind, ip, country, dest, target}`;
   the record trimmed to what it means (ids, hashes, protocol details and bulk
   go); the address described from the runtime's tables (country, network and
   owner, cloud or datacenter, Tor exit, VPN, one of yours), all loaded once for
@@ -80,11 +80,12 @@ kept, that this repository's release workflow built it from that tag
 login.
 
 Until the release after 0.1.9 there are none to fetch (`make test` stops at
-"v0.1.9 has no aws.component.wasm"), and the packs need a tangent built from
-the checkout anyway ([Using packs](/README.md#using-packs)). Build the plugins
-here instead, as for a pack you are changing: `make test PLUGINS=compile`, then
-`make run PLUGINS=compile`, or `export PLUGINS=compile` once. It installs the
-Rust WASM toolchain first (`./setup.sh toolchain`).
+"v0.1.9 has no baseline_builder.component.wasm"), and the packs need a tangent
+built from the checkout anyway ([Using packs](/README.md#using-packs)). Build
+the plugins here instead, as for a pack you are changing:
+`make test PLUGINS=compile`, then `make run PLUGINS=compile`, or
+`export PLUGINS=compile` once. It installs the Rust WASM toolchain first
+(`./setup.sh toolchain`).
 
 The judge defaults to a local model on `:8080`
 ([packs/judge](/packs/judge#the-model) says how to serve it). For a hosted one:
@@ -126,7 +127,7 @@ credential needs.
 
 | source | pack | what it reads |
 |---|---|---|
-| `cloudtrail` | [aws](/packs/aws#credentials) | a trail's files: every event, data events included, every account and region of an organization trail, a few minutes behind |
+| `aws_audit` | [cloudtrail](/packs/cloudtrail#credentials) | a trail's files: every event, data events included, every account and region of an organization trail, a few minutes behind |
 | `github_audit` | [github](/packs/github#use-it) | the organization's audit log, web and git events |
 | `okta_audit` | [okta](/packs/okta#use-it) | the System Log |
 | `workspace_audit` | [google_workspace](/packs/google_workspace#use-it) | login, token, drive and admin activity |
@@ -142,7 +143,7 @@ with a warning.
 
 [profile/profile.yaml](profile/profile.yaml) is every fact about your company
 that no log carries, the `profile` table `tangent.yaml` names; the model reads
-it as `_facts`. [packs/enrich](/packs/enrich#the-profile) lists the keys. It ships
+it as `_facts`. [packs](/packs/README.md#the-profile) lists the keys. It ships
 filled in for the fictional company the cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases)
 describe.
 

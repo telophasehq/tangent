@@ -30,7 +30,7 @@ github-attestations = true
 # beside the binaries (packs/dist.sh builds them; its list and this one agree)
 [[dist.extra-artifacts]]
 artifacts = [
-  "target/packs/aws.component.wasm",
+  "target/packs/cloudtrail.component.wasm",
   "target/packs/github.component.wasm",
   "target/packs/okta.component.wasm",
   "target/packs/google_workspace.component.wasm",

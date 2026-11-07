@@ -2,7 +2,7 @@
 //! about its address, and the record written out with `_norm` and `_facts`.
 //!
 //! The profile is the runtime's `profile` enrichment table, a document; its
-//! keys are listed in packs/enrich/README.md. The addresses come from
+//! keys are listed in packs/README.md#the-profile. The addresses come from
 //! [`enrichkit`]. Every pack's plugin ends in [`Kit::write`].
 
 use std::collections::{BTreeMap, BTreeSet};
