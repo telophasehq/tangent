@@ -15,7 +15,6 @@ says about it in `_facts`. How to use them is in the main
 | [github](github) | `github_audit`, `gha_ci`, `runner_egress` |
 | [okta](okta) | `okta` |
 | [google_workspace](google_workspace) | `google_workspace` |
-| [app](app) | your product's NDJSON: `app`, `agent`, and names you list |
 | [macos](macos) | planned, not built |
 | [shared](shared) | not a pack: `normkit`, `enrichkit`, `identitykit` and `factskit`, the Rust libraries every pack's plugin links |
 
