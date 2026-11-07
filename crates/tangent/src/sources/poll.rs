@@ -11,6 +11,10 @@
 //! the newest event when the poll stopped at its page cap). An id is
 //! remembered for a few times the lateness, which is as long as a poll can
 //! find it again.
+//!
+//! A source whose API hands it a link to resume from (Okta's `next`) saves
+//! that link instead (`save_link`) and sends with `forward`: no lateness and
+//! no seen ids.
 
 use std::sync::Arc;
 
@@ -148,6 +152,63 @@ impl Poller {
                 .await;
         }
         Ok(n)
+    }
+
+    /// Stamp each record (time, record) with `source` and `ts` and forward
+    /// it, in time order, as `emit` does, remembering no ids: for a source
+    /// that resumes from a link its API gave it (`save_link`), which never
+    /// reads an event twice.
+    pub async fn forward(
+        &self,
+        source: &str,
+        mut records: Vec<(DateTime<Utc>, Value)>,
+    ) -> Result<usize> {
+        if records.is_empty() {
+            return Ok(0);
+        }
+        records.sort_by_key(|(t, _)| *t);
+        let frames = records
+            .into_iter()
+            .map(|(t, mut v)| {
+                stamp(source, t, &mut v);
+                frame(&v)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let n = frames.len();
+        self.router.forward(&self.from, frames, Vec::new()).await?;
+        Ok(n)
+    }
+
+    /// The link the last poll saved to resume from (Okta's `next`), and the
+    /// base URL the source read from when it saved it, if any.
+    pub async fn saved_link(&self) -> Result<Option<(String, String)>> {
+        Ok(match self.store.get(SOURCES_NS, &self.link_key()).await? {
+            Some(StateValue::Json(v)) => match (v["base"].as_str(), v["link"].as_str()) {
+                (Some(base), Some(link)) => Some((base.to_string(), link.to_string())),
+                _ => None,
+            },
+            _ => None,
+        })
+    }
+
+    /// The next poll, and a restart, start from `link`, an API's own cursor
+    /// used as it is, saved with the `base` URL the source reads from: the
+    /// link's own host may be another (a custom domain's), so `base` is
+    /// what tells whether the link is still this source's. It never expires.
+    pub async fn save_link(&self, base: &str, link: &str) -> Result<()> {
+        let saved = serde_json::json!({ "base": base, "link": link });
+        self.store
+            .set(
+                SOURCES_NS,
+                &self.link_key(),
+                &StateValue::Json(saved),
+                Some(0),
+            )
+            .await
+    }
+
+    fn link_key(&self) -> String {
+        format!("{}:next", self.name)
     }
 }
 
@@ -377,6 +438,21 @@ pub(crate) mod testing {
                         .to_string()
                 })
                 .collect()
+        }
+
+        /// The source after a restart: a new poller on the same state store,
+        /// sending to a sink of its own.
+        pub fn restarted(&self) -> Self {
+            let mut keeper = Self::new(&self.poller.name);
+            keeper.poller.store = Arc::clone(&self.poller.store);
+            keeper
+        }
+
+        /// The keys the poller keeps in the state store.
+        pub async fn keys(&self) -> Vec<String> {
+            let prefix = format!("{}:", self.poller.name);
+            let entries = self.poller.store.scan(Some(SOURCES_NS), &prefix, 100);
+            entries.await.unwrap().into_iter().map(|e| e.key).collect()
         }
     }
 

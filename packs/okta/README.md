@@ -95,9 +95,12 @@ dag:
 and `okta` in your profile's `own_sources`, so its records are your org's.
 
 `OKTA_API_TOKEN` comes from Security → API → Tokens, made by a read-only
-administrator. The source keeps its place in the runtime's state store, so a
-restart resumes where it stopped; on first start it reads the last hour
-(`since`). Left without a token, it says so once and stays idle.
+administrator. The source keeps its place, the last `next` link Okta gave it,
+in the runtime's state store, so each poll and a restart go on from there and
+read nothing twice (only a crash between sending a page and saving the link
+after it sends that page again); on first start it reads the last hour
+(`since`), and so it does, with a warning, if Okta ever turns that link
+down. Left without a token, it says so once and stays idle.
 
 Kinds worth the profile's `watch`: `user.mfa.factor.deactivate`,
 `system.api_token.create`.
