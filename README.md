@@ -53,7 +53,7 @@ runtime:
     backend: sqlite        # or lru (in-process, bounded); distributed backends slot in here
     path: state.sqlite
     default_ttl_ms: 600000 # 0 = never expire
-    max_ttl_ms: 3600000    # cap on any TTL; 0 = no cap
+    max_ttl_ms: 3600000    # cap on a plugin's TTL; 0 = no cap
     max_entries: 100000    # lru only: evict the least recently used past this
 ```
 

@@ -46,6 +46,9 @@ pub struct HostEngine {
     /// Namespace of this plugin's state: the one every plugin shares, unless
     /// the plugin was given a `state_namespace` of its own.
     ns: Arc<str>,
+    /// `runtime.state.max_ttl_ms`: the longest TTL this plugin's writes get
+    /// (0: no cap).
+    max_ttl_ms: u64,
     /// The transaction the guest began and has not ended.
     txn: Option<Box<dyn Txn>>,
     plugin_cfg: Arc<HashMap<String, JSONValue>>,
@@ -60,6 +63,7 @@ impl HostEngine {
         ctx: WasiCtx,
         state: Arc<dyn StateStore>,
         ns: Arc<str>,
+        max_ttl_ms: u64,
         config: Arc<HashMap<String, JSONValue>>,
         tables: Arc<Tables>,
         disable_remote_calls: bool,
@@ -70,6 +74,7 @@ impl HostEngine {
             http_client: Client::new(),
             state,
             ns,
+            max_ttl_ms,
             txn: None,
             plugin_cfg: config,
             tables,
@@ -82,6 +87,15 @@ impl HostEngine {
     /// then no other state call runs, so the worker ends every call.
     pub fn end_call(&mut self) -> bool {
         self.txn.take().is_some()
+    }
+
+    /// A TTL the guest asked for, cut to `max_ttl_ms`. None (the default,
+    /// which the store refuses to open above the cap) and 0 (never) stand.
+    fn capped(&self, ttl_ms: Option<u64>) -> Option<u64> {
+        match ttl_ms {
+            Some(t) if self.max_ttl_ms > 0 && t > self.max_ttl_ms => Some(self.max_ttl_ms),
+            t => t,
+        }
     }
 
     async fn execute_single(client: Client, r: remote::Request) -> remote::Response {
@@ -245,7 +259,8 @@ impl tangent::logs::enrichment::Host for HostEngine {
 /// The guest's state: the plugins' namespace of the state store, shared by
 /// every record (a plugin keys per tenant itself). Each call stands alone,
 /// unless the guest began a transaction: then they go through it until it
-/// commits or rolls back.
+/// commits or rolls back. A write's TTL is held to `max_ttl_ms` here, where
+/// plugin writes enter, so the runtime's own writes keep theirs.
 impl tangent::logs::state::Host for HostEngine {
     async fn get(&mut self, key: String) -> Result<Option<Scalar>, String> {
         let got = match self.txn.as_mut() {
@@ -257,6 +272,7 @@ impl tangent::logs::state::Host for HostEngine {
 
     async fn set(&mut self, key: String, value: Scalar, ttl_ms: Option<u64>) -> Result<(), String> {
         let value = value.into();
+        let ttl_ms = self.capped(ttl_ms);
         match self.txn.as_mut() {
             Some(t) => t.set(&self.ns, &key, &value, ttl_ms).await,
             None => self.state.set(&self.ns, &key, &value, ttl_ms).await,
@@ -273,6 +289,7 @@ impl tangent::logs::state::Host for HostEngine {
     }
 
     async fn incr(&mut self, key: String, by: i64, ttl_ms: Option<u64>) -> Result<i64, String> {
+        let ttl_ms = self.capped(ttl_ms);
         match self.txn.as_mut() {
             Some(t) => t.incr(&self.ns, &key, by, ttl_ms).await,
             None => self.state.incr(&self.ns, &key, by, ttl_ms).await,
@@ -502,6 +519,7 @@ mod tests {
             wasmtime_wasi::WasiCtxBuilder::new().build(),
             Arc::clone(store),
             Arc::from("baseline"),
+            tangent_shared::runtime::StateConfig::default().max_ttl_ms,
             Arc::new(HashMap::default()),
             Arc::new(Tables::default()),
             true,
@@ -593,6 +611,48 @@ mod tests {
         assert!(g.end_call(), "left open");
         assert!(free(&store).await);
         assert_eq!(store.get("baseline", "b").await.unwrap(), None);
+    }
+
+    /// `max_ttl_ms` (an hour by default) caps a plugin's TTL, not the
+    /// runtime's: google_workspace's poller remembers each event it sent for
+    /// three times its hour of lateness, as long as its polls read it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn max_ttl_ms_caps_a_plugins_ttl_and_not_a_pollers() {
+        const HOUR: u64 = 3_600_000;
+        let dir = tempfile::tempdir().unwrap();
+        let store = sqlite(dir.path());
+        let at = crate::state::now_ms();
+        store
+            .set(
+                crate::sources::poll::SOURCES_NS,
+                "google_workspace:seen:a",
+                &StateValue::Bool(true),
+                Some(3 * HOUR),
+            )
+            .await
+            .unwrap();
+        guest(&store)
+            .set("a".into(), Scalar::Boolean(true), Some(3 * HOUR))
+            .await
+            .unwrap();
+        // Each write's TTL, give or take the milliseconds since `at`.
+        let ttl = |ns: &'static str| {
+            let store = Arc::clone(&store);
+            async move {
+                let rows = store.scan(Some(ns), "", 1).await.unwrap();
+                rows[0].expires_at_ms.unwrap() - at
+            }
+        };
+        let poller = ttl(crate::sources::poll::SOURCES_NS).await;
+        assert!(
+            (3 * HOUR..3 * HOUR + 60_000).contains(&poller),
+            "the poller's: {poller} ms"
+        );
+        let plugin = ttl("baseline").await;
+        assert!(
+            (HOUR..HOUR + 60_000).contains(&plugin),
+            "the plugin's: {plugin} ms"
+        );
     }
 
     /// Inside a transaction a second `begin` and a remote call fail, and a
