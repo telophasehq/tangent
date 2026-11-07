@@ -25,13 +25,13 @@ explains itself.
   sources keep their place and baseline its keys, which never expire.
 
 The judge includes this file. Without the model, include it and
-[enrich](../enrich)'s beside the packs, and send the renderer's records to a
-sink of yours. enrich's tables give each address its ASN and country; without
-them the builder learns neither ([below](#what-it-learns)).
+[enrich-ip](../enrich-ip)'s beside the packs, and send the renderer's records
+to a sink of yours. enrich-ip's tables give each address its ASN and country;
+without them the builder learns neither ([below](#what-it-learns)).
 
 ```yaml
 include:
-  - ../tangent/packs/enrich/ingest.yaml
+  - ../tangent/packs/enrich-ip/ingest.yaml
   - ../tangent/packs/behavior-baseline/ingest.yaml
   - ../tangent/packs/okta/ingest.yaml
 enrichment_tables:
@@ -96,7 +96,7 @@ records share; JSON lines repeat it on every record
 ([the cost](../judge#the-model)).
 
 - **People**: `people` in the profile
-  ([enrich](../enrich#the-profile)) says which names are one person, as an
+  ([packs](../README.md#the-profile)) says which names are one person, as an
   IAM user `dave` is `dave@example.com`; a name not there is its own person,
   and one other name may be written bare (`dave@example.com: dave`). Who is
   who is resolved once, in ingest: a pack's plugin writes the actor's person

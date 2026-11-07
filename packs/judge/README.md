@@ -3,7 +3,7 @@
 Not a provider: a model reads each actor's records a group at a time, with
 what [behavior-baseline](../behavior-baseline) knew of the actor before them,
 and writes a verdict per record; a person reads the ones it flagged.
-[ingest.yaml](ingest.yaml) includes [enrich](../enrich) and
+[ingest.yaml](ingest.yaml) includes [enrich-ip](../enrich-ip) and
 behavior-baseline, so a config that includes it has the tables and the
 baseline too, and names nothing more than its packs.
 
@@ -13,7 +13,7 @@ your sources ──▶ a pack's plugin ──┬──▶ a sink of yours: lake/
                    tables geo,     │                              │
                    asn, networks   └──▶ baseline_renderer ◀───────┘
                    and profile          an actor's records, a group at a time               (judge)
-                   (enrich)                  │
+                   (enrich-ip)               │
                                              ▼
                                            judge ──▶ fresh ──┬──▶ flagged ──▶ alerts.ndjson
                                                              └──▶ verdicts.ndjson

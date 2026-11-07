@@ -1,7 +1,7 @@
 TANGENT ?= tangent
 export TANGENT
 
-# Every pack: a directory with an ingest.yaml and a plugin (enrich,
+# Every pack: a directory with an ingest.yaml and a plugin (enrich-ip,
 # behavior-baseline, judge and macos have none).
 PACKS := $(sort $(patsubst %/Cargo.toml,%,$(wildcard */Cargo.toml)))
 PACKS := $(filter $(PACKS),$(patsubst %/ingest.yaml,%,$(wildcard */ingest.yaml)))

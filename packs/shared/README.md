@@ -12,5 +12,5 @@ file.
 | [identitykit](identitykit) | `People`, the profile's `people`: which names are one person |
 | [factskit](factskit) | the profile's facts (principal, usual country, cloud, destination and target, keys, watch, notes), the own-org fold, the actor's person, and the record written out with `_norm` and `_facts` |
 
-[packs/enrich](../enrich#writing-a-packs-plugin) has the contract a plugin keeps
+[packs](../README.md#writing-a-packs-plugin) has the contract a plugin keeps
 with them. Each has its own tests: `make -C packs test-shared`.

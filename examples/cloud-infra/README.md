@@ -5,7 +5,7 @@ of its actor's recent records; a person reads what it flags. Install, point your
 logs at it, fill in one file about your company, run.
 
 It is built only from [packs](/packs): `tangent.yaml` includes
-[judge](/packs/judge), which brings [enrich](/packs/enrich) and
+[judge](/packs/judge), which brings [enrich-ip](/packs/enrich-ip) and
 [behavior-baseline](/packs/behavior-baseline), and four packs, and adds the
 sources, the lake, their edges, each pack's edges to the lake, the baseline
 and the judge, and the profile. One config, one process.
@@ -142,7 +142,7 @@ with a warning.
 
 [profile/profile.yaml](profile/profile.yaml) is every fact about your company
 that no log carries, the `profile` table `tangent.yaml` names; the model reads
-it as `_facts`. [packs/enrich](/packs/enrich#the-profile) lists the keys. It ships
+it as `_facts`. [packs](/packs/README.md#the-profile) lists the keys. It ships
 filled in for the fictional company the cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases)
 describe.
 
