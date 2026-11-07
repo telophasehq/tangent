@@ -90,6 +90,26 @@ enum Commands {
         config: PathBuf,
     },
 
+    /// Read a past range of the config's sources through it, as fast as it
+    /// is read, then close every group and wait for the judge. Each source
+    /// whose past tangent can read is read (a cloudtrail source's, from its
+    /// account's Event history), and the rest are left out, as are Slack, S3
+    /// and rolling_file sinks. The history it builds starts empty and is gone
+    /// after; a live pipeline's state and lake are left as they are
+    Replay {
+        /// Path to YAML config
+        #[arg(long, value_name = "FILE")]
+        config: PathBuf,
+        /// Start of the range: a date (2026-10-01, midnight UTC), an RFC 3339
+        /// time, or a span before now (1d, 12h)
+        #[arg(long, value_name = "WHEN")]
+        from: String,
+        /// End of the range, as --from; five minutes ago when left out, since
+        /// CloudTrail typically has an event within five minutes of its call
+        #[arg(long, value_name = "WHEN")]
+        to: Option<String>,
+    },
+
     /// Inspect a pipeline's state store (read-only, works while it runs)
     State {
         /// Path to YAML config; the store is found from `runtime.state`
@@ -207,6 +227,19 @@ async fn main() -> Result<()> {
         }
 
         Commands::Config { config } => print!("{}", show_config(&config)?),
+
+        Commands::Replay { config, from, to } => {
+            let config = config.canonicalize().unwrap_or(config);
+            fetch::missing(&config).await?;
+            let state = tempfile::tempdir()?;
+            tangent_runtime::replay::replay(tangent_runtime::replay::ReplayOptions {
+                config,
+                from,
+                to,
+                state_dir: state.path().to_path_buf(),
+            })
+            .await?;
+        }
 
         Commands::State { config, command } => {
             let cfg = config.canonicalize().unwrap_or(config);

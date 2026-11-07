@@ -20,7 +20,7 @@ use crate::sources::poll::{frame, idle, opt, parse_time, stamp};
 use crate::sources::sqs::SqsAck;
 use crate::worker::Ack;
 
-const SOURCE: &str = "cloudtrail";
+pub(crate) const SOURCE: &str = "cloudtrail";
 
 pub async fn run_consumer(
     name: Arc<str>,
@@ -34,14 +34,7 @@ pub async fn run_consumer(
         shutdown.cancelled().await;
         return Ok(());
     };
-    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
-    if let Some(region) = opt(&cfg.region) {
-        loader = loader.region(aws_config::Region::new(region.to_string()));
-    }
-    if let Some(profile) = opt(&cfg.profile) {
-        loader = loader.profile_name(profile);
-    }
-    let aws = loader.load().await;
+    let aws = aws(&cfg).await;
     let sqs = SQSClient::new(&aws);
     let mut s3conf = aws_sdk_s3::config::Builder::from(&aws);
     if let Some(role) = opt(&cfg.bucket_role) {
@@ -119,6 +112,17 @@ pub async fn run_consumer(
         }
     }
     Ok(())
+}
+
+pub(crate) async fn aws(cfg: &CloudtrailConfig) -> aws_config::SdkConfig {
+    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+    if let Some(region) = opt(&cfg.region) {
+        loader = loader.region(aws_config::Region::new(region.to_string()));
+    }
+    if let Some(profile) = opt(&cfg.profile) {
+        loader = loader.profile_name(profile);
+    }
+    loader.load().await
 }
 
 async fn read_files(s3: &mut S3Client, files: &[(String, String)]) -> Result<BytesMut> {

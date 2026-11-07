@@ -18,6 +18,7 @@ pub mod enrichment;
 pub mod group;
 pub mod inference;
 pub mod record;
+pub mod replay;
 pub mod router;
 pub mod sinks;
 pub mod sources;

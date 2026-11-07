@@ -42,10 +42,31 @@ pub struct DagRuntime {
 }
 
 impl DagRuntime {
+    /// The DAG, and a consumer reading each source until `shutdown`.
     pub async fn build(
         cfg: Config,
         cfg_path: &Path,
         shutdown: CancellationToken,
+        stop_models: CancellationToken,
+    ) -> anyhow::Result<Self> {
+        Self::assemble(cfg, cfg_path, Some(shutdown), stop_models).await
+    }
+
+    /// The DAG with nothing reading its sources: the caller hands each
+    /// source's records to `router` as the source would, and the source's
+    /// edges take them on. `tangent replay` feeds it the sources' past.
+    pub async fn fed(
+        cfg: Config,
+        cfg_path: &Path,
+        stop_models: CancellationToken,
+    ) -> anyhow::Result<Self> {
+        Self::assemble(cfg, cfg_path, None, stop_models).await
+    }
+
+    async fn assemble(
+        cfg: Config,
+        cfg_path: &Path,
+        consumers: Option<CancellationToken>,
         stop_models: CancellationToken,
     ) -> anyhow::Result<Self> {
         let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
@@ -163,13 +184,16 @@ impl DagRuntime {
         }
         router.set_groupers(groupers);
 
-        let consumer_handles = spawn_consumers(
-            cfg.sources,
-            batch_size,
-            router.clone(),
-            Arc::clone(&store),
-            shutdown.clone(),
-        );
+        let consumer_handles = match consumers {
+            Some(shutdown) => spawn_consumers(
+                cfg.sources,
+                batch_size,
+                router.clone(),
+                Arc::clone(&store),
+                shutdown,
+            ),
+            None => Vec::new(),
+        };
 
         Ok(Self {
             router,
@@ -180,6 +204,23 @@ impl DagRuntime {
             #[cfg(test)]
             tables,
         })
+    }
+
+    /// The end of input, before a shutdown: waits for what is on its way
+    /// through the DAG, then closes every open group and waits until each is
+    /// through, however long its walk takes. `tangent replay` ends its range
+    /// with it: every actor's group closes at once there, and the judge can
+    /// take minutes over them, past what shutdown waits.
+    pub async fn finish(&self) {
+        drained(&self.router).await;
+        close_groups(&self.groups, &self.router, None).await;
+    }
+
+    /// Records in closed groups waiting for their key's group out to be
+    /// through, across the grouped plugins: what a caller feeding the DAG
+    /// faster than real time holds in memory.
+    pub fn waiting(&self) -> usize {
+        self.groups.iter().map(|(g, _, _)| g.waiting()).sum()
     }
 
     pub async fn shutdown(self, worker_timeout: Duration, sink_timeout: Duration) -> Result<()> {
@@ -217,35 +258,15 @@ impl DagRuntime {
         // sink and are not acked; a --once run waits for its calls. Wait for
         // the DAG to go quiet, then take the workers down.
         tracing::info!("draining workers...");
-        let quiet = timeout(worker_timeout, async {
-            while router.in_flight() > 0 {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await;
-        if quiet.is_err() {
+        if timeout(worker_timeout, drained(&router)).await.is_err() {
             tracing::warn!(
                 in_flight = router.in_flight(),
                 "drain timeout exceeded. Records may be dropped."
             );
         }
 
-        // Then the groups: the end of input closes every open one. A group's
-        // walk may reach another grouped plugin, so a round per grouped
-        // plugin, each waiting for the DAG to go quiet again.
-        for _ in 0..groups.len() {
-            for (grouper, _, _) in &groups {
-                if timeout(worker_timeout, grouper.flush()).await.is_err() {
-                    tracing::warn!("closing the groups timed out; groups still open are dropped");
-                }
-            }
-            let _ = timeout(worker_timeout, async {
-                while router.in_flight() > 0 {
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                }
-            })
-            .await;
-        }
+        // Then the groups: the end of input closes every open one.
+        close_groups(&groups, &router, Some(worker_timeout)).await;
         let mut pools = vec![pool];
         for (grouper, task, pool) in groups {
             drop(grouper);
@@ -280,6 +301,39 @@ impl DagRuntime {
         }
 
         Ok(())
+    }
+}
+
+/// Each grouped plugin's grouping task, and the pool it hands groups to.
+type Groups = [(Grouper, tokio::task::JoinHandle<()>, Arc<WorkerPool>)];
+
+/// Closes every open group and waits until each is through. A group's walk
+/// may reach another grouped plugin, so a round per grouped plugin, each
+/// waiting for the DAG to go quiet again. With a `limit`, each wait gives up
+/// after it, and the groups still open are left to be dropped.
+async fn close_groups(groups: &Groups, router: &Router, limit: Option<Duration>) {
+    for _ in 0..groups.len() {
+        for (grouper, _, _) in groups {
+            if within(limit, grouper.flush()).await.is_none() {
+                tracing::warn!("closing the groups timed out; groups still open are dropped");
+            }
+        }
+        within(limit, drained(router)).await;
+    }
+}
+
+/// Until nothing is on its way through the DAG.
+async fn drained(router: &Router) {
+    while router.in_flight() > 0 {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// `f`, given up after `limit` when there is one.
+async fn within<T>(limit: Option<Duration>, f: impl std::future::Future<Output = T>) -> Option<T> {
+    match limit {
+        Some(limit) => timeout(limit, f).await.ok(),
+        None => Some(f.await),
     }
 }
 
@@ -661,6 +715,116 @@ mod tests {
         assert_eq!(blocking_sink.write_count().await, 1);
         assert!(blocking_sink.flush_completed());
         assert_eq!(ack.count(), 1);
+    }
+
+    /// A fed DAG reads none of its sources, and what its caller hands it as
+    /// a source's records goes on along that source's edges.
+    #[tokio::test]
+    async fn a_fed_dag_takes_a_sources_records_from_its_caller() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("in.ndjson"), "{\"n\":1}\n").unwrap();
+        let cfg_path = root.join("tangent.yaml");
+        std::fs::write(
+            &cfg_path,
+            format!(
+                "runtime: {{ state: {{ backend: lru }} }}\nsources:\n  in: {{ type: file, path: {r}/in.ndjson, decoding: {{ format: {{ type: ndjson }} }} }}\nsinks:\n  out: {{ type: file, path: {r}/out.ndjson, compression: {{ type: none }} }}\ndag:\n  - from: in\n    to: [out]\n",
+                r = root.display()
+            ),
+        )
+        .unwrap();
+        let cfg = Config::from_file(&cfg_path).unwrap();
+        let dag = DagRuntime::fed(cfg, &cfg_path, CancellationToken::new())
+            .await
+            .unwrap();
+        let ack = Arc::new(CountingAck::default());
+        dag.router
+            .forward(
+                &NodeRef::Source { name: "in".into() },
+                vec![BytesMut::from("{\"n\":2}\n")],
+                vec![ack.clone() as Arc<dyn Ack>],
+            )
+            .await
+            .unwrap();
+        dag.shutdown(Duration::from_secs(5), Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(ack.count(), 1);
+        assert_eq!(
+            std::fs::read_to_string(root.join("out.ndjson")).unwrap(),
+            "{\"n\":2}\n"
+        );
+    }
+
+    /// Three actors' records in open groups, and a walk that takes `walk` a
+    /// group: a judge working through the groups at the end of a replay.
+    /// Returns how many records are through.
+    async fn slow_groups(walk: Duration) -> (DagRuntime, Arc<AtomicUsize>) {
+        struct Slow(Arc<AtomicUsize>, Duration);
+        #[async_trait]
+        impl Dispatch for Slow {
+            async fn dispatch(&self, g: group::Group) -> Result<()> {
+                let (through, walk) = (Arc::clone(&self.0), self.1);
+                tokio::spawn(async move {
+                    tokio::time::sleep(walk).await;
+                    through.fetch_add(g.records.len(), Ordering::SeqCst);
+                    g.done.ack().await.unwrap();
+                });
+                Ok(())
+            }
+        }
+        let through = Arc::new(AtomicUsize::new(0));
+        let store = state::open(
+            &tangent_shared::runtime::StateConfig {
+                backend: tangent_shared::runtime::StateBackend::Lru,
+                ..Default::default()
+            },
+            Path::new("."),
+        )
+        .unwrap();
+        let (grouper, task) = group::spawn(
+            Arc::from("judge"),
+            GroupConfig {
+                group_by: vec!["actor".into()],
+                max_events: None,
+                expire_after: Duration::from_secs(1800),
+                max_age: None,
+                history: 0,
+            },
+            Arc::new(Slow(Arc::clone(&through), walk)),
+            store,
+        );
+        let records = ["a", "b", "c"]
+            .iter()
+            .map(|a| {
+                let line = format!("{{\"actor\":\"{a}\"}}");
+                crate::wasm::host::JsonLogView::from_bytes(line.as_str().into()).unwrap()
+            })
+            .collect();
+        grouper.add(records).await.unwrap();
+        let sink_manager = Arc::new(SinkManager::for_test(vec![], 1));
+        let runtime = DagRuntime {
+            router: Arc::new(Router::new(HashMap::default(), Arc::clone(&sink_manager))),
+            pool: Arc::new(WorkerPool::new_for_test(vec![])),
+            sink_manager,
+            consumer_handles: vec![],
+            groups: vec![(grouper, task, Arc::new(WorkerPool::new_for_test(vec![])))],
+            tables: Default::default(),
+        };
+        (runtime, through)
+    }
+
+    /// The end of a replay: finish closes every open group and waits until
+    /// each is through, however long past the time shutdown gives them.
+    #[tokio::test]
+    async fn finish_waits_for_every_group_however_long() {
+        let (runtime, through) = slow_groups(Duration::from_millis(300)).await;
+        runtime.finish().await;
+        assert_eq!(through.load(Ordering::SeqCst), 3);
+        runtime
+            .shutdown(Duration::from_millis(100), Duration::from_millis(100))
+            .await
+            .unwrap();
     }
 
     /// A plugin with no `.cwasm` and no `prebuilt` stops the build naming
