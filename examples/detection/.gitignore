@@ -9,5 +9,6 @@ __pycache__/
 **/.test.yaml
 **/plugins/
 json_generated.go
+schema_generated.go
 out.ndjson
 state.sqlite*

@@ -71,7 +71,7 @@ The pointer tells a missing field from a zero value.
 
 ## Output type
 - `T` is a named struct declared in the plugin's package. Nested structs, slices, maps with string keys, pointers and `omitempty` are fine.
-- `tangent plugin compile` runs the SDK's generator, which writes `json_generated.go` (an [easyjson](https://github.com/mailru/easyjson) encoder for `T` and the same-package types it uses), builds, and deletes the file after a successful build. Do not write it, edit it or commit it.
+- `tangent plugin compile` runs the SDK's generator, which writes `json_generated.go` (an [easyjson](https://github.com/mailru/easyjson) encoder for `T` and the same-package types it uses) and `schema_generated.go` (`T`'s JSON Schema), builds, and deletes both after a successful build. Do not write them, edit them or commit them.
 - The SDK writes one JSON line per output, in the order returned.
 
 ## Tests and fixtures
