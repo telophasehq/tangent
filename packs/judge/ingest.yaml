@@ -58,9 +58,8 @@ inference:
       keep: [_context, _norm.actor, _norm.kind, _norm.target, _norm.dest, _facts.principal, _facts.watch, _facts.sensitive_target, _facts.key_known_network, _facts.ip.tor, _facts.ip.vpn]
       # Each pack's sources: the fields naming the principal and the time, and
       # those the model sees on every line beside `keep`. A source with no row
-      # goes without principal groups, as app's agent records do; a name of
-      # yours under app's `sources` or `extra_sources` wants a row of its own,
-      # as `app` has.
+      # goes without principal groups: a plugin of your own wants a row for
+      # each of its sources in your config.
       sources:
         cloudtrail:                # aws
           principal: [_norm.actor, userIdentity.arn]
@@ -80,7 +79,6 @@ inference:
           principal: [_norm.actor, actor.email]
           time: [id.time, ts]
           keep: [events]
-        app: { principal: [_norm.actor, actor], time: [ts] }   # app
 
 sinks:
   alerts:
