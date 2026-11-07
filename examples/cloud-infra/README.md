@@ -6,7 +6,7 @@ logs at it, fill in one file about your company, run.
 
 It is built only from [packs](/packs): `tangent.yaml` includes
 [judge](/packs/judge), which brings [enrich](/packs/enrich) and
-[behavior-baseline](/packs/behavior-baseline), and five packs, and adds the
+[behavior-baseline](/packs/behavior-baseline), and four packs, and adds the
 sources, the lake, their edges, each pack's edges to the lake, the baseline
 and the judge, and the profile. One config, one process.
 
@@ -26,9 +26,9 @@ NDJSON on :9400 ──▶ each pack ─────────┼──▶ base
 ```
 
 - **The packs** ([aws](/packs/aws), [github](/packs/github), [okta](/packs/okta),
-  [google_workspace](/packs/google_workspace), [app](/packs/app)) each turn
-  their provider's records into finished ones with one plugin: every source's
-  shape into one, `_norm.{actor, person, org, kind, ip, country, dest, target}`;
+  [google_workspace](/packs/google_workspace)) each turn their provider's
+  records into finished ones with one plugin: every source's shape into one,
+  `_norm.{actor, person, org, kind, ip, country, dest, target}`;
   the record trimmed to what it means (ids, hashes, protocol details and bulk
   go); the address described from the runtime's tables (country, network and
   owner, cloud or datacenter, Tor exit, VPN, one of yours), all loaded once for
@@ -80,7 +80,7 @@ kept, that this repository's release workflow built it from that tag
 login.
 
 Until the release after 0.1.9 there are none to fetch (`make test` stops at
-"v0.1.9 has no app.component.wasm"), and the packs need a tangent built from
+"v0.1.9 has no aws.component.wasm"), and the packs need a tangent built from
 the checkout anyway ([Using packs](/README.md#using-packs)). Build the plugins
 here instead, as for a pack you are changing: `make test PLUGINS=compile`, then
 `make run PLUGINS=compile`, or `export PLUGINS=compile` once. It installs the
@@ -133,10 +133,10 @@ credential needs.
 
 Anything else is one JSON line per record on `:9400`, with a `source` field
 naming its shape and a `ts`: `gha_ci` and `runner_egress` for the
-[github](/packs/github) pack, `app` and `agent` for [app](/packs/app), or the
-`source` the four above give their records: `cloudtrail`, `github_audit`,
-`okta`, `google_workspace`. Every pack sees the stream and takes its own; a
-record no pack takes goes no further, with a warning.
+[github](/packs/github) pack, or the `source` the four above give their
+records: `cloudtrail`, `github_audit`, `okta`, `google_workspace`. Every pack
+sees the stream and takes its own; a record no pack takes goes no further,
+with a warning.
 
 ## The profile
 
@@ -150,13 +150,13 @@ describe.
 
 34 of the sequences in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) are this example's, as the real sources write them, 28 that should flag and 6 that must not. Half follow disclosed compromises of 2025 and 2026 ([tangent-eval's cases README](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases#cases-from-disclosed-incidents-20252026) has the table and sources): TeamPCP's Trivy and LiteLLM, the axios hijack, nx/s1ngularity, Shai-Hulud's second wave, tj-actions/changed-files, Railway's environment-variable breach, Vercel via Context.ai. The rest are the classics: root login, CloudTrail stopped, a bucket made public, MFA off, impossible travel, a Gmail forwarding rule, a branch protection removed.
 
-This shape, an actor's records thirty at a time with ten before them, is not measured yet. The two before it, over the cases of both examples and 38 days of synthetic ordinary traffic: a judge reading every record in batches with each org's history as context (Claude Haiku 4.5) flagged 38 to 39 of the 40 positives, 1 of 11 negatives and 13 of 16,199 ordinary records; a rulebook gate in front of a local 30B judge, 38 of 40 and 2 of 11.
+This shape, an actor's records thirty at a time with ten before them, is not measured yet. The two before it, over tangent-eval's cases and 38 days of synthetic ordinary traffic: a judge reading every record in batches with each org's history as context (Claude Haiku 4.5) flagged 38 to 39 of the 40 positives, 1 of 11 negatives and 13 of 16,199 ordinary records; a rulebook gate in front of a local 30B judge, 38 of 40 and 2 of 11.
 
 The packs' fixtures were cut from eight of the cases; `make test` runs them, needs no model, and runs in CI.
 
 ## Files
 
 ```
-tangent.yaml          judge and the five packs, the sources, the lake, every edge, the profile
+tangent.yaml          judge and the four packs, the sources, the lake, every edge, the profile
 profile/profile.yaml  your company (edit this)
 ```
