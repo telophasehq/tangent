@@ -8,9 +8,9 @@ says about it in `_facts`. How to use them is in the main
 
 | directory | what it is |
 |---|---|
-| [enrich](enrich) | not a provider: the enrichment tables every pack's plugin reads. Its README has the record contract and the profile's keys. |
+| [enrich-ip](enrich-ip) | not a provider: the enrichment tables every pack's plugin reads. Its README has the record contract and the profile's keys. |
 | [behavior-baseline](behavior-baseline) | not a provider: `baseline_builder`, which learns each actor's history into the state store, and `baseline_renderer`, which stamps it on the actor's records as `_baseline`, and the state store they keep it in. |
-| [judge](judge) | not a provider: the judge, with a row for each pack's sources, and the renderer's records grouped an actor at a time for it. It includes enrich and behavior-baseline, so a pipeline with the model includes judge and its packs, routes each pack's plugin to `baseline_builder`, `baseline_renderer` and its own sink, and needs nothing else; one without the model includes enrich, behavior-baseline, or both. |
+| [judge](judge) | not a provider: the judge, with a row for each pack's sources, and the renderer's records grouped an actor at a time for it. It includes enrich-ip and behavior-baseline, so a pipeline with the model includes judge and its packs, routes each pack's plugin to `baseline_builder`, `baseline_renderer` and its own sink, and needs nothing else; one without the model includes enrich-ip, behavior-baseline, or both. |
 | [aws](aws) | `cloudtrail` |
 | [github](github) | `github_audit`, `gha_ci`, `runner_egress` |
 | [okta](okta) | `okta` |
@@ -49,7 +49,7 @@ Every record, kept, as Parquet files in
 in UTC, whenever it arrives, a replay's too, each record whole in `record` and
 `ts`, `source` and `_norm`'s org, actor, kind and ip as columns, for
 DataFusion or DuckDB to read. Kind and ip are empty when the log already
-holds them ([the record](enrich#the-record)), which is nearly always, so a
+holds them ([the record](enrich-ip#the-record)), which is nearly always, so a
 query reads them from `record` (CloudTrail's `eventName`, Okta's
 `client.ipAddress`). A file is sealed an hour after it opened, and
 only sealed files are there; a record that arrives after its hour's file

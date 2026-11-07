@@ -10,7 +10,7 @@
 #
 # Edit profile/profile.yaml first: it is everything the model knows about you.
 include:
-  - ../../packs/judge/ingest.yaml             # the judge, and the enrich and behavior-baseline packs it includes
+  - ../../packs/judge/ingest.yaml             # the judge, and the enrich-ip and behavior-baseline packs it includes
   - ../../packs/aws/ingest.yaml               # plugin aws: cloudtrail
   - ../../packs/github/ingest.yaml            # plugin github: github_audit, gha_ci, runner_egress
   - ../../packs/okta/ingest.yaml              # plugin okta: okta

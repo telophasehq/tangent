@@ -7,7 +7,7 @@ to copy for a new provider.
 
 ## What it writes
 
-`_norm` ([enrich](../enrich#the-record) has the contract):
+`_norm` ([enrich-ip](../enrich-ip#the-record) has the contract):
 
 | field | from |
 |---|---|
@@ -53,7 +53,7 @@ came through, read before the trim drops them.
 
 ## Use it
 
-In your config, beside [judge](../judge), which brings enrich and
+In your config, beside [judge](../judge), which brings enrich-ip and
 behavior-baseline:
 
 ```yaml
@@ -61,7 +61,7 @@ include:
   - ../tangent/packs/judge/ingest.yaml
   - ../tangent/packs/okta/ingest.yaml
 
-enrichment_tables:                  # your company: packs/enrich/README.md#the-profile
+enrichment_tables:                  # your company: packs/enrich-ip/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
 
 sinks:
