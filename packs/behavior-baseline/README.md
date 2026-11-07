@@ -23,7 +23,6 @@ explains itself.
   ([judge](../judge#ingestyaml)).
 - **The state store** at `state.sqlite` (`runtime.state`), where the API
   sources keep their place and baseline its keys, which never expire.
-  enrich's file sets it the same way.
 
 The judge includes this file. Without the model, include it and
 [enrich](../enrich)'s beside the packs, and send the renderer's records to a

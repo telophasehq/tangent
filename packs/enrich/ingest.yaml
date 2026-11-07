@@ -10,15 +10,3 @@ enrichment_tables:
   geo: { type: mmdb, path: ../../examples/enrich/data/GeoLite2-Country.mmdb }
   asn: { type: mmdb, path: ../../examples/enrich/data/GeoLite2-ASN.mmdb }
   networks: { type: cidr, path: ../../examples/enrich/data/networks.csv }
-
-# The state store, as behavior-baseline's file sets it: nothing expires unless
-# its writer says when, and no TTL is capped. A polling source remembers each
-# event it sent for three times its lateness, three hours for google_workspace.
-# Under the runtime's default cap of an hour it would forget them while its
-# polls still read them, and send them again.
-runtime:
-  state:
-    backend: sqlite
-    path: state.sqlite
-    default_ttl_ms: 0
-    max_ttl_ms: 0
