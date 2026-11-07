@@ -1,8 +1,18 @@
 use ahash::AHashMap as HashMap;
 
 use anyhow::{anyhow, Context, Result};
-use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
-use tangent_shared::{dag::NodeRef, sources::common::SourceConfig, Config};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
+use tangent_shared::{
+    dag::NodeRef,
+    plugins::{built, compiled},
+    sources::common::SourceConfig,
+    Config,
+};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use wasmtime::component::Component;
@@ -40,20 +50,12 @@ impl DagRuntime {
     ) -> anyhow::Result<Self> {
         let sink_manager = Arc::new(SinkManager::new(&cfg.sinks).await?);
         let config_dir = cfg_path.parent().unwrap_or_else(|| Path::new("."));
-        // A pipeline without plugins has no plugin directory to resolve.
-        let plugin_root = if cfg.plugins.is_empty() {
-            config_dir.to_path_buf()
-        } else {
-            config_dir
-                .join(&cfg.runtime.plugins_path)
-                .canonicalize()
-                .with_context(|| {
-                    format!(
-                        "canonicalizing plugins_path {}",
-                        config_dir.join(&cfg.runtime.plugins_path).display()
-                    )
-                })?
-        };
+        // What `tangent plugin compile` built, and what `tangent plugin
+        // fetch` downloaded; a config of prebuilt plugins has no plugins
+        // directory.
+        let plugins_dir = config_dir.join(&cfg.runtime.plugins_path);
+        let cache = tangent_shared::cache::plugins().ok();
+        let plugins = compiled_plugins(&cfg, &plugins_dir, cache.as_deref())?;
 
         let workers = cfg.runtime.workers;
 
@@ -83,7 +85,7 @@ impl DagRuntime {
                 anyhow::bail!("plugin {name}: max_age_ms must be at least 1");
             }
         }
-        let (engines, components) = load(&cfg, &plugin_root, config_dir, &store, &tables, workers)?;
+        let (engines, components) = load(&cfg, &plugins, config_dir, &store, &tables, workers)?;
         let mut outs: HashMap<NodeRef, Vec<NodeRef>> = HashMap::default();
         // `validate` has checked every name, so each resolves
         for e in &cfg.dag {
@@ -127,8 +129,7 @@ impl DagRuntime {
         let mut groups = Vec::new();
         let mut groupers = std::collections::HashMap::new();
         for (name, p) in cfg.plugins.iter().filter(|(_, p)| !p.group_by.is_empty()) {
-            let (engines, components) =
-                load(&cfg, &plugin_root, config_dir, &store, &tables, workers)?;
+            let (engines, components) = load(&cfg, &plugins, config_dir, &store, &tables, workers)?;
             let pool = Arc::new(
                 WorkerPool::new(
                     workers,
@@ -285,9 +286,45 @@ impl DagRuntime {
 /// `workers` engines, and every plugin loaded into each.
 type Loaded = (Vec<WasmEngine>, Vec<Vec<(Arc<str>, Component)>>);
 
+/// Each plugin's `.cwasm`, in `cfg.plugins`' order: what `tangent plugin
+/// compile` built in `plugins_dir`, else what `tangent plugin fetch` kept
+/// under `cache` for its `prebuilt` ([`compiled`]). All are found before any
+/// is loaded, so a plugin found nowhere stops the build at once, saying
+/// which command makes it.
+fn compiled_plugins(
+    cfg: &Config,
+    plugins_dir: &Path,
+    cache: Option<&Path>,
+) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::with_capacity(cfg.plugins.len());
+    for (name, plugin) in &cfg.plugins {
+        let Some(path) = compiled(name, plugin, plugins_dir, cache) else {
+            let built = built(name, plugin, plugins_dir);
+            let no_build = built
+                .map(|b| format!("no {}, and ", b.display()))
+                .unwrap_or_default();
+            anyhow::bail!(match &plugin.prebuilt {
+                None if no_build.is_empty() => {
+                    format!("plugin {name}: no `path` to compile it from, and no `prebuilt`")
+                }
+                None => format!(
+                    "plugin {name}: not compiled: {no_build}it has no `prebuilt`; `tangent plugin compile` builds it"
+                ),
+                Some(p) => format!(
+                    "plugin {name}: not compiled: {no_build}none fetched from {} {}; `tangent plugin fetch` gets it",
+                    p.repo,
+                    p.release(env!("CARGO_PKG_VERSION"))
+                ),
+            });
+        };
+        paths.push(path);
+    }
+    Ok(paths)
+}
+
 fn load(
     cfg: &Config,
-    plugin_root: &Path,
+    plugins: &[PathBuf],
     config_dir: &Path,
     store: &Arc<dyn StateStore>,
     tables: &Arc<Tables>,
@@ -306,19 +343,7 @@ fn load(
     let mut components: Vec<Vec<(Arc<str>, Component)>> = Vec::with_capacity(workers);
     for i in 0..workers {
         components.push(Vec::<(Arc<str>, Component)>::new());
-        for (name, plugin_cfg) in &cfg.plugins {
-            let component_file = format!("{name}.cwasm");
-            let plugin_path = plugin_root
-                .join(&component_file)
-                .canonicalize()
-                .with_context(|| {
-                    format!(
-                        "canonicalizing path: {}/{}",
-                        plugin_root.display(),
-                        &component_file
-                    )
-                })?;
-
+        for ((name, plugin_cfg), plugin_path) in cfg.plugins.iter().zip(plugins) {
             let data_dir = match &plugin_cfg.data {
                 Some(dir) => Some(config_dir.join(dir).canonicalize().with_context(|| {
                     format!(
@@ -334,13 +359,13 @@ fn load(
                 engines[i]
                     .load_precompiled(
                         Arc::clone(name),
-                        &plugin_path,
+                        plugin_path,
                         plugin_cfg.config.clone(),
                         plugin_cfg.state_namespace.as_deref(),
                         data_dir.as_deref(),
                         plugin_cfg.drop_on_error,
                     )
-                    .with_context(|| format!("loading {}", &component_file))?,
+                    .with_context(|| format!("plugin {name}: loading {}", plugin_path.display()))?,
             ));
         }
     }
@@ -636,6 +661,84 @@ mod tests {
         assert_eq!(blocking_sink.write_count().await, 1);
         assert!(blocking_sink.flush_completed());
         assert_eq!(ack.count(), 1);
+    }
+
+    /// A plugin with no `.cwasm` and no `prebuilt` stops the build naming
+    /// the file it looked for and the command that builds it, also when
+    /// there is no plugins directory at all.
+    #[tokio::test]
+    async fn a_plugin_never_compiled_names_the_command_that_builds_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let cfg_path = root.join("tangent.yaml");
+        std::fs::write(
+            &cfg_path,
+            format!(
+                "runtime: {{ state: {{ backend: lru }} }}\nplugins:\n  p: {{ module_type: rust, path: . }}\nsources:\n  in: {{ type: file, path: {}/in.ndjson, decoding: {{ format: {{ type: ndjson }} }} }}\nsinks:\n  out: {{ type: blackhole }}\ndag:\n  - from: in\n    to: [p]\n  - from: p\n    to: [out]\n",
+                root.display()
+            ),
+        )
+        .unwrap();
+        let cfg = Config::from_file(&cfg_path).unwrap();
+        let err = DagRuntime::build(
+            cfg,
+            &cfg_path,
+            CancellationToken::new(),
+            CancellationToken::new(),
+        )
+        .await
+        .err()
+        .unwrap();
+        let err = format!("{err:#}");
+        let want = format!(
+            "plugin p: not compiled: no {}, and it has no `prebuilt`; `tangent plugin compile` builds it",
+            root.join("plugins/p.cwasm").display()
+        );
+        assert!(err.contains(&want), "{err}");
+    }
+
+    /// A prebuilt plugin runs from what `tangent plugin fetch` kept, with no
+    /// plugins directory, and only when it was fetched for this `prebuilt`.
+    /// A plugin without a source never runs a plugins/ file of its name:
+    /// this config's `tangent plugin compile` did not build it.
+    #[test]
+    fn a_fetched_plugin_loads_from_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let (root, cache) = (dir.path(), dir.path().join("cache"));
+        let yaml = |release: &str| {
+            format!("runtime: {{ state: {{ backend: lru }} }}\nplugins:\n  p: {{ module_type: rust, prebuilt: {{ repo: acme/packs, release: {release} }} }}\n")
+        };
+        let cfg: Config = serde_yaml::from_str(&yaml("packs-3")).unwrap();
+        let fetched =
+            tangent_shared::plugins::fetched(&cache, cfg.plugins["p"].prebuilt.as_ref().unwrap());
+        std::fs::create_dir_all(&fetched).unwrap();
+        let cwasm = tangent_shared::wasm_engine::build()
+            .unwrap()
+            .precompile_component(
+                include_str!("../testdata/enrichment/plain.component.wat").as_bytes(),
+            )
+            .unwrap();
+        std::fs::write(fetched.join("p.cwasm"), cwasm).unwrap();
+        let store = state::open(&cfg.runtime.state, root).unwrap();
+        let tables = Arc::new(Tables::default());
+        let plugins_dir = root.join("plugins");
+        std::fs::create_dir(&plugins_dir).unwrap();
+        std::fs::write(plugins_dir.join("p.cwasm"), "another config's").unwrap();
+
+        let plugins = compiled_plugins(&cfg, &plugins_dir, Some(&cache)).unwrap();
+        assert_eq!(plugins, [fetched.join("p.cwasm")]);
+        let (_, components) = load(&cfg, &plugins, root, &store, &tables, 2).unwrap();
+        assert_eq!(components.len(), 2);
+        assert!(components.iter().all(|c| c.len() == 1 && &*c[0].0 == "p"));
+
+        let other: Config = serde_yaml::from_str(&yaml("packs-4")).unwrap();
+        let err = compiled_plugins(&other, &plugins_dir, Some(&cache))
+            .err()
+            .unwrap();
+        assert_eq!(
+            format!("{err:#}"),
+            "plugin p: not compiled: none fetched from acme/packs packs-4; `tangent plugin fetch` gets it"
+        );
     }
 
     /// A read-only pipeline whose runtime writes state is refused: a

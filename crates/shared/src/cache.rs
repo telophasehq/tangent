@@ -1,6 +1,6 @@
 //! What tangent writes for itself, kept per version: the packs built into it
 //! (`include: [pack:aws]`), written out so that every reader of a file finds
-//! one.
+//! one, and the prebuilt plugins `tangent plugin fetch` downloaded.
 
 use anyhow::{bail, Result};
 use std::ffi::OsString;
@@ -11,6 +11,18 @@ use std::path::PathBuf;
 /// never reads what another version wrote.
 pub fn dir() -> Result<PathBuf> {
     dir_from(|name| std::env::var_os(name))
+}
+
+/// Where `tangent plugin fetch` keeps what it downloaded: each plugin's
+/// component, its attestation bundle and its `.cwasm`, in a directory for
+/// each `prebuilt` ([`crate::plugins::fetched`]). Per version, and under
+/// that per engine ([`crate::wasm_engine::compatibility`]), since a `.cwasm`
+/// loads only on the engine that made it: a tangent of the same version
+/// built with another wasmtime, or a cache shared by machines with other
+/// CPUs, fetches its own instead of failing on this one's.
+pub fn plugins() -> Result<PathBuf> {
+    let engine = crate::wasm_engine::compatibility()?;
+    Ok(dir()?.join("plugins").join(format!("{engine:016x}")))
 }
 
 /// [`dir`], with `var` for the environment. A variable that is unset, empty

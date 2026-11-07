@@ -162,7 +162,9 @@ pub async fn run(opts: TestOptions) -> Result<()> {
             let plugin_config = PluginConfig {
                 module_type: "".to_string(), // not used
                 path: plugins_path,
-                prebuilt: None,
+                // Where it was fetched from, so the copy `tangent plugin
+                // fetch` keeps is found.
+                prebuilt: plugin_cfg.prebuilt.clone(),
                 tests: vec![],
                 config: plugin_cfg.config.clone(),
                 state_namespace: plugin_cfg.state_namespace.clone(),
