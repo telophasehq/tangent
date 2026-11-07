@@ -179,22 +179,29 @@ impl Poller {
         Ok(n)
     }
 
-    /// The link the last poll saved to resume from (Okta's `next`), if any.
-    pub async fn saved_link(&self) -> Result<Option<String>> {
+    /// The link the last poll saved to resume from (Okta's `next`), and the
+    /// base URL the source read from when it saved it, if any.
+    pub async fn saved_link(&self) -> Result<Option<(String, String)>> {
         Ok(match self.store.get(SOURCES_NS, &self.link_key()).await? {
-            Some(StateValue::Str(s)) => Some(s),
+            Some(StateValue::Json(v)) => match (v["base"].as_str(), v["link"].as_str()) {
+                (Some(base), Some(link)) => Some((base.to_string(), link.to_string())),
+                _ => None,
+            },
             _ => None,
         })
     }
 
     /// The next poll, and a restart, start from `link`, an API's own cursor
-    /// used as it is. It never expires.
-    pub async fn save_link(&self, link: &str) -> Result<()> {
+    /// used as it is, saved with the `base` URL the source reads from: the
+    /// link's own host may be another (a custom domain's), so `base` is
+    /// what tells whether the link is still this source's. It never expires.
+    pub async fn save_link(&self, base: &str, link: &str) -> Result<()> {
+        let saved = serde_json::json!({ "base": base, "link": link });
         self.store
             .set(
                 SOURCES_NS,
                 &self.link_key(),
-                &StateValue::Str(link.to_string()),
+                &StateValue::Json(saved),
                 Some(0),
             )
             .await

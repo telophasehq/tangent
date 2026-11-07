@@ -8,9 +8,12 @@
 //! `sources`, key `<name>:next`, never expiring), and the next poll, or a
 //! restart, asks for it as it is. Nothing is read twice, so there is no
 //! lookback and no seen ids. A first start reads from `since` ago, and so
-//! does a saved link to any origin but `org_url`'s, since the token goes
-//! with every request. The link holds the query and Okta's `after`, never
-//! the token, which goes in a header.
+//! does a link saved while `org_url` was another org's, since the token goes
+//! with every request. The link is saved with the `org_url` it was read
+//! under, and that, not the link's own host, is what is checked: Okta's
+//! links may name another host than `org_url` (its okta.com host for a
+//! custom domain, say), and a poll follows them anyway. The link holds the
+//! query and Okta's `after`, never the token, which goes in a header.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -81,22 +84,22 @@ async fn poll(
     token: &str,
     poller: &Poller,
 ) -> Result<usize> {
+    let org = org_url.trim_end_matches('/');
     let mut url = match poller.saved_link().await? {
-        Some(link) if same_origin(&link, org_url) => link,
+        Some((base, link)) if base == org => link,
         saved => {
-            if let Some(link) = saved {
+            if let Some((base, _)) = saved {
                 tracing::warn!(
                     source = %poller.name,
-                    link,
-                    org = org_url,
-                    "the saved next link is not this org's; reading from since"
+                    saved_for = base,
+                    org,
+                    "the saved next link was another org_url's; reading from since"
                 );
             }
             let since =
                 Utc::now() - Duration::milliseconds(duration_ms(&cfg.since).unwrap_or(3_600_000));
             format!(
-                "{}/api/v1/logs?since={}&sortOrder=ASCENDING&limit={PAGE}",
-                org_url.trim_end_matches('/'),
+                "{org}/api/v1/logs?since={}&sortOrder=ASCENDING&limit={PAGE}",
                 since.format("%Y-%m-%dT%H:%M:%S%.3fZ")
             )
         }
@@ -136,7 +139,7 @@ async fn poll(
         // it; a 429 on the next page leaves that page to the next poll.
         let Some(next) = next else { break };
         if next != url {
-            poller.save_link(&next).await?;
+            poller.save_link(org, &next).await?;
         }
         // An empty page: Okta has nothing newer yet.
         if read == 0 || sent >= CAP {
@@ -145,14 +148,6 @@ async fn poll(
         url = next;
     }
     Ok(sent)
-}
-
-/// Whether `link` has `org_url`'s scheme, host and port.
-fn same_origin(link: &str, org_url: &str) -> bool {
-    match (reqwest::Url::parse(link), reqwest::Url::parse(org_url)) {
-        (Ok(link), Ok(org)) => link.origin() == org.origin(),
-        _ => false,
-    }
 }
 
 #[cfg(test)]
@@ -288,10 +283,10 @@ mod tests {
         assert_eq!(after.sent("/uuid").await, ["c"]);
     }
 
-    /// The token goes to `org_url` and nowhere else: a link saved for
-    /// another org (`org_url` changed since) is not asked for.
+    /// A link saved while `org_url` was another org's is not asked for: the
+    /// token for this one does not go there.
     #[tokio::test]
-    async fn a_saved_link_to_another_org_is_ignored() {
+    async fn a_link_saved_for_another_org_url_is_ignored() {
         let other = Okta::serve(vec![event("x")]).await;
         let okta = Okta::serve(vec![event("a"), event("b")]).await;
         let cfg: OktaConfig = serde_json::from_value(json!({})).unwrap();
@@ -301,16 +296,41 @@ mod tests {
             "{}/api/v1/logs?after=0&limit=1000&sortOrder=ASCENDING",
             other.base
         );
-        keeper.poller.save_link(&theirs).await.unwrap();
+        keeper.poller.save_link(&other.base, &theirs).await.unwrap();
         let n = poll(&client, &cfg, &okta.base, "t", &keeper.poller)
             .await
             .unwrap();
         assert_eq!(n, 2);
         assert!(other.asked().is_empty(), "the other org is never asked");
         assert!(okta.asked()[0].contains("since="), "{:?}", okta.asked());
-        let saved = keeper.poller.saved_link().await.unwrap().unwrap();
-        assert!(saved.starts_with(&okta.base), "{saved}");
+        let (base, link) = keeper.poller.saved_link().await.unwrap().unwrap();
+        assert_eq!(base, okta.base);
+        assert!(link.starts_with(&okta.base), "{link}");
         assert_eq!(keeper.sent("/uuid").await, ["a", "b"]);
+    }
+
+    /// `org_url` may be a custom domain while Okta's links name another host
+    /// (here `localhost` against links on `127.0.0.1`, the same server): a
+    /// link saved for this `org_url` is still where the next poll starts.
+    #[tokio::test]
+    async fn a_saved_link_on_another_host_than_org_url_is_followed() {
+        let okta = Okta::serve(vec![event("a"), event("b")]).await;
+        let org_url = okta.base.replace("127.0.0.1", "localhost");
+        let cfg: OktaConfig = serde_json::from_value(json!({})).unwrap();
+        let client = reqwest::Client::new();
+        let keeper = Keeper::new("okta");
+        let n = poll(&client, &cfg, &org_url, "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 2);
+        okta.store("c");
+        let n = poll(&client, &cfg, &org_url, "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 1, "only what Okta stored since");
+        let asked = okta.asked();
+        assert_eq!(asked[2], asked[1], "the saved link: {asked:?}");
+        assert_eq!(keeper.sent("/uuid").await, ["a", "b", "c"]);
     }
 
     #[tokio::test]
