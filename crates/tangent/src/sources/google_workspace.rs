@@ -224,7 +224,9 @@ fn pollers(
 
 /// Every application once, each from its own cursor less its own
 /// lateness, the cursor then moving on its own: how many new events were
-/// forwarded.
+/// forwarded. An application that fails (a 429 on its pages, say) leaves
+/// its cursor where it was and does not keep the ones after it from being
+/// read; the failures come back together once all were tried.
 async fn poll_all(
     client: &reqwest::Client,
     access: &str,
@@ -232,14 +234,20 @@ async fn poll_all(
     apps: &[(String, Poller)],
 ) -> Result<usize> {
     let mut total = 0;
+    let mut failed = Vec::new();
     for (app, poller) in apps {
         let start = poller.start(&cfg.since).await;
         let end = Utc::now();
-        let (n, newest) = poll(client, access, app, cfg, poller, start, end)
-            .await
-            .with_context(|| format!("application {app}"))?;
-        poller.finish(newest, Some(end)).await;
-        total += n;
+        match poll(client, access, app, cfg, poller, start, end).await {
+            Ok((n, newest)) => {
+                poller.finish(newest, Some(end)).await;
+                total += n;
+            }
+            Err(e) => failed.push(format!("application {app}: {e:#}")),
+        }
+    }
+    if !failed.is_empty() {
+        bail!("{}", failed.join("; "));
     }
     Ok(total)
 }
@@ -334,6 +342,11 @@ mod tests {
     /// A Reports API serving each application's events from the request's
     /// `startTime` on, newest first, in one page.
     async fn reports(events: Events) -> String {
+        reports_throttling(events, &[]).await
+    }
+
+    /// The same, answering 429 for each application in `throttled`.
+    async fn reports_throttling(events: Events, throttled: &'static [&'static str]) -> String {
         serve(|_| {
             axum::Router::new().fallback(
                 move |uri: Uri, Query(q): Query<HashMap<String, String>>| {
@@ -343,6 +356,10 @@ mod tests {
                         .next()
                         .unwrap_or_default()
                         .to_string();
+                    if throttled.contains(&app.as_str()) {
+                        let resp = StatusCode::TOO_MANY_REQUESTS.into_response();
+                        return std::future::ready(resp);
+                    }
                     let start: DateTime<Utc> = q["startTime"].parse().unwrap();
                     let mut items: Vec<_> = events
                         .lock()
@@ -359,7 +376,7 @@ mod tests {
                             json!({"id": {"time": time, "uniqueQualifier": uq}})
                         })
                         .collect();
-                    async move { Json(json!({ "items": items })) }
+                    std::future::ready(Json(json!({ "items": items })).into_response())
                 },
             )
         })
@@ -417,6 +434,29 @@ mod tests {
         }
         drop((apps, store));
         assert_eq!(keeper.sent("/id/uniqueQualifier").await, ["l1", "t1", "l2"]);
+    }
+
+    #[tokio::test]
+    async fn an_application_that_fails_does_not_hold_up_the_ones_after_it() {
+        let now = Utc::now().trunc_subsecs(0);
+        let drive = now - Duration::minutes(3);
+        let events: Events = Arc::new(Mutex::new(vec![
+            ("login", "l1", now - Duration::minutes(1)),
+            ("token", "t1", now - Duration::minutes(2)),
+            ("drive", "d1", drive),
+        ]));
+        // token answers 429, as when its pages run into the quota
+        let api = reports_throttling(events, &["token"]).await;
+        let keeper = Keeper::new("google_workspace");
+        let (cfg, apps) = workspace(&keeper, &api, &["login", "token", "drive"], "1h");
+        let client = reqwest::Client::new();
+
+        let err = poll_all(&client, "t", &cfg, &apps).await.unwrap_err();
+        assert!(format!("{err:#}").contains("application token"), "{err:#}");
+        assert_eq!(apps[1].1.cursor().await, None, "token's stays");
+        assert_eq!(apps[2].1.cursor().await, Some(drive), "drive was read");
+        drop(apps);
+        assert_eq!(keeper.sent("/id/uniqueQualifier").await, ["l1", "d1"]);
     }
 
     #[tokio::test]
