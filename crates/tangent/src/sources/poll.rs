@@ -4,8 +4,8 @@
 //! poll does not emit an event twice. Records go out stamped with `source`
 //! and `ts`, one frame each, in time order.
 //!
-//! Each API reports events some time after they happen (Google Workspace by
-//! up to an hour, say). A source names that lateness; every poll reads
+//! Each API reports events some time after they happen (Google Workspace's
+//! token events by a few hours, say). A source names that lateness; every poll reads
 //! from the cursor less the lateness, and the cursor ends a poll at the
 //! newest event seen or at `now - lateness`, whichever is later (only at
 //! the newest event when the poll stopped at its page cap). An id is
@@ -47,6 +47,28 @@ impl Poller {
                 name: Arc::clone(&name),
             },
             name,
+            store,
+            router,
+            late,
+        }
+    }
+
+    /// A poller for one part of source `name` (one Google Workspace
+    /// application, say) with a cursor, seen ids and lateness of its own:
+    /// its keys start with `<name>:<part>`, and its records still come
+    /// from source `name`.
+    pub fn part(
+        name: Arc<str>,
+        part: &str,
+        store: Arc<dyn StateStore>,
+        router: Arc<Router>,
+        late: Duration,
+    ) -> Self {
+        Self {
+            from: NodeRef::Source {
+                name: Arc::clone(&name),
+            },
+            name: Arc::from(format!("{name}:{part}")),
             store,
             router,
             late,
@@ -359,6 +381,15 @@ pub(crate) mod testing {
                 manager,
                 kept,
             }
+        }
+
+        /// The store and router its poller writes to, for pollers of its
+        /// source's parts (`Poller::part`). Drop them before `sent`.
+        pub fn parts(&self) -> (Arc<dyn StateStore>, Arc<Router>) {
+            (
+                Arc::clone(&self.poller.store),
+                Arc::clone(&self.poller.router),
+            )
         }
 
         /// What the sink was sent, in order: each record's value at `pointer`.

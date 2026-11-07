@@ -90,9 +90,26 @@ and `google_workspace` in your profile's `own_sources`.
 domain-wide delegation for the scope
 `https://www.googleapis.com/auth/admin.reports.audit.readonly`;
 `GOOGLE_ADMIN_EMAIL` is the administrator it acts as (the Admin SDK API
-enabled on the project). The source keeps its place in the runtime's state
-store; on first start it reads the last hour (`since`). Left without
-credentials, it says so once and stays idle.
+enabled on the project). The source keeps each application's place in the
+runtime's state store; on first start it reads the last hour (`since`).
+Google reports some applications' events hours after they happen
+([lag times](https://knowledge.workspace.google.com/admin/reports/data-retention-and-lag-times)
+for log events, rounded up below), so each poll reads an application again
+from its cursor less that lag and sends what it had not sent. The cursor is
+the newest event sent, or now less the lag if that is later: a poll reads
+back the lag on a busy log and up to twice it on a quiet one. So the polls
+right after a first start also send, once, events older than `since` that
+the first poll did not reach, up to twice the lag old (8 h for `token`):
+
+| application | Google's lag | lag |
+|---|---|---|
+| `token` | token: a couple of hours; OAuth: up to a few hours | 4 h |
+| `cloud_search` | up to a few hours | 4 h |
+| `calendar`, `groups`, `groups_enterprise` | tens of minutes, up to a couple of hours (Groups'; Groups Enterprise has no row) | 3 h |
+| `takeout` | a finished export: up to many days | 7 days |
+| the rest | minutes | 1 h |
+
+Left without credentials, it says so once and stays idle.
 
 Kinds worth the profile's `watch`: `EMAIL_FORWARDING_OUT_OF_DOMAIN`.
 
