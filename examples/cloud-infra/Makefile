@@ -1,7 +1,7 @@
 TANGENT ?= tangent
 
 # The judge: any OpenAI-compatible endpoint, a local model on :8080 by default
-# (packs/core/judge.yaml has the defaults). A hosted one:
+# (packs/judge/ingest.yaml has the defaults). A hosted one:
 #   JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY make run
 
 # The sources. Each reads its API directly and wakes up when its credential is

@@ -7,7 +7,7 @@ reads it from the Reports API, or the same records sent as NDJSON.
 
 ## What it writes
 
-`_norm` ([packs/core](../core#the-record) has the contract):
+`_norm` ([enrich](../enrich#the-record) has the contract):
 
 | field | from |
 |---|---|
@@ -19,10 +19,11 @@ reads it from the Reports API, or the same records sent as NDJSON.
 `_facts` is what the profile and the tables say; Workspace adds no facts of
 its own.
 
-Your config routes each record to core's `lake` and [baseline](../core#baseline),
-which folds it into its actor's baseline: events, documents, OAuth apps,
-addresses, sign-ins, 2-step and password changes, and an admin's resets of
-someone else's. That is what the judge's `_baseline` says of the actor.
+Your config routes each record to its sink and to
+[behavior-baseline](../behavior-baseline), which folds it into its actor's
+baseline: events, documents, OAuth apps, addresses, sign-ins, 2-step and
+password changes, and an admin's resets of someone else's. That is what the
+judge's `_baseline` says of the actor.
 
 ## What it drops
 
@@ -44,16 +45,31 @@ would go through `Norm::address`.
 
 ## Use it
 
-In your config, beside [core](../core):
+In your config, beside [judge](../judge), which brings enrich and
+behavior-baseline:
 
 ```yaml
 include:
-  - ../tangent/packs/core/ingest.yaml
-  - ../tangent/packs/core/judge.yaml
+  - ../tangent/packs/judge/ingest.yaml
   - ../tangent/packs/google_workspace/ingest.yaml
 
-enrichment_tables:                  # your company: packs/core/README.md#the-profile
+enrichment_tables:                  # your company: packs/enrich/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
+
+sinks:
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }
 
 sources:
   workspace_audit:
@@ -64,7 +80,7 @@ sources:
 dag:
   - from: workspace_audit
     to: [google_workspace]
-  - from: google_workspace   # kept, learned, judged (packs/core)
+  - from: google_workspace   # kept, learned, judged
     to: [lake, baseline_builder, baseline_renderer]
 ```
 

@@ -2,12 +2,26 @@
 # actor's records judged a group at a time. The customer's tenant id is the
 # org, so each customer's actors are their own. One config, one process.
 include:
-  - ../../packs/core/ingest.yaml              # the runtime, the tables, the lake, each actor's baseline
-  - ../../packs/core/judge.yaml               # the judge: each actor's records a group at a time
+  - ../../packs/judge/ingest.yaml             # the judge, and the enrich and behavior-baseline packs it includes
   - ../../packs/app/ingest.yaml               # plugin app: app, agent
 
 enrichment_tables:
   profile: { type: document, path: profile/profile.yaml, required: true }   # a typo here stops it
+
+sinks:
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }
 
 sources:
   events:
@@ -18,6 +32,6 @@ dag:
   - from: events
     to: [app]
   # app's records: kept in the lake, folded into the actor's baseline, and
-  # judged (packs/core).
+  # judged (packs/behavior-baseline, packs/judge).
   - from: app
     to: [lake, baseline_builder, baseline_renderer]

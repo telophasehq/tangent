@@ -1,6 +1,6 @@
 //! What is known about an address, from the runtime's enrichment tables: no
 //! file is read here, and nothing leaves the machine. The tables, as
-//! packs/core/ingest.yaml names them:
+//! packs/enrich/ingest.yaml names them:
 //!
 //!   geo        mmdb      GeoLite2 Country: `country.iso_code`
 //!   asn        mmdb      GeoLite2 ASN: the network's number and organization

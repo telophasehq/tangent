@@ -1,8 +1,8 @@
 TANGENT ?= tangent
 export TANGENT
 
-# Every pack: a directory with an ingest.yaml and a plugin (core and macos
-# have none).
+# Every pack: a directory with an ingest.yaml and a plugin (enrich,
+# behavior-baseline, judge and macos have none).
 PACKS := $(sort $(patsubst %/Cargo.toml,%,$(wildcard */Cargo.toml)))
 PACKS := $(filter $(PACKS),$(patsubst %/ingest.yaml,%,$(wildcard */ingest.yaml)))
 
@@ -14,14 +14,14 @@ test: $(addprefix test-,$(PACKS)) test-baseline test-shared
 test-%:
 	cd $* && $(TANGENT) plugin compile --config ingest.yaml && $(TANGENT) plugin test --config ingest.yaml
 
-# Core's baseline: a sign-in story through the renderer and the builder over
-# one state (core/baseline/story.sh), then the unit tests of its kit, builder
+# behavior-baseline: a sign-in story through the renderer and the builder over
+# one state (behavior-baseline/story.sh), then the unit tests of its kit, builder
 # and renderer. The story goes first: its `tangent plugin compile` writes the
 # renderer's .tangent/wit, which the renderer's `cargo test` needs, and a
 # fresh clone has none.
 test-baseline:
-	core/baseline/story.sh
-	for c in kit builder renderer; do (cd core/baseline/$$c && cargo test) || exit 1; done
+	behavior-baseline/story.sh
+	for c in kit builder renderer; do (cd behavior-baseline/$$c && cargo test) || exit 1; done
 
 # The shared libraries' own tests.
 test-shared:
@@ -38,6 +38,6 @@ fixtures-%:
 	./fixtures.sh $*
 
 fixtures-baseline:
-	core/baseline/story.sh write
+	behavior-baseline/story.sh write
 
 .PHONY: test test-baseline test-shared dist fixtures-baseline

@@ -773,11 +773,11 @@ fn an_unset_model_with_a_default_loads_without_include_too() {
 #[test]
 fn paths_are_relative_to_the_file_that_names_them() {
     let dir = tree(&[
-        ("packs/core/facts/Cargo.toml", ""),
-        ("packs/core/judge.md", "judge"),
-        ("packs/core/tests/input.json", "[]"),
+        ("packs/judge/facts/Cargo.toml", ""),
+        ("packs/judge/judge.md", "judge"),
+        ("packs/judge/tests/input.json", "[]"),
         (
-            "packs/core/ingest.yaml",
+            "packs/judge/ingest.yaml",
             "
 runtime:
   plugins_path: plugins/
@@ -790,7 +790,7 @@ plugins:
     tests:
       - { input: tests/input.json, expected: tests/expected.json }
 inference:
-  judge: { model: m, prompt_file: judge.md, schema_file: ../core/judge.schema.json }
+  judge: { model: m, prompt_file: judge.md, schema_file: ../judge/judge.schema.json }
 sinks:
   logs: { type: file, path: logs.ndjson }
 sources:
@@ -800,7 +800,7 @@ sources:
         (
             "deploy/ingest.yaml",
             "
-include: [../packs/core/ingest.yaml]
+include: [../packs/judge/ingest.yaml]
 plugins:
   facts: { data: profile }
 ",
@@ -808,7 +808,7 @@ plugins:
     ]);
     let cfg = load(&dir, "deploy/ingest.yaml").unwrap().config;
     let facts = &cfg.plugins["facts"];
-    assert_eq!(facts.path, canonical(&dir, "packs/core/facts"));
+    assert_eq!(facts.path, canonical(&dir, "packs/judge/facts"));
     assert_eq!(
         facts.data,
         Some(PathBuf::from("profile")),
@@ -816,17 +816,17 @@ plugins:
     );
     assert_eq!(
         facts.tests[0].input,
-        canonical(&dir, "packs/core/tests/input.json")
+        canonical(&dir, "packs/judge/tests/input.json")
     );
     assert_eq!(
         facts.tests[0].expected,
-        canonical(&dir, "packs/core/tests/expected.json")
+        canonical(&dir, "packs/judge/tests/expected.json")
     );
     let judge = &cfg.inference["judge"];
-    assert_eq!(judge.prompt_file, canonical(&dir, "packs/core/judge.md"));
+    assert_eq!(judge.prompt_file, canonical(&dir, "packs/judge/judge.md"));
     assert_eq!(
         judge.schema_file.as_deref(),
-        Some(canonical(&dir, "packs/core/judge.schema.json").as_path())
+        Some(canonical(&dir, "packs/judge/judge.schema.json").as_path())
     );
     assert_eq!(cfg.runtime.plugins_path, PathBuf::from("plugins/"));
     assert_eq!(cfg.runtime.state.path, PathBuf::from("state.sqlite"));
@@ -836,19 +836,19 @@ plugins:
 
     // An included file's override of an included path is its own.
     fs::write(
-        dir.path().join("packs/core/data.yaml"),
+        dir.path().join("packs/judge/data.yaml"),
         "include: [ingest.yaml]\nplugins:\n  facts: { data: profile }\n",
     )
     .unwrap();
     fs::write(
         dir.path().join("deploy/ingest.yaml"),
-        "include: [../packs/core/data.yaml]\n",
+        "include: [../packs/judge/data.yaml]\n",
     )
     .unwrap();
     let cfg = load(&dir, "deploy/ingest.yaml").unwrap().config;
     assert_eq!(
         cfg.plugins["facts"].data,
-        Some(canonical(&dir, "packs/core/profile"))
+        Some(canonical(&dir, "packs/judge/profile"))
     );
 }
 
@@ -912,15 +912,18 @@ fn an_unknown_key_in_a_block_is_an_error() {
 /// written, for the runtime to read against the root's directory.
 #[test]
 fn enrichment_tables_merge_and_their_paths_are_the_naming_file_s() {
-    let core = "
+    let enrich = "
 enrichment_tables:
   geo: { type: mmdb, path: ../../data/GeoLite2-Country.mmdb }
   networks: { type: cidr, path: ../../data/networks.csv }
 ";
     let dir = tree(&[
         ("data/networks.csv", "203.0.113.0/24,aws\n"),
-        ("packs/core/ingest.yaml", core),
-        ("packs/aws/ingest.yaml", "include: [../core/ingest.yaml]\n"),
+        ("packs/enrich/ingest.yaml", enrich),
+        (
+            "packs/aws/ingest.yaml",
+            "include: [../enrich/ingest.yaml]\n",
+        ),
         (
             "packs/okta/ingest.yaml",
             "enrichment_tables:\n  geo: { type: mmdb, path: ../../data/./GeoLite2-Country.mmdb }\n",
@@ -969,7 +972,7 @@ enrichment_tables:
     .unwrap();
     let err = error(&dir, "deploy/ingest.yaml");
     assert!(err.contains("enrichment_tables.geo.path"), "{err}");
-    assert!(err.contains("packs/core/ingest.yaml"), "{err}");
+    assert!(err.contains("packs/enrich/ingest.yaml"), "{err}");
     assert!(err.contains("packs/okta/ingest.yaml"), "{err}");
 
     // The root settles it, and a config without tables writes none.

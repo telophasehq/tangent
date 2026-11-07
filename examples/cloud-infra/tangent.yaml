@@ -10,8 +10,7 @@
 #
 # Edit profile/profile.yaml first: it is everything the model knows about you.
 include:
-  - ../../packs/core/ingest.yaml              # the runtime, the tables, the lake, each actor's baseline
-  - ../../packs/core/judge.yaml               # the judge: each actor's records a group at a time
+  - ../../packs/judge/ingest.yaml             # the judge, and the enrich and behavior-baseline packs it includes
   - ../../packs/aws/ingest.yaml               # plugin aws: cloudtrail
   - ../../packs/github/ingest.yaml            # plugin github: github_audit, gha_ci, runner_egress
   - ../../packs/okta/ingest.yaml              # plugin okta: okta
@@ -21,19 +20,32 @@ include:
 enrichment_tables:
   profile: { type: document, path: profile/profile.yaml, required: true }   # a typo here stops it
 
-# JSON lines instead, at three times the tokens (packs/core/README.md):
+# JSON lines instead, at three times the tokens (packs/judge/README.md#the-model):
 # inference:
 #   judge:
 #     batch_bytes: 48000
 #     encoding:
 #       type: ndjson
 
-# What flagged keeps, to Slack too, with its edge at the end of `dag` (packs/core/README.md#slack):
-# sinks:
-#   slack:
-#     type: slack
-#     webhook_url: ${SLACK_WEBHOOK_URL}
-#     text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
+sinks:
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }
+  # What flagged keeps, to Slack too, with its edge at the end of `dag` (packs/judge/README.md#slack):
+  # slack:
+  #   type: slack
+  #   webhook_url: ${SLACK_WEBHOOK_URL}
+  #   text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
 
 sources:
   cloudtrail:
@@ -78,7 +90,7 @@ dag:
       - google_workspace
       - app
   # Each pack's records: kept in the lake, folded into the actor's baseline,
-  # and judged (packs/core).
+  # and judged (packs/behavior-baseline, packs/judge).
   - from: aws
     to: [lake, baseline_builder, baseline_renderer]
   - from: github

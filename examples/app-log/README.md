@@ -22,9 +22,10 @@ app audit log, agent logs: NDJSON on :9401
 ```
 
 It is built only from [packs](/packs): `tangent.yaml` includes
-[core](/packs/core), its judge, and the [app](/packs/app) pack, and adds the
-NDJSON source on `:9401`, the plugin's edges to the lake, the baseline and the
-judge, and the profile. One config, one process; the
+[judge](/packs/judge), which brings [enrich](/packs/enrich) and
+[behavior-baseline](/packs/behavior-baseline), and the [app](/packs/app) pack,
+and adds the NDJSON source on `:9401`, the lake, the plugin's edges to the
+lake, the baseline and the judge, and the profile. One config, one process; the
 judge reads each actor's history from the same `state.sqlite`. The
 18 cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases)
 written only in product logs, `app` and `agent` lines, are this example's, 13
@@ -54,7 +55,7 @@ from a checkout: `make test PLUGINS=compile` and `make run PLUGINS=compile`,
 which install the Rust WASM toolchain first.
 
 The judge defaults to a local model on `:8080`
-([packs/core](/packs/core#judgeyaml) says how to serve it); `JUDGE_URL`,
+([packs/judge](/packs/judge#the-model) says how to serve it); `JUDGE_URL`,
 `JUDGE_MODEL` and `JUDGE_API_KEY` point it at any OpenAI-compatible one (the
 Makefile has a hosted example).
 
@@ -93,7 +94,7 @@ first are any 30 of the 40, not the first.
 
 Runs today with one profile for every customer
 ([profile/profile.yaml](profile/profile.yaml);
-[packs/core](/packs/core#the-profile) lists the keys), which is wrong in
+[packs/enrich](/packs/enrich#the-profile) lists the keys), which is wrong in
 principle and fine for a first customer. What it still needs:
 
 - **Per-customer profiles.** The profile's facts (members, keys and their

@@ -12,7 +12,7 @@ GitHub into finished records, by one plugin, `github`. It takes three
 
 ## What it writes
 
-`_norm` ([packs/core](../core#the-record) has the contract):
+`_norm` ([enrich](../enrich#the-record) has the contract):
 
 | field | `github_audit` | `gha_ci` | `runner_egress` |
 |---|---|---|---|
@@ -27,10 +27,11 @@ GitHub into finished records, by one plugin, `github`. It takes three
 A CI run's story is told per repository: a run id is new every time, and the
 repository is not a principal, so CI records get no `_facts.principal`.
 
-Your config routes each record to core's `lake` and [baseline](../core#baseline),
-which folds it into its actor's baseline: actions, repositories, clients,
-tokens and OAuth apps, addresses, keys and grants; a CI repository's steps and
-egress hosts. That is what the judge's `_baseline` says of the actor.
+Your config routes each record to its sink and to
+[behavior-baseline](../behavior-baseline), which folds it into its actor's
+baseline: actions, repositories, clients, tokens and OAuth apps, addresses,
+keys and grants; a CI repository's steps and egress hosts. That is what the
+judge's `_baseline` says of the actor.
 
 ## What it drops
 
@@ -41,7 +42,7 @@ egress hosts. That is what the judge's `_baseline` says of the actor.
   `event`, `conclusion`, `runner_name`, `runner_type`, `pull_request_title`,
   `pull_request_url`, `topic`, `ref`, `key`, `fingerprint`, `read_only`,
   `hook_id`, `config`, `target_login`, `reason`, `explanation`, and
-  `token_id` and `hashed_token`, which name the credential, so core's baseline
+  `token_id` and `hashed_token`, which name the credential, so behavior-baseline
   can tell a token it has not seen before. A hosted runner's name (`GitHub
   Actions 12`, its job's VM) and a workflow event's `topic` go too; so do
   `@timestamp`, `created_at`, `_document_id`, `request_id`, `user_agent` and
@@ -59,16 +60,31 @@ talked to.
 
 ## Use it
 
-In your config, beside [core](../core):
+In your config, beside [judge](../judge), which brings enrich and
+behavior-baseline:
 
 ```yaml
 include:
-  - ../tangent/packs/core/ingest.yaml
-  - ../tangent/packs/core/judge.yaml
+  - ../tangent/packs/judge/ingest.yaml
   - ../tangent/packs/github/ingest.yaml
 
-enrichment_tables:                  # your company: packs/core/README.md#the-profile
+enrichment_tables:                  # your company: packs/enrich/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
+
+sinks:
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }
 
 sources:
   github_audit:
@@ -84,7 +100,7 @@ dag:
     to: [github]
   - from: events
     to: [github]
-  - from: github   # kept, learned, judged (packs/core)
+  - from: github   # kept, learned, judged
     to: [lake, baseline_builder, baseline_renderer]
 ```
 

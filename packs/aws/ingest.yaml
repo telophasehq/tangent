@@ -1,6 +1,6 @@
 # aws: CloudTrail into finished records, by one plugin, `aws`: normalized,
 # trimmed, its address enriched, the profile's facts added. Include it in
-# your config with packs/core/ingest.yaml, route a `cloudtrail` source to
+# your config with packs/enrich/ingest.yaml, route a `cloudtrail` source to
 # plugin aws, and plugin aws to where its records go, and give the config a
 # `profile` table; README.md has the lines.
 plugins:

@@ -1,5 +1,5 @@
 //! Every config in the repo loads: alone, or through a config that includes
-//! it (a pack's ingest.yaml, say, is a plugin whose tables core gives). And
+//! it (a pack's ingest.yaml, say, is a plugin whose tables enrich gives). And
 //! the pipelines pass the checks `tangent run` makes before it starts: with
 //! the judge, as the examples run, and without it.
 
@@ -108,12 +108,13 @@ fn pipelines_validate_with_and_without_the_judge() {
     }
 
     // Every pack, as packs/Makefile finds them: a directory with an
-    // ingest.yaml, core aside. Its plugins are the ones its file defines.
+    // ingest.yaml and its plugin's Cargo.toml, so not enrich, behavior-baseline
+    // or judge. Its plugins are the ones its file defines.
     let mut files: Vec<PathBuf> = fs::read_dir(repo.join("packs"))
         .unwrap()
         .flatten()
         .map(|e| e.path().join("ingest.yaml"))
-        .filter(|f| f.is_file() && !f.starts_with(repo.join("packs/core")))
+        .filter(|f| f.is_file() && f.with_file_name("Cargo.toml").is_file())
         .collect();
     files.sort();
     let mut plugins: Vec<String> = Vec::new();
@@ -133,12 +134,13 @@ fn pipelines_validate_with_and_without_the_judge() {
 
     let mut yaml = format!(
         "include:\n  - {}\n",
-        repo.join("packs/core/ingest.yaml").display()
+        repo.join("packs/enrich/ingest.yaml").display()
     );
     for f in &files {
         yaml += &format!("  - {}\n", f.display());
     }
-    yaml += "sources:\n  events: { type: tcp, bind_address: 127.0.0.1:0 }\ndag:\n";
+    yaml += "sources:\n  events: { type: tcp, bind_address: 127.0.0.1:0 }\n";
+    yaml += "sinks:\n  lake: { type: file, path: lake.ndjson }\ndag:\n";
     for p in &plugins {
         yaml += &format!("  - from: events\n    to: [{p}]\n");
         yaml += &format!("  - from: {p}\n    to: [lake]\n");

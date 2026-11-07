@@ -1,23 +1,24 @@
-# core, judge: a model reads each actor's records a group at a time, with
-# what baseline_builder knew of the actor before them, and writes a verdict
-# per new one; a person reads the ones it flagged. Include it in your config
-# with core's ingest.yaml and the packs', and route each pack's plugin to
-# baseline_renderer.
+# judge: a model reads each actor's records a group at a time, with what
+# baseline_builder knew of the actor before them, and writes a verdict per
+# new one; a person reads the ones it flagged. Include it in your config with
+# the packs', and route each pack's plugin to baseline_builder and
+# baseline_renderer. It brings enrich and behavior-baseline: a config that
+# includes them too gets the same files, read once.
+include:
+  - ../enrich/ingest.yaml
+  - ../behavior-baseline/ingest.yaml
+
 plugins:
-  baseline_renderer:             # the same `_baseline` on each of an actor's records
-    module_type: rust
-    path: baseline/renderer
-    prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }   # the release's component, its build attested (tangent plugin fetch)
-    state_namespace: baseline
-    drop_on_error: false         # no `_baseline` rather than no verdict
-    # Your config routes each pack's plugin here. An actor's records wait in
-    # a group and reach the renderer, then the model, together, on workers of
-    # their own, so ingest never waits on the model (README.md#baseline).
+  # behavior-baseline's renderer, its records grouped for the model. Your
+  # config routes each pack's plugin to it. An actor's records wait in a
+  # group and reach the renderer, then the model, together, on workers of
+  # their own, so ingest never waits on the model (README.md).
+  baseline_renderer:
     group_by: [_norm.org, _norm.actor]
     max_events: 30               # with the ten below, the forty `batch_bytes` fits in one request
     max_age_ms: 3600000          # or an hour after its first record, however busy the actor
     expire_after_ms: 3600000     # an hour's quiet too, not the 30 s default: fuller groups, fewer requests
-    history: 10                  # the actor's latest ten records again, as `_context`
+    history: 10                  # the actor's latest ten records again, as `_context`, which fresh drops
   fresh:
     module_type: rust
     path: fresh
