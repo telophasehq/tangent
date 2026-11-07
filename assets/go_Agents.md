@@ -55,10 +55,8 @@ Predicates: `Has(path)`, `EqString`, `EqInt`, `EqFloat`, `EqBool` `(path, value)
 |---|---|
 | `lv.GetString(path)`, `GetInt64`, `GetFloat64`, `GetBool` | a pointer, `nil` when the field is missing or of another type |
 | `lv.GetStringList(path)`, `GetInt64List`, `GetFloat64List` | `(list, ok)` |
-| `lv.Has(path)`, `lv.Keys(path)` | presence; an object's keys |
+| `lv.Has(path)`, `lv.Len(path)`, `lv.Keys(path)` | presence; length of a list or string (`*uint32`); an object's keys |
 | `lv.Log()` | the record as JSON text |
-
-Do not call `lv.Len`: in the SDK version the scaffold pins it calls itself and never returns. Take `len()` of a list instead.
 
 A path is first read as one key of the record, so `"msg.level"` finds a key with a dot in it. Without such a key it walks into objects (`source.name`), and `[n]` takes an item of a list (`tags[0]`).
 
