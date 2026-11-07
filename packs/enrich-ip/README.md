@@ -1,4 +1,4 @@
-# enrich
+# enrich-ip
 
 Not a provider: the tables every pack's plugin reads. A config includes
 [ingest.yaml](ingest.yaml) beside the packs it uses, or includes

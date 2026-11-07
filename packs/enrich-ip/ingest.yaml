@@ -1,4 +1,4 @@
-# enrich: the tables every pack's plugin reads. Not a provider: include it,
+# enrich-ip: the tables every pack's plugin reads. Not a provider: include it,
 # with the packs you want, in your config, which names your sources, routes
 # each to its pack and each pack's plugin on to where its records go, and
 # gives the `profile` table (README.md).

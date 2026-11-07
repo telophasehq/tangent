@@ -7,7 +7,7 @@ reads it from the Reports API, or the same records sent as NDJSON.
 
 ## What it writes
 
-`_norm` ([enrich](../enrich#the-record) has the contract):
+`_norm` ([enrich-ip](../enrich-ip#the-record) has the contract):
 
 | field | from |
 |---|---|
@@ -45,7 +45,7 @@ would go through `Norm::address`.
 
 ## Use it
 
-In your config, beside [judge](../judge), which brings enrich and
+In your config, beside [judge](../judge), which brings enrich-ip and
 behavior-baseline:
 
 ```yaml
@@ -53,7 +53,7 @@ include:
   - ../tangent/packs/judge/ingest.yaml
   - ../tangent/packs/google_workspace/ingest.yaml
 
-enrichment_tables:                  # your company: packs/enrich/README.md#the-profile
+enrichment_tables:                  # your company: packs/enrich-ip/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
 
 sinks:
