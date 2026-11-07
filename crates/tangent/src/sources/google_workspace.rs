@@ -1,5 +1,10 @@
 //! Google Workspace audit activity, polled from the Admin SDK Reports API as
 //! a service account with domain-wide delegation acting for an admin.
+//!
+//! Each application is read on its own, from a cursor of its own, so its
+//! lookback is its own. State keys (namespace `sources`):
+//! `<source>:<application>:cursor`, and
+//! `<source>:<application>:seen:<uniqueQualifier>:<ms>` for an event sent.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -68,12 +73,7 @@ pub async fn run_consumer(
     let signing = jsonwebtoken::EncodingKey::from_rsa_pem(account.private_key.as_bytes())
         .context("service account private key")?;
 
-    let poller = Poller::new(
-        Arc::clone(&name),
-        store,
-        router,
-        Duration::milliseconds(LATE_MS),
-    );
+    let apps = pollers(&name, &cfg, &store, &router);
     let client = reqwest::Client::builder()
         .user_agent("tangent")
         .timeout(StdDuration::from_secs(30))
@@ -92,24 +92,7 @@ pub async fn run_consumer(
                         token = Some(fetch_token(&client, &account, &signing, subject).await?);
                     }
                     let access = &token.as_ref().expect("token").value;
-                    let mut total = 0;
-                    // One cursor for all applications: the poll reads them all
-                    // from the same start, then moves it.
-                    let start = poller.start(&cfg.since).await;
-                    let end = Utc::now();
-                    let mut newest = None;
-                    for app in &cfg.applications {
-                        let (n, t) = poll(&client, access, app, &cfg, &poller, start, end)
-                            .await
-                            .with_context(|| format!("application {app}"))?;
-                        total += n;
-                        newest = match (newest, t) {
-                            (Some(a), Some(b)) => Some(std::cmp::max::<DateTime<Utc>>(a, b)),
-                            (a, b) => a.or(b),
-                        };
-                    }
-                    poller.finish(newest, Some(end)).await;
-                    Ok::<usize, anyhow::Error>(total)
+                    poll_all(&client, access, &cfg, &apps).await
                 }
                 .await;
                 match result {
@@ -186,6 +169,49 @@ async fn fetch_token(
     })
 }
 
+/// A poller for each application, with a cursor and seen ids of its own.
+fn pollers(
+    name: &Arc<str>,
+    cfg: &GoogleWorkspaceConfig,
+    store: &Arc<dyn StateStore>,
+    router: &Arc<Router>,
+) -> Vec<(String, Poller)> {
+    cfg.applications
+        .iter()
+        .map(|app| {
+            let poller = Poller::part(
+                Arc::clone(name),
+                app,
+                Arc::clone(store),
+                Arc::clone(router),
+                Duration::milliseconds(LATE_MS),
+            );
+            (app.clone(), poller)
+        })
+        .collect()
+}
+
+/// Every application once, each from its own cursor, which then moves on
+/// its own: how many new events were forwarded.
+async fn poll_all(
+    client: &reqwest::Client,
+    access: &str,
+    cfg: &GoogleWorkspaceConfig,
+    apps: &[(String, Poller)],
+) -> Result<usize> {
+    let mut total = 0;
+    for (app, poller) in apps {
+        let start = poller.start(&cfg.since).await;
+        let end = Utc::now();
+        let (n, newest) = poll(client, access, app, cfg, poller, start, end)
+            .await
+            .with_context(|| format!("application {app}"))?;
+        poller.finish(newest, Some(end)).await;
+        total += n;
+    }
+    Ok(total)
+}
+
 /// One application's activity from `start` on: how many new events were
 /// forwarded, and the newest event's time.
 async fn poll(
@@ -230,7 +256,7 @@ async fn poll(
         for item in v["items"].as_array().into_iter().flatten() {
             let t = parse_time(&item["id"]["time"]).unwrap_or(end);
             let id = format!(
-                "{app}:{}:{}",
+                "{}:{}",
                 item["id"]["uniqueQualifier"].as_str().unwrap_or(""),
                 t.timestamp_millis()
             );
@@ -253,12 +279,113 @@ async fn poll(
 mod tests {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
 
-    use axum::{extract::Query, http::StatusCode, response::IntoResponse, Json};
+    use axum::{
+        extract::Query,
+        http::{StatusCode, Uri},
+        response::IntoResponse,
+        Json,
+    };
+    use chrono::{SecondsFormat, SubsecRound};
     use serde_json::json;
 
     use super::*;
     use crate::sources::poll::testing::{serve, Keeper};
+    use crate::sources::poll::SOURCES_NS;
+
+    /// Events the API holds: (application, uniqueQualifier, time). A test
+    /// adds to them between polls, as Google does when an event shows up
+    /// late.
+    type Events = Arc<Mutex<Vec<(&'static str, &'static str, DateTime<Utc>)>>>;
+
+    /// A Reports API serving each application's events from the request's
+    /// `startTime` on, newest first, in one page.
+    async fn reports(events: Events) -> String {
+        serve(|_| {
+            axum::Router::new().fallback(
+                move |uri: Uri, Query(q): Query<HashMap<String, String>>| {
+                    let app = uri
+                        .path()
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or_default()
+                        .to_string();
+                    let start: DateTime<Utc> = q["startTime"].parse().unwrap();
+                    let mut items: Vec<_> = events
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .filter(|(a, _, t)| *a == app && *t >= start)
+                        .map(|&(_, uq, t)| (t, uq))
+                        .collect();
+                    items.sort_by_key(|&(t, _)| std::cmp::Reverse(t));
+                    let items: Vec<Value> = items
+                        .into_iter()
+                        .map(|(t, uq)| {
+                            let time = t.to_rfc3339_opts(SecondsFormat::Millis, true);
+                            json!({"id": {"time": time, "uniqueQualifier": uq}})
+                        })
+                        .collect();
+                    async move { Json(json!({ "items": items })) }
+                },
+            )
+        })
+        .await
+    }
+
+    /// A config reading `applications` from `api`, and their pollers, which
+    /// write to `keeper`'s store and sink.
+    fn workspace(
+        keeper: &Keeper,
+        api: &str,
+        applications: &[&str],
+        since: &str,
+    ) -> (GoogleWorkspaceConfig, Vec<(String, Poller)>) {
+        let cfg: GoogleWorkspaceConfig = serde_json::from_value(
+            json!({"api": api, "applications": applications, "since": since}),
+        )
+        .unwrap();
+        let (store, router) = keeper.parts();
+        let apps = pollers(&Arc::from("google_workspace"), &cfg, &store, &router);
+        (cfg, apps)
+    }
+
+    #[tokio::test]
+    async fn each_applications_cursor_moves_on_its_own() {
+        let now = Utc::now().trunc_subsecs(0);
+        let (login, token) = (now - Duration::minutes(1), now - Duration::minutes(10));
+        let events: Events = Arc::new(Mutex::new(vec![
+            ("login", "l1", login),
+            ("token", "t1", token),
+        ]));
+        let api = reports(Arc::clone(&events)).await;
+        let keeper = Keeper::new("google_workspace");
+        let (cfg, apps) = workspace(&keeper, &api, &["login", "token"], "1h");
+        let client = reqwest::Client::new();
+        let poll_both = || poll_all(&client, "t", &cfg, &apps);
+
+        assert_eq!(poll_both().await.unwrap(), 2);
+        assert_eq!(apps[0].1.cursor().await, Some(login));
+        assert_eq!(apps[1].1.cursor().await, Some(token), "not login's");
+
+        // only login has something new: only its cursor moves
+        events.lock().unwrap().push(("login", "l2", now));
+        assert_eq!(poll_both().await.unwrap(), 1);
+        assert_eq!(apps[0].1.cursor().await, Some(now));
+        assert_eq!(apps[1].1.cursor().await, Some(token));
+
+        let (store, _) = keeper.parts();
+        let t1 = format!(
+            "google_workspace:token:seen:t1:{}",
+            token.timestamp_millis()
+        );
+        for key in ["google_workspace:token:cursor", t1.as_str()] {
+            assert!(store.get(SOURCES_NS, key).await.unwrap().is_some(), "{key}");
+        }
+        drop((apps, store));
+        assert_eq!(keeper.sent("/id/uniqueQualifier").await, ["l1", "t1", "l2"]);
+    }
 
     #[tokio::test]
     async fn a_429_on_page_two_leaves_page_one_to_the_next_poll() {

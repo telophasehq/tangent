@@ -17,12 +17,13 @@ pub struct GoogleWorkspaceConfig {
     #[serde(default)]
     pub subject: Option<String>,
     /// Which applications' activity to read: `login`, `token`, `drive`,
-    /// `admin`, `saml`, `groups`, ...
+    /// `admin`, `saml`, `groups`, ... Each is read from a cursor of its own.
     #[serde(default = "default_applications")]
     pub applications: Vec<String>,
     #[serde(default = "default_interval_secs")]
     pub interval_secs: u64,
-    /// On first start, how far back to read; afterwards from the cursor.
+    /// On first start, how far back to read; afterwards from each
+    /// application's cursor.
     #[serde(default = "default_since", deserialize_with = "bare_string")]
     pub since: String,
     /// The Reports API root.

@@ -53,6 +53,28 @@ impl Poller {
         }
     }
 
+    /// A poller for one part of source `name` (one Google Workspace
+    /// application, say) with a cursor, seen ids and lateness of its own:
+    /// its keys start with `<name>:<part>`, and its records still come
+    /// from source `name`.
+    pub fn part(
+        name: Arc<str>,
+        part: &str,
+        store: Arc<dyn StateStore>,
+        router: Arc<Router>,
+        late: Duration,
+    ) -> Self {
+        Self {
+            from: NodeRef::Source {
+                name: Arc::clone(&name),
+            },
+            name: Arc::from(format!("{name}:{part}")),
+            store,
+            router,
+            late,
+        }
+    }
+
     /// Where the last poll stopped, if there was one.
     pub async fn cursor(&self) -> Option<DateTime<Utc>> {
         match self
@@ -359,6 +381,15 @@ pub(crate) mod testing {
                 manager,
                 kept,
             }
+        }
+
+        /// The store and router its poller writes to, for pollers of its
+        /// source's parts (`Poller::part`). Drop them before `sent`.
+        pub fn parts(&self) -> (Arc<dyn StateStore>, Arc<Router>) {
+            (
+                Arc::clone(&self.poller.store),
+                Arc::clone(&self.poller.router),
+            )
         }
 
         /// What the sink was sent, in order: each record's value at `pointer`.
