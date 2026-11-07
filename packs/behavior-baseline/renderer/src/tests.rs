@@ -378,21 +378,19 @@ fn who_is_behind_a_federated_user() {
     has(&h, "auth", &format!("last 72h, {fed} and dave: "));
 }
 
-/// The app pack's audit shape under a name of yours (its `sources` or
-/// `extra_sources`) is learned as `app` is; a record of a source baseline
-/// does not know, without an `event`, is not.
+/// A record baseline cannot read is neither learned nor stamped: one of a
+/// source it does not know, whatever fields it has, and one with no actor.
 #[test]
-fn the_app_shape_under_another_name() {
-    let rec = |src: &str, ts: &str| {
-        json!({"source": src, "ts": format!("2026-{ts}Z"), "event": "invoice.view", "ip": HOME.0,
-               "path": "/invoices/42", "_norm": {"actor": "carol@acme.io", "org": "acme"}})
+fn what_it_cannot_read_passes_unstamped() {
+    let rec = |ts: &str| {
+        json!({"source": "billing", "ts": format!("2026-{ts}Z"), "event": "invoice.view", "ip": HOME.0,
+               "_norm": {"actor": "carol@acme.io", "org": "acme"}})
     };
-    let mut st = fold(&[rec("billing", "01-01T15:00:00")]);
-    let h = baseline(&mut st, &rec("billing", "01-05T13:00:00"));
-    has(&h, "seen", "seen 3.9 days");
-    let mut other = rec("mystery", "01-05T13:00:00");
-    if let Some(m) = other.as_object_mut() {
-        m.remove("event");
+    let mut st = fold(&[rec("01-01T15:00:00")]);
+    assert_eq!(baseline(&mut st, &rec("01-05T13:00:00")), Value::Null);
+    let mut nobody = okta("01-05T13:00:00", "user.session.start", HOME);
+    if let Some(n) = nobody.get_mut("_norm").and_then(Value::as_object_mut) {
+        n.remove("actor");
     }
-    assert_eq!(baseline(&mut st, &other), Value::Null);
+    assert_eq!(baseline(&mut st, &nobody), Value::Null);
 }

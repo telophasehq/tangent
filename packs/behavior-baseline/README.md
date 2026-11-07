@@ -53,9 +53,7 @@ dag:
 
 `baseline_builder` learns from every record with a `_norm.actor` whose
 `source` it knows: `cloudtrail`, `github_audit`, `okta`, `google_workspace`,
-`app`, `gha_ci` and `runner_egress`, and any other with an `event`, as the
-app pack's audit shape under a name of yours. Others, `agent` among them, it
-passes over.
+`gha_ci` and `runner_egress`. Others it passes over.
 
 - when the actor was first seen, and its events per day and per five minutes,
   by category: read, write, IAM or policy on someone else, its own
@@ -167,10 +165,9 @@ slots only when they ended before it.
 
 [kit/src/kinds](kit/src/kinds) reads each source's own fields: its verb,
 category, resources, client, identity and sign-in or credential event, for
-`cloudtrail`, `github_audit`, `okta`, `google_workspace`, `app`, `gha_ci` and
-`runner_egress`. A record of any other source with an `event` is read as
-`app`'s: the app pack's audit shape under a name in its `sources` or
-`extra_sources`. The packs could later write these as a normalized field
+`cloudtrail`, `github_audit`, `okta`, `google_workspace`, `gha_ci` and
+`runner_egress`. A record of any other source passes through unlearned,
+with no `_baseline`. The packs could later write these as a normalized field
 instead, and this table would go.
 
 ## Tests
@@ -183,8 +180,8 @@ make -C packs fixtures-baseline  # story.sh write: tests/expected.json from the 
 `tests/input.json` is a sign-in story, records as the packs write them: office
 logins, a failed one from another country, an MFA reset by an admin, the
 sign-in from the new country, an aliased IAM user's bucket policy twenty
-minutes later, an AssumeRole and the role's call, an SSO session, and an
-agent's record with no actor. [test.yaml](test.yaml) sends each record to the
-renderer and then the builder, a call each, over one state, so its
-`_baseline` is what the records before it taught. `tangent plugin test` runs
-one plugin, so [story.sh](story.sh) runs the pipeline and compares.
+minutes later, an AssumeRole and the role's call, and an SSO session.
+[test.yaml](test.yaml) sends each record to the renderer and then the
+builder, a call each, over one state, so its `_baseline` is what the records
+before it taught. `tangent plugin test` runs one plugin, so
+[story.sh](story.sh) runs the pipeline and compares.
