@@ -90,18 +90,23 @@ fn every_config_in_the_repo_loads() {
 }
 
 /// Every edge's nodes exist, which `tangent run` checks before it starts and
-/// loading does not: in examples/cloud-infra, and in a pipeline of every pack
-/// in packs/ without the judge, so no pack names a node of the judge's.
+/// loading does not: in examples/cloud-infra and the config `tangent init`
+/// writes (its packs by name, the ones built in), and in a pipeline of every
+/// pack in packs/ without the judge, so no pack names a node of the judge's.
 #[test]
 fn pipelines_validate_with_and_without_the_judge() {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
         .unwrap();
-    let example = "examples/cloud-infra/tangent.yaml";
-    let cfg = Config::load(&repo.join(example)).unwrap().config;
-    cfg.validate()
-        .unwrap_or_else(|e| panic!("{example}: {e:#}"));
+    for example in [
+        "examples/cloud-infra/tangent.yaml",
+        "crates/cli/src/init.yaml",
+    ] {
+        let cfg = Config::load(&repo.join(example)).unwrap().config;
+        cfg.validate()
+            .unwrap_or_else(|e| panic!("{example}: {e:#}"));
+    }
 
     // Every pack, as packs/Makefile finds them: a directory with an
     // ingest.yaml and its plugin's Cargo.toml, so not enrich-ip,

@@ -1,0 +1,72 @@
+# tangent.yaml, written by `tangent init`. Check the line marked EDIT, then:
+#
+#   tangent replay --config tangent.yaml --from 1d
+#
+# That reads the last day of your AWS account's CloudTrail (Event history,
+# every region, up to 90 days back), has Claude Haiku 5.5 on Bedrock judge
+# each actor's records, and writes what it flagged to alerts.ndjson and every
+# verdict to verdicts.ndjson. `tangent config --config tangent.yaml` prints it
+# merged with the packs.
+
+# The AWS profile (~/.aws/config) that reads CloudTrail and calls Bedrock:
+# $AWS_PROFILE, or default when it is unset, as the aws CLI picks one.
+x-profile: &profile ${AWS_PROFILE:-default}    # EDIT to name another profile
+
+include:
+  - pack:judge/hosted          # the judge, for a hosted model, with the enrich-ip and behavior-baseline packs
+  - pack:aws                   # plugin aws: CloudTrail into finished records
+
+sources:
+  cloudtrail:
+    type: cloudtrail
+    profile: *profile
+    region: us-east-1          # for looking up its credentials; replay reads every region
+
+inference:
+  judge:
+    backend: bedrock
+    model: us.anthropic.claude-haiku-5-5
+    aws: { profile: *profile, region: us-west-2 }   # a US region: Bedrock serves this model there
+    max_tokens: 400                                 # per record
+    extra: { thinking: { type: disabled } }         # no thinking: the reply is the answer
+
+# Files beside this one, none shipped. Without one, its facts are left out,
+# with a warning. profile.yaml is your company, what no log says:
+# https://github.com/EthanBlackburn/tangent/blob/main/packs/README.md#the-profile
+# The data/ files name each address's country, owner, hosting, Tor and VPN:
+# https://github.com/EthanBlackburn/tangent/blob/main/examples/enrich/README.md#data
+enrichment_tables:
+  profile: { type: document, path: profile.yaml }
+  geo: { type: mmdb, path: data/GeoLite2-Country.mmdb }
+  asn: { type: mmdb, path: data/GeoLite2-ASN.mmdb }
+  networks: { type: cidr, path: data/networks.csv }
+
+# `tangent run` keeps every record in the lake; `tangent replay` writes nothing to it.
+sinks:
+  lake:                          # every finished record, kept: Parquet files, a directory an hour; delete old hours to trim it
+    type: rolling_file
+    path: lake/logs/%Y/%m/%d/%H
+    wal_path: lake/wal
+    max_file_age_seconds: 3600
+    compression: { type: zstd, level: 3 }
+    encoding:
+      type: parquet
+      record_column: record      # each record whole, for the fields the schema leaves out
+      schema:
+        ts: timestamp
+        source: string
+        _norm: { org: string, actor: string, kind: string, ip: string }
+
+dag:
+  - from: cloudtrail
+    to: [aws]
+  - from: aws                  # each record kept, learned and judged
+    to: [lake, baseline_builder, baseline_renderer]
+  - from: baseline_renderer
+    to: [judge]
+  - from: judge
+    to: [fresh]
+  - from: fresh                # verdicts on the new records
+    to: [flagged, verdicts]
+  - from: flagged              # those the model flagged
+    to: [alerts]
