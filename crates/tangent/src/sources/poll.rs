@@ -4,8 +4,8 @@
 //! poll does not emit an event twice. Records go out stamped with `source`
 //! and `ts`, one frame each, in time order.
 //!
-//! Each API reports events some time after they happen (Google Workspace by
-//! up to an hour, say). A source names that lateness; every poll reads
+//! Each API reports events some time after they happen (Google Workspace's
+//! token events by a few hours, say). A source names that lateness; every poll reads
 //! from the cursor less the lateness, and the cursor ends a poll at the
 //! newest event seen or at `now - lateness`, whichever is later (only at
 //! the newest event when the poll stopped at its page cap). An id is

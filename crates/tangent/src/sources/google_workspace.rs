@@ -1,10 +1,13 @@
 //! Google Workspace audit activity, polled from the Admin SDK Reports API as
 //! a service account with domain-wide delegation acting for an admin.
 //!
-//! Each application is read on its own, from a cursor of its own, so its
-//! lookback is its own. State keys (namespace `sources`):
-//! `<source>:<application>:cursor`, and
-//! `<source>:<application>:seen:<uniqueQualifier>:<ms>` for an event sent.
+//! Each application is read on its own, from a cursor of its own less as
+//! long as Google says its events can take to show up (`lateness`): four
+//! hours for `token`, three for `calendar`, `groups` and
+//! `groups_enterprise`, an hour for most.
+//! State keys (namespace `sources`): `<source>:<application>:cursor`, and
+//! `<source>:<application>:seen:<uniqueQualifier>:<ms>` for an event sent,
+//! kept three times the application's lateness.
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -22,8 +25,35 @@ use crate::state::StateStore;
 
 const SOURCE: &str = "google_workspace";
 const SCOPE: &str = "https://www.googleapis.com/auth/admin.reports.audit.readonly";
-/// Some applications' activity shows up an hour late; look back that far.
-const LATE_MS: i64 = 60 * 60 * 1000;
+
+/// How late an application's events can show up, so how far back each of
+/// its polls reads: the most Google's table of lag times gives for its log
+/// events (not its reports), rounded up to the hour,
+/// <https://knowledge.workspace.google.com/admin/reports/data-retention-and-lag-times>.
+/// An application the table gives in minutes, or does not list, gets an
+/// hour.
+fn lateness(app: &str) -> Duration {
+    Duration::hours(match app {
+        // Token log events: "A couple of hours". OAuth log events (an
+        // app's grants and API calls, which the Reports API serves as
+        // `token`): "Up to a few hours".
+        "token" => 4,
+        // "Up to a few hours"
+        "cloud_search" => 4,
+        // "Tens of minutes (can also go up to a couple of hours)". The
+        // table has no row for `groups_enterprise` (groups and memberships
+        // changed in the Admin console or through the APIs), though its
+        // own page sends you to the table for its lag: it gets Groups'.
+        "calendar" | "groups" | "groups_enterprise" => 3,
+        // a process finishing: "Depends on the size of the data, up to
+        // many days" (its start: "Near real time"); there is no maximum,
+        // and a week of Takeout is a page
+        "takeout" => 7 * 24,
+        // "Near real time (couple of minutes)" for most; user accounts
+        // "Tens of minutes"; quota "5–10 minutes"
+        _ => 1,
+    })
+}
 
 #[derive(Deserialize)]
 struct ServiceAccount {
@@ -169,7 +199,8 @@ async fn fetch_token(
     })
 }
 
-/// A poller for each application, with a cursor and seen ids of its own.
+/// A poller for each application, with a cursor, seen ids and lateness of
+/// its own.
 fn pollers(
     name: &Arc<str>,
     cfg: &GoogleWorkspaceConfig,
@@ -184,15 +215,16 @@ fn pollers(
                 app,
                 Arc::clone(store),
                 Arc::clone(router),
-                Duration::milliseconds(LATE_MS),
+                lateness(app),
             );
             (app.clone(), poller)
         })
         .collect()
 }
 
-/// Every application once, each from its own cursor, which then moves on
-/// its own: how many new events were forwarded.
+/// Every application once, each from its own cursor less its own
+/// lateness, the cursor then moving on its own: how many new events were
+/// forwarded.
 async fn poll_all(
     client: &reqwest::Client,
     access: &str,
@@ -385,6 +417,56 @@ mod tests {
         }
         drop((apps, store));
         assert_eq!(keeper.sent("/id/uniqueQualifier").await, ["l1", "t1", "l2"]);
+    }
+
+    #[tokio::test]
+    async fn a_token_event_two_hours_late_is_read_and_sent_once() {
+        let now = Utc::now().trunc_subsecs(0);
+        let events: Events = Arc::new(Mutex::new(vec![(
+            "token",
+            "on-time",
+            now - Duration::minutes(1),
+        )]));
+        let api = reports(Arc::clone(&events)).await;
+        let keeper = Keeper::new("google_workspace");
+        let (cfg, apps) = workspace(&keeper, &api, &["token"], "1h");
+        let client = reqwest::Client::new();
+        let poll_token = || poll_all(&client, "t", &cfg, &apps);
+
+        assert_eq!(poll_token().await.unwrap(), 1);
+        // an event from two hours ago shows up only now, as Google says
+        // token events can
+        events
+            .lock()
+            .unwrap()
+            .push(("token", "late", now - Duration::hours(2)));
+        assert_eq!(poll_token().await.unwrap(), 1, "inside token's lookback");
+        assert_eq!(poll_token().await.unwrap(), 0, "and sent once");
+        drop(apps);
+        assert_eq!(
+            keeper.sent("/id/uniqueQualifier").await,
+            ["on-time", "late"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_repeat_inside_an_applications_lookback_is_sent_once() {
+        // three hours ago: past an hour, inside token's lookback, so every
+        // poll reads it again
+        let then = Utc::now().trunc_subsecs(0) - Duration::hours(3);
+        let events: Events = Arc::new(Mutex::new(vec![("token", "t1", then)]));
+        let api = reports(events).await;
+        let keeper = Keeper::new("google_workspace");
+        let (cfg, apps) = workspace(&keeper, &api, &["token"], "6h");
+        let client = reqwest::Client::new();
+
+        assert_eq!(poll_all(&client, "t", &cfg, &apps).await.unwrap(), 1);
+        for _ in 0..2 {
+            assert!(apps[0].1.start(&cfg.since).await <= then, "read again");
+            assert_eq!(poll_all(&client, "t", &cfg, &apps).await.unwrap(), 0);
+        }
+        drop(apps);
+        assert_eq!(keeper.sent("/id/uniqueQualifier").await, ["t1"]);
     }
 
     #[tokio::test]
