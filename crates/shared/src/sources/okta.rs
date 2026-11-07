@@ -3,9 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::sources::common::bare_string;
 
-/// Okta's System Log, polled (`GET /api/v1/logs?since=…`, paged by the
-/// `Link` header). Records are emitted as Okta returns them, plus
-/// `source: okta` and `ts` (from `published`).
+/// Okta's System Log, polled (`GET /api/v1/logs?since=…&sortOrder=ASCENDING`,
+/// then each page's `next` link; the last link read is saved, and the next
+/// poll or a restart asks for it). Records are emitted as Okta returns them,
+/// plus `source: okta` and `ts` (from `published`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OktaConfig {
@@ -18,7 +19,8 @@ pub struct OktaConfig {
     pub token: Option<SecretString>,
     #[serde(default = "default_interval_secs")]
     pub interval_secs: u64,
-    /// On first start, how far back to read; afterwards from the cursor.
+    /// On first start, how far back to read; afterwards from the saved
+    /// `next` link.
     #[serde(default = "default_since", deserialize_with = "bare_string")]
     pub since: String,
 }
