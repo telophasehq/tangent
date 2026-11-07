@@ -57,6 +57,8 @@ runtime:
     max_entries: 100000    # lru only: evict the least recently used past this
 ```
 
+An entry past its TTL reads as missing at once, and the running pipeline deletes it when it starts and every five minutes after. SQLite reuses the space a deleted entry held, so `state.sqlite` grows only while the live entries do; it does not shrink.
+
 Entries are keyed by namespace and key. Plugins share one namespace, `plugins`, so what one plugin writes the next can read; a read, and a write that depends on it, go in a transaction when several workers run the plugin (below). Give a plugin a `state_namespace` of its own when it must not share, such as two instances of one plugin with different configs:
 
 ```yaml

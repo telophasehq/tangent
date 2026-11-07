@@ -25,6 +25,10 @@ use super::{expires_at, now_ms, sqlite_path, Count, Entry, StateStore, StateValu
 
 static OPEN_GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
+/// Expired rows a purge deletes per turn: about 20 ms on a table of a
+/// million rows, as long as a call that comes in meanwhile waits on it.
+const PURGE_BATCH: usize = 1000;
+
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS state (
     ns         TEXT NOT NULL,
@@ -242,13 +246,38 @@ impl StateStore for SqliteStore {
     }
 
     async fn purge_expired(&self) -> Result<u64> {
-        let now = now_ms() as i64;
-        let _turn = self.turn.lock().await;
-        let n = self.conn.lock().execute(
-            "DELETE FROM state WHERE expires_at IS NOT NULL AND expires_at <= ?1",
-            [now],
-        )?;
-        Ok(n as u64)
+        // A reader leaves the rows to the writer, as `get` does.
+        if self.lock.is_none() {
+            return Ok(0);
+        }
+        let mut purged = 0;
+        loop {
+            let (n, took) = {
+                let _turn = self.turn.lock().await;
+                let started = std::time::Instant::now();
+                // The clock now, which a read judges a row by: rows land
+                // between batches, with a TTL from a clock that may have
+                // stepped back since the purge began.
+                let now = now_ms() as i64;
+                let n = self.conn.lock().execute(
+                    "DELETE FROM state WHERE rowid IN (
+                        SELECT rowid FROM state
+                        WHERE expires_at IS NOT NULL AND expires_at <= ?1
+                        LIMIT ?2)",
+                    params![now, PURGE_BATCH as i64],
+                )?;
+                (n, started.elapsed())
+            };
+            purged += n as u64;
+            if n < PURGE_BATCH {
+                return Ok(purged);
+            }
+            // The store is the other calls' for as long as the batch held
+            // it, so they keep at least half their pace while a purge runs.
+            // A yield alone let each waiting call make one call per batch.
+            // Nothing waits for a purge to end.
+            tokio::time::sleep(took).await;
+        }
     }
 
     async fn reset(&self) -> Result<()> {
@@ -500,6 +529,184 @@ mod tests {
             reader.sql("DELETE FROM state", 10).is_err(),
             "writes are refused"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Expired rows are the writer's to delete: a reader's purge leaves
+    /// them in the table.
+    #[tokio::test]
+    async fn a_reader_leaves_expired_rows_to_the_writer() {
+        let dir = temp_dir("reader-purge");
+        let writer = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
+        writer
+            .set("sources", "okta:seen:1", &StateValue::Bool(true), Some(1))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let reader =
+            SqliteStore::open_readonly(&sqlite_path(&StateConfig::default(), &dir)).unwrap();
+        let rows = || reader.sql("SELECT key FROM state", 10).unwrap().len();
+        assert_eq!(reader.purge_expired().await.unwrap(), 0);
+        assert_eq!(rows(), 1, "still in the table");
+        assert_eq!(writer.purge_expired().await.unwrap(), 1);
+        assert_eq!(rows(), 0, "the writer's purge deletes it");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The runtime's purge runs on its timer until it is stopped: a row that
+    /// expires after one purge is deleted by a later one.
+    #[tokio::test]
+    async fn the_purge_runs_until_stopped() {
+        let dir = temp_dir("purge-timer");
+        let store = Arc::new(SqliteStore::open(&StateConfig::default(), &dir).unwrap());
+        let stop = tokio_util::sync::CancellationToken::new();
+        let every = Duration::from_millis(20);
+        let task = crate::state::spawn_purge(store.clone(), every, stop.clone());
+        // Past the first purge, which runs at once.
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let seen = StateValue::Bool(true);
+        store
+            .set("sources", "okta:seen:1", &seen, Some(1))
+            .await
+            .unwrap();
+        let rows = || store.sql("SELECT key FROM state", 10).unwrap().len();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while rows() > 0 && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(rows(), 0, "a later purge deleted it");
+
+        stop.cancel();
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("the purge stops")
+            .unwrap();
+        store
+            .set("sources", "okta:seen:2", &seen, Some(1))
+            .await
+            .unwrap();
+        tokio::time::sleep(every * 3).await;
+        assert_eq!(rows(), 1, "nothing purges once stopped");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// `n` seen ids, expired, and a cursor that never expires.
+    async fn expired_ids_and_a_cursor(store: &SqliteStore, n: usize) -> StateValue {
+        let mut tx = store.begin().await.unwrap();
+        for i in 0..n {
+            let key = format!("okta:seen:{i}");
+            tx.set("sources", &key, &StateValue::Bool(true), Some(1))
+                .await
+                .unwrap();
+        }
+        let cursor = StateValue::Str("2026-11-07T00:00:00Z".into());
+        tx.set("sources", "okta:cursor", &cursor, Some(0))
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        cursor
+    }
+
+    /// The rows in the table, expired or not.
+    fn rows(store: &SqliteStore) -> u64 {
+        store.sql("SELECT count(*) AS n FROM state", 1).unwrap()[0]["n"]
+            .as_u64()
+            .unwrap()
+    }
+
+    fn spawn_purge(store: &Arc<SqliteStore>) -> tokio::task::JoinHandle<u64> {
+        let store = Arc::clone(store);
+        tokio::spawn(async move { store.purge_expired().await.unwrap() })
+    }
+
+    /// A purge deletes every expired row, a batch per turn: a call that
+    /// comes in meanwhile runs between two batches, not after them all.
+    #[tokio::test]
+    async fn a_purge_takes_a_turn_per_batch() {
+        let dir = temp_dir("purge-batches");
+        let store = Arc::new(SqliteStore::open(&StateConfig::default(), &dir).unwrap());
+        let expired = 2 * PURGE_BATCH + 1;
+        let cursor = expired_ids_and_a_cursor(&store, expired).await;
+
+        let purge = spawn_purge(&store);
+        let get = tokio::spawn({
+            let store = Arc::clone(&store);
+            async move {
+                assert_eq!(
+                    store.get("sources", "okta:cursor").await.unwrap(),
+                    Some(cursor)
+                );
+                rows(&store)
+            }
+        });
+        let left_at_get = get.await.unwrap();
+        assert_eq!(purge.await.unwrap(), expired as u64);
+        assert!(
+            left_at_get > 1 && left_at_get <= expired as u64,
+            "the get ran between two batches: {left_at_get} rows were left"
+        );
+        assert_eq!(rows(&store), 1, "every expired row is gone");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Between two batches a purge leaves the store to other calls, so one
+    /// that makes call after call keeps going while it runs, not one call
+    /// per batch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn calls_keep_going_while_a_purge_runs() {
+        let dir = temp_dir("purge-pace");
+        let store = Arc::new(SqliteStore::open(&StateConfig::default(), &dir).unwrap());
+        let batches = 10;
+        let cursor = expired_ids_and_a_cursor(&store, batches * PURGE_BATCH).await;
+        let all = rows(&store);
+
+        let purge = spawn_purge(&store);
+        // Counting from the end of the first batch.
+        while rows(&store) == all {
+            tokio::task::yield_now().await;
+        }
+        let mut calls = 0;
+        while !purge.is_finished() {
+            let got = store.get("sources", "okta:cursor").await.unwrap();
+            assert_eq!(got.as_ref(), Some(&cursor));
+            calls += 1;
+        }
+        assert_eq!(purge.await.unwrap(), (batches * PURGE_BATCH) as u64);
+        assert!(
+            calls >= 10 * batches,
+            "{calls} calls while {batches} batches ran"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Each batch goes by the clock when it runs, as a read does, not the
+    /// clock when the purge began: a row written while a purge runs
+    /// expires by the clock it was written with.
+    #[tokio::test]
+    async fn each_batch_goes_by_the_clock_then() {
+        let dir = temp_dir("purge-clock");
+        let store = Arc::new(SqliteStore::open(&StateConfig::default(), &dir).unwrap());
+        let expired = 10 * PURGE_BATCH;
+        expired_ids_and_a_cursor(&store, expired).await;
+        let all = rows(&store);
+
+        let purge = spawn_purge(&store);
+        while rows(&store) == all {
+            tokio::task::yield_now().await;
+        }
+        // Written after the purge began, and expired before it ends.
+        store
+            .set(
+                "sources",
+                "okta:seen:late",
+                &StateValue::Bool(true),
+                Some(1),
+            )
+            .await
+            .unwrap();
+        assert_eq!(purge.await.unwrap(), expired as u64 + 1);
+        assert_eq!(rows(&store), 1, "only the cursor is left");
         let _ = std::fs::remove_dir_all(dir);
     }
 

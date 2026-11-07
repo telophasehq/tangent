@@ -23,6 +23,9 @@ pub struct DagRuntime {
     pool: Arc<WorkerPool>,
     sink_manager: Arc<SinkManager>,
     consumer_handles: Vec<tokio::task::JoinHandle<()>>,
+    /// What stops the task that deletes expired state, and the task; none
+    /// when the pipeline reads another's state.
+    purge: Option<(CancellationToken, tokio::task::JoinHandle<()>)>,
     /// Each grouped plugin's grouping task, and the pool it hands groups to.
     groups: Vec<(Grouper, tokio::task::JoinHandle<()>, Arc<WorkerPool>)>,
     /// The enrichment tables every plugin on every worker reads, here so a
@@ -162,6 +165,14 @@ impl DagRuntime {
         }
         router.set_groupers(groupers);
 
+        // Last, after everything that can fail, so a failed build leaves no
+        // task holding the store (and SQLite's lock with it). Expired
+        // entries in a store this pipeline only reads are its writer's.
+        let purge = (!cfg.runtime.state.read_only).then(|| {
+            let stop = shutdown.child_token();
+            let task = state::spawn_purge(Arc::clone(&store), state::PURGE_EVERY, stop.clone());
+            (stop, task)
+        });
         let consumer_handles = spawn_consumers(
             cfg.sources,
             batch_size,
@@ -175,6 +186,7 @@ impl DagRuntime {
             pool,
             sink_manager,
             consumer_handles,
+            purge,
             groups,
             #[cfg(test)]
             tables,
@@ -187,9 +199,17 @@ impl DagRuntime {
             pool,
             sink_manager,
             consumer_handles,
+            purge,
             groups,
             ..
         } = self;
+
+        // Stopped with the shutdown signal already; this stops it when the
+        // caller never sent one.
+        if let Some((stop, task)) = purge {
+            stop.cancel();
+            let _ = task.await;
+        }
 
         tracing::info!("waiting on consumers to shutdown...");
         for mut h in consumer_handles {
@@ -604,6 +624,7 @@ mod tests {
             pool: worker_pool,
             sink_manager: Arc::clone(&sink_manager),
             consumer_handles: vec![],
+            purge: None,
             groups: vec![],
             tables: Default::default(),
         };
@@ -636,6 +657,77 @@ mod tests {
         assert_eq!(blocking_sink.write_count().await, 1);
         assert!(blocking_sink.flush_completed());
         assert_eq!(ack.count(), 1);
+    }
+
+    /// A running pipeline deletes the state rows that have expired, not
+    /// just skips them on read: here the ids a polling source remembered
+    /// while it last ran.
+    #[tokio::test]
+    async fn a_running_pipeline_deletes_expired_state() {
+        use crate::state::{sqlite::SqliteStore, StateValue};
+        use tangent_shared::runtime::StateConfig;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        {
+            let store = SqliteStore::open(&StateConfig::default(), &root).unwrap();
+            let seen = StateValue::Bool(true);
+            store
+                .set("sources", "okta:seen:1", &seen, Some(1))
+                .await
+                .unwrap();
+            let cursor = StateValue::Str("2026-11-07T00:00:00Z".into());
+            store
+                .set("sources", "okta:cursor", &cursor, Some(0))
+                .await
+                .unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        std::fs::write(root.join("in.ndjson"), "{\"id\":1}\n").unwrap();
+        let cfg_path = root.join("tangent.yaml");
+        std::fs::write(
+            &cfg_path,
+            format!(
+                "
+sources:
+  in: {{ type: file, path: {root}/in.ndjson, decoding: {{ format: {{ type: ndjson }} }} }}
+sinks:
+  out: {{ type: file, path: {root}/out.ndjson, compression: {{ type: none }} }}
+dag:
+  - from: in
+    to: [out]
+",
+                root = root.display()
+            ),
+        )
+        .unwrap();
+        let cfg = Config::from_file(&cfg_path).unwrap();
+
+        let shutdown = CancellationToken::new();
+        let rt = DagRuntime::build(cfg, &cfg_path, shutdown.clone(), CancellationToken::new())
+            .await
+            .unwrap();
+        // The table itself, read beside the running pipeline: `get` skips
+        // an expired row whether or not it is still there.
+        let reader = SqliteStore::open_readonly(&root.join("state.sqlite")).unwrap();
+        let keys = || -> Vec<String> {
+            reader
+                .sql("SELECT key FROM state ORDER BY key", 10)
+                .unwrap()
+                .into_iter()
+                .map(|r| r["key"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while keys().len() > 1 && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(keys(), ["okta:cursor"], "the expired id is gone");
+
+        shutdown.cancel();
+        rt.shutdown(Duration::from_secs(5), Duration::from_secs(5))
+            .await
+            .unwrap();
     }
 
     /// A read-only pipeline whose runtime writes state is refused: a
