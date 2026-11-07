@@ -7,7 +7,7 @@ of an organization trail), or the same records sent as NDJSON.
 
 ## What it writes
 
-`_norm` ([enrich](../enrich#the-record) has the contract):
+`_norm` ([the record](../README.md#the-record) has the contract):
 
 | field | from |
 |---|---|
@@ -65,7 +65,7 @@ Tor and VPN, and whether it is one of yours (`_facts.ip`). Next, through
 
 ## Use it
 
-In your config, beside [judge](../judge), which brings enrich and
+In your config, beside [judge](../judge), which brings enrich-ip and
 behavior-baseline:
 
 ```yaml
@@ -73,7 +73,7 @@ include:
   - ../tangent/packs/judge/ingest.yaml
   - ../tangent/packs/aws/ingest.yaml
 
-enrichment_tables:                  # your company: packs/enrich/README.md#the-profile
+enrichment_tables:                  # your company: packs/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
 
 sinks:

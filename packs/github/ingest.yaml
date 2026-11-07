@@ -1,7 +1,7 @@
 # github: GitHub's audit log, CI job logs and runner egress into finished
 # records, by one plugin, `github`: normalized, trimmed, enriched, the
 # profile's facts added. Include it in your config with
-# packs/enrich/ingest.yaml, route a `github_audit` source (and NDJSON with
+# packs/enrich-ip/ingest.yaml, route a `github_audit` source (and NDJSON with
 # `source: gha_ci` or `runner_egress`) to plugin github, and plugin github to
 # where its records go, and give the config a `profile` table; README.md has
 # the lines.

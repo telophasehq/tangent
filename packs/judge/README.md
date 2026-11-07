@@ -3,7 +3,7 @@
 Not a provider: a model reads each actor's records a group at a time, with
 what [behavior-baseline](../behavior-baseline) knew of the actor before them,
 and writes a verdict per record; a person reads the ones it flagged.
-[ingest.yaml](ingest.yaml) includes [enrich](../enrich) and
+[ingest.yaml](ingest.yaml) includes [enrich-ip](../enrich-ip) and
 behavior-baseline, so a config that includes it has the tables and the
 baseline too, and names nothing more than its packs.
 
@@ -13,7 +13,7 @@ your sources ──▶ a pack's plugin ──┬──▶ a sink of yours: lake/
                    tables geo,     │                              │
                    asn, networks   └──▶ baseline_renderer ◀───────┘
                    and profile          an actor's records, a group at a time               (judge)
-                   (enrich)                  │
+                   (enrich-ip)               │
                                              ▼
                                            judge ──▶ fresh ──┬──▶ flagged ──▶ alerts.ndjson
                                                              └──▶ verdicts.ndjson
@@ -69,7 +69,29 @@ model about one reply in five came back unreadable):
 llama-server -m GLM-4.7-Flash-Q4_K.gguf --port 8080 -np 1 -c 32768 -ngl 99 -fa on --jinja --temp 0.7 --top-p 0.95
 ```
 
-For a hosted one: `JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY`.
+`ingest.yaml` also sends that model's sampling settings (`temperature: 0.7`,
+`top_p` and `chat_template_kwargs`), which a hosted model may refuse: Claude
+Haiku 5.5 refuses `temperature` and `top_p`, and `chat_template_kwargs` is
+llama.cpp's. For a hosted one, include [hosted.yaml](hosted.yaml) in place
+of `ingest.yaml`: the same judge without them. With an OpenAI-compatible
+endpoint that is
+`JUDGE_URL=https://api.openai.com/v1 JUDGE_MODEL=gpt-5.1 JUDGE_API_KEY=$OPENAI_API_KEY`;
+for Claude Haiku 5.5 on Bedrock, your config sets the rest:
+
+```yaml
+include: [packs/judge/hosted.yaml]
+inference:
+  judge:
+    backend: bedrock
+    model: us.anthropic.claude-haiku-5-5
+    aws: { region: us-west-2 }               # and `profile`; the SDK's chain when unset
+    max_tokens: 400                          # per record
+    extra: { thinking: { type: disabled } }  # no thinking: the reply is the answer
+```
+
+These are the settings tangent-eval's
+[harness/maincfg.py](https://github.com/EthanBlackburn/tangent-eval/blob/main/harness/maincfg.py)
+runs Haiku 5.5 with.
 
 The records go to the model as logfmt, a line each, each source written as
 its row under `encoding.sources` says: about half the tokens of JSON lines, and an

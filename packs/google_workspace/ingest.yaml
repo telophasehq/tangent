@@ -1,7 +1,7 @@
 # google_workspace: Google Workspace's activity into finished records, by one
 # plugin, `google_workspace`: normalized, trimmed, its address enriched, the
 # profile's facts added. Include it in your config with
-# packs/enrich/ingest.yaml, route a `google_workspace` source to plugin
+# packs/enrich-ip/ingest.yaml, route a `google_workspace` source to plugin
 # google_workspace, and the plugin to where its records go, and give the config
 # a `profile` table; README.md has the lines.
 plugins:

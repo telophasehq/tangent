@@ -919,10 +919,10 @@ enrichment_tables:
 ";
     let dir = tree(&[
         ("data/networks.csv", "203.0.113.0/24,aws\n"),
-        ("packs/enrich/ingest.yaml", enrich),
+        ("packs/enrich-ip/ingest.yaml", enrich),
         (
             "packs/aws/ingest.yaml",
-            "include: [../enrich/ingest.yaml]\n",
+            "include: [../enrich-ip/ingest.yaml]\n",
         ),
         (
             "packs/okta/ingest.yaml",
@@ -972,7 +972,7 @@ enrichment_tables:
     .unwrap();
     let err = error(&dir, "deploy/ingest.yaml");
     assert!(err.contains("enrichment_tables.geo.path"), "{err}");
-    assert!(err.contains("packs/enrich/ingest.yaml"), "{err}");
+    assert!(err.contains("packs/enrich-ip/ingest.yaml"), "{err}");
     assert!(err.contains("packs/okta/ingest.yaml"), "{err}");
 
     // The root settles it, and a config without tables writes none.
@@ -1304,4 +1304,107 @@ fn a_name_two_files_give_to_two_kinds_fails_to_load() {
     ]);
     let e = error(&dir, "root.yaml");
     assert!(e.contains("`okta` is a source and a plugin"), "{e}");
+}
+
+/// `pack:<name>` is the pack built into tangent, written out under its
+/// cache, where its own paths name the files beside it as in the repo. A
+/// pack named here and included by another (enrich-ip, by judge) is one file,
+/// read once.
+#[test]
+fn a_pack_name_includes_the_copy_built_in() {
+    let dir = tree(&[(
+        "tangent.yaml",
+        "
+include: [pack:enrich-ip, pack:judge/hosted, pack:aws]
+sources:
+  cloudtrail: { type: cloudtrail, region: us-east-1 }
+dag:
+  - from: cloudtrail
+    to: [aws]
+  - from: aws
+    to: [baseline_builder, baseline_renderer]
+",
+    )]);
+    let loaded = load(&dir, "tangent.yaml").unwrap();
+    loaded.config.validate().unwrap();
+    assert!(loaded.config.plugins.contains_key("aws"));
+    assert!(loaded.config.plugins.contains_key("baseline_renderer"));
+    assert!(loaded.config.enrichment_tables.contains_key("geo"));
+
+    let packs = tangent_shared::packs::dir()
+        .unwrap()
+        .canonicalize()
+        .unwrap();
+    let judge = &loaded.config.inference["judge"];
+    assert_eq!(judge.prompt_file, packs.join("judge/judge.md"));
+    assert_eq!(
+        judge.temperature, None,
+        "hosted.yaml's, over judge's ingest.yaml's"
+    );
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs");
+    assert_eq!(
+        fs::read_to_string(&judge.prompt_file).unwrap(),
+        fs::read_to_string(repo.join("judge/judge.md")).unwrap()
+    );
+    for f in [
+        "enrich-ip/ingest.yaml",
+        "behavior-baseline/ingest.yaml",
+        "judge/ingest.yaml",
+        "judge/hosted.yaml",
+        "aws/ingest.yaml",
+    ] {
+        let path = packs.join(f);
+        let times = loaded.files.iter().filter(|p| **p == path).count();
+        assert_eq!(times, 1, "{f}: {:?}", loaded.files);
+    }
+}
+
+/// A pack built in names no plugin source or fixtures, which tangent does
+/// not carry: `tangent plugin compile` says such a plugin is prebuilt, for
+/// `tangent plugin fetch`, and `tangent plugin test` has none to run. A
+/// config can still give one its source.
+#[test]
+fn a_built_in_pack_s_plugins_name_no_source() {
+    let dir = tree(&[(
+        "tangent.yaml",
+        "
+include: [pack:judge, pack:aws, pack:okta]
+plugins:
+  okta: { path: ../tangent/packs/okta }
+",
+    )]);
+    let cfg = load(&dir, "tangent.yaml").unwrap().config;
+    for name in ["baseline_builder", "baseline_renderer", "fresh", "aws"] {
+        let p = &cfg.plugins[name];
+        assert_eq!(p.path, PathBuf::new(), "{name}");
+        assert!(p.tests.is_empty(), "{name}");
+        assert!(p.prebuilt.is_some(), "{name}");
+    }
+    assert_eq!(cfg.plugins["okta"].path, Path::new("../tangent/packs/okta"));
+}
+
+/// A message names a pack built in by its name, not its cache path; a name
+/// tangent has no pack for is an error listing those it has.
+#[test]
+fn an_error_names_a_built_in_pack_by_its_name() {
+    let dir = tree(&[
+        ("mine.yaml", "inference:\n  judge: { max_tokens: 999 }\n"),
+        ("tangent.yaml", "include: [pack:judge, mine.yaml]\n"),
+        ("typo.yaml", "include: [pack:awss]\n"),
+    ]);
+    let e = error(&dir, "tangent.yaml");
+    assert!(
+        e.contains("inference.judge.max_tokens: pack:judge has 200, "),
+        "{e}"
+    );
+    assert!(e.contains("mine.yaml has 999"), "{e}");
+
+    let e = error(&dir, "typo.yaml");
+    assert!(
+        e.contains(&format!(
+            "typo.yaml includes pack:awss: no such pack in tangent {}; it has pack:aws, pack:behavior-baseline, ",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{e}"
+    );
 }

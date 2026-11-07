@@ -1,6 +1,6 @@
 # okta: Okta's System Log into finished records, by one plugin, `okta`:
 # normalized, trimmed, its address enriched, the profile's facts added. Include
-# it in your config with packs/enrich/ingest.yaml, route an `okta` source to
+# it in your config with packs/enrich-ip/ingest.yaml, route an `okta` source to
 # plugin okta, and plugin okta to where its records go, and give the config a
 # `profile` table; README.md has the lines.
 plugins:
