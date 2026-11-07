@@ -10,3 +10,4 @@ __pycache__/
 state.sqlite*
 out.ndjson
 json_generated.go
+schema_generated.go

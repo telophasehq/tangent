@@ -45,8 +45,8 @@ Compile writes this tangent's WIT to `.tangent/wit`, runs the SDK's generator,
 which writes `json_generated.go` (the JSON encoder for `ExampleOutput`),
 builds with `tinygo build -target=wasip2`, deletes `json_generated.go` again
 and leaves the plugin in `plugins/golang.cwasm`. The first compile downloads
-the Go modules, and every compile needs the network: the generator runs
-`go run github.com/mailru/easyjson/easyjson@latest`. The test feeds `tests/input.json` to the plugin, writes what
+the Go modules; later ones need no network, as the generator runs the easyjson
+that `go.mod` requires. The test feeds `tests/input.json` to the plugin, writes what
 comes out to `test_out.ndjson` and compares it with `tests/expected.json`; it
 ends with `✅ test passed: output matches expected`. Of the fixture's three
 records, one has every field, one has only `msg` and `source.name` (the rest
