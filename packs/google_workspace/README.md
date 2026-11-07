@@ -7,7 +7,7 @@ reads it from the Reports API, or the same records sent as NDJSON.
 
 ## What it writes
 
-`_norm` ([enrich-ip](../enrich-ip#the-record) has the contract):
+`_norm` ([the record](../README.md#the-record) has the contract):
 
 | field | from |
 |---|---|
@@ -53,7 +53,7 @@ include:
   - ../tangent/packs/judge/ingest.yaml
   - ../tangent/packs/google_workspace/ingest.yaml
 
-enrichment_tables:                  # your company: packs/enrich-ip/README.md#the-profile
+enrichment_tables:                  # your company: packs/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
 
 sinks:

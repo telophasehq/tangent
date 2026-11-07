@@ -318,7 +318,7 @@ dag:
 ```
 
 ```yaml
-# profile/profile.yaml: what no log says about you; packs/enrich-ip/README.md lists every key
+# profile/profile.yaml: what no log says about you; packs/README.md#the-profile lists every key
 org: example
 own_sources: [cloudtrail, okta]      # their records are all this org's
 countries: [US]
@@ -338,7 +338,7 @@ tangent run --config tangent.yaml
 
 `tangent plugin compile` in place of `fetch` builds the packs here, from source, for a pack you are changing: it needs the Rust WASM toolchain, which `../tangent/examples/enrich/setup.sh` (without `data`) installs.
 
-The judge is any OpenAI-compatible model: `JUDGE_URL` (a local model on `:8080` by default), `JUDGE_MODEL` (`glm-4.7-flash`), `JUDGE_API_KEY`. Each pack's README has its source's block and credentials, [packs/enrich-ip](/packs/enrich-ip#the-profile) the profile's keys, and [packs/judge](/packs/judge#the-model) the judge's settings.
+The judge is any OpenAI-compatible model: `JUDGE_URL` (a local model on `:8080` by default), `JUDGE_MODEL` (`glm-4.7-flash`), `JUDGE_API_KEY`. Each pack's README has its source's block and credentials, [packs](/packs/README.md#the-profile) the profile's keys, and [packs/judge](/packs/judge#the-model) the judge's settings.
 
 A `tcp` source can feed several packs: route it to each, and each takes only its own `source` values. A record whose `source` no included pack takes goes no further, and `tangent run` says so. Your product's own logs have no pack: no two products' are alike, so they want a plugin of your own that fills `_norm` ([Writing a pack](#writing-a-pack) starts from packs/okta; `tangent plugin scaffold` from nothing). The judge's logfmt wants a row for each of its sources in your config, under `inference.judge.encoding.sources`, as [judge's ingest.yaml](/packs/judge/ingest.yaml) has for each pack's, for their times and the fields on every line; behavior-baseline passes their records through unlearned, with no `_baseline`.
 
@@ -403,7 +403,7 @@ The examples keep every finished log once in their lake, Parquet files in a dire
 These are estimates. Log sizes are measured on samples (CloudTrail on 20k events, the others on tens to hundreds), tokens with Claude Haiku 4.5's count scaled to 5.5's, and the volumes are typical of startups, not yours: a day of your own logs in the lake says what yours are.
 
 ### Writing a pack
-1. Copy [packs/okta](/packs/okta), the smallest, to a directory beside it under `packs/`, and rename its package and plugin; a name may not contain `-`. Its `Cargo.toml` finds `normkit` and `factskit` at `../shared/`; a copy kept elsewhere points them at `<checkout>/packs/shared/...`. Its `probe()` takes your `source` values and nothing else: a value belongs to one pack. `process_logs` fills a `normkit::Norm`, trims the record, and hands both to `factskit`, which enriches the address, adds the profile's facts and writes the record ([packs/enrich-ip](/packs/enrich-ip#the-record) has the contract).
+1. Copy [packs/okta](/packs/okta), the smallest, to a directory beside it under `packs/`, and rename its package and plugin; a name may not contain `-`. Its `Cargo.toml` finds `normkit` and `factskit` at `../shared/`; a copy kept elsewhere points them at `<checkout>/packs/shared/...`. Its `probe()` takes your `source` values and nothing else: a value belongs to one pack. `process_logs` fills a `normkit::Norm`, trims the record, and hands both to `factskit`, which enriches the address, adds the profile's facts and writes the record ([packs](/packs/README.md#the-record) has the contract).
 2. `ingest.yaml`: the plugin, named after the pack, with its fixtures under `tests:` and the tables they were written against (`tests/profile.yaml`, and `tests/addresses.yaml` and `tests/networks.csv` for the addresses). No `dag`: the config that includes the pack routes it. behavior-baseline learns a `source` only once [its table](/packs/behavior-baseline/kit/src/kinds/mod.rs) knows it.
 3. A row for each of its sources in [judge's ingest.yaml](/packs/judge/ingest.yaml), under `inference.judge.encoding.sources.<source>`: the fields naming the principal and the time, and those the model should see on every line. Your pack's own `_facts` keys go in its sources' `keep` too: the judge's top-level `keep` is every pack's.
 4. `tests/input.json` from synthetic records, two or more, with the tables they read: the company they describe, and what you want their addresses to be (`203.0.113.9` a Tor exit, say). `make -C packs fixtures-<name>` writes `tests/expected.json` from the plugin's output; read it before committing. `make -C packs test` runs every pack's fixtures on its own.
