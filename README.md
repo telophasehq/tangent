@@ -226,9 +226,9 @@ A config can span several files. `include:` lists files merged into the one that
 ```yaml
 include:
   - packs/judge/ingest.yaml
-  - packs/app/ingest.yaml
+  - packs/aws/ingest.yaml
 plugins:
-  app: { config: { extra_sources: [billing] } }   # one setting of a plugin an included file defines
+  baseline_renderer: { expire_after_ms: 10000 }   # one setting of a plugin an included file defines
 ```
 
 - Maps merge key by key at any depth, so a file can add a source, a plugin, or one setting of another file's plugin.
@@ -262,14 +262,13 @@ A pack is what tangent knows about one provider's logs, and it is one plugin, na
 | [github](/packs/github) | `github_audit`, `gha_ci`, `runner_egress` | the `github_audit` source; Actions job logs and runner egress as NDJSON | a CI run told per repository, which is not a principal |
 | [okta](/packs/okta) | `okta` | the `okta` source: the System Log | Okta's own risk signals kept |
 | [google_workspace](/packs/google_workspace) | `google_workspace` | the `google_workspace` source: login, token, drive and admin activity | each event's parameters by name |
-| [app](/packs/app) | `app`, `agent`, and names you list | NDJSON from your product: its audit log, an AI agent's run log | the customer's tenant as the org |
 | [macos](/packs/macos) | | planned: Endpoint Security events from laptops | |
 
 A pack is a directory: the plugin (`Cargo.toml`, `src/`, Rust compiled to WASM), its fixtures (`tests/`), `ingest.yaml` (the plugin and its fixtures; your config says where its records go), and a README saying what it reads, writes, drops and enriches, with the lines to paste.
 
 Three packs are not providers: [packs/enrich](/packs/enrich), the enrichment tables every pack's plugin reads; [packs/behavior-baseline](/packs/behavior-baseline), `baseline_builder` and `baseline_renderer`, each actor's history in the state store; and [packs/judge](/packs/judge), which groups each actor's records for the judge, with a row for each pack's sources, and includes the other two. No pack defines a sink: your config says where records are kept ([the lake](/packs/README.md#the-lake) in the examples). The packs' shared code is in [packs/shared](/packs/shared): `normkit` (`_norm` and the scrubs), `enrichkit` (an address from the tables), `identitykit` (which names are one person) and `factskit` (the profile's facts), Rust libraries each plugin links.
 
-No pack loads IP data itself. enrich's `ingest.yaml` names it as enrichment tables (GeoLite2 Country and ASN, and `networks.csv`, the cloud, datacenter, VPN and Tor ranges in one file), the runtime loads each once when the pipeline starts, and every pack's plugin, on every worker, reads that one copy: five packs load GeoLite2 once. [examples/enrich/setup.sh](/examples/enrich/setup.sh) fetches the files. Your profile is a table too, `profile`, which your config names.
+No pack loads IP data itself. enrich's `ingest.yaml` names it as enrichment tables (GeoLite2 Country and ASN, and `networks.csv`, the cloud, datacenter, VPN and Tor ranges in one file), the runtime loads each once when the pipeline starts, and every pack's plugin, on every worker, reads that one copy: four packs load GeoLite2 once. [examples/enrich/setup.sh](/examples/enrich/setup.sh) fetches the files. Your profile is a table too, `profile`, which your config names.
 
 The judge also sees each actor's history, which one window of its records cannot show. behavior-baseline folds every finished record into the state store (`baseline_builder`), and before the judge puts the same `_baseline` on each of an actor's records (`baseline_renderer`): who it is and, for a role, who assumed it; how long it has been seen; what it does for the first time (an API, a resource, a client, a network, an OAuth app); its volume and hours against its own 28 days; its person's sign-ins and credential changes in every source over three days (the profile's `people` says which names are one person); and addresses it shares with other actors. Only what happened before the actor's first record counts, and it is facts, not verdicts ([packs/behavior-baseline](/packs/behavior-baseline)). The judge writes records as logfmt, `_baseline` once per request, about 5% more tokens than without it; JSON lines (`encoding: {type: ndjson}`) repeat it on every record, at three times logfmt's tokens ([packs/judge](/packs/judge#the-model) has the numbers). Baseline's folds are one state transaction per batch, so ingest runs as many workers as it likes.
 
@@ -341,9 +340,9 @@ tangent run --config tangent.yaml
 
 The judge is any OpenAI-compatible model: `JUDGE_URL` (a local model on `:8080` by default), `JUDGE_MODEL` (`glm-4.7-flash`), `JUDGE_API_KEY`. Each pack's README has its source's block and credentials, [packs/enrich](/packs/enrich#the-profile) the profile's keys, and [packs/judge](/packs/judge#the-model) the judge's settings.
 
-A `tcp` source can feed several packs: route it to each, and each takes only its own `source` values. A record whose `source` no included pack takes goes no further, and `tangent run` says so. To keep records in your own shape, send them as `source: app`, or list their name under `plugins.app.config.extra_sources`: baseline learns them as it does `app`'s, and the judge's logfmt wants a row for the name in your config, under `inference.judge.encoding.sources`, as [judge's ingest.yaml](/packs/judge/ingest.yaml) has for `app`, for its times and the fields on every line.
+A `tcp` source can feed several packs: route it to each, and each takes only its own `source` values. A record whose `source` no included pack takes goes no further, and `tangent run` says so. Your product's own logs have no pack: no two products' are alike, so they want a plugin of your own that fills `_norm` ([Writing a pack](#writing-a-pack) starts from packs/okta; `tangent plugin scaffold` from nothing). The judge's logfmt wants a row for each of its sources in your config, under `inference.judge.encoding.sources`, as [judge's ingest.yaml](/packs/judge/ingest.yaml) has for each pack's, for their times and the fields on every line; behavior-baseline passes their records through unlearned, with no `_baseline`.
 
-[examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, whose cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) it is measured against; [examples/app-log](/examples/app-log) is the app pack, one org per customer.
+[examples/cloud-infra](/examples/cloud-infra) is every pack for a fictional company, whose cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) it is measured against.
 
 ### Prebuilt plugins
 A plugin is a WASM component, compiled once and run on every machine, so only a pack's author needs the toolchain. Each release of tangent carries every pack's plugin as a release asset, `<plugin>.component.wasm`, built by [packs/dist.sh](/packs/dist.sh) in the release workflow, and a pack's `ingest.yaml` says so:
@@ -393,7 +392,6 @@ Rough ranges for a company of 50 people, each active about eight hours a day, pr
 | pack | grows with | a log | a day | judged as | Haiku 5.5, a day |
 |---|---|---|---|---|---|
 | [aws](/packs/aws) | services, scheduled jobs and deploys, more than people | ~2 KB | 50k–500k events, 0.1–1 GB | the same | $2–20 |
-| [app](/packs/app) | traffic, background jobs and log level | 0.2–1 KB | 0.6M–6M lines, 0.3–3 GB | the same | $13–130 at 0.5 KB |
 | [google_workspace](/packs/google_workspace) | people: 100–500 events each, most of them Drive | ~0.5 KB | 5k–25k events, 3–13 MB | 16k–32k logs | $0.35–0.70 |
 | [okta](/packs/okta) | people: 20–100 events each, sign-ins, MFA and app launches | ~2 KB | 1k–5k events, 2–10 MB | 16k logs | $0.60 |
 | [github](/packs/github) | engineers: 20–200 events each, pushes, reviews and Actions runs | ~0.3 KB | 1k–10k events, 0.3–3 MB | 16k logs | $0.30 |

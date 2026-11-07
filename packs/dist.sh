@@ -24,7 +24,6 @@ PLUGINS=(
   "github packs/github"
   "okta packs/okta"
   "google_workspace packs/google_workspace"
-  "app packs/app"
   "baseline_builder packs/behavior-baseline/builder"
   "baseline_renderer packs/behavior-baseline/renderer"
   "fresh packs/judge/fresh"

@@ -32,7 +32,7 @@ What a pack's plugin writes, the same for every provider (`factskit::Finished`):
 | field | always there | what it is |
 |---|---|---|
 | `ts` | yes, text | the record's own `ts`, or the time its pack read it when it had none |
-| `source` | yes, text | the shape it came in as: `cloudtrail`, `okta`, `app`, ... |
+| `source` | yes, text | the shape it came in as: `cloudtrail`, `okta`, `gha_ci`, ... |
 | `_norm` | yes, an object | who did what, from where, to what (below); each field may be missing |
 | `_facts` | yes, an object | what the profile and the tables say (below) |
 | the rest | no | the provider's fields the pack kept, as the pack trimmed them |
@@ -48,7 +48,7 @@ speak for the pipeline.
 
 | field | what it is |
 |---|---|
-| `actor` | who acted: a user, role or key; for CI and an agent's run, the repository or nothing |
+| `actor` | who acted: a user, role or key; for CI, the repository |
 | `person` | the person the actor is, when the profile's `people` names them |
 | `org` | whose it is: your org for your own sources (the profile's `org` and `own_sources`), else the record's own tenant |
 | `kind` | what happened: the event's name |
@@ -128,5 +128,4 @@ the config that includes the pack routes it to its sink, `baseline_builder`
 and `baseline_renderer`. behavior-baseline reads a source it knows from its
 own table ([kit/src/kinds](../behavior-baseline/kit/src/kinds)); a new pack's records pass
 through it unlearned, with no `_baseline`, until the table knows their
-`source`, unless they carry an `event`, which it reads as the app pack's audit
-shape.
+`source`.

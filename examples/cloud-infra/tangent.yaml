@@ -15,7 +15,6 @@ include:
   - ../../packs/github/ingest.yaml            # plugin github: github_audit, gha_ci, runner_egress
   - ../../packs/okta/ingest.yaml              # plugin okta: okta
   - ../../packs/google_workspace/ingest.yaml  # plugin google_workspace: google_workspace
-  - ../../packs/app/ingest.yaml               # plugin app: app, agent
 
 enrichment_tables:
   profile: { type: document, path: profile/profile.yaml, required: true }   # a typo here stops it
@@ -80,15 +79,14 @@ dag:
   - from: workspace_audit
     to: [google_workspace]
   # NDJSON, each record's `source` naming its shape: each pack takes its own
-  # (gha_ci and runner_egress are github's, app and agent app's), and a record
-  # no pack takes is dropped, with a warning.
+  # (gha_ci and runner_egress are github's), and a record no pack takes is
+  # dropped, with a warning.
   - from: events
     to:
       - aws
       - github
       - okta
       - google_workspace
-      - app
   # Each pack's records: kept in the lake, folded into the actor's baseline,
   # and judged (packs/behavior-baseline, packs/judge).
   - from: aws
@@ -98,8 +96,6 @@ dag:
   - from: okta
     to: [lake, baseline_builder, baseline_renderer]
   - from: google_workspace
-    to: [lake, baseline_builder, baseline_renderer]
-  - from: app
     to: [lake, baseline_builder, baseline_renderer]
   # - from: flagged   # to Slack, with `slack` above
   #   to: [slack]

@@ -3,7 +3,6 @@
 //! i iam/policy on someone or something else, d delete, a sign-in, c the
 //! actor's own credentials.
 
-mod app;
 mod cloudtrail;
 mod github;
 mod okta;
@@ -88,7 +87,6 @@ pub fn ev(r: &Value) -> Option<Ev> {
         "okta" => okta::read(r, &mut e),
         "github_audit" => github::read(r, &mut e),
         "google_workspace" => workspace::read(r, &mut e),
-        "app" => app::read(r, &mut e),
         "gha_ci" => {
             e.verb = format!("step {}", quoted(s(&r["step"])));
             e.typ = Some("ci repo".into());
@@ -101,9 +99,6 @@ pub fn ev(r: &Value) -> Option<Ev> {
                 .collect();
             e.typ = Some("ci repo".into());
         }
-        // The app pack's audit shape under a name of yours (its `sources` or
-        // `extra_sources`): it reads the fields `app` does.
-        _ if r["event"].is_string() => app::read(r, &mut e),
         _ => return None,
     }
     e.ip = e.ip.filter(|ip| ip.parse::<IpAddr>().is_ok());

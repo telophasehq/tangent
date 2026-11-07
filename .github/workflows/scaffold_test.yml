@@ -72,10 +72,6 @@ jobs:
         run: make test PLUGINS=compile
         working-directory: examples/cloud-infra
 
-      - name: Run make test (examples/app-log)
-        run: make test PLUGINS=compile
-        working-directory: examples/app-log
-
       # Each pack alone, so none leans on another's files; and the libraries they share.
       - name: Run make test (packs)
         run: make -C packs test
@@ -84,8 +80,5 @@ jobs:
       - name: Check the packs' release list
         run: packs/dist.sh check
 
-      - name: Merge and check the examples' configs
-        run: |
-          for c in examples/cloud-infra/tangent.yaml examples/app-log/tangent.yaml; do
-            tangent config --config "$c" > /dev/null
-          done
+      - name: Merge and check examples/cloud-infra's config
+        run: tangent config --config examples/cloud-infra/tangent.yaml > /dev/null

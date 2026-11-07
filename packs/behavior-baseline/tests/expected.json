@@ -880,30 +880,5 @@
    "role": "AWSReservedSSO_ReadOnly_0123456789abcdef",
    "type": "AssumedRole"
   }
- },
- {
-  "ts": "2026-01-05T13:06:00Z",
-  "source": "agent",
-  "timestamp": "2026-01-05T13:06:00Z",
-  "service": "example-plan-worker",
-  "logger": "example.worker",
-  "level": "info",
-  "event": "plan_started",
-  "host": "ip-10-0-3-41",
-  "organization_id": "org_example",
-  "task_id": "t-5003",
-  "plan_id": "p-33",
-  "target": "s3://acme-reports",
-  "steps": [
-   "read_bucket_policy",
-   "propose_fix",
-   "open_pull_request"
-  ],
-  "_norm": {
-   "org": "org_example"
-  },
-  "_facts": {
-   "notes": []
-  }
  }
 ]
