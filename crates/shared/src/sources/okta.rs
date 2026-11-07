@@ -19,8 +19,8 @@ pub struct OktaConfig {
     pub token: Option<SecretString>,
     #[serde(default = "default_interval_secs")]
     pub interval_secs: u64,
-    /// On first start, how far back to read; afterwards from the saved
-    /// `next` link.
+    /// On first start, or when Okta turns down the saved `next` link, how
+    /// far back to read; otherwise from that link.
     #[serde(default = "default_since", deserialize_with = "bare_string")]
     pub since: String,
 }

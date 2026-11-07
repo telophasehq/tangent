@@ -8,7 +8,9 @@
 //! `sources`, key `<name>:next`, never expiring), and the next poll, or a
 //! restart, asks for it as it is. Nothing is read twice, so there is no
 //! lookback and no seen ids. A first start reads from `since` ago, and so
-//! does a link saved while `org_url` was another org's, since the token goes
+//! does a saved link Okta turns down (a 4xx but 401, 403, 408 or 429: its
+//! `after` changed format, say), which would otherwise fail every poll, and
+//! a link saved while `org_url` was another org's, since the token goes
 //! with every request. The link is saved with the `org_url` it was read
 //! under, and that, not the link's own host, is what is checked: Okta's
 //! links may name another host than `org_url` (its okta.com host for a
@@ -85,10 +87,19 @@ async fn poll(
     poller: &Poller,
 ) -> Result<usize> {
     let org = org_url.trim_end_matches('/');
-    let mut url = match poller.saved_link().await? {
-        Some((base, link)) if base == org => link,
-        saved => {
-            if let Some((base, _)) = saved {
+    let since = || {
+        let since =
+            Utc::now() - Duration::milliseconds(duration_ms(&cfg.since).unwrap_or(3_600_000));
+        format!(
+            "{org}/api/v1/logs?since={}&sortOrder=ASCENDING&limit={PAGE}",
+            since.format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        )
+    };
+    // Whether `url` is the saved link, which only the first request is.
+    let (mut url, mut saved) = match poller.saved_link().await? {
+        Some((base, link)) if base == org => (link, true),
+        other => {
+            if let Some((base, _)) = other {
                 tracing::warn!(
                     source = %poller.name,
                     saved_for = base,
@@ -96,12 +107,7 @@ async fn poll(
                     "the saved next link was another org_url's; reading from since"
                 );
             }
-            let since =
-                Utc::now() - Duration::milliseconds(duration_ms(&cfg.since).unwrap_or(3_600_000));
-            format!(
-                "{org}/api/v1/logs?since={}&sortOrder=ASCENDING&limit={PAGE}",
-                since.format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            )
+            (since(), false)
         }
     };
     let mut sent = 0;
@@ -113,14 +119,36 @@ async fn poll(
             .send()
             .await
             .context("System Log request")?;
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            bail!(
-                "System Log {status}: {}",
-                body.chars().take(200).collect::<String>()
-            );
+        let status = resp.status();
+        if !status.is_success() {
+            let body: String = resp
+                .text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect();
+            // Okta turned down the saved link itself (its `after` changed
+            // format, or the link went bad): asked for again, it would fail
+            // every poll for good. A 401 or 403 (the token), 408 or 429 is
+            // not the link's fault and keeps it.
+            if saved
+                && status.is_client_error()
+                && !matches!(status.as_u16(), 401 | 403 | 408 | 429)
+            {
+                tracing::warn!(
+                    source = %poller.name,
+                    link = url,
+                    "Okta turned down the saved next link ({status}: {body}); reading from \
+                     since ago, so events in that window may be sent again"
+                );
+                url = since();
+                saved = false;
+                continue;
+            }
+            bail!("System Log {status}: {body}");
         }
+        saved = false;
         let next = resp
             .headers()
             .get("link")
@@ -155,7 +183,10 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
 
-    use axum::{extract::Query, http::Uri, response::IntoResponse, Json};
+    use axum::extract::Query;
+    use axum::http::{HeaderMap, StatusCode, Uri};
+    use axum::response::{IntoResponse, Response};
+    use axum::Json;
     use chrono::DateTime;
     use serde_json::json;
 
@@ -166,6 +197,7 @@ mod tests {
     /// order Okta stored them, `limit` a page. `since` starts at the first
     /// one published then or later, and every page, an empty one too, links
     /// on with an `after` (here the count read so far; Okta's own is opaque).
+    /// The token is `t`; any other gets a 401.
     struct Okta {
         base: String,
         events: Arc<Mutex<Vec<Value>>>,
@@ -180,28 +212,15 @@ mod tests {
             let base = serve(move |base| {
                 let base = base.to_string();
                 axum::Router::new().fallback(
-                    move |uri: Uri, Query(q): Query<HashMap<String, String>>| {
+                    move |uri: Uri,
+                          headers: HeaderMap,
+                          Query(q): Query<HashMap<String, String>>| {
                         noted.lock().unwrap().push(uri.to_string());
-                        let events = stored.lock().unwrap();
-                        let from = match (q.get("after"), q.get("since")) {
-                            (Some(after), _) => after.parse().unwrap(),
-                            (None, Some(since)) => {
-                                let since: DateTime<Utc> = since.parse().unwrap();
-                                events
-                                    .iter()
-                                    .position(|v| parse_time(&v["published"]).unwrap() >= since)
-                                    .unwrap_or(events.len())
-                            }
-                            (None, None) => 0,
+                        let resp = if headers["authorization"] == "SSWS t" {
+                            answer(&base, &stored.lock().unwrap(), &q)
+                        } else {
+                            StatusCode::UNAUTHORIZED.into_response()
                         };
-                        let limit: usize = q.get("limit").map_or(100, |l| l.parse().unwrap());
-                        let page: Vec<Value> =
-                            events.iter().skip(from).take(limit).cloned().collect();
-                        let link = format!(
-                            "<{base}/api/v1/logs?after={}&limit={limit}&sortOrder=ASCENDING>; rel=\"next\"",
-                            from + page.len()
-                        );
-                        let resp = ([("link", link)], Json(page)).into_response();
                         async move { resp }
                     },
                 )
@@ -223,6 +242,35 @@ mod tests {
         fn store(&self, id: &str) {
             self.events.lock().unwrap().push(event(id));
         }
+    }
+
+    /// A page of `events` for the query `q`, or a 400 for an `after` this
+    /// Okta does not take.
+    fn answer(base: &str, events: &[Value], q: &HashMap<String, String>) -> Response {
+        let from = match (q.get("after"), q.get("since")) {
+            (Some(after), _) => match after.parse() {
+                Ok(from) => from,
+                Err(_) => {
+                    let error = json!({"errorCode": "E0000001", "errorSummary": "Api validation failed: after"});
+                    return (StatusCode::BAD_REQUEST, Json(error)).into_response();
+                }
+            },
+            (None, Some(since)) => {
+                let since: DateTime<Utc> = since.parse().unwrap();
+                events
+                    .iter()
+                    .position(|v| parse_time(&v["published"]).unwrap() >= since)
+                    .unwrap_or(events.len())
+            }
+            (None, None) => 0,
+        };
+        let limit: usize = q.get("limit").map_or(100, |l| l.parse().unwrap());
+        let page: Vec<Value> = events.iter().skip(from).take(limit).cloned().collect();
+        let link = format!(
+            "<{base}/api/v1/logs?after={}&limit={limit}&sortOrder=ASCENDING>; rel=\"next\"",
+            from + page.len()
+        );
+        ([("link", link)], Json(page)).into_response()
     }
 
     fn event(id: &str) -> Value {
@@ -331,6 +379,57 @@ mod tests {
         let asked = okta.asked();
         assert_eq!(asked[2], asked[1], "the saved link: {asked:?}");
         assert_eq!(keeper.sent("/uuid").await, ["a", "b", "c"]);
+    }
+
+    /// Okta turns down the saved link (its `after` changed format, or the
+    /// link went bad): the poll reads from `since` and saves Okta's new link,
+    /// rather than asking for the dead one every poll for good.
+    #[tokio::test]
+    async fn a_saved_link_okta_turns_down_gives_way_to_since() {
+        let okta = Okta::serve(vec![event("a"), event("b")]).await;
+        let cfg: OktaConfig = serde_json::from_value(json!({})).unwrap();
+        let client = reqwest::Client::new();
+        let keeper = Keeper::new("okta");
+        let dead = format!(
+            "{}/api/v1/logs?after=gone&limit=1000&sortOrder=ASCENDING",
+            okta.base
+        );
+        keeper.poller.save_link(&okta.base, &dead).await.unwrap();
+        let n = poll(&client, &cfg, &okta.base, "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 2);
+        let asked = okta.asked();
+        assert!(asked[0].contains("after=gone"), "{asked:?}");
+        assert!(asked[1].contains("since="), "{asked:?}");
+        let (_, link) = keeper.poller.saved_link().await.unwrap().unwrap();
+        assert_ne!(link, dead);
+        okta.store("c");
+        let n = poll(&client, &cfg, &okta.base, "t", &keeper.poller)
+            .await
+            .unwrap();
+        assert_eq!(n, 1, "from Okta's new link");
+        assert_eq!(keeper.sent("/uuid").await, ["a", "b", "c"]);
+    }
+
+    /// A 401 is the token's fault, not the link's: the saved link stays, so
+    /// a fixed token resumes where the source stopped.
+    #[tokio::test]
+    async fn a_401_keeps_the_saved_link() {
+        let okta = Okta::serve(vec![event("a"), event("b")]).await;
+        let cfg: OktaConfig = serde_json::from_value(json!({})).unwrap();
+        let client = reqwest::Client::new();
+        let keeper = Keeper::new("okta");
+        poll(&client, &cfg, &okta.base, "t", &keeper.poller)
+            .await
+            .unwrap();
+        let before = keeper.poller.saved_link().await.unwrap();
+        let err = poll(&client, &cfg, &okta.base, "revoked", &keeper.poller)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("401"), "{err:#}");
+        assert_eq!(keeper.poller.saved_link().await.unwrap(), before);
+        assert_eq!(okta.asked().len(), 3, "one request for the 401, no since");
     }
 
     #[tokio::test]
