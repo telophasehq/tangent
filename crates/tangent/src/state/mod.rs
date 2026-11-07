@@ -22,8 +22,11 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tangent_shared::runtime::{StateBackend, StateConfig};
+use tokio::task::JoinHandle;
+use tokio::time::MissedTickBehavior;
+use tokio_util::sync::CancellationToken;
 
 pub mod lru;
 pub mod sqlite;
@@ -203,6 +206,42 @@ pub fn open_reader(cfg: &StateConfig, base_dir: &Path) -> Result<Arc<dyn StateSt
             "the lru backend lives inside the pipeline's process; there is nothing to read from outside"
         ),
     }
+}
+
+/// How often a running pipeline deletes its expired entries. Reads skip
+/// them either way; deleting them keeps them from piling up, a polling
+/// source's every id since it first ran, say. Half the default TTL: the
+/// store holds at most five minutes of expired entries beside its live
+/// ones, and in SQLite a purge with nothing to delete is one look at an
+/// index.
+pub const PURGE_EVERY: Duration = Duration::from_secs(5 * 60);
+
+/// Delete `store`'s expired entries now and every `every` after, until
+/// `stop`. A purge that fails is a warning, and the next one tries again.
+/// For the store a pipeline writes, not a reader's.
+pub fn spawn_purge(
+    store: Arc<dyn StateStore>,
+    every: Duration,
+    stop: CancellationToken,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(every);
+        tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        // A purge stopped between two of its batches has kept the
+        // batches it deleted.
+        stop.run_until_cancelled(async {
+            loop {
+                tick.tick().await;
+                match store.purge_expired().await {
+                    Ok(n) => {
+                        tracing::debug!(target: "state", deleted = n, "purged expired entries")
+                    }
+                    Err(e) => tracing::warn!(target: "state", "purging expired entries: {e:#}"),
+                }
+            }
+        })
+        .await;
+    })
 }
 
 /// The SQLite file a config points at, resolved like `open` does.

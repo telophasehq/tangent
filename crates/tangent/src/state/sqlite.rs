@@ -553,6 +553,43 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// The runtime's purge runs on its timer until it is stopped: a row that
+    /// expires after one purge is deleted by a later one.
+    #[tokio::test]
+    async fn the_purge_runs_until_stopped() {
+        let dir = temp_dir("purge-timer");
+        let store = Arc::new(SqliteStore::open(&StateConfig::default(), &dir).unwrap());
+        let stop = tokio_util::sync::CancellationToken::new();
+        let every = Duration::from_millis(20);
+        let task = crate::state::spawn_purge(store.clone(), every, stop.clone());
+        // Past the first purge, which runs at once.
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let seen = StateValue::Bool(true);
+        store
+            .set("sources", "okta:seen:1", &seen, Some(1))
+            .await
+            .unwrap();
+        let rows = || store.sql("SELECT key FROM state", 10).unwrap().len();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while rows() > 0 && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(rows(), 0, "a later purge deleted it");
+
+        stop.cancel();
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("the purge stops")
+            .unwrap();
+        store
+            .set("sources", "okta:seen:2", &seen, Some(1))
+            .await
+            .unwrap();
+        tokio::time::sleep(every * 3).await;
+        assert_eq!(rows(), 1, "nothing purges once stopped");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     /// `n` seen ids, expired, and a cursor that never expires.
     async fn expired_ids_and_a_cursor(store: &SqliteStore, n: usize) -> StateValue {
         let mut tx = store.begin().await.unwrap();
