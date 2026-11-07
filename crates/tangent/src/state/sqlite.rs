@@ -242,6 +242,10 @@ impl StateStore for SqliteStore {
     }
 
     async fn purge_expired(&self) -> Result<u64> {
+        // A reader leaves the rows to the writer, as `get` does.
+        if self.lock.is_none() {
+            return Ok(0);
+        }
         let now = now_ms() as i64;
         let _turn = self.turn.lock().await;
         let n = self.conn.lock().execute(
@@ -500,6 +504,27 @@ mod tests {
             reader.sql("DELETE FROM state", 10).is_err(),
             "writes are refused"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Expired rows are the writer's to delete: a reader's purge leaves
+    /// them in the table.
+    #[tokio::test]
+    async fn a_reader_leaves_expired_rows_to_the_writer() {
+        let dir = temp_dir("reader-purge");
+        let writer = SqliteStore::open(&StateConfig::default(), &dir).unwrap();
+        writer
+            .set("sources", "okta:seen:1", &StateValue::Bool(true), Some(1))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let reader =
+            SqliteStore::open_readonly(&sqlite_path(&StateConfig::default(), &dir)).unwrap();
+        let rows = || reader.sql("SELECT key FROM state", 10).unwrap().len();
+        assert_eq!(reader.purge_expired().await.unwrap(), 0);
+        assert_eq!(rows(), 1, "still in the table");
+        assert_eq!(writer.purge_expired().await.unwrap(), 1);
+        assert_eq!(rows(), 0, "the writer's purge deletes it");
         let _ = std::fs::remove_dir_all(dir);
     }
 
