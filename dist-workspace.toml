@@ -34,7 +34,6 @@ artifacts = [
   "target/packs/github.component.wasm",
   "target/packs/okta.component.wasm",
   "target/packs/google_workspace.component.wasm",
-  "target/packs/app.component.wasm",
   "target/packs/baseline_builder.component.wasm",
   "target/packs/baseline_renderer.component.wasm",
   "target/packs/fresh.component.wasm",
