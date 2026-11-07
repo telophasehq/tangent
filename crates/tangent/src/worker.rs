@@ -889,7 +889,7 @@ mod tests {
             mappers: Mappers {
                 mappers: Vec::new(),
             },
-            engine: WasmEngine::new(Arc::clone(&store), Default::default(), true).unwrap(),
+            engine: WasmEngine::new(Arc::clone(&store), 0, Default::default(), true).unwrap(),
             components: Vec::new(),
             inference,
             batch_max_size: 1 << 20,
@@ -1061,7 +1061,7 @@ mod tests {
             mappers: Mappers {
                 mappers: Vec::new(),
             },
-            engine: WasmEngine::new(Arc::clone(&store), Default::default(), true).unwrap(),
+            engine: WasmEngine::new(Arc::clone(&store), 0, Default::default(), true).unwrap(),
             components: Vec::new(),
             inference,
             batch_max_size: 1 << 20,
@@ -1192,7 +1192,7 @@ mod tests {
         std::fs::write(&cwasm, compiled).unwrap();
         let store: Arc<dyn StateStore> =
             Arc::new(crate::state::lru::LruStore::new(StateConfig::default()).unwrap());
-        let mut engine = WasmEngine::new(Arc::clone(&store), Default::default(), true).unwrap();
+        let mut engine = WasmEngine::new(Arc::clone(&store), 0, Default::default(), true).unwrap();
         let keeps: Arc<str> = Arc::from("keeps");
         let drops: Arc<str> = Arc::from("drops");
         let mut components = Vec::new();

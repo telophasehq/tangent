@@ -297,6 +297,7 @@ fn load(
         .map(|_| {
             WasmEngine::new(
                 Arc::clone(store),
+                cfg.runtime.state.max_ttl_ms,
                 Arc::clone(tables),
                 cfg.runtime.disable_remote_calls,
             )

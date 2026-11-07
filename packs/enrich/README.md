@@ -19,13 +19,6 @@ warning, and the fields it would give are left out.
 | `networks` | `cidr` | networks.csv | its labels: `tor` and `vpn` are flags, and any other label names its hosting provider (`aws`, `gcp`, `cloudflare`, `datacenter`; the first in the file wins) |
 | `profile` | `document` | yours | everything else ([below](#the-profile)); your config names it |
 
-**The state store's expiry** (`runtime.state`), as
-[behavior-baseline](../behavior-baseline)'s file sets it: nothing expires
-unless its writer says when, and no TTL is capped. A polling source remembers
-each event it sent for three times its lateness, three hours for
-google_workspace. Under the runtime's default cap of an hour it would forget
-them while its polls still read them, and send them again.
-
 No sources, no sinks and no profile: your config adds them, sends each source
 to its pack, and sends each pack's plugin on to where its records go: a sink
 of yours ([the lake](../README.md#the-lake) in the examples),

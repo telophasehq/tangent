@@ -149,14 +149,13 @@ pub trait Txn: Send {
 }
 
 /// Resolve a write's TTL against the config: None -> default, 0 -> never,
-/// anything else capped by `max_ttl_ms` (when that is not 0).
+/// anything else as given. `max_ttl_ms` caps a plugin's TTL, which the
+/// plugin host holds to it before the write gets here; the runtime's own
+/// writes (a polling source's ids, say) keep the TTL they need.
 pub fn expires_at(cfg: &StateConfig, ttl_ms: Option<u64>, now_ms: u64) -> Option<u64> {
-    let mut ttl = ttl_ms.unwrap_or(cfg.default_ttl_ms);
+    let ttl = ttl_ms.unwrap_or(cfg.default_ttl_ms);
     if ttl == 0 {
         return None;
-    }
-    if cfg.max_ttl_ms > 0 {
-        ttl = ttl.min(cfg.max_ttl_ms);
     }
     Some(now_ms.saturating_add(ttl))
 }
@@ -247,12 +246,11 @@ mod tests {
         };
         assert_eq!(expires_at(&cfg, None, 100), Some(1_100), "default");
         assert_eq!(expires_at(&cfg, Some(0), 100), None, "0 never expires");
-        assert_eq!(expires_at(&cfg, Some(9_000), 100), Some(5_100), "capped");
-        let uncapped = StateConfig {
-            max_ttl_ms: 0,
-            ..cfg
-        };
-        assert_eq!(expires_at(&uncapped, Some(9_000), 100), Some(9_100));
+        assert_eq!(
+            expires_at(&cfg, Some(9_000), 100),
+            Some(9_100),
+            "past max_ttl_ms: the plugin host caps a plugin's"
+        );
     }
 }
 

@@ -72,7 +72,9 @@ pub struct StateConfig {
     #[serde(default = "default_state_ttl_ms")]
     pub default_ttl_ms: u64,
 
-    /// Longest TTL a write may ask for; 0 means no cap.
+    /// Longest TTL a plugin's write may ask for (a longer one is cut to
+    /// this); 0 means no cap. The runtime's own writes, such as the ids a
+    /// polling source remembers, are not capped.
     #[serde(default = "default_state_max_ttl_ms")]
     pub max_ttl_ms: u64,
 

@@ -17,6 +17,8 @@ pub struct WasmEngine {
     engine: Engine,
     linker: Linker<HostEngine>,
     state: Arc<dyn StateStore>,
+    /// `runtime.state.max_ttl_ms`, which each plugin's writes are held to.
+    max_ttl_ms: u64,
     config: HashMap<Arc<str>, Arc<HashMap<String, Value>>>,
     /// Each plugin's state namespace: `PLUGIN_NS` unless configured otherwise.
     state_ns: HashMap<Arc<str>, Arc<str>>,
@@ -35,6 +37,7 @@ pub struct WasmEngine {
 impl WasmEngine {
     pub fn new(
         state: Arc<dyn StateStore>,
+        max_ttl_ms: u64,
         tables: Arc<Tables>,
         disable_remote_calls: bool,
     ) -> Result<Self> {
@@ -54,6 +57,7 @@ impl WasmEngine {
             engine,
             linker,
             state,
+            max_ttl_ms,
             tables,
             disable_remote_calls,
             config: HashMap::new(),
@@ -117,6 +121,7 @@ impl WasmEngine {
                 self.state_ns
                     .get(component_name)
                     .map_or_else(|| Arc::from(PLUGIN_NS), Arc::clone),
+                self.max_ttl_ms,
                 self.config.get(component_name).unwrap().clone(),
                 Arc::clone(&self.tables),
                 self.disable_remote_calls,
