@@ -122,7 +122,7 @@ fn pipelines_validate_with_and_without_the_judge() {
         plugins.extend(defined.keys().filter_map(Value::as_str).map(String::from));
     }
     assert!(
-        ["aws", "github", "google_workspace", "okta"]
+        ["cloudtrail", "github", "google_workspace", "okta"]
             .iter()
             .all(|p| plugins.iter().any(|q| q == p)),
         "found the packs: {plugins:?}"

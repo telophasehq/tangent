@@ -1,9 +1,9 @@
-# aws
+# cloudtrail
 
-CloudTrail into finished records, by one plugin, `aws`. It takes the records
-whose `source` is `cloudtrail`: what tangent's `cloudtrail` source reads from
-a trail's files (every event, data events included, every account and region
-of an organization trail), or the same records sent as NDJSON.
+CloudTrail into finished records, by one plugin, `cloudtrail`. It takes the
+records whose `source` is `cloudtrail`: what tangent's `cloudtrail` source
+reads from a trail's files (every event, data events included, every account
+and region of an organization trail), or the same records sent as NDJSON.
 
 ## What it writes
 
@@ -71,7 +71,7 @@ behavior-baseline:
 ```yaml
 include:
   - ../tangent/packs/judge/ingest.yaml
-  - ../tangent/packs/aws/ingest.yaml
+  - ../tangent/packs/cloudtrail/ingest.yaml
 
 enrichment_tables:                  # your company: packs/README.md#the-profile
   profile: { type: document, path: profile/profile.yaml, required: true }
@@ -101,8 +101,8 @@ sources:
 
 dag:
   - from: aws_audit
-    to: [aws]
-  - from: aws   # kept, learned, judged
+    to: [cloudtrail]
+  - from: cloudtrail   # kept, learned, judged
     to: [lake, baseline_builder, baseline_renderer]
 ```
 
@@ -167,8 +167,8 @@ the company; [addresses.yaml](tests/addresses.yaml), GeoLite2's answers for
 their addresses; [networks.csv](tests/networks.csv), those addresses' labels.
 
 ```bash
-make -C packs test-aws          # compile, then the fixtures
-make -C packs fixtures-aws      # expected.json again, after a change; read the diff
+make -C packs test-cloudtrail       # compile, then the fixtures
+make -C packs fixtures-cloudtrail   # expected.json again, after a change; read the diff
 ```
 
 Cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases) with CloudTrail

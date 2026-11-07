@@ -292,7 +292,7 @@ sinks:
 fn runtime_is_optional() {
     let dir = tree(&[(
         "pack.yaml",
-        "plugins:\n  aws: { module_type: rust, path: . }\n",
+        "plugins:\n  cloudtrail: { module_type: rust, path: . }\n",
     )]);
     let cfg = load(&dir, "pack.yaml").unwrap().config;
     assert_eq!(cfg.runtime.plugins_path, PathBuf::from("plugins/"));
@@ -316,10 +316,10 @@ inference:
 ",
         ),
         (
-            "aws.yaml",
+            "cloudtrail.yaml",
             "
 plugins:
-  aws: { module_type: rust, path: aws }
+  cloudtrail: { module_type: rust, path: cloudtrail }
 inference:
   judge:
     encoding:
@@ -327,13 +327,13 @@ inference:
         cloudtrail: { principal: [_norm.actor], time: [eventTime] }
 ",
         ),
-        ("root.yaml", "include: [core.yaml, aws.yaml]\n"),
+        ("root.yaml", "include: [core.yaml, cloudtrail.yaml]\n"),
     ]);
     let cfg = load(&dir, "root.yaml").unwrap().config;
     assert!(cfg.plugins.contains_key("facts"));
-    assert!(cfg.plugins.contains_key("aws"));
+    assert!(cfg.plugins.contains_key("cloudtrail"));
     let text = yaml(&cfg);
-    assert!(text.contains("cloudtrail"), "{text}");
+    assert!(text.contains("eventTime"), "{text}");
     assert!(text.contains("_norm.actor"), "{text}");
 }
 
@@ -361,12 +361,12 @@ dag:
     };
     let dir = tree(&[
         ("shared/enrich/Cargo.toml", ""),
-        ("packs/aws/ingest.yaml", &pack("aws")),
+        ("packs/cloudtrail/ingest.yaml", &pack("cloudtrail")),
         ("packs/okta/ingest.yaml", &pack("okta")),
         (
             "deploy/ingest.yaml",
             "
-include: [../packs/aws/ingest.yaml, ../packs/okta/ingest.yaml]
+include: [../packs/cloudtrail/ingest.yaml, ../packs/okta/ingest.yaml]
 sinks:
   logs: { type: file, path: logs.ndjson }
 ",
@@ -374,7 +374,7 @@ sinks:
     ]);
     let cfg = load(&dir, "deploy/ingest.yaml").unwrap().config;
     let plugins: Vec<&str> = cfg.plugins.keys().map(|k| k.as_ref()).collect();
-    assert_eq!(plugins, ["aws", "enrich", "okta"]);
+    assert_eq!(plugins, ["cloudtrail", "enrich", "okta"]);
     let enrich = &cfg.plugins["enrich"];
     assert_eq!(enrich.path, canonical(&dir, "shared/enrich"));
     assert_eq!(
@@ -722,8 +722,8 @@ fn env_works_in_include_paths_with_defaults() {
     std::env::set_var("TANGENT_TEST_EMPTY", "");
     let dir = tree(&[
         (
-            "packs/aws.yaml",
-            "plugins:\n  aws: { module_type: rust, path: . }\n",
+            "packs/cloudtrail.yaml",
+            "plugins:\n  cloudtrail: { module_type: rust, path: . }\n",
         ),
         (
             "packs/okta.yaml",
@@ -733,7 +733,7 @@ fn env_works_in_include_paths_with_defaults() {
             "root.yaml",
             "
 include:
-  - ${TANGENT_TEST_PACKS}/aws.yaml
+  - ${TANGENT_TEST_PACKS}/cloudtrail.yaml
   - ${TANGENT_TEST_UNSET_DIR:-packs}/okta.yaml
 inference:
   judge:
@@ -744,7 +744,7 @@ inference:
         ),
     ]);
     let cfg = load(&dir, "root.yaml").unwrap().config;
-    assert!(cfg.plugins.contains_key("aws"));
+    assert!(cfg.plugins.contains_key("cloudtrail"));
     assert!(cfg.plugins.contains_key("okta"));
     assert_eq!(
         cfg.inference["judge"].model, "glm-4.7-flash",
@@ -858,7 +858,7 @@ fn an_unknown_top_level_key_is_an_error_in_any_file() {
         ("typo.yaml", "includes: [core.yaml]\n"),
         (
             "pack.yaml",
-            "plugin:\n  aws: { module_type: rust, path: . }\n",
+            "plugin:\n  cloudtrail: { module_type: rust, path: . }\n",
         ),
         ("root.yaml", "include: [pack.yaml]\n"),
     ]);
@@ -921,7 +921,7 @@ enrichment_tables:
         ("data/networks.csv", "203.0.113.0/24,aws\n"),
         ("packs/enrich-ip/ingest.yaml", enrich),
         (
-            "packs/aws/ingest.yaml",
+            "packs/cloudtrail/ingest.yaml",
             "include: [../enrich-ip/ingest.yaml]\n",
         ),
         (
@@ -931,7 +931,7 @@ enrichment_tables:
         (
             "deploy/ingest.yaml",
             "
-include: [../packs/aws/ingest.yaml, ../packs/okta/ingest.yaml]
+include: [../packs/cloudtrail/ingest.yaml, ../packs/okta/ingest.yaml]
 enrichment_tables:
   profile: { type: document, path: profile/profile.yaml, required: true }
 ",
@@ -979,7 +979,7 @@ enrichment_tables:
     fs::write(
         dir.path().join("deploy/ingest.yaml"),
         "
-include: [../packs/aws/ingest.yaml, ../packs/okta/ingest.yaml]
+include: [../packs/cloudtrail/ingest.yaml, ../packs/okta/ingest.yaml]
 enrichment_tables:
   geo: { path: city.mmdb }
 ",
@@ -1001,7 +1001,7 @@ enrichment_tables:
 fn a_test_s_own_tables_are_relative_to_the_file_that_names_them() {
     let pack = "
 plugins:
-  aws:
+  cloudtrail:
     module_type: rust
     path: .
     tests:
@@ -1011,23 +1011,23 @@ plugins:
           profile: { type: document, path: tests/profile.yaml }
 ";
     let dir = tree(&[
-        ("packs/aws/ingest.yaml", pack),
+        ("packs/cloudtrail/ingest.yaml", pack),
         (
             "deploy/ingest.yaml",
             "
-include: [../packs/aws/ingest.yaml]
+include: [../packs/cloudtrail/ingest.yaml]
 enrichment_tables:
   profile: { type: document, path: profile/profile.yaml }
 ",
         ),
     ]);
     let cfg = load(&dir, "deploy/ingest.yaml").unwrap().config;
-    let test = &cfg.plugins["aws"].tests[0];
+    let test = &cfg.plugins["cloudtrail"].tests[0];
     assert_eq!(
         test.enrichment_tables["profile"],
         TableConfig {
             kind: TableKind::Document,
-            path: canonical(&dir, "packs/aws/tests/profile.yaml"),
+            path: canonical(&dir, "packs/cloudtrail/tests/profile.yaml"),
             required: false,
         }
     );
@@ -1179,7 +1179,7 @@ fn a_bad_edge_names_its_file() {
     let dir = tree(&[
         (
             "pack.yaml",
-            "dag:\n  - from: { kind: plugn, name: aws }\n    to: []\n",
+            "dag:\n  - from: { kind: plugn, name: cloudtrail }\n    to: []\n",
         ),
         ("root.yaml", "include: [pack.yaml]\n"),
     ]);

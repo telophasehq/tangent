@@ -152,7 +152,7 @@ fn open_cidr(v: &Value) -> Option<String> {
 impl Guest for Component {
     fn metadata() -> Meta {
         Meta {
-            name: "aws".to_string(),
+            name: "cloudtrail".to_string(),
             version: "0.1.0".to_string(),
         }
     }

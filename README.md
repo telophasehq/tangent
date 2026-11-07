@@ -226,7 +226,7 @@ A config can span several files. `include:` lists files merged into the one that
 ```yaml
 include:
   - packs/judge/ingest.yaml
-  - packs/aws/ingest.yaml
+  - packs/cloudtrail/ingest.yaml
 plugins:
   baseline_renderer: { expire_after_ms: 10000 }   # one setting of a plugin an included file defines
 ```
@@ -245,10 +245,10 @@ Unknown keys aside, a config without `include:` reads as it always has.
 
 `tangent config --config FILE` prints the merged config, every default filled in, after the files it came from. Secret fields (tokens, `api_key`, `webhook_url`, passwords) are left out, so it is for reading, not for running.
 
-An edge names its nodes and nothing else, `from: aws_audit` and `to: [aws, lake]`: a name is one node, so no source, plugin, inference node and sink share one, and a config where two do fails to load, naming both. `tangent run` checks the DAG before it starts: an edge to a node no file defines is an error, and so is one out of a sink or into a source. It warns about a source with no edge out, and names once a source whose records none of its targets take, as when no included plugin's probe claims a record's `source`; `tangent_unrouted_records_total` counts every record dropped that way, per node.
+An edge names its nodes and nothing else, `from: aws_audit` and `to: [cloudtrail, lake]`: a name is one node, so no source, plugin, inference node and sink share one, and a config where two do fails to load, naming both. `tangent run` checks the DAG before it starts: an edge to a node no file defines is an error, and so is one out of a sink or into a source. It warns about a source with no edge out, and names once a source whose records none of its targets take, as when no included plugin's probe claims a record's `source`; `tangent_unrouted_records_total` counts every record dropped that way, per node.
 
 ## Packs
-A pack is what tangent knows about one provider's logs, and it is one plugin, named after the provider. Tangent's own sources read the logs (`cloudtrail`, `github_audit`, `okta` and `google_workspace` read the providers' APIs; `tcp` takes anything else as NDJSON with a `source` field), and the pack's plugin turns each raw record into a finished one:
+A pack is what tangent knows about one provider's logs, and it is one plugin, named after the logs it reads. Tangent's own sources read the logs (`cloudtrail`, `github_audit`, `okta` and `google_workspace` read the providers' APIs; `tcp` takes anything else as NDJSON with a `source` field), and the pack's plugin turns each raw record into a finished one:
 
 1. drops the keys only the pipeline writes (`_norm`, `_facts`, `_ip`, `_context`, `_baseline`), so a log line cannot speak for it;
 2. normalizes it: `_norm` says who did what, from where, to what (`actor`, `person`, `org`, `kind`, `ip`, `country`, `dest`, `target`), the same way for every provider;
@@ -258,7 +258,7 @@ A pack is what tangent knows about one provider's logs, and it is one plugin, na
 
 | pack | takes `source` | from | of its own |
 |---|---|---|---|
-| [aws](/packs/aws) | `cloudtrail` | the `cloudtrail` source: a trail's files, every account of an organization trail | the role or SSO user as actor, `aws:<service>` when AWS acts on its own; `_facts.root`, `_facts.world_open` |
+| [cloudtrail](/packs/cloudtrail) | `cloudtrail` | the `cloudtrail` source: a trail's files, every account of an organization trail | the role or SSO user as actor, `aws:<service>` when AWS acts on its own; `_facts.root`, `_facts.world_open` |
 | [github](/packs/github) | `github_audit`, `gha_ci`, `runner_egress` | the `github_audit` source; Actions job logs and runner egress as NDJSON | a CI run told per repository, which is not a principal |
 | [okta](/packs/okta) | `okta` | the `okta` source: the System Log | Okta's own risk signals kept |
 | [google_workspace](/packs/google_workspace) | `google_workspace` | the `google_workspace` source: login, token, drive and admin activity | each event's parameters by name |
@@ -281,7 +281,7 @@ A pipeline is one config: judge's `ingest.yaml`, which includes enrich-ip's and 
 # tangent.yaml
 include:
   - ../tangent/packs/judge/ingest.yaml
-  - ../tangent/packs/aws/ingest.yaml
+  - ../tangent/packs/cloudtrail/ingest.yaml
   - ../tangent/packs/okta/ingest.yaml
 
 enrichment_tables:
@@ -308,10 +308,10 @@ sources:
 
 dag:
   - from: aws_audit
-    to: [aws]
+    to: [cloudtrail]
   - from: okta_audit
     to: [okta]
-  - from: aws     # kept, learned, judged
+  - from: cloudtrail     # kept, learned, judged
     to: [lake, baseline_builder, baseline_renderer]
   - from: okta
     to: [lake, baseline_builder, baseline_renderer]
@@ -332,7 +332,7 @@ watch: [StopLogging, user.mfa.factor.deactivate]
 brew install gh                                   # once: it checks each prebuilt plugin's attestation; no login
 ../tangent/examples/enrich/setup.sh data          # once: GeoLite2, cloud ranges, Tor exits
 tangent plugin fetch --config tangent.yaml        # the packs' plugins, prebuilt and attested
-tangent plugin test --config tangent.yaml         # the aws and okta fixtures
+tangent plugin test --config tangent.yaml         # the cloudtrail and okta fixtures
 tangent run --config tangent.yaml
 ```
 
@@ -349,7 +349,7 @@ A plugin is a WASM component, compiled once and run on every machine, so only a 
 
 ```yaml
 plugins:
-  aws:
+  cloudtrail:
     module_type: rust
     path: .                                          # the source, for `tangent plugin compile`
     prebuilt: { repo: EthanBlackburn/tangent, workflow: .github/workflows/attest-packs.yml }
@@ -360,8 +360,8 @@ plugins:
 A prebuilt plugin is code off the network that reads every record, so before one is kept its build is checked: the release workflow attests each component, on its own, with [GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations) ([.github/workflows/attest-packs.yml](/.github/workflows/attest-packs.yml)), a Sigstore signature naming the component's file name and digest, the repository, the workflow and the commit that built it, with the attestation bundle uploaded beside the component as `<asset>.sigstore.json`. `fetch` has `gh attestation verify`, GitHub's own verifier, check it: signed for `repo` from the release's tag (`--source-ref refs/tags/<release>`), by `workflow` when named; and then that the statement names the file as the asset asked for, not only by its digest, so one attested component of a release cannot be served under another's name. With the bundle on the release nothing asks GitHub's API, so `gh` need not be logged in; a release without the bundle falls back to the API, which needs `gh auth login`. A plugin that does not verify is not kept, and there is no flag to skip the check. `sha256:` pins the component's digest as well, for a lockfile's certainty. The command `fetch` ran is printed, to run again by hand:
 
 ```bash
-gh attestation verify plugins/aws.component.wasm --repo EthanBlackburn/tangent --source-ref refs/tags/v0.1.10 \
-  --bundle plugins/aws.component.wasm.sigstore.json --signer-workflow EthanBlackburn/tangent/.github/workflows/attest-packs.yml
+gh attestation verify plugins/cloudtrail.component.wasm --repo EthanBlackburn/tangent --source-ref refs/tags/v0.1.10 \
+  --bundle plugins/cloudtrail.component.wasm.sigstore.json --signer-workflow EthanBlackburn/tangent/.github/workflows/attest-packs.yml
 ```
 
 A pack of your own is published the same way: a workflow that builds the component with `cargo component build --release --target wasm32-wasip2`, attests it with `actions/attest-build-provenance` under the file name it will have on the release (the step's `bundle-path` output is the bundle), and uploads both to a release; its users write `prebuilt: { repo: you/packs, release: <tag>, workflow: .github/workflows/release.yml }`.
@@ -391,12 +391,12 @@ Rough ranges for a company of 50 people, each active about eight hours a day, pr
 
 | pack | grows with | a log | a day | judged as | Haiku 5.5, a day |
 |---|---|---|---|---|---|
-| [aws](/packs/aws) | services, scheduled jobs and deploys, more than people | ~2 KB | 50k–500k events, 0.1–1 GB | the same | $2–20 |
+| [cloudtrail](/packs/cloudtrail) | services, scheduled jobs and deploys, more than people | ~2 KB | 50k–500k events, 0.1–1 GB | the same | $2–20 |
 | [google_workspace](/packs/google_workspace) | people: 100–500 events each, most of them Drive | ~0.5 KB | 5k–25k events, 3–13 MB | 16k–32k logs | $0.35–0.70 |
 | [okta](/packs/okta) | people: 20–100 events each, sign-ins, MFA and app launches | ~2 KB | 1k–5k events, 2–10 MB | 16k logs | $0.60 |
 | [github](/packs/github) | engineers: 20–200 events each, pushes, reviews and Actions runs | ~0.3 KB | 1k–10k events, 0.3–3 MB | 16k logs | $0.30 |
 
-A person costs about a cent a day or less in each source that sees them, however little they do. A trail that also logs data events (S3 objects, Lambda invocations) can have ten to a hundred times aws's events. AWS VPC Flow Logs have no pack: a startup writes 5M–30M flow records a day of about 0.1 KB, $80–500 a day by the rule and more than one judge keeps up with, so a pack for them would roll flows up before the judge.
+A person costs about a cent a day or less in each source that sees them, however little they do. A trail that also logs data events (S3 objects, Lambda invocations) can have ten to a hundred times cloudtrail's events. AWS VPC Flow Logs have no pack: a startup writes 5M–30M flow records a day of about 0.1 KB, $80–500 a day by the rule and more than one judge keeps up with, so a pack for them would roll flows up before the judge.
 
 The examples keep every finished log once in their lake, Parquet files in a directory an hour, about 20 bytes a log on a day of CloudTrail, which deleting old hours trims; the judge's groups wait in memory; `state.sqlite` grows with actors, their active hours, role sessions and sign-ins, and each actor's ten latest records the judge saw, not with logs. A local model, the default, costs only the machine it runs on.
 

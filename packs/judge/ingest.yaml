@@ -61,7 +61,7 @@ inference:
       # goes without principal groups: a plugin of your own wants a row for
       # each of its sources in your config.
       sources:
-        cloudtrail:                # aws
+        cloudtrail:                # cloudtrail
           principal: [_norm.actor, userIdentity.arn]
           time: [eventTime, ts]
           keep: [eventName, requestParameters, responseElements, errorCode, errorMessage, userIdentity.mfaAuthenticated, additionalEventData.MFAUsed, _facts.root, _facts.world_open]

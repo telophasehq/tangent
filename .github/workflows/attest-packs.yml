@@ -6,8 +6,8 @@
 # uploaded to the release beside it as <asset>.sigstore.json, so a check needs
 # no GitHub login:
 #
-#   gh attestation verify aws.component.wasm --repo EthanBlackburn/tangent \
-#     --bundle aws.component.wasm.sigstore.json --source-ref refs/tags/<tag> \
+#   gh attestation verify cloudtrail.component.wasm --repo EthanBlackburn/tangent \
+#     --bundle cloudtrail.component.wasm.sigstore.json --source-ref refs/tags/<tag> \
 #     --signer-workflow EthanBlackburn/tangent/.github/workflows/attest-packs.yml
 #
 # One statement per component, not one over all of them: gh accepts a file

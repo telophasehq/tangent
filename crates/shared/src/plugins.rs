@@ -205,10 +205,10 @@ mod tests {
         assert!(p.path.as_os_str().is_empty());
         let pre = p.prebuilt.unwrap();
         assert_eq!(pre.release("0.1.10"), "v0.1.10");
-        assert_eq!(pre.asset("aws"), "aws.component.wasm");
+        assert_eq!(pre.asset("cloudtrail"), "cloudtrail.component.wasm");
         assert_eq!(
-            pre.asset_url("0.1.10", "aws.component.wasm"),
-            "https://github.com/EthanBlackburn/tangent/releases/download/v0.1.10/aws.component.wasm"
+            pre.asset_url("0.1.10", "cloudtrail.component.wasm"),
+            "https://github.com/EthanBlackburn/tangent/releases/download/v0.1.10/cloudtrail.component.wasm"
         );
         assert_eq!(pre.pinned_sha256(), None);
     }
@@ -216,14 +216,14 @@ mod tests {
     #[test]
     fn a_prebuilt_names_its_release_asset_host_and_digest() {
         let pre: Prebuilt = serde_yaml::from_str(
-            "repo: acme/packs\nrelease: packs-3\nasset: aws-pack.wasm\nhost: github.acme.com\nsha256: \"sha256:5B3B31\"\n",
+            "repo: acme/packs\nrelease: packs-3\nasset: cloudtrail-pack.wasm\nhost: github.acme.com\nsha256: \"sha256:5B3B31\"\n",
         )
         .unwrap();
         assert_eq!(pre.release("0.1.10"), "packs-3");
-        assert_eq!(pre.asset("aws"), "aws-pack.wasm");
+        assert_eq!(pre.asset("cloudtrail"), "cloudtrail-pack.wasm");
         assert_eq!(
-            pre.asset_url("0.1.10", "aws-pack.wasm"),
-            "https://github.acme.com/acme/packs/releases/download/packs-3/aws-pack.wasm"
+            pre.asset_url("0.1.10", "cloudtrail-pack.wasm"),
+            "https://github.acme.com/acme/packs/releases/download/packs-3/cloudtrail-pack.wasm"
         );
         assert_eq!(pre.pinned_sha256().as_deref(), Some("5b3b31"));
     }

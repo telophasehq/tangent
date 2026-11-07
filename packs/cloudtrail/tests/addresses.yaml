@@ -1,7 +1,7 @@
-# The fixtures' addresses, as GeoLite2 Country and ASN answer them: the aws
-# plugin's test reads this file as its `geo` and `asn` tables (ingest.yaml),
-# whatever the config's. An address not here is in no network these tables
-# know.
+# The fixtures' addresses, as GeoLite2 Country and ASN answer them: the
+# cloudtrail plugin's test reads this file as its `geo` and `asn` tables
+# (ingest.yaml), whatever the config's. An address not here is in no network
+# these tables know.
 
 "3.208.10.20": {"country": {"iso_code": "US"}, "autonomous_system_number": 14618, "autonomous_system_organization": "Amazon.com, Inc."}
 "52.94.76.10": {"country": {"iso_code": "US"}, "autonomous_system_number": 16509, "autonomous_system_organization": "Amazon.com, Inc."}

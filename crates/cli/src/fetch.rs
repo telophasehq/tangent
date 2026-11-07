@@ -368,8 +368,8 @@ mod tests {
     #[test]
     fn verify_checks_the_repo_and_the_releases_tag_from_the_bundle() {
         let args = verify_args(
-            Path::new("plugins/aws.component.wasm"),
-            Some(Path::new("plugins/aws.component.wasm.sigstore.json")),
+            Path::new("plugins/cloudtrail.component.wasm"),
+            Some(Path::new("plugins/cloudtrail.component.wasm.sigstore.json")),
             &prebuilt(),
             "v0.1.10",
         );
@@ -378,13 +378,13 @@ mod tests {
             [
                 "attestation",
                 "verify",
-                "plugins/aws.component.wasm",
+                "plugins/cloudtrail.component.wasm",
                 "--repo",
                 "EthanBlackburn/tangent",
                 "--source-ref",
                 "refs/tags/v0.1.10",
                 "--bundle",
-                "plugins/aws.component.wasm.sigstore.json",
+                "plugins/cloudtrail.component.wasm.sigstore.json",
             ]
         );
     }
@@ -414,7 +414,7 @@ mod tests {
         );
     }
 
-    const AWS: &str = "791384b07102b8b4f42972513bec962bc44d6a812668fcd718eef3e3c83a3c0f";
+    const CLOUDTRAIL: &str = "791384b07102b8b4f42972513bec962bc44d6a812668fcd718eef3e3c83a3c0f";
     const FRESH: &str = "8fdda3d978509a6e84dad3e2f7e21bfe09e66e4b932910c28a26f38093e6e11e";
 
     /// What gh prints for a statement over two of a release's components.
@@ -423,7 +423,7 @@ mod tests {
             "attestation": {},
             "verificationResult": {
                 "statement": { "subject": [
-                    { "name": "aws.component.wasm", "digest": { "sha256": AWS } },
+                    { "name": "cloudtrail.component.wasm", "digest": { "sha256": CLOUDTRAIL } },
                     { "name": "fresh.component.wasm", "digest": { "sha256": FRESH } }
                 ]},
                 "signature": { "certificate": {
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn the_file_must_be_attested_under_the_assets_name() {
-        let v = attested_as(&accepted(), AWS, "aws.component.wasm").unwrap();
+        let v = attested_as(&accepted(), CLOUDTRAIL, "cloudtrail.component.wasm").unwrap();
         assert_eq!(
             v.signer,
             "EthanBlackburn/tangent/.github/workflows/attest-packs.yml@refs/tags/v0.1.10"
@@ -447,27 +447,27 @@ mod tests {
         assert_eq!(short(&v.commit), "63837fb778d6");
         assert_eq!(v.source_ref, "refs/tags/v0.1.10");
 
-        // fresh's bytes on the release as aws.component.wasm: attested, but not as aws
+        // fresh's bytes on the release as cloudtrail.component.wasm: attested, but not as cloudtrail
         let err = format!(
             "{:#}",
-            attested_as(&accepted(), FRESH, "aws.component.wasm").unwrap_err()
+            attested_as(&accepted(), FRESH, "cloudtrail.component.wasm").unwrap_err()
         );
         assert!(
-            err.contains("attested as fresh.component.wasm, not as aws.component.wasm"),
+            err.contains("attested as fresh.component.wasm, not as cloudtrail.component.wasm"),
             "{err}"
         );
         // a digest no statement has, though gh accepted something
         let other = "0".repeat(64);
         let err = format!(
             "{:#}",
-            attested_as(&accepted(), &other, "aws.component.wasm").unwrap_err()
+            attested_as(&accepted(), &other, "cloudtrail.component.wasm").unwrap_err()
         );
         assert!(
             err.contains("no accepted attestation names a file with sha256 000"),
             "{err}"
         );
-        assert!(attested_as(b"[]", AWS, "aws.component.wasm").is_err());
-        assert!(attested_as(b"not json", AWS, "aws.component.wasm").is_err());
+        assert!(attested_as(b"[]", CLOUDTRAIL, "cloudtrail.component.wasm").is_err());
+        assert!(attested_as(b"not json", CLOUDTRAIL, "cloudtrail.component.wasm").is_err());
     }
 
     #[test]

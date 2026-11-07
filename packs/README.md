@@ -11,7 +11,7 @@ says about it in `_facts`. How to use them is in the main
 | [enrich-ip](enrich-ip) | not a provider: the enrichment tables keyed by address, `geo`, `asn` and `networks`, that every pack's plugin reads. |
 | [behavior-baseline](behavior-baseline) | not a provider: `baseline_builder`, which learns each actor's history into the state store, and `baseline_renderer`, which stamps it on the actor's records as `_baseline`, and the state store they keep it in. |
 | [judge](judge) | not a provider: the judge, with a row for each pack's sources, and the renderer's records grouped an actor at a time for it. It includes enrich-ip and behavior-baseline, so a pipeline with the model includes judge and its packs, routes each pack's plugin to `baseline_builder`, `baseline_renderer` and its own sink, and needs nothing else; one without the model includes enrich-ip, behavior-baseline, or both. |
-| [aws](aws) | `cloudtrail` |
+| [cloudtrail](cloudtrail) | `cloudtrail` |
 | [github](github) | `github_audit`, `gha_ci`, `runner_egress` |
 | [okta](okta) | `okta` |
 | [google_workspace](google_workspace) | `google_workspace` |
@@ -70,7 +70,7 @@ speak for the pipeline.
 | `sensitive_target` | the target is one you mark sensitive |
 | `notes` | what a model reads all this by, a sentence each |
 
-A pack adds what only its provider's log says: `aws` adds `root` and
+A pack adds what only its provider's log says: `cloudtrail` adds `root` and
 `world_open`, each with its note after the watch note.
 
 ## The profile

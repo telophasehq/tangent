@@ -11,7 +11,7 @@
 # Edit profile/profile.yaml first: it is everything the model knows about you.
 include:
   - ../../packs/judge/ingest.yaml             # the judge, and the enrich-ip and behavior-baseline packs it includes
-  - ../../packs/aws/ingest.yaml               # plugin aws: cloudtrail
+  - ../../packs/cloudtrail/ingest.yaml        # plugin cloudtrail: cloudtrail
   - ../../packs/github/ingest.yaml            # plugin github: github_audit, gha_ci, runner_egress
   - ../../packs/okta/ingest.yaml              # plugin okta: okta
   - ../../packs/google_workspace/ingest.yaml  # plugin google_workspace: google_workspace
@@ -71,7 +71,7 @@ sources:
 
 dag:
   - from: aws_audit
-    to: [aws]
+    to: [cloudtrail]
   - from: github_audit
     to: [github]
   - from: okta_audit
@@ -83,13 +83,13 @@ dag:
   # dropped, with a warning.
   - from: events
     to:
-      - aws
+      - cloudtrail
       - github
       - okta
       - google_workspace
   # Each pack's records: kept in the lake, folded into the actor's baseline,
   # and judged (packs/behavior-baseline, packs/judge).
-  - from: aws
+  - from: cloudtrail
     to: [lake, baseline_builder, baseline_renderer]
   - from: github
     to: [lake, baseline_builder, baseline_renderer]
