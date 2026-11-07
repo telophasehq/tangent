@@ -126,7 +126,7 @@ credential needs.
 
 | source | pack | what it reads |
 |---|---|---|
-| `cloudtrail` | [aws](/packs/aws#credentials) | a trail's files: every event, data events included, every account and region of an organization trail, a few minutes behind |
+| `aws_audit` | [aws](/packs/aws#credentials) | a trail's files: every event, data events included, every account and region of an organization trail, a few minutes behind |
 | `github_audit` | [github](/packs/github#use-it) | the organization's audit log, web and git events |
 | `okta_audit` | [okta](/packs/okta#use-it) | the System Log |
 | `workspace_audit` | [google_workspace](/packs/google_workspace#use-it) | login, token, drive and admin activity |

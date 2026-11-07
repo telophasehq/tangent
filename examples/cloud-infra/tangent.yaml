@@ -47,7 +47,7 @@ sinks:
   #   text: "*{_norm.actor}* {_norm.kind|eventName|eventType|action|event|step|events.0.name} from {_norm.ip|sourceIPAddress|client.ipAddress|ipAddress|actor_ip|ip|client_ip}: {judge.why|not judged: judge.error}"
 
 sources:
-  cloudtrail:
+  aws_audit:
     type: cloudtrail
     region: ${AWS_REGION}
     profile: ${AWS_PROFILE}
@@ -70,7 +70,7 @@ sources:
     bind_address: 0.0.0.0:9400
 
 dag:
-  - from: cloudtrail
+  - from: aws_audit
     to: [aws]
   - from: github_audit
     to: [github]

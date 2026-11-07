@@ -245,7 +245,7 @@ Unknown keys aside, a config without `include:` reads as it always has.
 
 `tangent config --config FILE` prints the merged config, every default filled in, after the files it came from. Secret fields (tokens, `api_key`, `webhook_url`, passwords) are left out, so it is for reading, not for running.
 
-An edge names its nodes and nothing else, `from: cloudtrail` and `to: [aws, lake]`: a name is one node, so no source, plugin, inference node and sink share one, and a config where two do fails to load, naming both. `tangent run` checks the DAG before it starts: an edge to a node no file defines is an error, and so is one out of a sink or into a source. It warns about a source with no edge out, and names once a source whose records none of its targets take, as when no included plugin's probe claims a record's `source`; `tangent_unrouted_records_total` counts every record dropped that way, per node.
+An edge names its nodes and nothing else, `from: aws_audit` and `to: [aws, lake]`: a name is one node, so no source, plugin, inference node and sink share one, and a config where two do fails to load, naming both. `tangent run` checks the DAG before it starts: an edge to a node no file defines is an error, and so is one out of a sink or into a source. It warns about a source with no edge out, and names once a source whose records none of its targets take, as when no included plugin's probe claims a record's `source`; `tangent_unrouted_records_total` counts every record dropped that way, per node.
 
 ## Packs
 A pack is what tangent knows about one provider's logs, and it is one plugin, named after the provider. Tangent's own sources read the logs (`cloudtrail`, `github_audit`, `okta` and `google_workspace` read the providers' APIs; `tcp` takes anything else as NDJSON with a `source` field), and the pack's plugin turns each raw record into a finished one:
@@ -303,11 +303,11 @@ sinks:
         _norm: { org: string, actor: string, kind: string, ip: string }
 
 sources:
-  cloudtrail: { type: cloudtrail, region: "${AWS_REGION}", queue_url: "${CLOUDTRAIL_QUEUE_URL}" }
+  aws_audit: { type: cloudtrail, region: "${AWS_REGION}", queue_url: "${CLOUDTRAIL_QUEUE_URL}" }
   okta_audit: { type: okta, org_url: "${OKTA_ORG_URL}", token: "${OKTA_API_TOKEN}" }
 
 dag:
-  - from: cloudtrail
+  - from: aws_audit
     to: [aws]
   - from: okta_audit
     to: [okta]

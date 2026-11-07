@@ -92,7 +92,7 @@ sinks:
         _norm: { org: string, actor: string, kind: string, ip: string }
 
 sources:
-  cloudtrail:
+  aws_audit:
     type: cloudtrail
     region: ${AWS_REGION}                   # the queue's; the SDK's default chain when unset
     profile: ${AWS_PROFILE}
@@ -100,7 +100,7 @@ sources:
     bucket_role: ${CLOUDTRAIL_BUCKET_ROLE}  # an organization trail's log archive role; unset otherwise
 
 dag:
-  - from: cloudtrail
+  - from: aws_audit
     to: [aws]
   - from: aws   # kept, learned, judged
     to: [lake, baseline_builder, baseline_renderer]
