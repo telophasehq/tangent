@@ -3,11 +3,11 @@ module detection
 go 1.26.0
 
 require (
-	github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261102190949-bf65266c13bb
+	github.com/ethanblackburn/tangent-sdk-go v0.0.0-20261107000312-bea4e3fee4bb
 	go.bytecodealliance.org/cm v0.3.0 // indirect
 )
 
-require github.com/mailru/easyjson v0.9.1
+require github.com/mailru/easyjson v0.9.1 // indirect
 
 require (
 	github.com/coreos/go-semver v0.3.1 // indirect
@@ -23,9 +23,8 @@ require (
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	github.com/urfave/cli/v3 v3.3.3 // indirect
 	go.bytecodealliance.org v0.7.0 // indirect
-	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
+	golang.org/x/mod v0.29.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 )
 
 tool go.bytecodealliance.org/cmd/wit-bindgen-go
