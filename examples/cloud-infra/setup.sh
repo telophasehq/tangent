@@ -22,7 +22,7 @@ if [ "${1:-}" = "toolchain" ]; then
 fi
 
 # GeoLite2, the cloud providers' ranges, the Tor exit list: the runtime's
-# enrichment tables (packs/enrich/ingest.yaml). See examples/enrich.
+# enrichment tables (packs/enrich-ip/ingest.yaml). See examples/enrich.
 ../../examples/enrich/setup.sh data
 
 echo "==> Done. Edit profile/profile.yaml, then: make test, make run"

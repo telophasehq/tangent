@@ -1,7 +1,7 @@
 //! Every config in the repo loads: alone, or through a config that includes
-//! it (a pack's ingest.yaml, say, is a plugin whose tables enrich gives). And
-//! the pipelines pass the checks `tangent run` makes before it starts: with
-//! the judge, as the examples run, and without it.
+//! it (a pack's ingest.yaml, say, is a plugin whose tables enrich-ip gives).
+//! And the pipelines pass the checks `tangent run` makes before it starts:
+//! with the judge, as the examples run, and without it.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -104,8 +104,8 @@ fn pipelines_validate_with_and_without_the_judge() {
         .unwrap_or_else(|e| panic!("{example}: {e:#}"));
 
     // Every pack, as packs/Makefile finds them: a directory with an
-    // ingest.yaml and its plugin's Cargo.toml, so not enrich, behavior-baseline
-    // or judge. Its plugins are the ones its file defines.
+    // ingest.yaml and its plugin's Cargo.toml, so not enrich-ip,
+    // behavior-baseline or judge. Its plugins are the ones its file defines.
     let mut files: Vec<PathBuf> = fs::read_dir(repo.join("packs"))
         .unwrap()
         .flatten()
@@ -130,7 +130,7 @@ fn pipelines_validate_with_and_without_the_judge() {
 
     let mut yaml = format!(
         "include:\n  - {}\n",
-        repo.join("packs/enrich/ingest.yaml").display()
+        repo.join("packs/enrich-ip/ingest.yaml").display()
     );
     for f in &files {
         yaml += &format!("  - {}\n", f.display());

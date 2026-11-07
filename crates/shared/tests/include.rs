@@ -919,10 +919,10 @@ enrichment_tables:
 ";
     let dir = tree(&[
         ("data/networks.csv", "203.0.113.0/24,aws\n"),
-        ("packs/enrich/ingest.yaml", enrich),
+        ("packs/enrich-ip/ingest.yaml", enrich),
         (
             "packs/aws/ingest.yaml",
-            "include: [../enrich/ingest.yaml]\n",
+            "include: [../enrich-ip/ingest.yaml]\n",
         ),
         (
             "packs/okta/ingest.yaml",
@@ -972,7 +972,7 @@ enrichment_tables:
     .unwrap();
     let err = error(&dir, "deploy/ingest.yaml");
     assert!(err.contains("enrichment_tables.geo.path"), "{err}");
-    assert!(err.contains("packs/enrich/ingest.yaml"), "{err}");
+    assert!(err.contains("packs/enrich-ip/ingest.yaml"), "{err}");
     assert!(err.contains("packs/okta/ingest.yaml"), "{err}");
 
     // The root settles it, and a config without tables writes none.
