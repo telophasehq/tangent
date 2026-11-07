@@ -1,7 +1,7 @@
-# enrich-ip: the tables every pack's plugin reads. Not a provider: include it,
-# with the packs you want, in your config, which names your sources, routes
-# each to its pack and each pack's plugin on to where its records go, and
-# gives the `profile` table (README.md).
+# enrich-ip: the address tables every pack's plugin reads. Not a provider:
+# include it, with the packs you want, in your config, which names your
+# sources, routes each to its pack and each pack's plugin on to where its
+# records go, and gives the `profile` table (packs/README.md#the-profile).
 
 # Read once for the process and shared by every pack's plugin, however many are
 # included. examples/enrich/setup.sh fetches them; a missing file is a warning,

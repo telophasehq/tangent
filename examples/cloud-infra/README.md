@@ -142,7 +142,7 @@ with a warning.
 
 [profile/profile.yaml](profile/profile.yaml) is every fact about your company
 that no log carries, the `profile` table `tangent.yaml` names; the model reads
-it as `_facts`. [packs/enrich-ip](/packs/enrich-ip#the-profile) lists the keys. It ships
+it as `_facts`. [packs](/packs/README.md#the-profile) lists the keys. It ships
 filled in for the fictional company the cases in [tangent-eval's cases](https://github.com/EthanBlackburn/tangent-eval/tree/main/cases)
 describe.
 

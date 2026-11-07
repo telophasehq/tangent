@@ -96,7 +96,7 @@ records share; JSON lines repeat it on every record
 ([the cost](../judge#the-model)).
 
 - **People**: `people` in the profile
-  ([enrich-ip](../enrich-ip#the-profile)) says which names are one person, as an
+  ([packs](../README.md#the-profile)) says which names are one person, as an
   IAM user `dave` is `dave@example.com`; a name not there is its own person,
   and one other name may be written bare (`dave@example.com: dave`). Who is
   who is resolved once, in ingest: a pack's plugin writes the actor's person
