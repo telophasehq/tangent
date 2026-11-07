@@ -8,9 +8,9 @@
 //! token events by a few hours, say). A source names that lateness; every poll reads
 //! from the cursor less the lateness, and the cursor ends a poll at the
 //! newest event seen or at `now - lateness`, whichever is later (only at
-//! the newest event when the poll stopped at its page cap). An id is
-//! remembered for a few times the lateness, which is as long as a poll can
-//! find it again.
+//! the newest event when an API serving oldest first stopped the poll at
+//! its page cap). An id is remembered for a few times the lateness, which
+//! is as long as a poll can find it again.
 
 use std::sync::Arc;
 

@@ -109,6 +109,11 @@ the first poll did not reach, up to twice the lag old (8 h for `token`):
 | `takeout` | a finished export: up to many days | 7 days |
 | the rest | minutes | 1 h |
 
+A poll sends at most 10,000 new events per application. When there are
+more (a first start with `since: 7d`, or a restart after days stopped),
+Google serves the newest first, so the next polls read the older ones,
+10,000 at a time, before that application's newer events.
+
 Left without credentials, it says so once and stays idle.
 
 Kinds worth the profile's `watch`: `EMAIL_FORWARDING_OUT_OF_DOMAIN`.
